@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -90,6 +91,14 @@ def serial_port_on_data(self, data):
         else:
             self.serial_rx_data += c
         i += 1
+
+ def send_command_get_answer(self, command, timeout, callback):
+    _LOGGER.debug('Nikobus.sendCommandGetAnswer() enter')
+    _LOGGER.debug('command = ' + command + ', ' + 'timeout = ' + str(timeout))
+    self.get_answer_callback = callback
+    self.wait_command_ack = '$05' + command[3:5]  # $1012B6027576C9 => $0512
+    _LOGGER.debug('serial tx [' + command + '] (cr)', 2)        
+    self.log('Nikobus.sendCommandGetAnswer() exit', 9)
 
 class MyTCPSocketEntity(Entity):
     """Representation of a TCP socket entity."""
