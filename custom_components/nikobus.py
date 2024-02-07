@@ -50,7 +50,7 @@ class MyTCPSocketEntity(Entity):
     @property
     def name(self):
         """Return the name of the entity."""
-        return "Nikobus Bridge"
+        return "Nikobus PC Link"
 
     @property
     def state(self):
