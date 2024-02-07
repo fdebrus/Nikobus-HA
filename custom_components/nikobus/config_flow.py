@@ -1,6 +1,5 @@
 """Config Flow."""
 from typing import Any, Optional
-
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -21,7 +20,6 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
         """Handle a flow initialized by the user."""
-        errors = {}
         if user_input is not None:
             self.data = user_input
   
