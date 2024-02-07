@@ -9,10 +9,10 @@ from serial import Serial, SerialException
 from serial.tools.list_ports import comports
 
 import homeassistant.helpers.config_validation as cv
-from homeassistant.const import CONF_HOST, CONF_PORT, CHANNEL_OUTPUT_PREFIX
+from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN
+from .const import *
 from .nikobus_command import NikobusCommand, Result
 from .crc_util import append_crc2
 
