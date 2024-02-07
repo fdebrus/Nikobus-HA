@@ -14,6 +14,11 @@ from homeassistant.helpers.entity import Entity
 
 from .const import *
 
+__title__ = "Nikobus"
+__version__ = "0.0.1"
+__author__ = "Frederic Debrus"
+__license__ = "MIT"
+
 _LOGGER = logging.getLogger(__name__)
 
 class Nikobus:
