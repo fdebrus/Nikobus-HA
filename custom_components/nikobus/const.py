@@ -2,6 +2,7 @@
 
 DOMAIN = "nikobus"
 
+"""
 # List of all Thing Type UIDs
 BRIDGE_TYPE_PCLINK = f"{BINDING_ID}:pc-link"
 
@@ -21,3 +22,4 @@ CONFIG_REFRESH_INTERVAL = "refreshInterval"
 CONFIG_IMPACTED_MODULES = "impactedModules"
 CONFIG_ADDRESS = "address"
 CONFIG_PORT_NAME = "port"
+"""
