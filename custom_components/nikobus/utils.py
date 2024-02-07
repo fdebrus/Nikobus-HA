@@ -1,3 +1,5 @@
+from typing import Optional
+
 class Utils:
     @staticmethod
     def cancel(future):
