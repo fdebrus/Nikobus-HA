@@ -10,25 +10,13 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required(CONF_HOST): cv.string,
-                vol.Required(CONF_PORT): cv.port,
-            }
-        )
-    },
-    extra=vol.ALLOW_EXTRA,
-)
-
 class Nikobus:
 
     async def async_setup(hass, config):
         """Set up the TCP socket integration."""
         conf = config[DOMAIN]
-        host = conf.get(CONF_HOST)
-        port = conf.get(CONF_PORT)
+        host = CONF_HOST
+        port = CONF_PORT
 
         # Establish connection to TCP socket
         reader, writer = await asyncio.open_connection(host, port)
@@ -62,7 +50,7 @@ class MyTCPSocketEntity(Entity):
     @property
     def name(self):
         """Return the name of the entity."""
-        return "My TCP Socket Entity"
+        return "Nikobus Bridge"
 
     @property
     def state(self):
