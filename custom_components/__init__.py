@@ -11,12 +11,12 @@ PLATFORMS = [binary_sensor.DOMAIN, light.DOMAIN, switch.DOMAIN, sensor.DOMAIN, c
 
 async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Set up the Nikobus component."""
-    api = await Nikobus.create(async_get_clientsession(hass), entry.data[CONF_HOST], entry.data[CONF_PORT])
-    coordinator = NikobusDataCoordinator(hass, api)
+    bridge = await Nikobus.create(async_get_clientsession(hass), entry.data[CONF_HOST], entry.data[CONF_PORT])
+    coordinator = NikobusDataCoordinator(hass, bridge)
     
-    coordinator.data = await hass.async_add_executor_job(api.get_bridge, entry.data["bridge_id"])
+    coordinator.data = await hass.async_add_executor_job(bridge.get_bridge, entry.data["bridge_id"])
     
-    hass.async_add_executor_job(api.subscribe, entry.data["bridge_id"], coordinator.set_updated_data)
+    hass.async_add_executor_job(bridge.subscribe, entry.data["bridge_id"], coordinator.set_updated_data)
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
