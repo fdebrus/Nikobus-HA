@@ -34,14 +34,6 @@ class Nikobus:
         return bridge
     
     async def async_setup(hass, config):
-        """Set up the TCP socket integration."""
-        conf = config[DOMAIN]
-        host = CONF_HOST
-        port = CONF_PORT
-
-        # Establish connection to TCP socket
-        reader, writer = await asyncio.open_connection(host, port)
-
         # Example: send data to the socket
         writer.write(b"Hello, TCP socket!\n")
         await writer.drain()
