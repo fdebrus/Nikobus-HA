@@ -1,7 +1,7 @@
 """The Nikobus integration."""
 from homeassistant import config_entries, core
 from homeassistant.components import binary_sensor, light, switch, sensor, select
-from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.const import CONF_PORT
 
 from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
@@ -11,7 +11,7 @@ PLATFORMS = [binary_sensor.DOMAIN, light.DOMAIN, switch.DOMAIN, sensor.DOMAIN, c
 
 async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Set up the Nikobus component."""
-    bridge = await Nikobus.create(async_get_clientsession(hass), entry.data[CONF_HOST], entry.data[CONF_PORT])
+    bridge = await Nikobus.create(async_get_clientsession(hass), entry.data[CONF_PORT])
     coordinator = NikobusDataCoordinator(hass, bridge)
     
     coordinator.data = await hass.async_add_executor_job(bridge.get_bridge, entry.data["bridge_id"])
