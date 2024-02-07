@@ -8,7 +8,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 import homeassistant.helpers.config_validation as cv
 
 from .const import DOMAIN
-from .nikobus import Nikobus, UnauthorizedException
+from .nikobus import Nikobus
 
 AUTH_SCHEMA = vol.Schema(
     {vol.Required(CONF_HOST): cv.string, vol.Required(CONF_PORT): cv.string}
