@@ -22,7 +22,17 @@ __license__ = "MIT"
 _LOGGER = logging.getLogger(__name__)
 
 class Nikobus:
+    
+    def __init__(host: str, port: str) -> None:
+        """Initialize Nikobus API."""
+        self.handlers = []
 
+    @classmethod
+    async def create(host: str, port: str):
+        """Initialize Nikobus async."""
+        bridge = await asyncio.open_connection(host, port)
+        return bridge
+    
     async def async_setup(hass, config):
         """Set up the TCP socket integration."""
         conf = config[DOMAIN]
