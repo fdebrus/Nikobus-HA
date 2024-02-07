@@ -5,7 +5,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 
 from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
-from .aquarite import Nikobus
+from .nikobus import Nikobus
 
 PLATFORMS = [binary_sensor.DOMAIN, light.DOMAIN, switch.DOMAIN, sensor.DOMAIN, cover.DOMAIN]
 
