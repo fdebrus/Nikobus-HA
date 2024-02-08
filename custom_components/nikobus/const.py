@@ -2,6 +2,13 @@
 
 DOMAIN = "nikobus"
 
+CONF_BUFFER_SIZE: Final = "buffer_size"
+CONF_VALUE_ON: Final = "value_on"
+
+DEFAULT_BUFFER_SIZE: Final = 1024
+DEFAULT_NAME: Final = "NikobusBridge"
+DEFAULT_TIMEOUT: Final = 10
+
 """
 # List of all Thing Type UIDs
 BRIDGE_TYPE_PCLINK = f"{BINDING_ID}:pc-link"
