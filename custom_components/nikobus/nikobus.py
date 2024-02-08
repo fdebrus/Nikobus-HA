@@ -50,19 +50,18 @@ class NikobusBridge(entity):
                 )
             return
 
-    def get_bridge_data(self, socket) -> Any:
+    def get_bridge_data(self, sock) -> Any:
         readable, _, _ = select.select([sock], [], [], DEFAULT_TIMEOUT)
         if not readable:
            _LOGGER.warning(
-           (
-            "Timeout (%s second(s)) waiting for a response after "
-            "sending %r to %s on port %s"
-           ),
-            DEFAULT_TIMEOUT,
-            self._config[CONF_PAYLOAD],
-            self._host,
-            self._port,
-           )
+               (
+                 "Timeout (%s second(s)) waiting for a response after "
+                 "%s on port %s"
+               ),
+                 DEFAULT_TIMEOUT,
+                 self._host,
+                 self._port,
+               )
            return
 
         value = sock.recv(DEFAULT_BUFFER_SIZE).decode()
