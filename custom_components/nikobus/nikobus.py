@@ -17,13 +17,24 @@ CONF_PAYLOAD_DELIMITER = '\n'
 
 _LOGGER = logging.getLogger(__name__)
 
-def setup(hass, config):
-    """ Set up the TCP socket listener. """
-    conf = config[DOMAIN]
-    listener = TcpSocketListener(hass, conf[CONF_HOST], conf[CONF_PORT], conf[CONF_PAYLOAD_DELIMITER])
-    listener.start()
-    hass.data[DATA_LISTENER] = listener
-    return True
+class Nikobus:
+
+    def def __init__(hass, config):
+
+    def __init__(self, aiohttp_session: aiohttp.ClientSession, username : str, password : str)-> None:
+        """Init Nikobus Bridge"""
+        self.username = username
+        self.password = password
+        self.handlers = []
+
+    @classmethod
+    async def create(hass, config):
+        """ Set up the TCP socket listener. """
+        conf = config[DOMAIN]
+        listener = TcpSocketListener(hass, conf[CONF_HOST], conf[CONF_PORT], conf[CONF_PAYLOAD_DELIMITER])
+        listener.start()
+        hass.data[DATA_LISTENER] = listener
+        return True
 
 class TcpSocketListener(threading.Thread):
     """ Thread to listen for TCP/IP socket events. """
