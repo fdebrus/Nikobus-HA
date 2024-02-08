@@ -14,7 +14,6 @@ from homeassistant.helpers.typing import ConfigType
 import homeassistant.helpers.config_validation as cv
 
 from .const import (
-    CONF_BUFFER_SIZE,
     DEFAULT_BUFFER_SIZE,
     DEFAULT_NAME,
     DEFAULT_TIMEOUT,
@@ -34,14 +33,14 @@ class NikobusBridge(entity):
         self.host = host
         self.port = port
         self.handlers = []
-        self.update()
 
-    def update(self, host: str, port: str) -> None:
-        """Get the latest value."""
+    def connect_bridge(self, host: str, port: str) -> Any:
+        """Connect Bridge linked to Nikobus PC Link"""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            sock.settimeout(self._config[CONF_TIMEOUT])
+            sock.settimeout(DEFAULT_TIMEOUT)
             try:
                 sock.connect((host, port))
+                return sock
             except OSError as err:
                 _LOGGER.error(
                     "Unable to connect to %s on port %s: %s",
@@ -49,34 +48,23 @@ class NikobusBridge(entity):
                     port,
                     err,
                 )
-                return
+            return
 
-            readable, _, _ = select.select([sock], [], [], self._config[CONF_TIMEOUT])
-            if not readable:
-                _LOGGER.warning(
-                    (
-                        "Timeout (%s second(s)) waiting for a response after "
-                        "sending %r to %s on port %s"
-                    ),
-                    self._config[CONF_TIMEOUT],
-                    self._config[CONF_PAYLOAD],
-                    self._config[CONF_HOST],
-                    self._config[CONF_PORT],
-                )
-                return
+    def get_bridge_data(self, socket) -> Any:
+        readable, _, _ = select.select([sock], [], [], DEFAULT_TIMEOUT)
+        if not readable:
+           _LOGGER.warning(
+           (
+            "Timeout (%s second(s)) waiting for a response after "
+            "sending %r to %s on port %s"
+           ),
+            DEFAULT_TIMEOUT,
+            self._config[CONF_PAYLOAD],
+            self._host,
+            self._port,
+           )
+           return
 
-            value = sock.recv(self._config[CONF_BUFFER_SIZE]).decode()
-
-        value_template = self._config[CONF_VALUE_TEMPLATE]
-        if value_template is not None:
-            try:
-                self._state = value_template.render(parse_result=False, value=value)
-                return
-            except TemplateError:
-                _LOGGER.error(
-                    "Unable to render template of %r with value: %r",
-                    self._config[CONF_VALUE_TEMPLATE],
-                    value,
-                )
-                return
-        self._state = value
+        value = sock.recv(DEFAULT_BUFFER_SIZE).decode()
+        _LOGGER.info(value)
+        return value
