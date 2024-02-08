@@ -24,26 +24,15 @@ CONFIG_SCHEMA = vol.Schema({
     })
 }, extra=vol.ALLOW_EXTRA)
 
-__title__ = "Nikobus"
-__version__ = "0.0.1"
-__author__ = "Frederic Debrus"
-__license__ = "MIT"
-
-_LOGGER = logging.getLogger(__name__)
 
 def setup(hass, config):
     """Set up the TCP socket listener."""
     conf = config[DOMAIN]
-    host = conf.get(CONF_HOST)
-    port = conf.get(CONF_PORT)
-    delimiter = conf.get(CONF_PAYLOAD_DELIMITER)
-
-    listener = TcpSocketListener(hass, host, port, delimiter)
+    listener = TcpSocketListener(hass, conf[CONF_HOST], conf[CONF_PORT], conf[CONF_PAYLOAD_DELIMITER])
     listener.start()
-
     hass.data[DATA_LISTENER] = listener
-
     return True
+
 
 class TcpSocketListener(threading.Thread):
     """Thread to listen for TCP/IP socket events."""
@@ -88,6 +77,7 @@ class TcpSocketListener(threading.Thread):
         """Stop the listener."""
         self._stop_event.set()
 
+
 class TcpSocketEventSensor(Entity):
     """Representation of a TCP/IP socket event sensor."""
 
@@ -119,5 +109,3 @@ class TcpSocketEventSensor(Entity):
     def should_poll(self):
         """Disable polling."""
         return False
-
-
