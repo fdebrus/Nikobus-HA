@@ -1,4 +1,7 @@
 """Coordinator for Nikobus."""
+
+"""
+
 import asyncio
 import logging
 from typing import Any
@@ -145,3 +148,4 @@ class SwitchModuleGroup(Enum):
                 SwitchModuleGroup.FIRST.offset, max_value, channel_number))
         return SwitchModuleGroup.SECOND if channel_number >= SwitchModuleGroup.SECOND.offset else SwitchModuleGroup.FIRST
 
+"""
