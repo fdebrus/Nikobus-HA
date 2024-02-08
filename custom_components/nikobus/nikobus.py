@@ -50,7 +50,7 @@ class NikobusBridge(entity):
                 )
             return
 
-    def get_bridge_data(self, sock) -> Any:
+    def get(self, sock) -> Any:
         readable, _, _ = select.select([sock], [], [], DEFAULT_TIMEOUT)
         if not readable:
            _LOGGER.warning(
