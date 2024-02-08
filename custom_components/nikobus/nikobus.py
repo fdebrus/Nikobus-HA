@@ -19,12 +19,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class Nikobus:
 
-    def def __init__(hass, config):
-
-    def __init__(self, aiohttp_session: aiohttp.ClientSession, username : str, password : str)-> None:
+    def __init__(self, aiohttp_session: aiohttp.ClientSession, host : str, port : str)-> None:
         """Init Nikobus Bridge"""
-        self.username = username
-        self.password = password
+        self.host = host
+        self.port = port
         self.handlers = []
 
     @classmethod
