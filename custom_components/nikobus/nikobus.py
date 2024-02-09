@@ -13,6 +13,7 @@ from homeassistant.const import (
     CONF_PORT,
     CONF_NAME,
     CONF_TIMEOUT,
+    CONF_BUFFER_SIZE,
 )
 
 from homeassistant.core import HomeAssistant
