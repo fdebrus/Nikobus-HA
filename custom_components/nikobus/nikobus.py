@@ -27,6 +27,7 @@ from .const import (
     DEFAULT_BUFFER_SIZE,
     DEFAULT_TIMEOUT,
     DEFAULT_NAME,
+    CONF_BUFFER_SIZE,
 )
 
 _LOGGER: Final = logging.getLogger(__name__)
