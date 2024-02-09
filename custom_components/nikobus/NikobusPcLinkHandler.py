@@ -8,7 +8,6 @@ from typing import Any, Callable, Deque, Dict, Optional
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    CONF_NAME,
     CONF_PORT,
 )
 from homeassistant.core import HomeAssistant, callback
