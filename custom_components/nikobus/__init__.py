@@ -1,12 +1,11 @@
 """The Nikobus component."""
-from nikobus import real_time_api
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_IP_ADDRESS, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
+from .nikobus import TcpEntity
 
 PLATFORMS = [Platform.SENSOR]
 
@@ -14,11 +13,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the sensors from a ConfigEntry."""
 
     try:
-        api = await real_time_api(
+        api = await update(
             entry.data[CONF_IP_ADDRESS],
             entry.data[CONF_PORT],
         )
-        await api.get_data()
     except Exception as err:
         raise ConfigEntryNotReady from err
 
