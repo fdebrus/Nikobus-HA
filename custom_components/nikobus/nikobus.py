@@ -25,6 +25,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import (
     DEFAULT_BUFFER_SIZE,
     DEFAULT_TIMEOUT,
+    DEFAULT_NAME,
 )
 
 _LOGGER: Final = logging.getLogger(__name__)
@@ -35,7 +36,6 @@ TCP_PLATFORM_SCHEMA: Final[dict[vol.Marker, Any]] = {
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
     vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,
     vol.Optional(CONF_BUFFER_SIZE, default=DEFAULT_BUFFER_SIZE): cv.positive_int,
-    vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,
 }
 
 class TcpEntity(Entity):
