@@ -1,35 +1,49 @@
+"""Nikobus component."""
+from __future__ import annotations
+
+import logging
+import select
+import socket
+from typing import Any, Final
+
+import voluptuous as vol
+
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PORT,
+    CONF_NAME,
+    CONF_TIMEOUT,
+)
+
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import TemplateError
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.template import Template
+from homeassistant.helpers.typing import ConfigType
+
+from .const import (
+    DEFAULT_BUFFER_SIZE,
+    DEFAULT_TIMEOUT,
+)
+
+_LOGGER: Final = logging.getLogger(__name__)
+
+TCP_PLATFORM_SCHEMA: Final[dict[vol.Marker, Any]] = {
+    vol.Required(CONF_HOST): cv.string,
+    vol.Required(CONF_PORT): cv.port,
+    vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+    vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,
+    vol.Optional(CONF_BUFFER_SIZE, default=DEFAULT_BUFFER_SIZE): cv.positive_int,
+    vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,
+}
+
 class TcpEntity(Entity):
     """Base entity class for TCP platform."""
 
     def __init__(self, hass: HomeAssistant, config: ConfigType) -> None:
-        """Set all the config values if they exist and get initial state."""
-
-        value_template: Template | None = config.get(CONF_VALUE_TEMPLATE)
-        if value_template is not None:
-            value_template.hass = hass
-
+        value_template.hass = hass
         self._hass = hass
-        self._config: TcpSensorConfig = {
-            CONF_NAME: config[CONF_NAME],
-            CONF_HOST: config[CONF_HOST],
-            CONF_PORT: config[CONF_PORT],
-            CONF_TIMEOUT: config[CONF_TIMEOUT],
-            CONF_PAYLOAD: config[CONF_PAYLOAD],
-            CONF_UNIT_OF_MEASUREMENT: config.get(CONF_UNIT_OF_MEASUREMENT),
-            CONF_VALUE_TEMPLATE: value_template,
-            CONF_VALUE_ON: config.get(CONF_VALUE_ON),
-            CONF_BUFFER_SIZE: config[CONF_BUFFER_SIZE],
-            CONF_SSL: config[CONF_SSL],
-            CONF_VERIFY_SSL: config[CONF_VERIFY_SSL],
-        }
-
-        self._ssl_context: ssl.SSLContext | None = None
-        if self._config[CONF_SSL]:
-            self._ssl_context = ssl.create_default_context()
-            if not self._config[CONF_VERIFY_SSL]:
-                self._ssl_context.check_hostname = False
-                self._ssl_context.verify_mode = ssl.CERT_NONE
-
         self._state: str | None = None
         self.update()
 
@@ -52,11 +66,6 @@ class TcpEntity(Entity):
                     err,
                 )
                 return
-
-            if self._ssl_context is not None:
-                sock = self._ssl_context.wrap_socket(
-                    sock, server_hostname=self._config[CONF_HOST]
-                )
 
             try:
                 sock.send(self._config[CONF_PAYLOAD].encode())
@@ -85,11 +94,10 @@ class TcpEntity(Entity):
                 return
 
             value = sock.recv(self._config[CONF_BUFFER_SIZE]).decode()
-
-        value_template = self._config[CONF_VALUE_TEMPLATE]
-        if value_template is not None:
+            
+        if value is not None:
             try:
-                self._state = value_template.render(parse_result=False, value=value)
+                self._state = value
                 return
             except TemplateError:
                 _LOGGER.error(
