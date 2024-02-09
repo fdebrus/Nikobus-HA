@@ -1,0 +1,9 @@
+send_command_to_serial_port:
+  description: Send a command to the serial port
+  fields:
+    port:
+      description: Serial port name (e.g., /dev/ttyUSB0)
+      example: "/dev/ttyUSB0"
+    command:
+      description: Command to send
+      example: "AT\r\n"
