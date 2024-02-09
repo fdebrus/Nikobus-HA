@@ -1,2 +1,3 @@
 """Constants."""
-DOMAIN = "nikobus"
+DOMAIN = "solax"
+MANUFACTURER = "Niko"
