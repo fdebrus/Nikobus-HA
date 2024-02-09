@@ -52,17 +52,17 @@ class TcpEntity(Entity):
         """Return the name of this sensor."""
         return self._config[CONF_NAME]
 
-    def update(self) -> None:
+    def update(self, host, port) -> None:
         """Get the latest value for this sensor."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(self._config[CONF_TIMEOUT])
             try:
-                sock.connect((self._config[CONF_HOST], self._config[CONF_PORT]))
+                sock.connect((host, port))
             except OSError as err:
                 _LOGGER.error(
                     "Unable to connect to %s on port %s: %s",
-                    self._config[CONF_HOST],
-                    self._config[CONF_PORT],
+                    host,
+                    port,
                     err,
                 )
                 return
@@ -73,8 +73,8 @@ class TcpEntity(Entity):
                 _LOGGER.error(
                     "Unable to send payload %r to %s on port %s: %s",
                     self._config[CONF_PAYLOAD],
-                    self._config[CONF_HOST],
-                    self._config[CONF_PORT],
+                    host,
+                    port,
                     err,
                 )
                 return
@@ -88,8 +88,8 @@ class TcpEntity(Entity):
                     ),
                     self._config[CONF_TIMEOUT],
                     self._config[CONF_PAYLOAD],
-                    self._config[CONF_HOST],
-                    self._config[CONF_PORT],
+                    host,
+                    port,
                 )
                 return
 
@@ -101,8 +101,7 @@ class TcpEntity(Entity):
                 return
             except TemplateError:
                 _LOGGER.error(
-                    "Unable to render template of %r with value: %r",
-                    self._config[CONF_VALUE_TEMPLATE],
+                    "Unable to read value: %r",
                     value,
                 )
                 return
