@@ -7,5 +7,5 @@ from .NikobusPcLinkHandler import NikobusPcLinkHandler
 
 async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Set up the Nikobus component."""
-    await NikobusPcLinkHandler.async_setup(hass, entry.data[CONF_PORT])
+    await NikobusPcLinkHandler.async_setup(hass)
     return True
