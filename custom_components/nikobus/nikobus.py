@@ -31,6 +31,7 @@ from .const import (
 
 _LOGGER: Final = logging.getLogger(__name__)
 
+"""
 TCP_PLATFORM_SCHEMA: Final[dict[vol.Marker, Any]] = {
     vol.Required(CONF_HOST): cv.string,
     vol.Required(CONF_PORT): cv.port,
@@ -38,6 +39,7 @@ TCP_PLATFORM_SCHEMA: Final[dict[vol.Marker, Any]] = {
     vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,
     vol.Optional(CONF_BUFFER_SIZE, default=DEFAULT_BUFFER_SIZE): cv.positive_int,
 }
+"""
 
 class TcpEntity(Entity):
     """Base entity class for TCP platform."""
