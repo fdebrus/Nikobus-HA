@@ -5,6 +5,5 @@
   "config_flow": true,
   "documentation": "https://github.com/fdebrus/nikobus-ha",
   "iot_class": "local_polling",
-  "loggers": ["nikobus"],
-  "requirements": ["nikobus==0.0.1"]
+  "loggers": ["nikobus"]
 }
