@@ -4,8 +4,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from nikobus import real_time_api
-from nikobus.discovery import DiscoveryError
+# from nikobus import real_time_api
+# from nikobus.discovery import DiscoveryError
 import voluptuous as vol
 
 from homeassistant import config_entries
