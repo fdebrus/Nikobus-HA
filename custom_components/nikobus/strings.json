@@ -2,9 +2,14 @@
   "config": {
     "step": {
       "user": {
+        "title": "test",
         "data": {
           "ip_address": "[%key:common::config_flow::data::ip%]",
           "port": "[%key:common::config_flow::data::port%]"
+        },
+        "data_description": {
+          "ip_address": "The IP address of the device.",
+          "port": "The Port of the device."
         }
       }
     },
