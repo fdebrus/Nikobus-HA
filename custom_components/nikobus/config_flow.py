@@ -26,16 +26,14 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-
+"""
 async def validate_api(data) -> str:
-    """Validate the credentials."""
-
     api = await update(
         data[CONF_IP_ADDRESS], data[CONF_PORT]
     )
     response = await api.get_data()
     return response.serial_number
-
+"""
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Nikobus."""
@@ -49,9 +47,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_show_form(
                 step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
             )
-
+"""
         try:
-            serial_number = await validate_api(user_input)
+            await update(user_input)
         except (ConnectionError, DiscoveryError):
             errors["base"] = "cannot_connect"
         except Exception:  # pylint: disable=broad-except
@@ -61,7 +59,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(serial_number)
             self._abort_if_unique_id_configured()
             return self.async_create_entry(title=serial_number, data=user_input)
-
+"""
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
         )
