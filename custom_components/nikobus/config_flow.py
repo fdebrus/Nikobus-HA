@@ -30,7 +30,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def validate_api(data) -> str:
     """Validate the credentials."""
 
-    api = await real_time_api(
+    api = await update(
         data[CONF_IP_ADDRESS], data[CONF_PORT]
     )
     response = await api.get_data()
