@@ -1,35 +1,22 @@
-"""The Nikobus component."""
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_IP_ADDRESS, CONF_PORT, Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+"""The Nikobus integration."""
+import logging
+
+from homeassistant import config_entries, core
+from homeassistant.const import CONF_HOST, CONF_PORT
+
+from simple_socket.tcp_client import SimpleTCPClient
 
 from .const import DOMAIN
-from .nikobus import TcpEntity
+from .nikobus import Nikobus
 
-PLATFORMS = [Platform.SENSOR]
+_LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the sensors from a ConfigEntry."""
 
+async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+    """Set up the Nikobus component."""
     try:
-        api = await update(
-            entry.data[CONF_IP_ADDRESS],
-            entry.data[CONF_PORT],
-        )
-    except Exception as err:
-        raise ConfigEntryNotReady from err
-
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = api
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    return True
-
-
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
-
-    return unload_ok
-
+        api = await Nikobus.create(SimpleTCPClient, entry.data[CONF_HOST], entry.data[CONF_PORT])
+        return True
+    except Exception as e:
+        _LOGGER.error("Error setting up Nikobus component: %s", e)
+        return False
