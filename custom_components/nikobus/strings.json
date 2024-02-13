@@ -2,23 +2,23 @@
   "config": {
     "step": {
       "user": {
-        "title": "test",
         "data": {
-          "ip_address": "[%key:common::config_flow::data::ip%]",
-          "port": "[%key:common::config_flow::data::port%]"
+          "hostname": "Nikobus bridge IP",
+          "ipport": "Nikobus bridge PORT"
         },
-        "data_description": {
-          "ip_address": "The IP address of the device.",
-          "port": "The Port of the device."
-        }
+        "description": "Enter your Nikobus bridge details.",
+        "title": "Connectivity"
+      },
+      "reauth_confirm": {
+        "title": "[%key:common::config_flow::title::reauth%]",
+        "description": "The Nikobus integration needs to re-connect"
       }
     },
-    "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
-    },
     "error": {
-      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "auth_error": "failed, check hostname and port."
+    },
+    "abort": {
+      "reauth_successful": "New connectivity info has been saved"
     }
   }
 }
