@@ -9,12 +9,16 @@ import homeassistant.helpers.config_validation as cv
 
 from simple_socket.tcp_client import SimpleTCPClient
 
-from .const import DOMAIN
+import logging
+
+from .const import DOMAIN, MODEL
 from .nikobus import Nikobus, UnauthorizedException
 
 STEP_USER_CONNECTIVITY = vol.Schema(
     {vol.Required(CONF_HOST): cv.string, vol.Required(CONF_PORT): cv.port}
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Nikobus config flow."""
@@ -27,16 +31,16 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 TcpSocket = await Nikobus.create(SimpleTCPClient, user_input[CONF_HOST], user_input[CONF_PORT])
                 self.data = user_input
                 self.data['bridge'] = TcpSocket.Connect()
-                return self.async_create_entry(title="Nikobus Bridge", data=self.data)
+                return await self.async_create_entry(title="Nikobus Bridge", data=self.data)
             except UnauthorizedException:
                 errors["base"] = "auth_error"
         return self.async_show_form(step_id="user", data_schema=STEP_USER_CONNECTIVITY, errors=errors)
 
     async def async_create_entry(self, title: str, data: dict) -> dict:
         """Create an entry."""
-        existing_entry = self.hass.config_entries.async_entries(DOMAIN)
+        existing_entry = ""
         if existing_entry:
-            self.hass.config_entries.async_update_entry(existing_entry[0], data=data)
-            await self.hass.config_entries.async_reload(existing_entry[0].entry_id)
+            self.hass.config_entries.async_update_entry(existing_entry, data=data)
+            await self.hass.config_entries.async_reload(existing_entry.entry_id)
             return self.async_abort(reason="reauth_successful")
         return super().async_create_entry(title=title, data=data)
