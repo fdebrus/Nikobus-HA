@@ -3,7 +3,7 @@
     "flow_title": "Discovered Device ({host})",
     "step": {
       "user": {
-        "title": "Nikobus Bridge",
+        "title": "Nikobus PC-Link",
         "description": "Please enter connectivity details.",
         "data": {
           "host": "IP address of the bridge",
