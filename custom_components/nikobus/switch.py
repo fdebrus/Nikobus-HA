@@ -3,17 +3,25 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SWITCH_MODULES_ADDRESSES
+from .const import DOMAIN, BRAND, SWITCH_MODULES_ADDRESSES
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
     """Set up a config entry."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    for module in SWITCH_MODULES_ADDRESSES:
-        async_add_entities(NikobusSwitchEntity(hass, dataservice, module, "1"))
-        async_add_entities(NikobusSwitchEntity(hass, dataservice, module, "2"))
-        async_add_entities(NikobusSwitchEntity(hass, dataservice, module, "3"))
-        async_add_entities(NikobusSwitchEntity(hass, dataservice, module, "4"))
+    # for module in SWITCH_MODULES_ADDRESSES:
+    entities = [
+        NikobusSwitchEntity(hass, dataservice, "A5C9", "1"),
+        NikobusSwitchEntity(hass, dataservice, "A5C9", "2"),
+        NikobusSwitchEntity(hass, dataservice, "A5C9", "3"),
+        NikobusSwitchEntity(hass, dataservice, "A5C9", "4"),
+        NikobusSwitchEntity(hass, dataservice, "055B", "1"),
+        NikobusSwitchEntity(hass, dataservice, "055B", "2"),
+        NikobusSwitchEntity(hass, dataservice, "055B", "3"),
+        NikobusSwitchEntity(hass, dataservice, "055B", "4"),
+    ]
+
+    async_add_entities(entities)
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     """Nikobus Switch Entity."""
@@ -24,7 +32,7 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         self._dataservice = dataservice
         self._module = module
         self._channel = channel
-        self._attr_name = "Output " + channel
+        self._attr_name = f"{self._module}_Output_{channel}"
         self._unique_id = f"{self._module}{self._channel}"
 
     @property
@@ -32,9 +40,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         """Return the device info."""
         return {
             "identifiers": {(DOMAIN, self._module)},
-            "name": "Switch Module " + self._module,
+            "name": "SwitchModule_" + self._module,
             "manufacturer": BRAND,
-            "model": MODEL,
+            "model": "SwitchModule",
         }
 
     @property
