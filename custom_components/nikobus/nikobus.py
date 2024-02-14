@@ -56,7 +56,7 @@ class Nikobus:
     async def __aexit__(self, exc_type, exc, tb):
         await self.close()
 
-    def is_on(self, module, channel) -> Any:
+    async def is_on(self, module, channel) -> Any:
         """Return part from document."""
         await send_command()
 
