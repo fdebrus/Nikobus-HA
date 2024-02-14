@@ -11,19 +11,20 @@ from .nikobus import Nikobus
 
 _LOGGER = logging.getLogger(__name__)
 
+PLATFORMS = [switch.DOMAIN]
+
 async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Set up the Nikobus component."""
-    hostname = entry.data.get(CONF_HOST)
-    port = entry.data.get(CONF_PORT)
-
-    api = await Nikobus.connect_bridge(hostname=hostname, port=port)
+    api = await Nikobus.create(async_get_clientsession(hass), entry.data.get(CONF_HOST), entry.data.get(CONF_PORT))
     _LOGGER.debug("Nikobus connected: %s", api)
 
-    # Perform an initial check or command to verify that the connection is working (pseudo-code)
-    # await api.verify_connection()
+    coordinator = NikobusDataCoordinator(hass, api)
 
     # Store API instance for later use
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = api
+    hass.data.setdefault(DOMAIN, {})
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
