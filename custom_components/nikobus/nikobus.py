@@ -2,6 +2,9 @@ import asyncio
 import logging
 from typing import Any, Callable, Optional
 
+import aiohttp
+from aiohttp import ClientResponseError, ClientSession
+
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
@@ -12,15 +15,22 @@ __license__ = "MIT"
 class Nikobus:
     """Nikobus API."""
 
-    def __init__(self, hostname: str, port: int, hass) -> None:
+    def __init__(self,  aiohttp_session: ClientSession, hostname: str, port: int) -> None:
         """Initialize Nikobus API."""
-        self.hostname = entry.data.get(CONF_HOST)
-        self.port = entry.data.get(CONF_PORT)
-        self.session = session
+        self.hostname = hostname
+        self.port = port
+        self.aiohttp_session = aiohttp_session
         self.reader = None
         self.writer = None
 
-    async def connect():
+    @classmethod
+    async def create(cls, aiohttp_session: ClientSession, hostname: str, port: str):
+        """Initialize Nikobus async."""
+        instance = cls(aiohttp_session, hostname, port)
+        await instance.connect()
+        return instance
+
+    async def connect(self):
         self.reader, self.writer = await asyncio.open_connection(self.hostname, self.port)
 
         commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
@@ -28,7 +38,7 @@ class Nikobus:
             self.writer.write(command.encode())
             await self.writer.drain()
 
-        data = await self.reader.readuntil(b'\r')
+        data = await self.reader.read(64)
         _LOGGER.debug("Received response: %s", data.decode())
 
     async def send_command(self, command):
