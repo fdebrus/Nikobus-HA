@@ -4,10 +4,16 @@ import asyncio
 import logging
 
 from homeassistant import config_entries, core
+from homeassistant.components import switch
 from homeassistant.const import CONF_HOST, CONF_PORT
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+import aiohttp
+from aiohttp import ClientResponseError, ClientSession
 
 from .const import DOMAIN
 from .nikobus import Nikobus
+from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
