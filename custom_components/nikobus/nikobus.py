@@ -34,7 +34,7 @@ class Nikobus:
             _LOGGER.debug("Received response: %s", data.decode())
 
             # React to the received data appropriately
-            react_to_data(data.decode())
+            self.hass.bus.async_fire('nikobus_tcp_response', {'data': data})
 
         except Exception as e:
             _LOGGER.error("Failed to connect to Nikobus bridge: %s", e)
@@ -42,11 +42,6 @@ class Nikobus:
         finally:
             writer.close()
             await writer.wait_closed()
-
-    def react_to_data(data):
-        """Handle data received from the bridge."""
-        # Fire an event within Home Assistant with the received data
-        self.hass.bus.async_fire('nikobus_tcp_response', {'data': data})
 
 class UnauthorizedException(Exception):
     """Exception for unauthorized access attempts."""
