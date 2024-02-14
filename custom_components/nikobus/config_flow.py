@@ -39,10 +39,10 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if existing_entry:
             self.hass.config_entries.async_update_entry(existing_entry, data=data)
             await self.hass.config_entries.async_reload(existing_entry.entry_id)
-            _LOGGER.info("Existing Nikobus bridge entry updated")
+            _LOGGER.info("Existing Nikobus PC-Link entry updated")
             return self.async_abort(reason="reauth_successful")
 
         return super().async_create_entry(title=title, data=data)
 
     async def _create_entry(self, data: dict[str, Any]):
-        return await self.async_create_entry(title="Nikobus Bridge", data=data)
+        return await self.async_create_entry(title="Nikobus PC-Link", data=data)
