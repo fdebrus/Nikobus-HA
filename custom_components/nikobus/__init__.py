@@ -16,7 +16,7 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
     hostname = entry.data.get(CONF_HOST)
     port = entry.data.get(CONF_PORT)
 
-    reader, writer = await Nikobus.connect_bridge(self, hostname=hostname, port=port)
+    reader, writer = await Nikobus.connect_bridge(hostname=hostname, port=port)
     _LOGGER.debug("Nikobus connected: %s / %s", reader, writer)
 
     # Perform an initial check or command to verify that the connection is working (pseudo-code)
