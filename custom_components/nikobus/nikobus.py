@@ -21,7 +21,7 @@ class Nikobus:
     async def connect_bridge(hostname, port):
         """Connect to the Nikobus bridge and initialize."""
         try:
-            reader, writer = await asyncio.open_connection(self._hostname, self._port)
+            reader, writer = await asyncio.open_connection(hostname, port)
 
             # Connection sequence commands
             commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
@@ -34,9 +34,7 @@ class Nikobus:
             _LOGGER.debug("Received response: %s", data.decode())
 
             # React to the received data appropriately
-            self.react_to_data(data.decode())
-
-            return reader, writer
+            react_to_data(data.decode())
 
         except Exception as e:
             _LOGGER.error("Failed to connect to Nikobus bridge: %s", e)
@@ -45,7 +43,7 @@ class Nikobus:
             writer.close()
             await writer.wait_closed()
 
-    def react_to_data(self, data):
+    def react_to_data(data):
         """Handle data received from the bridge."""
         # Fire an event within Home Assistant with the received data
         self.hass.bus.async_fire('nikobus_tcp_response', {'data': data})
