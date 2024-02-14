@@ -18,7 +18,7 @@ class Nikobus:
         self._port = port
         self.hass = hass
 
-    async def connect_bridge(self, hostname, port):
+    async def connect_bridge(hostname, port):
         """Connect to the Nikobus bridge and initialize."""
         try:
             reader, writer = await asyncio.open_connection(self._hostname, self._port)
