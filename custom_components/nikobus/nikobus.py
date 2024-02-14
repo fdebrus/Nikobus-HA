@@ -1,7 +1,6 @@
+import asyncio
 import logging
 from typing import Any
-
-from simple_socket.tcp_client import SimpleTCPClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -13,28 +12,43 @@ __license__ = "MIT"
 class Nikobus:
     """Nikobus API."""
 
-    def __init__(self, tcp_client: SimpleTCPClient, hostname: str, ipport: str) -> None:
+    def __init__(self, hostname: str, port: int, hass) -> None:
         """Initialize Nikobus API."""
-        self.tcp_client = tcp_client
         self._hostname = hostname
-        self._ipport = ipport
-        self._autoConnect = True
-        self.handlers = []
+        self._port = port
+        self.hass = hass
 
-    @classmethod
-    async def create(cls, tcp_client: SimpleTCPClient, hostname: str, ipport: str):
-        """Initialize Nikobus."""
-        instance = tcp_client(hostname, ipport)
-        return instance
+    async def connect_bridge(self, hostname, port):
+        """Connect to the Nikobus bridge and initialize."""
+        try:
+            reader, writer = await asyncio.open_connection(self._hostname, self._port)
 
-    async def get_data(self):
-        """Retrieve data from the Nikobus system."""
-        while True:
-            try:
-                response = await self.tcp_client.receive()
-                _LOGGER.debug("Data received: %s", response)
-            except Exception as e:
-                print("An error occurred while receiving data:", e)
+            # Connection sequence commands
+            commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
+            for command in commands:
+                writer.write(command.encode())
+                await writer.drain()  # Ensure command is sent
+
+            # Wait for a response to ensure connection is established
+            data = await reader.read(64)  # Adjusted read buffer size
+            _LOGGER.debug("Received response: %s", data.decode())
+
+            # React to the received data appropriately
+            self.react_to_data(data.decode())
+
+            return reader, writer
+
+        except Exception as e:
+            _LOGGER.error("Failed to connect to Nikobus bridge: %s", e)
+            return False
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    def react_to_data(self, data):
+        """Handle data received from the bridge."""
+        # Fire an event within Home Assistant with the received data
+        self.hass.bus.async_fire('nikobus_tcp_response', {'data': data})
 
 class UnauthorizedException(Exception):
-    """Unauthorized user exception."""
+    """Exception for unauthorized access attempts."""
