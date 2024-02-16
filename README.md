@@ -1,17 +1,37 @@
 # Nikobus-HA
 
-Work in progress, goal is to create a Nikobus integration for HomeAssistant
+**Work in progress** ALPHA
 
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/2451b88a-beff-46ce-85bf-f5486a69b37c)
 
+**Install Instruction**
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/3b0ce9d9-6f92-439a-a4c8-40a70ae0be44)
+One you have installed the custom integration using HACS, go to the custom_repository/nikobus to edit nikobus_conf.json
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/b112bcff-6483-468b-bab3-5c4de32200e3)
+Integration supports
+  switch_modules_addresses
+  dimmer_modules_addresses 
+  roller_modules_addresses
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/b66bdd85-cddb-46b0-b97a-628ac326ed33)
+Update each section to reflect your nikobus installation, module address can be found on your nikobus software.
+
+Now add "Nikobus" as an integration
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/70cbd1c8-2e2b-4114-9cf3-f0d618e2ce52)
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/ec3e56de-5b9e-404a-b97f-341c4c96331a)
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4c0eb84a-0187-418a-aa9e-24650214998b)
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/6d154d91-ac59-4f44-b3c4-e7714005d15e)
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/a5cbb377-9274-42e6-bee7-abe58c62ca82)
+
+
+
+
 
 References
 
