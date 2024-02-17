@@ -152,7 +152,7 @@ class Nikobus:
         else:
             async with async_timeout.timeout(10):
                 answer = await asyncio.get_event_loop().run_in_executor(None, lambda: self._async_send_command_and_get_answer(writer, reader, command))
-    return answer
+        return answer
 
 
 class UnauthorizedException(Exception):
