@@ -58,7 +58,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 state_group_array = {str(index): item for index, item in enumerate(textwrap.wrap(state_groups, width=2))}
                 result_dict[actual_address] = state_group_array
 
-        self.json_status_data = json.dumps(result_dict)
+        self.json_status_data = result_dict
         _LOGGER.debug("json: %s",self.json_status_data)
 
     def get_switch_status(self, address, channel):
