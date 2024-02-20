@@ -82,13 +82,29 @@ class Nikobus:
                 if not readable:
                     # Timeout occurred
                     break
-                data = self._nikobus_socket.recv(28).decode('utf-8')
+                data = self._nikobus_socket.recv(64).decode()
                 if not data:
                     # No more data
                     break
                 received_data.append(data)
-            _LOGGER.debug("Received response: ACK %s vs %s with %s", received_data[0], _wait_command_ack, received_data[1] )
-            if received_data and received_data[0] == _wait_command_ack:
+
+            _answer = None
+            _LOGGER.debug("Received response: %s", received_data)
+
+            for index, data in enumerate(received_data, start=1):
+                _LOGGER.debug("  %d: %s", index, data)
+                if _wait_command_ack in data:
+                    _LOGGER.debug("Found ACK at index %d: %s", index, data)
+                    ack_index = data.index(_wait_command_ack)
+                    if ack_index < len(received_data):
+                        next_data = data[ack_index + 1]
+                        _LOGGER.debug("Posting as answer  %d: %s", index, next_data)
+                        _answer = next_data
+                    else:
+                        _LOGGER.debug("No data available after ACK in the same message at index %d", index)
+                        _answer = None
+
+            if _answer:            
                 # check pc-link checksum
                 _answer = received_data[1]
                 crc1 = hex_to_int(_answer[25:])
