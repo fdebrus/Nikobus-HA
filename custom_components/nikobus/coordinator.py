@@ -23,6 +23,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             name="Nikobus",
         )
         self.api = api
+        self.json_status_data = {}
         self.json_config_data = None
         self.json_status_data = None
 
