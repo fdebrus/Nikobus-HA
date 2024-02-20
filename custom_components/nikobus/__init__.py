@@ -25,7 +25,7 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
     hass.data.setdefault(DOMAIN, {})
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    await NikobusDataCoordinator.initial_data_load(coordinator)
+    await NikobusDataCoordinator.refresh_nikobus_data(coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
