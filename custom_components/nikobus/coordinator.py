@@ -21,26 +21,26 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Nikobus",
-            update_method=self.refresh_data,
-            update_interval=timedelta(seconds=60)
+            update_method = self.refresh_nikobus_data(),
+            update_interval = timedelta(seconds=60)
         )
         self.api = api
         self.json_state_data = {}
         self.json_config_data = None
 
-    async def initial_data_load(self):
+    async def load_json_data(self):
         # Open the JSON file and load its contents
         current_file_path = os.path.abspath(__file__)
         current_directory = os.path.dirname(current_file_path)
         config_file_path = os.path.join(current_directory, "nikobus_config.json")
         with open(config_file_path, 'r') as file:
             self.json_config_data = json.load(file)
-        await self.refresh_data()
 
-    async def refresh_data(self):
+    async def refresh_nikobus_data(self):
         result_dict = {} 
         state_group = []
         state_group2 = []
+        await load_json_data()
         for module_type in ['dimmer_modules_addresses', 'switch_modules_addresses', 'roller_modules_addresses']:
             for entry in self.json_config_data[module_type]:
                 actual_address = entry.get("address")
