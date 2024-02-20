@@ -40,7 +40,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         result_dict = {} 
         state_group = []
         state_group2 = []
-        await load_json_data()
+        await self.load_json_data()
         for module_type in ['dimmer_modules_addresses', 'switch_modules_addresses', 'roller_modules_addresses']:
             for entry in self.json_config_data[module_type]:
                 actual_address = entry.get("address")
