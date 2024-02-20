@@ -21,7 +21,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Nikobus",
-            update_method = self.refresh_nikobus_data(),
+            update_method = self.refresh_nikobus_data,
             update_interval = timedelta(seconds=60)
         )
         self.api = api
