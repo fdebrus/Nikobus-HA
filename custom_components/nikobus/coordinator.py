@@ -22,7 +22,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER,
             name="Nikobus",
             update_method = self.refresh_nikobus_data,
-            update_interval = timedelta(seconds=60)
+            update_interval = timedelta(seconds=120)
         )
         self.api = api
         self.json_state_data = {}
@@ -61,15 +61,36 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("json: %s",self.json_state_data)
         return True 
 
+    async def get_output_state(self, address, channel, timeout) -> Any:
+        """Return status of address channel."""
+        _state = self.api.get_output_state(address, channel, timeout)
+        _LOGGER.debug("get_output_state:%s %s %s",address, channel, _state)
+        return _state
+
+#### SWITCHES
     def get_switch_state(self, address, channel):
         _state = self.json_state_data.get(address, {}).get(channel)
+        _LOGGER.debug("get_switch_state: %s %s %s",address, channel, _state)
         if _state == "FF":
             return True
         else:
             return False
 
+    async def turn_on_switch(self, address, channel) -> None:
+        """Turn on address channel."""
+        self.json_state_data.setdefault(address, {})[channel] = 'FF'
+        await self.api.turn_on_switch(address, channel)
+
+    async def turn_off_switch(self, address, channel) -> None:
+        """Turn off address channel."""
+        self.json_state_data.setdefault(address, {})[channel] = '00'
+        await self.api.turn_off_switch(address, channel)
+####
+
+#### DIMMERS
     def get_light_state(self, address, channel):
         _state = self.json_state_data.get(address, {}).get(channel)
+        _LOGGER.debug("get_light_state: %s %s %s",address, channel, _state)
         if _state == "00":
             return False
         else:
@@ -82,26 +103,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         else:
             return 0
 
-    def get_output_state(self, address, channel, timeout) -> Any:
-        """Return status of address channel."""
-        return self.api.get_output_state(address, channel, timeout)
-
-    async def turn_on_switch(self, address, channel) -> None:
+    async def turn_on_light(self, address, channel, brightness) -> None:
         """Turn on address channel."""
-        await self.api.turn_on_switch(address, channel)
-
-    async def turn_off_switch(self, address, channel) -> None:
-        """Turn off address channel."""
-        await self.api.turn_off_switch(address, channel)
-
-    async def turn_on_light(self, address, channel) -> None:
-        """Turn on address channel."""
-        await self.api.turn_on_light(address, channel)
+        self.json_state_data.setdefault(address, {})[channel] = format(brightness, '02X')
+        await self.api.turn_on_light(address, channel, brightness)
 
     async def turn_off_light(self, address, channel) -> None:
         """Turn off address channel."""
+        self.json_state_data.setdefault(address, {})[channel] = '00'
         await self.api.turn_off_light(address, channel)
+####
 
+#### COVERS
     async def open_cover(self, address, channel) -> None:
         """Open the cover."""
         await self.api.open_cover(address, channel)
@@ -117,3 +130,4 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     async def get_cover_state(self, address, channel) -> None:
         """Update the state of the cover."""
         await self.api.get_cover_state(address, channel)
+#### 
