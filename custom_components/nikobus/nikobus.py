@@ -73,12 +73,12 @@ class Nikobus:
     async def send_command_get_answer(self, command, timeout):
         _LOGGER.debug('----- Nikobus.send_command_get_answer() enter -----')
         _LOGGER.debug(f'command = {command}, timeout = {timeout}')
-        _wait_command_ack = '$05' + command[3:5]
         try:
-            received_data=[]
+            _wait_command_ack = '$05' + command[3:5]
+            received_data = []
             self._nikobus_socket.send(command.encode() + b'\r')
             while True:
-                readable, _, _ = select.select([self._nikobus_socket], [], [], 2)
+                readable, _, _ = select.select([self._nikobus_socket], [], [], 3)
                 if not readable:
                     # Timeout occurred
                     break
@@ -87,39 +87,24 @@ class Nikobus:
                     # No more data
                     break
                 received_data.append(data)
-
-            _answer = None
-            _LOGGER.debug("Received response: %s", received_data)
-
-            for index, data in enumerate(received_data, start=1):
-                _LOGGER.debug("  %d: %s", index, data)
+            combined_data = ''.join(received_data)
+            received_data_split = re.split(r'(?=\$)', combined_data)
+            _LOGGER.debug(f"Received response: {received_data_split}")
+            for index, data in enumerate(received_data_split):
                 if _wait_command_ack in data:
-                    _LOGGER.debug("Found ACK at index %d: %s", index, data)
-                    ack_index = data.index(_wait_command_ack)
-                    if ack_index < len(received_data):
-                        next_data = data[ack_index + 1]
-                        _LOGGER.debug("Posting as answer  %d: %s", index, next_data)
-                        _answer = next_data
+                    _LOGGER.debug(f"Found ACK at index {index}: {data}")
+                    if index < len(received_data_split) - 1:
+                        next_data_index = index + 1
+                        next_data = received_data_split[next_data_index]
+                        _LOGGER.debug(f"Posting as answer {index + 1} {next_data}")
+                        _answer = next_data[6:18]
+                        _LOGGER.debug(f"Final response: '{_answer}'")
+                        return _answer
                     else:
-                        _LOGGER.debug("No data available after ACK in the same message at index %d", index)
-                        _answer = None
-
-            if _answer:            
-                # check pc-link checksum
-                _answer = received_data[1]
-                crc1 = hex_to_int(_answer[25:])
-                crc2 = calc_crc2(_answer[:25])
-                if (crc1 != crc2):
-                    _LOGGER.error("Checksum error step 1")
-                _answer = _answer[3:25]
-                # check pc-link checksum
-                crc1 = hex_to_int(_answer[-4:])
-                crc2 = calc_crc1(_answer[:-4])
-                if (crc1 != crc2):
-                    _LOGGER.error("Checksum error step 2")
-                _answer = _answer[6:18]
-                _LOGGER.debug("Final response: '%s'", _answer)
-                return _answer
+                        _LOGGER.debug(f"No data available after ACK in the same message at index {index}")
+                        return None
+            _LOGGER.warning("No ACK found in the received data")
+            return None
         except Exception as e:
             _LOGGER.error(f"Error during command execution: {e}")
 
