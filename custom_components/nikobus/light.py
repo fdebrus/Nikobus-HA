@@ -71,8 +71,11 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def is_on(self):
-        self._state = self._dataservice.get_light_state(self._address, self._channel)
         self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
+        if self._brightness > 0:
+            self._state = True
+        else:
+            self._state = False
         return self._state
 
     def update(self):
