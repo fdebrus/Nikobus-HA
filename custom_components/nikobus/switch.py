@@ -64,8 +64,8 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         self._state = self._dataservice.get_switch_state(self._address, self._channel)
         return self._state
     
-    def update(self):
-        self._state = self._dataservice.get_switch_state(self._address, self._channel)
+    async def update(self):
+        self._state = await self._dataservice.get_switch_state(self._address, self._channel)
         return self._state
 
     async def async_turn_on(self, **kwargs):
