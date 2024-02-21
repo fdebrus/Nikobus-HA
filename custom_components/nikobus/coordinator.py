@@ -44,23 +44,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         for module_type in ['dimmer_modules_addresses', 'switch_modules_addresses', 'roller_modules_addresses']:
             for entry in self.json_config_data[module_type]:
                 actual_address = entry.get("address")
-                _LOGGER.debug('refresh with %s', actual_address)
-
+                _LOGGER.debug('*** REFRESH for %s ***', actual_address)
                 state_group = await self.api.get_output_state(address=actual_address, group=1, timeout=5)
-                
+                _LOGGER.debug("state_group: %s", state_group)       
                 if len(entry.get('channels', [])) == 12:
                     state_group2 = await self.api.get_output_state(address=actual_address, group=2, timeout=5)
-                
+                    _LOGGER.debug("state_group2: %s", state_group2)  
                 if state_group is not None and state_group2 is not None:
                     state_group += state_group2
-
                 if state_group is not None:
                     state_group_array = {index: item for index, item in enumerate(textwrap.wrap(state_group, width=2))}
                 else:
                     return False
-
                 result_dict[actual_address] = state_group_array
-
         self.json_state_data = result_dict
         _LOGGER.debug("json: %s",self.json_state_data)
         return True 
@@ -81,7 +77,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     
     def get_light_brightness(self, address, channel):
         _state = self.json_state_data.get(address, {}).get(channel)
-        return int(_state, 16)
+        if _state:
+            return int(_state, 16)
+        else:
+            return 0
 
     def get_output_state(self, address, channel, timeout) -> Any:
         """Return status of address channel."""
