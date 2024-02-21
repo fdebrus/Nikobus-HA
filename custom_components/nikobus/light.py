@@ -78,10 +78,10 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
             self._state = False
         return self._state
 
-    def update(self):
+    async def update(self):
         """Update the state of the light."""
-        self._state = self._dataservice.get_light_state(self._address, self._channel)
-        self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
+        self._state = await self._dataservice.get_light_state(self._address, self._channel)
+        self._brightness = await self._dataservice.get_light_brightness(self._address, self._channel)
         return self._state
         
     async def async_turn_on(self, **kwargs):
