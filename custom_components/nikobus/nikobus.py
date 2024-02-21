@@ -1,6 +1,7 @@
 import logging
 import select
 import socket
+import re
 
 from .helpers import int_to_hex, hex_to_int, int_to_dec, dec_to_int, calc_crc1, calc_crc2, append_crc1, append_crc2, make_pc_link_command, calculate_group_output_number, calculate_group_number
 
@@ -28,36 +29,17 @@ class Nikobus:
         try:
             self._nikobus_socket.connect((self._host, self._port))
         except OSError as err:
-            _LOGGER.error(
-                "Unable to connect to %s on port %s: %s",
-                self._host,
-                self._port,
-                err,
-            )
+            _LOGGER.error(f"Unable to connect to {self._host} on port {self._port}: {err}")
         commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
         for command in commands:
             try:
                 self._nikobus_socket.send(command.encode())
             except OSError as err:
-                _LOGGER.error(
-                    "Unable to send payload %r to %s on port %s: %s",
-                    command,
-                    self._host,
-                    self._port,
-                    err,
-                )
+                _LOGGER.error(f"Unable to send payload {command!r} to {self._host} on port {self._port}: {err}")
                 return
         readable, _, _ = select.select([self._nikobus_socket], [], [], 10)
         if not readable:
-            _LOGGER.warning(
-                (
-                    "Timeout (%s second(s)) waiting for a response after "
-                    "%s on port %s"
-                ),
-                5,
-                self._host,
-                self._port,
-            )
+            _LOGGER.warning(f"Timeout (5 second(s)) waiting for a response after {self._host} on port {self._port}")
             return
         self._answer = self._nikobus_socket.recv(28).decode('utf-8').rstrip()
 
@@ -82,7 +64,7 @@ class Nikobus:
                 if not readable:
                     # Timeout occurred
                     break
-                data = self._nikobus_socket.recv(64).decode()
+                data = self._nikobus_socket.recv(64).decode('utf-8').rstrip()
                 if not data:
                     # No more data
                     break
@@ -97,7 +79,7 @@ class Nikobus:
                         next_data_index = index + 1
                         next_data = received_data_split[next_data_index]
                         _LOGGER.debug(f"Posting as answer {index + 1} {next_data}")
-                        _answer = next_data[6:18]
+                        _answer = next_data[9:21]
                         _LOGGER.debug(f"Final response: '{_answer}'")
                         return _answer
                     else:
@@ -123,103 +105,52 @@ class Nikobus:
         _LOGGER.debug('----- NikobusApi.setOutputState() enter -----')
         _LOGGER.debug(f'address = {address}, group = {group}, value = {value}, timeout = {timeout}')
         if group == 1:
-            cmd = make_pc_link_command(0x15, address, value)
+            cmd = make_pc_link_command(0x15, address, value + 'FF')
         elif group == 2:
-            cmd = make_pc_link_command(0x16, address, value)
+            cmd = make_pc_link_command(0x16, address, value + 'FF')
         else:
             raise ValueError("Invalid group number")
         _LOGGER.debug('SET OUTPUT STATE command %s',cmd)
         await self.send_command(cmd)
 
-    async def turn_on_switch(self, address, channel):
+    async def set_value_at_address(self, address, channel, value):
         channel += 1
-        _LOGGER.debug('TURNON address %s channel %s', address, channel)
+        _LOGGER.debug('address %s channel %s', address, channel)
         group_number = calculate_group_number(channel)
         group_output_number = calculate_group_output_number(channel)
-        _LOGGER.debug('TURNON group_number %s group_output_number %s', group_number, group_output_number)
+        _LOGGER.debug('group_number %s group_output_number %s', group_number, group_output_number)
         old_value = await self.get_output_state(address, group_number, timeout=5)
         _LOGGER.debug('old old_value %s', old_value)
         if old_value:
-            new_value = old_value[:group_output_number * 2] + 'FF' + old_value[(group_output_number + 1) * 2:]
-            _LOGGER.debug('TURNON new_value %s', new_value)
+            new_value = old_value[:group_output_number * 2] + value + old_value[(group_output_number + 1) * 2:]
+            _LOGGER.debug('new_value %s', new_value)
             await self.set_output_state(address, group_number, new_value, 5)
         else:
-            _LOGGER.error('TURNON Invalid address %s channel %s group_number %s group_output_number %s', address, channel, group_number, group_output_number)
+            _LOGGER.error('Invalid address %s channel %s group_number %s group_output_number %s', address, channel, group_number, group_output_number)
 
+#### SWITCHES
+    async def turn_on_switch(self, address, channel):
+        await self.set_value_at_address(address, channel, 'FF')
 
+    async def turn_off_switch(self, address, channel):
+        await self.set_value_at_address(address, channel, '00')
+#####
 
+#### DIMMERS
+    async def turn_on_light(self, address, channel, brightness):
+        await self.set_value_at_address(address, channel, format(brightness, '02X'))
 
+    async def turn_off_light(self, address, channel):
+        await self.set_value_at_address(address, channel, '00')
+#####
 
+""" 
+    COVERS
+    async def open_cover(self, address, channel):
 
+    async def close_cover(self, address, channel):
 
-###################################################
+    async def stop_cover(self, address, channel):
 
-
-
-
-
-
-    async def switch_get_output_state(self, number, timeout):
-        _LOGGER.debug('NikobusModuleSwitch.getOutputState() enter')
-        _LOGGER.debug(f'number = {number}, timeout = {timeout}')
-        group_number = calculate_group_number(number)
-        group_output_number = calculate_group_output_number(number)
-        try:
-            err, answer = await self.get_output_state(self.address, group_number, timeout)
-            _LOGGER.error(f'NikobusApi.getOutputState() (err = %s, answer = %s)', err, answer)
-            if err:
-                _LOGGER.error('Error %s', err)
-                return
-            answer = answer[group_output_number * 2:group_output_number * 2 + 2]
-            _LOGGER.error('Answer %s', answer)
-        except Exception as e:
-            _LOGGER.error('Error: %s',e)
-        _LOGGER.debug('NikobusModuleSwitch.getOutputState() leave', 9)
-
-    async def switch_set_output_state(self, number, value, timeout):
-        _LOGGER.debug('NikobusModuleSwitch.setOutputState() enter')
-        _LOGGER.debug(f'number = {number}, value = {value}, timeout = {timeout}')
-        group_number = calculate_group_number(number)
-        group_output_number = calculate_group_output_number(number)
-        try:
-            err, answer = await self.get_output_state(self.address, group_number, timeout)
-            _LOGGER.debug('NikobusApi.getOutputState() err = %s, answer = %s', err, answer)
-            if err:
-                _LOGGER.error('err %s', err)
-                return
-            old_value = answer
-            new_value = old_value[:group_output_number * 2] + value + old_value[(group_output_number + 1) * 2:(6 - group_output_number - 1) * 2]
-            if old_value == new_value:
-                _LOGGER.debug('no need to change output state', 9)
-                return
-            err, answer = await self.api.set_output_state(self.address, group_number, new_value, timeout)
-            _LOGGER.debug('NikobusApi.setOutputState() (err = %s, answer = %s)', err, answer)
-            if err:
-                _LOGGER.error('error %s', err)
-                return
-            if answer != 'FF00':
-                _LOGGER.error('unexpected answer %s', answer)
-                return
-        except Exception as e:
-            _LOGGER.debug(f'Error: {e}')
-        _LOGGER.debug('NikobusModuleSwitch.setOutputState() leave', 9)
-
-    async def switch_get_group_output_state(self, group, timeout):
-        _LOGGER.debug('NikobusModuleSwitch.getGroupOutputState() enter', 5)
-        _LOGGER.debug(f'group = {group}, timeout = {timeout}', 7)
-        try:
-            err, answer = await self.get_output_state(self.address, group, timeout)
-            _LOGGER.debug('NikobusApi.getOutputState() (err = %s, answer = %s)', err, answer)
-        except Exception as e:
-            _LOGGER.debug(f'Error: {e}')
-        _LOGGER.debug('NikobusModuleSwitch.getGroupOutputState() leave', 9)
-
-    async def switch_set_group_output_state(self, group, value, timeout):
-        _LOGGER.debug('NikobusModuleSwitch.setGroupOutputState() enter', 5)
-        _LOGGER.debug(f'group = {group}, value = {value}, timeout = {timeout}', 7)
-        try:
-            err, answer = await self.api.set_output_state(self.address, group, value, timeout)
-            _LOGGER.debug(f'NikobusApi.setOutputState() (err = {err}, answer = {answer})')
-        except Exception as e:
-            _LOGGER.debug(f'Error: {e}')
-        _LOGGER.debug('NikobusModuleSwitch.setGroupOutputState() leave', 9)
+    async def get_cover_state(self, address, channel):
+"""
