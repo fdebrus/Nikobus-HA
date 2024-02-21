@@ -1,6 +1,19 @@
 # Nikobus-HA
 
-**Work in progress** ALPHA
+**Work in progress** BETA
+
+**update**
+- Got the switches and lights (dimmer) to work
+
+**open issues**
+- the system overall is slow
+- when you change status of a switch / dimmer it is not updated till next refresh 60secs
+
+**TO DO**
+- add cover support
+- manage buttons
+- code cleanup
+
 
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
 
