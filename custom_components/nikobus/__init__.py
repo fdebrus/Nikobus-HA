@@ -12,7 +12,7 @@ from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [switch.DOMAIN, light.DOMAIN] #, cover.DOMAIN]
+PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN]
 
 async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Set up the Nikobus component."""
@@ -25,7 +25,6 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
     hass.data.setdefault(DOMAIN, {})
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    # await NikobusDataCoordinator.refresh_nikobus_data(coordinator)
     await coordinator.async_config_entry_first_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
