@@ -1,43 +1,27 @@
 import logging
 import json
-import os
 
 from homeassistant.components.cover import CoverEntity
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-_LOGGER = logging.getLogger(__name__)
-
 from .const import DOMAIN, BRAND
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
     """Set up a config entry."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
     entities = []
 
-    # Open the JSON file and load its contents
-    current_file_path = os.path.abspath(__file__)
-    current_directory = os.path.dirname(current_file_path)
-    config_file_path = os.path.join(current_directory, "nikobus_config.json")
-    with open(config_file_path, 'r') as file:
-        data = json.load(file)
-
-    _LOGGER.debug("cover: START")
-
     # Iterate over cover modules
-    for cover_module in data["roller_modules_addresses"]: 
+    for cover_module in dataservice.json_config_data["roller_modules_addresses"]: 
         description = cover_module.get("description")
         model = cover_module.get("model")
         address = cover_module.get("address")
         channels = cover_module["channels"]
-
-        _LOGGER.debug("cover: %s",description)
-
-        # Iterate over channels
         for i in range(len(channels)):
             chDescription = channels[i]["description"]
-            _LOGGER.debug("cover: %s",chDescription)
             entities.append(NikobusCoverEntity(hass, dataservice, description, model, address, i, chDescription))
 
     async_add_entities(entities)
