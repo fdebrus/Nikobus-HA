@@ -2,17 +2,16 @@
 
 **Work in progress** BETA
 
-**implemented**
+**fully implemented**
 - Switches control
 - Lights control (dimmers)
 
-**open issues**
-- When you change status of a switch / dimmer outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP)
-
 **TO DO**
 - add cover/shutter support
-- add buttons support
+- add buttons support, when a wall switch is pressed trigger the refresh of the related HA data so it is kept up-to-date
 
+**open issues**
+- When you change status of a switch / dimmer outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP)
 
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
 
