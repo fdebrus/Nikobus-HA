@@ -7,7 +7,7 @@
 - Lights control (dimmers)
 
 **open issues**
-- When you change status of a switch / dimmer it is not updated till next refresh 60secs (WIP)
+- When you change status of a switch / dimmer outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP)
 
 **TO DO**
 - add cover/shutter support
