@@ -15,7 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     entities = []
 
     # Iterate over cover modules
-    for cover_module in dataservice.json_config_data["roller_modules_addresses"]: 
+    for cover_module in dataservice.api.json_config_data["roller_modules_addresses"]: 
         description = cover_module.get("description")
         model = cover_module.get("model")
         address = cover_module.get("address")
