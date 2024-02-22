@@ -36,7 +36,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._name = ch_description
-        self._is_on = initial_state
+        self._state = initial_state
         self._brightness = brightness
         self._description = description
         self._model = model
@@ -61,6 +61,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def brightness(self):
+        self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
         return self._brightness
 
     @property
@@ -70,23 +71,24 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def is_on(self):
-        return self._is_on
+        self._state = self._dataservice.get_light_state(self._address, self._channel)
+        return self._state
 
     def update(self):
-        self._is_on = self._dataservice.get_light_state(self._address, self._channel)
+        self._state = self._dataservice.get_light_state(self._address, self._channel)
         self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
 
     async def async_turn_on(self, **kwargs):
         """Turn the entity on."""
         self._brightness = kwargs.get("brightness", 255)
         await self._dataservice.turn_on_light(self._address, self._channel, self._brightness)
-        self._is_on = True
+        self._state = True
         self.schedule_update_ha_state()
 
     async def async_turn_off(self, **kwargs):
         """Turn the entity off."""
         await self._dataservice.turn_off_light(self._address, self._channel)
-        self._is_on = False
+        self._state = False
         self.schedule_update_ha_state()
         
     @property
