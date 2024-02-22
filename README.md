@@ -2,11 +2,12 @@
 
 **Work in progress** BETA
 
-**update**
-- Got the switches and lights (dimmer) to accept command
+**implemented**
+- Switches control
+- Lights control (dimmers)
 
 **open issues**
-- when you change status of a switch / dimmer it is not updated till next refresh 60secs (WIP)
+- When you change status of a switch / dimmer it is not updated till next refresh 60secs (WIP)
 
 **TO DO**
 - add cover/shutter support
