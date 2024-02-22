@@ -34,7 +34,7 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         """Initialize a Nikobus Switch Entity."""
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._is_on = initial_state
+        self._state = initial_state
         self._name = chDescription
         self._description = description
         self._model = model
@@ -59,21 +59,22 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self):
-        return self._is_on
+        self._state = self._dataservice.get_switch_state(self._address, self._channel)
+        return self._state
 
     def update(self):
-        self._is_on = self._dataservice.get_switch_state(self._address, self._channel)
+        self._state = self._dataservice.get_switch_state(self._address, self._channel)
 
     async def async_turn_on(self):
         """Turn the entity on."""
         await self._dataservice.turn_on_switch(self._address, self._channel)
-        self._is_on = True
+        self._state = True
         self.schedule_update_ha_state()
 
     async def async_turn_off(self):
         """Turn the entity off."""
         await self._dataservice.turn_off_switch(self._address, self._channel)
-        self._is_on = False
+        self._state = False
         self.schedule_update_ha_state()
 
     @property
