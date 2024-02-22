@@ -25,7 +25,8 @@ class Nikobus:
     async def connect(self):
         _LOGGER.debug("----- Nikobus.connect() enter-----")
         self._nikobus_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-        self._nikobus_socket.settimeout(10)
+        self._nikobus_socket.settimeout(5)
+        self._nikobus_socket.setblocking(False)
         try:
             self._nikobus_socket.connect((self._host, self._port))
         except OSError as err:
