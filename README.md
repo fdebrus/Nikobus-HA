@@ -3,16 +3,14 @@
 **Work in progress** BETA
 
 **update**
-- Got the switches and lights (dimmer) to work
+- Got the switches and lights (dimmer) to accept command
 
 **open issues**
-- the system overall is slow, **resolved** more improvements (wip)
 - when you change status of a switch / dimmer it is not updated till next refresh 60secs (WIP)
 
 **TO DO**
 - add cover/shutter support
 - add buttons support
-- code cleanup
 
 
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
