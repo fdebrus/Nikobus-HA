@@ -14,10 +14,9 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     """Set up a config entry."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
     entities = []
-    entities_status = []
 
     # Iterate over switch modules
-    for switch_module in dataservice.json_config_data["switch_modules_addresses"]: 
+    for switch_module in dataservice.api.json_config_data["switch_modules_addresses"]: 
         description = switch_module.get("description")
         model = switch_module.get("model")
         address = switch_module.get("address")
@@ -35,8 +34,8 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         """Initialize a Nikobus Switch Entity."""
         super().__init__(dataservice)
         self._dataservice = dataservice
+        self._is_on = initial_state
         self._name = chDescription
-        self._state = initial_state
         self._description = description
         self._model = model
         self._address = address
@@ -60,21 +59,22 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self):
-        """Return true if the switch is on.""" 
-        self._state = self._dataservice.get_switch_state(self._address, self._channel)
-        return self._state
-    
-    async def update(self):
-        self._state = await self._dataservice.get_switch_state(self._address, self._channel)
-        return self._state
+        return self._is_on
 
-    async def async_turn_on(self, **kwargs):
+    def update(self):
+        self._is_on = self._dataservice.get_switch_state(self._address, self._channel)
+
+    async def async_turn_on(self):
         """Turn the entity on."""
         await self._dataservice.turn_on_switch(self._address, self._channel)
+        self._is_on = True
+        self.schedule_update_ha_state()
 
-    async def async_turn_off(self, **kwargs):
+    async def async_turn_off(self):
         """Turn the entity off."""
         await self._dataservice.turn_off_switch(self._address, self._channel)
+        self._is_on = False
+        self.schedule_update_ha_state()
 
     @property
     def unique_id(self):
