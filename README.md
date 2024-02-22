@@ -6,12 +6,12 @@
 - Got the switches and lights (dimmer) to work
 
 **open issues**
-- the system overall is slow
-- when you change status of a switch / dimmer it is not updated till next refresh 60secs
+- the system overall is slow, **resolved** more improvements (wip)
+- when you change status of a switch / dimmer it is not updated till next refresh 60secs (WIP)
 
 **TO DO**
-- add cover support
-- manage buttons
+- add cover/shutter support
+- add buttons support
 - code cleanup
 
 
