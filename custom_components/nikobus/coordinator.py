@@ -1,11 +1,8 @@
 """Coordinator for Nikobus."""
-import os
-import json
-import textwrap
-
-import logging
 from typing import Any
 from datetime import timedelta
+
+import logging
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -21,96 +18,46 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Nikobus",
-            update_method = self.refresh_nikobus_data,
+            update_method = api.refresh_nikobus_data,
             update_interval = timedelta(seconds=120)
         )
         self.api = api
-        self.json_state_data = {}
-        self.json_config_data = None
 
-    async def load_json_data(self):
-        # Open the JSON file and load its contents
-        current_file_path = os.path.abspath(__file__)
-        current_directory = os.path.dirname(current_file_path)
-        config_file_path = os.path.join(current_directory, "nikobus_config.json")
-        with open(config_file_path, 'r') as file:
-            self.json_config_data = json.load(file)
-
-    async def refresh_nikobus_data(self):
-        result_dict = {} 
-        state_group = []
-        state_group2 = []
-        await self.load_json_data()
-        for module_type in ['dimmer_modules_addresses', 'switch_modules_addresses', 'roller_modules_addresses']:
-            for entry in self.json_config_data[module_type]:
-                actual_address = entry.get("address")
-                _LOGGER.debug('*** REFRESH for %s ***', actual_address)
-                state_group = await self.api.get_output_state(address=actual_address, group=1, timeout=5)
-                _LOGGER.debug("state_group: %s", state_group)       
-                if len(entry.get('channels', [])) == 12:
-                    state_group2 = await self.api.get_output_state(address=actual_address, group=2, timeout=5)
-                    _LOGGER.debug("state_group2: %s", state_group2)  
-                if state_group is not None and state_group2 is not None:
-                    state_group += state_group2
-                if state_group is not None:
-                    state_group_array = {index: item for index, item in enumerate(textwrap.wrap(state_group, width=2))}
-                else:
-                    return False
-                result_dict[actual_address] = state_group_array
-        self.json_state_data = result_dict
-        _LOGGER.debug("json: %s",self.json_state_data)
-        return True 
-
+#### GENERAL
     async def get_output_state(self, address, channel, timeout) -> Any:
         """Return status of address channel."""
         _state = self.api.get_output_state(address, channel, timeout)
         _LOGGER.debug("get_output_state:%s %s %s",address, channel, _state)
         return _state
+####
 
 #### SWITCHES
-    def get_switch_state(self, address, channel):
-        _state = self.json_state_data.get(address, {}).get(channel)
-        _LOGGER.debug("get_switch_state: %s %s %s",address, channel, _state)
-        if _state == "FF":
-            return True
-        else:
-            return False
+    def get_switch_state(self, address, channel) -> Any:
+        """Get State on address / channel."""
+        return self.api.get_switch_state(address, channel)
 
     async def turn_on_switch(self, address, channel) -> None:
-        """Turn on address channel."""
-        self.json_state_data.setdefault(address, {})[channel] = 'FF'
+        """Turn on address address / channel"""
         await self.api.turn_on_switch(address, channel)
 
     async def turn_off_switch(self, address, channel) -> None:
-        """Turn off address channel."""
-        self.json_state_data.setdefault(address, {})[channel] = '00'
+        """Turn off address address / Channel"""
         await self.api.turn_off_switch(address, channel)
 ####
 
 #### DIMMERS
     def get_light_state(self, address, channel):
-        _state = self.json_state_data.get(address, {}).get(channel)
-        _LOGGER.debug("get_light_state: %s %s %s",address, channel, _state)
-        if _state == "00":
-            return False
-        else:
-            return True
-    
+        return self.api.get_light_state(address, channel)
+        
     def get_light_brightness(self, address, channel):
-        _state = self.json_state_data.get(address, {}).get(channel)
-        if _state:
-            return int(_state, 16)
-        else:
-            return 0
+        return self.api.get_light_brightness(address, channel)
 
     async def turn_on_light(self, address, channel, brightness) -> None:
-        """Turn on address channel."""
-        self.json_state_data.setdefault(address, {})[channel] = format(brightness, '02X')
+        """Turn on address / channel with brightness"""
         await self.api.turn_on_light(address, channel, brightness)
 
     async def turn_off_light(self, address, channel) -> None:
-        """Turn off address channel."""
-        self.json_state_data.setdefault(address, {})[channel] = '00'
+        """Turn off address / channel"""
         await self.api.turn_off_light(address, channel)
 ####
 
