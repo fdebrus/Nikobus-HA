@@ -49,7 +49,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 ####
 
 #### SWITCHES
-    def get_switch_state(self, address, channel) -> Any:
+    def get_switch_state(self, address, channel):
         """
         Get the state of a switch.
 
@@ -137,15 +137,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Open the cover."""
         await self.api.open_cover(address, channel)
 
-    async def async_close_cover(self, address, channel) -> None:
+    async def close_cover(self, address, channel) -> None:
         """Close the cover."""
         await self.api.close_cover(address, channel)
 
-    async def async_stop_cover(self, address, channel) -> None:
+    async def stop_cover(self, address, channel) -> None:
         """Stop the cover."""
         await self.api.stop_cover(address, channel)
-
-    async def get_cover_state(self, address, channel) -> None:
-        """Update the state of the cover."""
-        await self.api.get_cover_state(address, channel)
 #### 
