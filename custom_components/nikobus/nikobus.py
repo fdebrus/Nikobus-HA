@@ -6,7 +6,19 @@ import os
 import json
 import textwrap
 
-from .helpers import int_to_hex, hex_to_int, int_to_dec, dec_to_int, calc_crc1, calc_crc2, append_crc1, append_crc2, make_pc_link_command, calculate_group_output_number, calculate_group_number
+from .helpers import (
+    int_to_hex, 
+    hex_to_int, 
+    int_to_dec, 
+    dec_to_int, 
+    calc_crc1, 
+    calc_crc2, 
+    append_crc1, 
+    append_crc2, 
+    make_pc_link_command, 
+    calculate_group_output_number, 
+    calculate_group_number
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,6 +27,7 @@ class Nikobus:
         self._host = host
         self._port = port
         self.json_config_data = {}
+        self.json_state_data = {}
         self._nikobus_reader = None
         self._nikobus_writer = None
         self._answer = None
@@ -65,7 +78,7 @@ class Nikobus:
                 _LOGGER.debug('*** REFRESH for %s ***', actual_address)
                 state_group = await self.get_output_state(address=actual_address, group=1)
                 _LOGGER.debug("state_group: %s", state_group)       
-                if len(entry.get('channels', [])) == 12:
+                if len(entry.get('channels', [])) > 6:
                     state_group2 = await self.get_output_state(address=actual_address, group=2)
                     _LOGGER.debug("state_group2: %s", state_group2)  
                 if state_group is not None and state_group2 is not None:
@@ -86,7 +99,7 @@ class Nikobus:
             self._nikobus_writer.write(command.encode() + b'\r')
             await self._nikobus_writer.drain()
         except Exception as err:
-            _LOGGER.debug('SerialPort.write() %s', err)
+            _LOGGER.debug('TCP.write() %s', err)
         _LOGGER.debug('Nikobus.sendCommand() leave')
 
     async def send_command_get_answer(self, command):
@@ -163,6 +176,13 @@ class Nikobus:
         _LOGGER.debug('Setting value %s for %s', new_value, address)
         await self.set_output_state(address, group_number, new_value)
 
+    async def set_value_at_address_shutter(self, address, channel, value):
+        group_number = 1
+        original_string = '000000000000'
+        new_value = original_string[:channel*2] + value + original_string[channel*2:-2]
+        _LOGGER.debug('Shutters - Setting value %s for %s', new_value, address)
+        await self.set_output_state(address, group_number, new_value)
+
 #### SWITCHES
     def get_switch_state(self, address, channel):
         _state = self.json_state_data.get(address, {}).get(channel)
@@ -202,13 +222,18 @@ class Nikobus:
         await self.set_value_at_address(address, channel)
 #####
 
-""" 
-    COVERS
-    async def open_cover(self, address, channel):
+#### COVERS
+    async def stop_cover(self, address, channel) -> None:
+        """Stop the cover."""
+        await self.set_value_at_address_shutter(address, channel, '00')
 
-    async def close_cover(self, address, channel):
+    async def open_cover(self, address, channel) -> None:
+        """Open the cover."""
+        await self.set_value_at_address_shutter(address, channel, '01')
 
-    async def stop_cover(self, address, channel):
+    async def close_cover(self, address, channel) -> None:
+        """Close the cover."""
+        await self.set_value_at_address_shutter(address, channel, '02')
+#### 
 
-    async def get_cover_state(self, address, channel):
-"""
+
