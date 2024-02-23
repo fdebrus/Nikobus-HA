@@ -21,24 +21,25 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
         address = cover_module.get("address")
         channels = cover_module["channels"]
         for i in range(len(channels)):
-            chDescription = channels[i]["description"]
-            entities.append(NikobusCoverEntity(hass, dataservice, description, model, address, i, chDescription))
+            channel_description = channels[i]["description"]
+            entities.append(NikobusCoverEntity(hass, dataservice, description, model, address, i, channel_description))
 
     async_add_entities(entities)
 
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     """Nikobus Cover Entity."""
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, chDescription, initial_state="closed") -> None:
+    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
         """Initialize a Nikobus Cover Entity."""
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._name = chDescription
-        self._state = initial_state
+        self._name = channel_description
+        self._position = 100
+        self._is_closed = False
         self._description = description
         self._model = model
         self._address = address
-        self._channel = channel + 1
+        self._channel = channel
         self._unique_id = f"{self._address}{self._channel}"
 
     @property
@@ -56,26 +57,47 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Return the name of the cover."""
         return self._name
 
+    @property
     def is_closed(self):
-        """Return true if the switch is on."""
-        return self._dataservice.get_switch_status(self._address, self._channel)
+        """Return true if the cover is closed."""
+        return self._is_closed
 
-    def update(self):
-        """Update the state of the cover."""
-        self._state = self._dataservice.get_output_state(self._address, self._channel)
-        return self._state
+    @property
+    def current_cover_position(self):
+        """Return the current position of the cover."""
+        return self._position
 
-    async def async_open_cover(self, **kwargs):
+    async def async_set_cover_position(self, **kwargs):
+        """Move the cover to a specific position."""
+        position = kwargs['position']
+        # Code to move the cover to the specified position goes here
+        self._position = position
+        self.schedule_update_ha_state()
+
+    # def update(self):
+    #    """Update the state of the cover."""
+    #    self._state = self._dataservice.get_output_state(self._address, self._channel)
+    #    return self._state
+
+    async def async_open_cover(self):
         """Open the cover."""
         await self._dataservice.open_cover(self._address, self._channel)
+        self._is_closed = False
+        self._position = 100
+        self.schedule_update_ha_state()
 
-    async def async_close_cover(self, **kwargs):
+    async def async_close_cover(self):
         """Close the cover."""
         await self._dataservice.close_cover(self._address, self._channel)
+        self._is_closed = True
+        self._position = 0
+        self.schedule_update_ha_state()
+        # self.async_write_ha_state()
 
-    async def async_stop_cover(self, **kwargs):
+    async def async_stop_cover(self):
         """Stop the cover."""
         await self._dataservice.stop_cover(self._address, self._channel)
+        self.schedule_update_ha_state()
 
     @property
     def unique_id(self):
