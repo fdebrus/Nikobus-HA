@@ -13,51 +13,122 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     """Nikobus custom coordinator."""
 
     def __init__(self, hass: HomeAssistant, api) -> None:
-        """Initialize the coordinator."""
+        """
+        Initialize the coordinator.
+
+        Parameters:
+        - hass: The Home Assistant instance.
+        - api: The API used for communication with Nikobus devices.
+        """
+        # Call the __init__ method of the superclass with necessary parameters
         super().__init__(
             hass,
             _LOGGER,
             name="Nikobus",
-            update_method = api.refresh_nikobus_data,
-            update_interval = timedelta(seconds=120)
+            update_method=api.refresh_nikobus_data,
+            update_interval=timedelta(seconds=120)
         )
+        # Store the API instance for later use
         self.api = api
 
 #### GENERAL
-    async def get_output_state(self, address, channel, timeout) -> Any:
-        """Return status of address channel."""
-        _state = self.api.get_output_state(address, channel, timeout)
+    async def get_output_state(self, address, channel) -> Any:
+        """
+        Get the state of an output.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the output.
+
+        Returns:
+        - The state of the output.
+        """
+        _state = self.api.get_output_state(address, channel)
         _LOGGER.debug("get_output_state:%s %s %s",address, channel, _state)
         return _state
 ####
 
 #### SWITCHES
     def get_switch_state(self, address, channel) -> Any:
-        """Get State on address / channel."""
+        """
+        Get the state of a switch.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the switch.
+
+        Returns:
+        - The state of the switch.
+        """
         return self.api.get_switch_state(address, channel)
 
     async def turn_on_switch(self, address, channel) -> None:
-        """Turn on address address / channel"""
+        """
+        Turn on a switch.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the switch.
+        """
         await self.api.turn_on_switch(address, channel)
 
     async def turn_off_switch(self, address, channel) -> None:
-        """Turn off address address / Channel"""
+        """
+        Turn off a switch.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the switch.
+        """
         await self.api.turn_off_switch(address, channel)
 ####
 
 #### DIMMERS
     def get_light_state(self, address, channel):
+        """
+        Get the state of a light.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the light.
+
+        Returns:
+        - The state of the light.
+        """
         return self.api.get_light_state(address, channel)
         
     def get_light_brightness(self, address, channel):
+        """
+        Get the brightness of a light.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the light.
+
+        Returns:
+        - The brightness of the light.
+        """
         return self.api.get_light_brightness(address, channel)
 
     async def turn_on_light(self, address, channel, brightness) -> None:
-        """Turn on address / channel with brightness"""
+        """
+        Turn on a light with specified brightness.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the light.
+        - brightness: The brightness to set the light to.
+        """
         await self.api.turn_on_light(address, channel, brightness)
 
     async def turn_off_light(self, address, channel) -> None:
-        """Turn off address / channel"""
+        """
+        Turn off a light.
+
+        Parameters:
+        - address: The address of the controller.
+        - channel: The channel of the light.
+        """
         await self.api.turn_off_light(address, channel)
 ####
 
