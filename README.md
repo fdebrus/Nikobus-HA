@@ -6,8 +6,10 @@
 - Switches control
 - Lights control (dimmers)
 
+**beta**
+- cover/shutter support
+
 **TO DO**
-- add cover/shutter support
 - add buttons support, when a wall switch is pressed trigger the refresh of the related HA data so it is kept up-to-date
 
 **open issues**
