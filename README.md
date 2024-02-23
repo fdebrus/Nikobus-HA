@@ -13,8 +13,9 @@
 - add buttons support, when a wall switch is pressed trigger the refresh of the related HA data so it is kept up-to-date
 
 **open issues**
-- When you change status of a switch / dimmer outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP)
+- When you change status of a switch / dimmer outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP). Will be solved when button press will be managed in HA
 
+**Install**
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/2451b88a-beff-46ce-85bf-f5486a69b37c)
