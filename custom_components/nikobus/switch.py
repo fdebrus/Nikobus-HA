@@ -63,7 +63,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         return self._state
 
     def update(self):
-        self._state = self._dataservice.get_switch_state(self._address, self._channel)
+        """Update the state of the cover."""
+        self._state = self._dataservice.get_output_state(self._address, self._channel)
+        return self._state
 
     async def async_turn_on(self):
         """Turn the entity on."""
