@@ -7,7 +7,7 @@
 - Lights control (dimmers)
 
 **beta**
-- cover/shutter support
+- cover/shutter support, introduce an "operation_time": "20" definition by channel in seconds to fully open/close (WIP)
 
 **TO DO**
 - add buttons support, when a wall switch is pressed trigger the refresh of the related HA data so it is kept up-to-date
