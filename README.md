@@ -12,6 +12,7 @@
 The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
 
 **Install**
+
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/2451b88a-beff-46ce-85bf-f5486a69b37c)
