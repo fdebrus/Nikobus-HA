@@ -48,6 +48,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._position = 100 
         self._is_opening = False
         self._is_closing = False
+        self._in_motion = False
         self._operation_time = float(operation_time) # Time in seconds to fully open/close
         self._name = channel_description
         self._description = description
@@ -135,6 +136,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         # Reset operation flags
         self._is_opening = False
         self._is_closing = False
+        self._in_motion = False
         self.async_write_ha_state()
         # Issue the stop command to the cover device
         await self._dataservice.stop_cover(self._address, self._channel)
@@ -171,12 +173,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         direction = 1 if expected_position > initial_position else -1
         position_change = abs(expected_position - initial_position)
 
-        while self._is_opening or self._is_closing:
+        self._in_motion = True
+        while self._in_motion: 
             elapsed_time = (datetime.now() - start_time).total_seconds()
             if elapsed_time >= total_time:
                 # If the operation is completed or exceeded the expected time,
                 # set the position directly to the expected position.
                 self._position = expected_position
+                self._in_motion = False
                 await self.async_stop_cover()
                 break
 
@@ -195,8 +199,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self.async_write_ha_state()  # Update the state in Home Assistant
             await asyncio.sleep(1)  # Throttle updates to avoid flooding Home Assistant with too many state changes
 
-        # Final state update to ensure consistency
-        self._position = expected_position
         self._is_opening = False
         self._is_closing = False
         self.async_write_ha_state()
