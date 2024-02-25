@@ -207,6 +207,8 @@ class Nikobus:
             _LOGGER.debug("A button with the same address already exists.")
 
     async def send_command(self, command):
+        _LOGGER.debug('----- Nikobus.send_command() enter -----')
+        _LOGGER.debug(f'command = {command.encode()}')
         try:
             # Acquire the lock to ensure exclusive access to _nikobus_writer
             async with self._nikobus_writer_lock:
@@ -342,3 +344,10 @@ class Nikobus:
         """Close the cover."""
         await self.set_value_at_address_shutter(address, channel, '02')
 #####
+
+#### BUTTONS
+    async def send_button_press(self, address) -> None:
+        start_of_transmission = '#N'
+        end_of_transmission = "\r#E1";
+        await self.send_command(start_of_transmission + address + end_of_transmission)
+#### 
