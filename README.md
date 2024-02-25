@@ -4,12 +4,9 @@
 - Switches control.
 - Lights control (dimmers).
 - Cover/shutter support, (open/stop/close/set position).
-- Buttons support
-     When a wall switch is pressed
-       it is discovered by the integration and registered in the nikobus_button_config.json file.
-       it will trigger the refresh of associated module / group defined in the config file.
-    When a HA button is pressed, it will trigger the same command on Nikobus.
-    You can create "virtual button" in HA and link them to an action in Nikobus. eg 000001
+- Buttons support. When a HA button is pressed, it will trigger the command on Nikobus. When a wall switch is pressed, it will trigger the refresh in HA.
+    
+You can create "virtual button" in HA and link them to an action in Nikobus. eg 000001
 
 **BREAKING CHANGES**
 The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
