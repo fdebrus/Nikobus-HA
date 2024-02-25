@@ -8,6 +8,19 @@
     
 You can create "virtual button" in HA and link them to an action in Nikobus. eg 000001
 
+Automation example 
+
+alias: "React to Nikobus Button Push"
+description: "Perform actions when a Nikobus button is reported as pushed"
+trigger:
+  - platform: event
+    event_type: nikobus_button_pushed
+    event_data:
+      address: "specific_button_address"  # Optional: Specify if you want to react to a specific button
+action:
+  - service: homeassistant.toggle
+    entity_id: light.example_light
+
 **BREAKING CHANGES**
 The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
 
