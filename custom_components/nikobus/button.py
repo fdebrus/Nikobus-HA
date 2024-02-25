@@ -36,7 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     # Add created entities to Home Assistant
     async_add_entities(entities)
 
-class NikobusButton(CoordinatorEntity, ButtonEntity):
+class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     """Representation of a Nikobus Button."""
 
     def __init__(self, hass:  HomeAssistant, dataservice, description, address, impacted_module_address, impacted_module_group) -> None:
