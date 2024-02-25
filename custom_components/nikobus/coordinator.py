@@ -5,7 +5,7 @@ from datetime import timedelta
 import logging
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,6 +44,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         - The state of the output.
         """
         _state = self.api.get_output_state(address, channel)
+        
         _LOGGER.debug("get_output_state:%s %s %s",address, channel, _state)
         return _state
 ####
@@ -133,6 +134,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 ####
 
 #### COVERS
+    async def operate_cover(self, address, channel, direction):
+        if direction == 'open':
+            await self.api.open_cover(address, channel)
+        else:
+            await self.api.close_cover(address, channel)
+
     async def open_cover(self, address, channel) -> None:
         """Open the cover."""
         await self.api.open_cover(address, channel)
