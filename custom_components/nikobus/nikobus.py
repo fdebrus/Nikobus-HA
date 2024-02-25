@@ -195,10 +195,11 @@ class Nikobus:
         address_exists = any(button['address'] == new_button['address'] for button in self.json_button_data['nikobus_button'])
         if not address_exists:
             self.json_button_data["nikobus_button"].append(new_button)
-            # async_dispatcher_send(self._hass, 'nikobus_new_button_added', new_button)
+            async_dispatcher_send(self._hass, 'nikobus_button_pressed', new_button)
             _LOGGER.debug("New button added. %s", self.json_button_data)
             await self.write_json_button_data()
         else:
+            async_dispatcher_send(self._hass, 'nikobus_button_pressed', {'address': address})
             for button in self.json_button_data['nikobus_button']:
                 if button['address'] == address:
                     await self.get_output_state(address, button['impacted_module'][0]['group'])
