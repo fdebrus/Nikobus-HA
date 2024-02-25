@@ -48,7 +48,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._position = 100 
         self._is_opening = False
         self._is_closing = False
-        self._operation_start = None
         self._operation_time = float(operation_time) # Time in seconds to fully open/close
         self._name = channel_description
         self._description = description
@@ -112,7 +111,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if self._position < 100:  # Ensure there's a need to open the cover
             self._is_opening = True
             self._is_closing = False
-            self._operation_start = datetime.now()
             try:
                 await self._dataservice.operate_cover(self._address, self._channel, "open")
                 await self._complete_movement(100)
@@ -125,7 +123,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if self._position > 0:  # Ensure there's a need to close the cover
             self._is_closing = True
             self._is_opening = False
-            self._operation_start = datetime.now()
             try:
                 await self._dataservice.operate_cover(self._address, self._channel, "close")
                 await self._complete_movement(0)
@@ -135,46 +132,20 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     async def async_stop_cover(self):
         """Stop the cover movement."""
         _LOGGER.debug("STOP cover")
-        if self._is_opening or self._is_closing:
-            # Calculate the elapsed time to determine how far the cover has moved
-            elapsed_time = (datetime.now() - self._operation_start).total_seconds()
-            progress = min(elapsed_time / self._operation_time, 1)  # Ensure progress does not exceed 100%
-
-            # Calculate new position based on whether the cover was opening or closing
-            if self._is_opening:
-                new_position = self._position + (progress * (100 - self._position))
-            else:
-                new_position = self._position * (1 - progress)
-
-            # Round and bound the new position
-            self._position = round(max(0, min(100, new_position)))
-            _LOGGER.debug(f"Position after stop {self._position}")
-
-            # Reset operation flags
-            self._is_opening = False
-            self._is_closing = False
-            self._operation_start = None
-
-            # Immediately update Home Assistant state to reflect the new position
-            self.async_write_ha_state()
-
-            # Issue the stop command to the cover device
-            await self._dataservice.stop_cover(self._address, self._channel)
+        # Reset operation flags
+        self._is_opening = False
+        self._is_closing = False
+        self.async_write_ha_state()
+        # Issue the stop command to the cover device
+        await self._dataservice.stop_cover(self._address, self._channel)
 
     async def async_set_cover_position(self, **kwargs):
         """Move the cover to a specific position."""
         _LOGGER.debug("SET POS COVER")
         expected_position = int(kwargs.get(ATTR_POSITION))
-        if expected_position is None:
-            _LOGGER.error("No position specified")
-            return
 
         # Determine if we need to open or close based on the current and expected positions
         direction = "open" if expected_position > self._position else "close"
-
-        # Calculate the time needed to move to the expected position
-        position_diff = abs(expected_position - self._position)
-        move_duration = (position_diff / 100.0) * self._operation_time  # Full open/close time adjusted by position difference
 
         # Start moving in the determined direction
         if direction == "open":
@@ -183,17 +154,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         else:
             self._is_closing = True
             self._is_opening = False
-        self._operation_start = datetime.now()
         await self._dataservice.operate_cover(self._address, self._channel, direction)
         await self._complete_movement(expected_position)
         
-        # Schedule to stop the cover after the calculated move duration
-        await asyncio.sleep(move_duration)
-        await self.async_stop_cover()
-
-        # Update the position to the expected position after the movement duration
-        self.async_write_ha_state()  # Update the state in Home Assistant
-
     async def _complete_movement(self, expected_position):
         """Handle completion of movement towards the desired position."""
         _LOGGER.debug("MOVEMENT COVER")
@@ -214,6 +177,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 # If the operation is completed or exceeded the expected time,
                 # set the position directly to the expected position.
                 self._position = expected_position
+                await self.async_stop_cover()
                 break
 
             # Calculate the progress as a fraction of the total time
