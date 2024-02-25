@@ -8,9 +8,10 @@
 
 **beta**
 - cover/shutter support, (open/stop/close) are working well. Now I'm working to introduce an "operation_time" definition by channel. So HA can simulate cover position based on execution time and use set_postion for covers.
+- buttons support, when a wall switch is pressed, it is discovered by the integration and registered in the nikobus_button_config.json file
 
-**TO DO**
-- add buttons support, when a wall switch is pressed trigger the refresh of the related HA data so it is kept up-to-date
+**BREAKING CHANGES**
+The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
 
 **open issues**
 - When you change status of a switch / dimmer / shutter outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP). Will be solved when button press will be managed in HA
@@ -22,7 +23,11 @@ You will need a RS232 to IP bridge for this integration to work (like HF2211 or 
 
 **Install Instruction**
 
-One you have installed the custom integration using HACS, go to the custom_repository/nikobus to edit nikobus_conf.json
+One you have installed the custom integration using HACS, go to the custom_repository/nikobus
+copy nikobus_conf.json.default to your HA config directory / nikobus_conf.json
+copy nikobus_button_conf.json.default to your HA config directory / nikobus_button_conf.json
+
+update the file to reflect your installation. Button are discovery when pushed and registered in the nikobus_button_conf.json
 
 Integration supports
   switch_modules_addresses
