@@ -182,7 +182,7 @@ class Nikobus:
         return True
     
     async def button_discovery(self,address):
-        _LOGGER.debug(f"Found a button: {message} at {address}")
+        _LOGGER.debug(f"Found a button at {address}")
         _LOGGER.debug("Current button %s", self.json_button_data)
         new_button = {
             "description": f"Nikobus Button #N{address}",
