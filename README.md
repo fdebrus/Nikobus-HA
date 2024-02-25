@@ -15,6 +15,7 @@ The configuration files are no longer in the custom_integration directory but sh
 
 **open issues**
 - When you change status of a switch / dimmer / shutter outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP). Will be solved when button press will be managed in HA
+- setting cover position do not work. you can open/stop/close only 
 
 **Install**
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
