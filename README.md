@@ -7,7 +7,7 @@
 - Lights control (dimmers)
 
 **beta**
-- cover/shutter support, introduce an "operation_time" definition by channel in seconds to fully open/close (WIP)
+- cover/shutter support, (open/stop/close) are working well. Now I'm working to introduce an "operation_time" definition by channel. So HA can simulate cover position based on execution time and use set_postion for covers.
 
 **TO DO**
 - add buttons support, when a wall switch is pressed trigger the refresh of the related HA data so it is kept up-to-date
