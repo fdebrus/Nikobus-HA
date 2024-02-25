@@ -134,7 +134,7 @@ class Nikobus:
         _button_command_prefix = '#N'  # The prefix of a button
         if message.startswith(_button_command_prefix):
             address = message[2:8] 
-            await button_discovery(address)
+            await self.button_discovery(address)
         else:
             _LOGGER.info(f"Posting message: {message}")
             await self._response_queue.put(message)
