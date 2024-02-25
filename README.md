@@ -5,17 +5,16 @@
 **fully implemented**
 - Switches control
 - Lights control (dimmers)
+- Buttons support, when a wall switch is pressed, it is discovered by the integration and registered in the nikobus_button_config.json file. When wall switch is pressed, it will trigger the refresh of associated module / group defined in the config file.
 
 **beta**
 - cover/shutter support, (open/stop/close) are working well. Now I'm working to introduce an "operation_time" definition by channel. So HA can simulate cover position based on execution time and use set_postion for covers.
-- buttons support, when a wall switch is pressed, it is discovered by the integration and registered in the nikobus_button_config.json file. Still need to trigger associated module / group refresh when pressed. (WIP)
 
 **BREAKING CHANGES**
 The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
 
 **open issues**
-- When you change status of a switch / dimmer / shutter outside HA, eg wallswitch, it is not updated till next refresh 60secs (WIP). Will be solved when button press will be managed in HA
-- setting cover position do not work. you can open/stop/close only 
+- COVERS : You can open/stop/close/set position. BUT the state of the cover is incorrect if you start an open or close followed by a stop command 
 
 **Install**
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
