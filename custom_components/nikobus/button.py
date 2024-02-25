@@ -25,7 +25,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             dataservice,
             button.get("description"),
             button.get("address"),
-            i,
             impacted_module["address"],
             impacted_module["group"],
         )
