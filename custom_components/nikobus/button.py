@@ -49,6 +49,16 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{self._address}"
 
+    @property
+    def device_info(self):
+        """Return the device info."""
+        return {
+            "identifiers": {(DOMAIN, self._address)},
+            "name": self._description,
+            "manufacturer": BRAND,
+            "model": "Push Button"
+        }
+
     async def async_press(self) -> None:
         """Handle the button press."""
         _LOGGER.debug("Nikobus Button Pressed")
