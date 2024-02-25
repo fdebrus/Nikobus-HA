@@ -66,4 +66,4 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Handle the button press."""
         _LOGGER.debug("Nikobus Button Pressed")
-        # await self._nikobus.send_command("your_command_here")
+        await self._dataservice.send_button_press(self._address)
