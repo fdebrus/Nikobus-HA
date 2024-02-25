@@ -17,18 +17,21 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     """Set up a config entry."""
     # Getting data service from Home Assistant data using entry ID
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-    entities = []
 
-    # Iterate over dimmer modules
-    for dimmer_module in dataservice.api.json_config_data["dimmer_modules_addresses"]: 
-        description = dimmer_module.get("description")
-        model = dimmer_module.get("model")
-        address = dimmer_module.get("address")
-        channels = dimmer_module["channels"]
-        for i in range(len(channels)):
-            channel_description = channels[i]["description"]
-            # Create NikobusLightEntity instance for each channel
-            entities.append(NikobusLightEntity(hass, dataservice, description, model, address, i, channel_description))
+    # Iteration over dimmer modules and their channels
+    entities = [
+        NikobusLightEntity(
+            hass,
+            dataservice,
+            dimmer_module.get("description"),
+            dimmer_module.get("model"),
+            dimmer_module.get("address"),
+            i,
+            channel["description"],
+        )
+        for dimmer_module in dataservice.api.json_config_data["dimmer_modules_addresses"]
+        for i, channel in enumerate(dimmer_module["channels"])
+    ]
 
     # Add created entities to Home Assistant
     async_add_entities(entities)
@@ -74,11 +77,15 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
         return self._brightness
 
-    # supported_features property
     @property
-    def supported_features(self):
-        """Flag supported features."""
-        return SUPPORT_BRIGHTNESS 
+    def color_mode(self):
+        """Return the color mode of the light."""
+        return "brightness"
+
+    @property
+    def supported_color_modes(self):
+        """Return the supported color modes."""
+        return {"brightness"}
 
     # is_on property
     @property
@@ -97,16 +104,16 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     async def async_turn_on(self, **kwargs):
         """Turn the light on."""
         self._brightness = kwargs.get("brightness", 255)
-        await self._dataservice.turn_on_light(self._address, self._channel, self._brightness)
         self._state = True
-        self.schedule_update_ha_state()
+        await self._dataservice.turn_on_light(self._address, self._channel, self._brightness)
+        self.async_write_ha_state()
 
     # async_turn_off method
     async def async_turn_off(self, **kwargs):
         """Turn the light off."""
-        await self._dataservice.turn_off_light(self._address, self._channel)
         self._state = False
-        self.schedule_update_ha_state()
+        await self._dataservice.turn_off_light(self._address, self._channel)
+        self.async_write_ha_state()
 
     # unique_id property
     @property
