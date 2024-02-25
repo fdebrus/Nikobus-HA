@@ -16,18 +16,21 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     """Set up a config entry."""
     # Getting data service from Home Assistant data using entry ID
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-    entities = []
 
     # Iterate over switch modules
-    for switch_module in dataservice.api.json_config_data["switch_modules_addresses"]: 
-        description = switch_module.get("description")
-        model = switch_module.get("model")
-        address = switch_module.get("address")
-        channels = switch_module["channels"]
-        for i in range(len(channels)):
-            channel_description = channels[i]["description"]
-            # Create NikobusSwitchEntity instance for each channel
-            entities.append(NikobusSwitchEntity(hass, dataservice, description, model, address, i, channel_description))
+    entities = [
+        NikobusSwitchEntity(
+            hass,
+            dataservice,
+            switch_module.get("description"),
+            switch_module.get("model"),
+            switch_module.get("address"),
+            i,
+            channel["description"],
+        )
+        for switch_module in dataservice.api.json_config_data["switch_modules_addresses"]
+        for i, channel in enumerate(switch_module["channels"])
+    ]
 
     # Add created entities to Home Assistant
     async_add_entities(entities)
@@ -40,8 +43,8 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         """Initialize a Nikobus Switch Entity."""
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._state = initial_state
         self._name = channel_description
+        self._state = initial_state
         self._description = description
         self._model = model
         self._address = address
@@ -81,16 +84,16 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     # async_turn_on method
     async def async_turn_on(self):
         """Turn the switch on."""
-        await self._dataservice.turn_on_switch(self._address, self._channel)
         self._state = True
-        self.schedule_update_ha_state()
+        await self._dataservice.turn_on_switch(self._address, self._channel)
+        self.async_write_ha_state()
 
     # async_turn_off method
     async def async_turn_off(self):
         """Turn the switch off."""
-        await self._dataservice.turn_off_switch(self._address, self._channel)
         self._state = False
-        self.schedule_update_ha_state()
+        await self._dataservice.turn_off_switch(self._address, self._channel)
+        self.async_write_ha_state()
 
     # unique_id property
     @property
