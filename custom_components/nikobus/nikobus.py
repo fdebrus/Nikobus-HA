@@ -131,28 +131,10 @@ class Nikobus:
             _LOGGER.error("Error in event listener: %s", str(e), exc_info=True)
 
     async def handle_message(self, message):
-        _button_command_prefix = '#N'  # The prefix to look for
+        _button_command_prefix = '#N'  # The prefix of a button
         if message.startswith(_button_command_prefix):
-            # Extract the address from the message starting from the 2nd character to the end
-            address = message[2:8]  
-            _LOGGER.info(f"Found a button: {message} at {address}")
-            _LOGGER.info("Current button %s", self.json_button_data)
-            new_button = {
-                "description": f"Nikobus Button #N{address}",
-                "address": address,  # Use the extracted address
-                "impacted_module": [
-                    {"address": "", "group": ""}
-                ]
-            }
-            # Check if a button with the same address already exists
-            address_exists = any(button['address'] == new_button['address'] for button in self.json_button_data['nikobus_button'])
-            if not address_exists:
-                self.json_button_data["nikobus_button"].append(new_button)
-                # async_dispatcher_send(self._hass, 'nikobus_new_button_added', new_button)
-                _LOGGER.info("New button added. %s", self.json_button_data)
-                await self.write_json_button_data()
-            else:
-                _LOGGER.info("A button with the same address already exists.")
+            address = message[2:8] 
+            await button_discovery(address)
         else:
             _LOGGER.info(f"Posting message: {message}")
             await self._response_queue.put(message)
@@ -198,6 +180,31 @@ class Nikobus:
     
         # Return True to indicate successful refresh
         return True
+    
+    async def button_discovery(self,address):
+        _LOGGER.debug(f"Found a button: {message} at {address}")
+        _LOGGER.debug("Current button %s", self.json_button_data)
+        new_button = {
+            "description": f"Nikobus Button #N{address}",
+            "address": address,  # Use the extracted address
+            "impacted_module": [
+                {"address": "", "group": ""}
+            ]
+        }
+        # Check if a button with the same address already exists
+        address_exists = any(button['address'] == new_button['address'] for button in self.json_button_data['nikobus_button'])
+        if not address_exists:
+            self.json_button_data["nikobus_button"].append(new_button)
+            # async_dispatcher_send(self._hass, 'nikobus_new_button_added', new_button)
+            _LOGGER.debug("New button added. %s", self.json_button_data)
+            await self.write_json_button_data()
+        else:
+            for button in self.json_button_data['nikobus_button']:
+                if button['address'] == address:
+                    await self.get_output_state(address, button['impacted_module'][0]['group'])
+                    break
+            await self.get_output_state(address,group)
+            _LOGGER.debug("A button with the same address already exists.")
 
     async def send_command(self, command):
         try:
