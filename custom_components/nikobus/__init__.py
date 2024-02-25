@@ -30,11 +30,15 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # Listen for new button added events
+    async def button_pressed_callback(button_info):
+        """Handle the button pressed event."""
+        _LOGGER.info(f"Button pressed: {button_info}")
+
+    # Connect to the signal for button press
     async_dispatcher_connect(
         hass,
-        'nikobus_new_button_added',
-        lambda new_button: async_add_entities(NikobusButton(CoordinatorEntity, ButtonEntity), True)
+        'nikobus_button_pressed',
+        button_pressed_callback
     )
 
     return True
