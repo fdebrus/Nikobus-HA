@@ -94,7 +94,7 @@ class Nikobus:
         result_dict = {}
     
         # Iterate over module types
-        for module_type in json_data:
+        for module_type in self.json_config_data:
             # Iterate over entries in the current module type
             for entry in self.json_config_data.get(module_type, []):
                 # Get the actual address from the entry
