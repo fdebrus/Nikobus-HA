@@ -58,6 +58,10 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             "manufacturer": BRAND,
             "model": "Push Button"
         }
+    @property
+    def extra_state_attributes(self) -> dict[str, str] | None:
+        """Return extra attributes."""
+        return {"impacted_module": f"{self.impacted_module_address}_{self.impacted_module_group}"}
 
     async def async_press(self) -> None:
         """Handle the button press."""
