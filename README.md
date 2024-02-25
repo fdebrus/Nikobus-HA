@@ -8,7 +8,7 @@
 
 **beta**
 - cover/shutter support, (open/stop/close) are working well. Now I'm working to introduce an "operation_time" definition by channel. So HA can simulate cover position based on execution time and use set_postion for covers.
-- buttons support, when a wall switch is pressed, it is discovered by the integration and registered in the nikobus_button_config.json file
+- buttons support, when a wall switch is pressed, it is discovered by the integration and registered in the nikobus_button_config.json file. Still need to trigger associated module / group refresh when pressed. (WIP)
 
 **BREAKING CHANGES**
 The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
