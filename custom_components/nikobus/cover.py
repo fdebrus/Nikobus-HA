@@ -131,13 +131,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._nikobus_command = True
             await self.async_stop_cover()
 
-    def update_cover_state(self, is_opening, is_closing, is_open):
-        """Update the cover's state."""
-        self._is_opening = is_opening
-        self._is_closing = is_closing
-        self._is_open = is_open
-        self.schedule_update_ha_state()
-
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
         _LOGGER.debug("OPEN COVER")
