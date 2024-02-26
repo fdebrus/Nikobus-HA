@@ -15,7 +15,7 @@ alias: "React to Nikobus Button Push"
 description: "Perform actions when a Nikobus button is reported as pushed"
 trigger:
   - platform: event
-    event_type: nikobus_button_pushed
+    event_type: nikobus_button_pressed
     event_data:
       address: "specific_button_address"  # Optional: Specify if you want to react to a specific button
 action:
