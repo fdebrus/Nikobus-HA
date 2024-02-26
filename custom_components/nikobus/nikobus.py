@@ -22,8 +22,6 @@ from .helpers import (
     calculate_group_number
 )
 
-from homeassistant.helpers.dispatcher import async_dispatcher_send
-
 _LOGGER = logging.getLogger(__name__)
 
 class Nikobus:
@@ -191,7 +189,7 @@ class Nikobus:
         for button in self.json_button_data['nikobus_button']:
             if button['address'] == address:
                 # Button is configured, handle the press and send event to HA
-                async_dispatcher_send(self._hass, 'nikobus_button_pressed', {'address': address})
+                self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
                 for module in button['impacted_module']:
                     impacted_module_address = module['address']
                     impacted_group = module['group']
