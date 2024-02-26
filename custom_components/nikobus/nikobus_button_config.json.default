@@ -6,6 +6,17 @@
             "impacted_module": [
                 {"address": "0E6C", "group": "1"}
             ]
+        },
+        {
+            "description": "BT_GF_Laundry_Shutter_Open",
+            "address": "063D06",
+            "impacted_module": [
+                {
+                    "address": "9105",
+                    "group": "6",
+                    "command": "open"
+                }
+            ]
         }
     ]
 }
