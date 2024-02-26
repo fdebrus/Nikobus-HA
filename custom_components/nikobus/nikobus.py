@@ -181,31 +181,41 @@ class Nikobus:
         # Return True to indicate successful refresh
         return True
     
-    async def button_discovery(self,address):
+    async def button_discovery(self, address):
         _LOGGER.debug(f"Found a button at {address}")
-        _LOGGER.debug("Current button %s", self.json_button_data)
-        new_button = {
-            "description": f"Nikobus Button #N{address}",
-            "address": address,  # Use the extracted address
-            "impacted_module": [
-                {"address": "", "group": ""}
-            ]
-        }
-        # Check if a button with the same address already exists
-        address_exists = any(button['address'] == new_button['address'] for button in self.json_button_data['nikobus_button'])
-        if not address_exists:
+
+        # Flag to check if the button has been handled
+        button_handled = False
+
+        # Iterate over the button configurations
+        for button in self.json_button_data['nikobus_button']:
+            if button['address'] == address:
+                # Button is configured, handle the press and send event to HA
+                async_dispatcher_send(self._hass, 'nikobus_button_pressed', {'address': address})
+                for module in button['impacted_module']:
+                    impacted_module_address = module['address']
+                    impacted_group = module['group']
+                    # Ensure both impacted module address and group are specified
+                    if impacted_module_address and impacted_group:
+                        try:
+                            await self.get_output_state(impacted_module_address, impacted_group)
+                            _LOGGER.debug(f"Handled button press for module {impacted_module_address} in group {impacted_group}.")
+                        except Exception as e:
+                            _LOGGER.error(f"Error handling button press for address {address}: {e}")
+                button_handled = True
+                break
+
+        # If no existing configuration matches the button press, add a new configuration
+        if not button_handled:
+            new_button = {
+                "description": f"Nikobus Button #N{address}",
+                "address": address,
+                "impacted_module": [{"address": "", "group": ""}]  # Placeholder for new configuration
+            }
+            _LOGGER.warning(f"No configuration found for button with address {address}. Adding new configuration.")
             self.json_button_data["nikobus_button"].append(new_button)
-            async_dispatcher_send(self._hass, 'nikobus_button_pressed', new_button)
-            _LOGGER.debug("New button added. %s", self.json_button_data)
             await self.write_json_button_data()
-        else:
-            async_dispatcher_send(self._hass, 'nikobus_button_pressed', {'address': address})
-            for button in self.json_button_data['nikobus_button']:
-                if button['address'] == address:
-                    await self.get_output_state(address, button['impacted_module'][0]['group'])
-                    break
-            await self.get_output_state(address,group)
-            _LOGGER.debug("A button with the same address already exists.")
+            _LOGGER.debug("New button configuration added: %s", new_button)
 
     async def send_command(self, command):
         _LOGGER.debug('----- Nikobus.send_command() enter -----')
