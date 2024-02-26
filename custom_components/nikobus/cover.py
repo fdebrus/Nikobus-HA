@@ -123,13 +123,16 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Handle incoming signal."""
         if message['command'] == 'close':
             self._nikobus_command = True
-            await self.async_close_cover()
+            if self._is_opening or self._is_closing
+                await self.async_stop_cover()
+            else:            
+                await self.async_close_cover()
         if message['command'] == 'open':
             self._nikobus_command = True
-            await self.async_open_cover()
-        if message['command'] == 'close':
-            self._nikobus_command = True
-            await self.async_stop_cover()
+            if self._is_opening or self._is_closing
+                await self.async_stop_cover()
+            else:
+                await self.async_open_cover()
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
