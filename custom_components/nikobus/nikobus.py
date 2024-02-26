@@ -239,7 +239,7 @@ class Nikobus:
             # await self.convert_from_openhab()
             _LOGGER.debug("New button configuration added: %s", new_button)
 
-    def button_press_cover(address, impacted_group, cover_command ):
+    def button_press_cover(self, address, impacted_group, cover_command):
         """Handle button press from Nikobus system for cover"""
         async_dispatcher_send(hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
 
