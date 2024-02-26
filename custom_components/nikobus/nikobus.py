@@ -241,7 +241,7 @@ class Nikobus:
 
     def button_press_cover(self, address, impacted_group, cover_command):
         """Handle button press from Nikobus system for cover"""
-        async_dispatcher_send(hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
+        async_dispatcher_send(self._hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
 
     async def send_command(self, command):
         _LOGGER.debug('----- Nikobus.send_command() enter -----')
