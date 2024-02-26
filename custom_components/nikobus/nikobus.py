@@ -8,6 +8,8 @@ import textwrap
 from pathlib import Path
 import aiofiles
 
+from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
+
 from .helpers import (
     int_to_hex, 
     hex_to_int, 
@@ -75,6 +77,20 @@ class Nikobus:
         # Write the updated data asynchronously
         async with aiofiles.open(button_config_file_path, mode='w') as file:
             await file.write(json.dumps(self.json_button_data, indent=4))
+
+    async def convert_from_openhab(self):
+        openhab_config_file_path = self._hass.config.path("org.openhab.core.thing.Thing.json")
+        async with aiofiles.open(openhab_config_file_path, mode='r') as file:
+            self.json_openhab_button_data = json.loads(await file.read())
+        for key, value in self.json_openhab_button_data.items():
+            if "nikobus:push-button" in key:
+                new_button = {
+                    "description": value["value"]["label"],
+                    "address": value["value"]["configuration"]["address"],
+                    "impacted_module": [{"address": value["value"]["configuration"].get("impactedModules", "N/A"), "group": ""}]
+                }
+                self.json_button_data.setdefault("nikobus_button", []).append(new_button)
+        await self.write_json_button_data()
 
     async def connect(self):
         _LOGGER.debug("----- Nikobus.connect() enter -----")
@@ -193,10 +209,17 @@ class Nikobus:
                 for module in button['impacted_module']:
                     impacted_module_address = module['address']
                     impacted_group = module['group']
+                    if 'command' in module:
+                        cover_command = module['command']
+                        cover_button = True
                     # Ensure both impacted module address and group are specified
                     if impacted_module_address and impacted_group:
                         try:
-                            await self.get_output_state(impacted_module_address, impacted_group)
+                            if cover_button:
+                                await self.button_press_cover(impacted_module_address, impacted_group, cover_command)
+                                cover_button = False
+                            else:
+                                await self.get_output_state(impacted_module_address, impacted_group)
                             _LOGGER.debug(f"Handled button press for module {impacted_module_address} in group {impacted_group}.")
                         except Exception as e:
                             _LOGGER.error(f"Error handling button press for address {address}: {e}")
@@ -213,7 +236,12 @@ class Nikobus:
             _LOGGER.warning(f"No configuration found for button with address {address}. Adding new configuration.")
             self.json_button_data["nikobus_button"].append(new_button)
             await self.write_json_button_data()
+            # await self.convert_from_openhab()
             _LOGGER.debug("New button configuration added: %s", new_button)
+
+    def button_press_cover(address, impacted_group, cover_command ):
+        """Handle button press from Nikobus system for cover"""
+        async_dispatcher_send(hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
 
     async def send_command(self, command):
         _LOGGER.debug('----- Nikobus.send_command() enter -----')
@@ -260,9 +288,9 @@ class Nikobus:
     async def get_output_state(self, address, group):
         _LOGGER.debug('----- NikobusApi.get_output_state() enter -----')
         _LOGGER.debug(f'address = {address}, group = {group}')
-        if group == 1:
+        if int(group) == 1:
             cmd = make_pc_link_command(0x12, address)
-        elif group == 2:
+        elif int(group) == 2:
             cmd = make_pc_link_command(0x17, address)
         else:
             raise ValueError("Invalid group number")
@@ -271,9 +299,9 @@ class Nikobus:
     async def set_output_state(self, address, group_number, value):
         _LOGGER.debug('----- NikobusApi.setOutputState() enter -----')
         _LOGGER.debug(f'address = {address}, group = {group_number}, value = {value}')
-        if group_number == 1:
+        if int(group_number) == 1:
             cmd = make_pc_link_command(0x15, address, value + 'FF')
-        elif group_number == 2:
+        elif int(group_number) == 2:
             cmd = make_pc_link_command(0x16, address, value + 'FF')
         else:
             raise ValueError("Invalid group number")
