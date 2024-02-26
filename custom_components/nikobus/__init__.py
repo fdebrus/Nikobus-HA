@@ -5,7 +5,6 @@ from homeassistant import config_entries, core
 from homeassistant.components import switch, light, cover, button
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN
 from .nikobus import Nikobus
@@ -29,17 +28,6 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
     await coordinator.async_config_entry_first_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    async def button_pressed_callback(button_info):
-        """Handle the button pressed event."""
-        _LOGGER.info(f"Button pressed: {button_info}")
-
-    # Connect to the signal for button press
-    async_dispatcher_connect(
-        hass,
-        'nikobus_button_pressed',
-        button_pressed_callback
-    )
 
     return True
 
