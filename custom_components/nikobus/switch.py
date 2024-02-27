@@ -71,17 +71,15 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     # is_on property
     @property
     def is_on(self):
-        _LOGGER.debug("SWITCH ISON")
-        # """Return the current state of the switch."""
-        # self._state = self._dataservice.get_switch_state(self._address, self._channel)
+        """Return the current state of the switch."""
+        self._state= bool(self._dataservice.get_switch_state(self._address, self._channel))
         return self._state
 
     # Update method
     def update(self):
-        _LOGGER.debug("SWITCH UPDATE")
-        """Update the state of the switch."""
-        self._state = self._dataservice.get_output_state(self._address, self._channel)
-        return self._state
+        """Update the state of the light."""
+        output_state = self._dataservice.get_output_state(self._address, self._channel)
+        self._state = bool(output_state['is_on'])
 
     # async_turn_on method
     async def async_turn_on(self):
