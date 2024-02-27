@@ -8,6 +8,8 @@ import textwrap
 from pathlib import Path
 import aiofiles
 
+from .const import DOMAIN
+
 from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
 
 from .helpers import (
@@ -40,6 +42,8 @@ class Nikobus:
         self.json_state_data = {}
         self.json_button_data = {}
         self._nikobus_writer_lock = asyncio.Lock()
+        self._command_queue = asyncio.Queue()
+        self._processing_lock = asyncio.Lock()
 
     @classmethod
     async def create(cls, hass, host: str, port: str):
@@ -261,9 +265,9 @@ class Nikobus:
         _LOGGER.debug(f'command = {command}')
         _wait_command_ack = '$05' + command[3:5]
         try:
-            async with self._nikobus_writer_lock:
-                self._nikobus_writer.write(command.encode() + b'\r')
-                await self._nikobus_writer.drain()
+            # async with self._nikobus_writer_lock: 2 to move
+            self._nikobus_writer.write(command.encode() + b'\r')
+            await self._nikobus_writer.drain()
             ack_found = False
             while True:
                 try:
@@ -289,24 +293,27 @@ class Nikobus:
         _LOGGER.debug('----- NikobusApi.get_output_state() enter -----')
         _LOGGER.debug(f'address = {address}, group = {group}')
         if int(group) == 1:
-            cmd = make_pc_link_command(0x12, address)
+            command = make_pc_link_command(0x12, address)
         elif int(group) == 2:
-            cmd = make_pc_link_command(0x17, address)
+            command = make_pc_link_command(0x17, address)
         else:
             raise ValueError("Invalid group number")
-        return await self.send_command_get_answer(cmd)
+        return await self.send_command_get_answer(command)
 
     async def set_output_state(self, address, group_number, value):
         _LOGGER.debug('----- NikobusApi.setOutputState() enter -----')
         _LOGGER.debug(f'address = {address}, group = {group_number}, value = {value}')
         if int(group_number) == 1:
-            cmd = make_pc_link_command(0x15, address, value + 'FF')
+            command = make_pc_link_command(0x15, address, value + 'FF')
         elif int(group_number) == 2:
-            cmd = make_pc_link_command(0x16, address, value + 'FF')
+            command = make_pc_link_command(0x16, address, value + 'FF')
         else:
             raise ValueError("Invalid group number")
-        _LOGGER.debug('SET OUTPUT STATE command %s',cmd)
-        await self.send_command(cmd)
+        _LOGGER.debug('SET OUTPUT STATE command %s',command)
+        #await self.send_command(command) TRY TRY TRY
+        #await self.send_command_get_answer(command)
+        _LOGGER.debug('CALLING THE QUEUE')
+        await self.queue_command(command)
 
     async def set_value_at_address(self, address, channel):
         channel += 1
@@ -388,3 +395,18 @@ class Nikobus:
         end_of_transmission = "\r#E1";
         await self.send_command(start_of_transmission + address + end_of_transmission)
 #### 
+
+    async def queue_command(self, command):
+        _LOGGER.debug('***command in queue %s', command)
+        await self._command_queue.put(command)
+    
+    async def process_commands(self):
+        while True:
+            command = await self._command_queue.get()
+            _LOGGER.debug('***command queue execute %s', command)
+            try:
+                await self.send_command_get_answer(command)
+            except Exception as e:
+                _LOGGER.debug(f"QUEUE TASK Failed to execute commands: {e}")
+            self._command_queue.task_done()
+
