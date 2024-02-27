@@ -44,10 +44,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         Returns:
         - The state of the output.
         """
-        _state = self.api.get_output_state(address, channel)
+        _state = await self.api.get_output_state(address, channel)
+
+        # Convert the state from hexadecimal to an integer
+        state_int = int(_state, 16)
         
-        _LOGGER.debug("get_output_state:%s %s %s",address, channel, _state)
-        return _state
+        # Determine is_on and brightness based on the state value
+        is_on = state_int != 0
+        brightness = state_int if state_int != 255 else 255  # 255 is full brightness
+
+        _LOGGER.debug(f'*** coordinator get_output_state: address: {address} channel: {channel} is_on: {self._is_on} brightness: {self._brightness}')
+
+        return {'is_on': is_on, 'brightness': brightness}
 ####
 
 #### SWITCHES
