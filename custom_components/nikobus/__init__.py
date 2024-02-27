@@ -1,10 +1,11 @@
 """The Nikobus integration."""
 import logging
+import asyncio
 
 from homeassistant import config_entries, core
+from homeassistant.core import HomeAssistant
 from homeassistant.components import switch, light, cover, button
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
 from .nikobus import Nikobus
@@ -29,6 +30,17 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    try:
+        command_processor_task = hass.loop.create_task(
+            api.process_commands()
+        )
+    except Exception as e:
+        _LOGGER.debug(f"QUEUE TASK Failed to process commands: {e}")
+
+    return True
+
+async def async_unload_entry(hass: HomeAssistant, entry):
+    """Unload a config entry."""
     return True
 
 async def async_setup(hass: core.HomeAssistant, config: dict) -> bool:
