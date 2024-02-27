@@ -91,11 +91,13 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     @property
     def is_on(self):
         """Return the current state of the light."""
-        self._state = self._dataservice.get_light_state(self._address, self._channel)
+        _LOGGER.debug(f"LIGHT ISON {self._address} {self._channel}")
+        # self._state = self._dataservice.get_light_state(self._address, self._channel)
         return self._state
 
     # update method
     def update(self):
+        _LOGGER.debug("LIGHT UPDATE")
         """Update the state of the light."""
         self._state = self._dataservice.get_output_state(self._address, self._channel)
         return self._state
