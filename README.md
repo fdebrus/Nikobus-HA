@@ -23,6 +23,38 @@ action:
     entity_id: light.example_light
 ```
 
+If you want to add your shutters to HomeKit, I had to come up with the following.
+As time allow, I will look at why it's not working directly from the integration.
+
+```
+ - platform: template
+    covers:
+      virtual_<yourshutter>:
+        device_class: shutter
+        friendly_name: "<yourshutter>"
+        position_template: "{{ state_attr('cover.<yourshutter>', 'current_position') | int(100) }}"
+        open_cover:
+          service: cover.open_cover
+          data: {}
+          target:
+            entity_id: cover.<yourshutter>
+        close_cover:
+          service: cover.close_cover
+          data: {}
+          target:
+            entity_id: cover.<yourshutter>
+        stop_cover:
+          service: cover.stop_cover
+          data: {}
+          target:
+            entity_id: cover.<yourshutter>
+        set_cover_position:
+          service: cover.set_cover_position
+          data:
+            position: "{{position}}"
+            entity_id: cover.<yourshutter>
+```
+
 **BREAKING CHANGES**
 The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
 
