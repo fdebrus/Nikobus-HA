@@ -48,7 +48,7 @@ class Nikobus:
         self.json_button_data = {}
         self._nikobus_writer_lock = asyncio.Lock()
         self._command_queue = asyncio.Queue()
-        self._processing_lock = asyncio.Lock()
+        self._button_press_lock = asyncio.Lock()
 
     @classmethod
     async def create(cls, hass, host: str, port: str):
@@ -67,35 +67,27 @@ class Nikobus:
             # Load JSON data
             self.json_config_data = json.loads(await file.read())
 
+#### CONNECT NIKOBUS
     async def connect(self):
-        _LOGGER.debug("----- Nikobus.connect() enter -----")
         try:
-            # Attempt to establish a connection
             self._nikobus_reader, self._nikobus_writer = await asyncio.open_connection(self._host, self._port)
-            _LOGGER.debug("Connection established, starting event listener...")
             self._event_listener_task = asyncio.create_task(self.listen_for_events())
         except OSError as err:
-            # Handle connection failure
-            _LOGGER.error(f"Unable to connect to {self._host} on port {self._port}: {err}")
+            _LOGGER.error(f"Connection error to {self._host}:{self._port} - {err}")
             return
-        # Define commands to be sent after connection
         commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
-        # Send each command
         for command in commands:
             try:
                 self._nikobus_writer.write(command.encode())
                 await self._nikobus_writer.drain()
             except OSError as err:
-                # Handle payload sending failure
-                _LOGGER.error(f"Unable to send payload {command!r} to {self._host} on port {self._port}: {err}")
+                _LOGGER.error(f"Send error {command!r} to {self._host}:{self._port} - {err}")
                 return
         try:
-            # Wait for a response from the queue with a timeout
-            raw_response = await asyncio.wait_for(self._response_queue.get(), timeout=5)
-            _LOGGER.debug(f"Connected with {raw_response}")
+            raw_response = await asyncio.wait_for(self._response_queue.get(), timeout=10)
+            _LOGGER.error(f"Connection status {raw_response}")
         except asyncio.TimeoutError:
-            # Handle timeout waiting for a response
-            _LOGGER.warning(f"Timeout (5 second(s)) waiting for a response after {self._host} on port {self._port}")
+            _LOGGER.warning(f"Timeout waiting for response from {self._host}:{self._port}")
 
 #### REFRESH DATA FROM THE NIKOBUS
     async def refresh_nikobus_data(self):
@@ -129,22 +121,36 @@ class Nikobus:
         _LOGGER.debug('----- Entering send_command_get_answer() -----')
         _LOGGER.debug(f'*** Command: {command} Address: {address}')
         _wait_command_ack = '$05' + command[3:5]
-        _wait_command_answer = '$1C' + address[2:] + address[:2] if address else None
+        _wait_command_answer = '$1C' + address[2:] + address[:2]
+        _LOGGER.debug(f'*** Waiting for ACK: {_wait_command_ack} ANSWER: {_wait_command_answer}')
+        result_dict = {}
         async with self._nikobus_writer_lock:
             self._nikobus_writer.write(command.encode() + b'\r')
             await self._nikobus_writer.drain()
         try:
             while True:
-                message = await asyncio.wait_for(self._response_queue.get(), timeout=10)
+                message = await asyncio.wait_for(self._response_queue.get(), timeout=5)
+                _LOGGER.debug(f'*** Message in queue {message}')
+                if not message:
+                    _LOGGER.warning("Nothing to read from the queue anymore")
+                    break
                 if _wait_command_ack in message:
                     _LOGGER.debug(f'*** ACK found: {_wait_command_ack} in message: {message}')
-                    if _wait_command_answer and _wait_command_answer in message:
+                    if _wait_command_answer in message:
                         _LOGGER.debug(f'*** ANSWER found: {_wait_command_answer} in message: {message}')
-                        return message[14:26]
-                    elif not address:
-                        return message
+                        state = message[message.find(_wait_command_answer) + len(_wait_command_answer) + 2 :][:12]
+                        return state
         except asyncio.TimeoutError:
             _LOGGER.warning('Timeout waiting for send_command_get_answer response')
+        return None
+
+#### SEND A COMMAND
+    async def send_command(self, command):
+        _LOGGER.debug('----- Entering send_command -----')
+        _LOGGER.debug(f'*** Command: {command}')
+        async with self._nikobus_writer_lock:
+            self._nikobus_writer.write(command.encode() + b'\r')
+            await self._nikobus_writer.drain()
         return None
 
 #### SET's AND GET's
@@ -156,7 +162,8 @@ class Nikobus:
             command = make_pc_link_command(command_code, address)
         else:
             _LOGGER.error(f'get_output_state - Invalid group number {group}')
-        return await self.send_command_get_answer(command, address)
+        result = await self.send_command_get_answer(command, address)
+        return result
 
     async def set_output_state(self, address, group_number, value):
         _LOGGER.debug('----- NikobusApi.setOutputState() enter -----')
@@ -167,7 +174,7 @@ class Nikobus:
         else:
             _LOGGER.error(f'set_out_state - Invalid group number {group_number}')
         _LOGGER.debug(f'*** set_out_state command {command}')
-        await self.queue_command(command, None)
+        await self.queue_command(command)
 
     async def set_value_at_address(self, address, channel):
         channel += 1
@@ -185,41 +192,39 @@ class Nikobus:
         _LOGGER.debug(f'Shutters - Setting value {new_value} for {address}')
         await self.set_output_state(address, 1, new_value)
 
-#### QUEUE FOR COMMANDS 
-    async def queue_command(self, command, address):
+#### QUEUE FOR COMMANDS
+    async def queue_command(self, command):
         _LOGGER.debug(f'*** command in queue {command}')
-        await self._command_queue.put((command, address))
+        await self._command_queue.put((command))
 
     async def process_commands(self):
         while True:
-            command, address = await self._command_queue.get()
-            _LOGGER.debug(f'*** Command task execute {command} for address {address}')
+            command = await self._command_queue.get()
+            _LOGGER.debug(f'*** Command task execute {command}')
             try:
-                await self.send_command_get_answer(command, address)
+                result = await self.send_command(command)
             except Exception as e:
-                _LOGGER.debug(f"*** Command task failed to execute command: {e} for address {address}")
+                _LOGGER.debug(f"*** Command task failed to execute command: {e}")
             self._command_queue.task_done()
 
 #### LISTENER FOR NIKOBUS EVENTS
     async def listen_for_events(self):
-        _LOGGER.debug("Event Listener started")
-        delimiter = b'\r'
-        buffer = b''  # Initialize a buffer for accumulating data
+        _LOGGER.debug("*** Nikobus Event Listener started")
+        _last_message = ""
         try:
             while True:
                 try:
                     # Attempt to read data
-                    data = await asyncio.wait_for(self._nikobus_reader.read(64), timeout=5)
+                    data = await asyncio.wait_for(self._nikobus_reader.readuntil(separator=b'\r'), timeout=10)                    
                     if not data:
                         _LOGGER.warning("Nikobus connection closed")
-                        break  # Exit the loop if no data is read
-                    # Append new data to the buffer
-                    buffer += data
-                    # Process complete messages in the buffer
-                    while delimiter in buffer:
-                        message, buffer = buffer.split(delimiter, 1)  # Split on the first delimiter
-                        message = message.decode('utf-8').strip()
+                        break
+                    message = data.decode('utf-8')
+                    if message != _last_message:
                         await self.handle_message(message)
+                        _last_message = message
+                    else:
+                        _LOGGER.debug(f"*** Duplicate message received consecutively; ignoring {message}")
                 except asyncio.TimeoutError:
                     _LOGGER.debug("*** Read operation timed out. Waiting for next data...")
         except asyncio.CancelledError:
@@ -228,13 +233,12 @@ class Nikobus:
             _LOGGER.error("Error in event listener: %s", str(e), exc_info=True)
 
     async def handle_message(self, message):
+        await self._response_queue.put(message)
         _button_command_prefix = '#N'  # The prefix of a button
         if message.startswith(_button_command_prefix):
-            address = message[2:8] 
-            await self.button_discovery(address)
-        else:
-            _LOGGER.debug(f"*** Posting message: {message}")
-            await self._response_queue.put(message)
+            async with self._button_press_lock:
+                address = message[2:8]
+                await self.button_discovery(address)
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
@@ -324,16 +328,38 @@ class Nikobus:
 
     async def process_button_modules(self, button):
         """Process each module impacted by a button press."""
+        button_description = button.get('description')
+        _LOGGER.debug(f'*** Received {button_description} press')
         for module in button.get('impacted_module', []):
             impacted_module_address = module.get('address')
             impacted_group = module.get('group')
+            _LOGGER.debug(f'*** Getting status for module {impacted_module_address} for group {impacted_group}')
             if not (impacted_module_address and impacted_group):
                 continue
             try:
                 if 'command' in module:
-                    await self.button_press_cover(impacted_module_address, impacted_group, module['command'])
+                    self.button_press_cover(impacted_module_address, impacted_group, module['command'])
                 else:
-                    await self.get_output_state(impacted_module_address, impacted_group)
-                _LOGGER.debug(f'Handled button press for module {impacted_module_address} in group {impacted_group}')
+                    group_state = await self.get_output_state(impacted_module_address, impacted_group)
+                    _LOGGER.debug(f'*** Status {group_state}')
+                    self.update_json(impacted_module_address, int(impacted_group), group_state)
             except Exception as e:
-                _LOGGER.error(f'Error handling button press for address {address}: {e}')
+                _LOGGER.error(f'Error handling button press for address {impacted_module_address}: {e}')
+
+    def update_json(self, address, impacted_group, update_data):
+        _LOGGER.debug(f"*** Update JSON address {address} impacted_group {impacted_group} update_data {update_data}")
+        # Split the update_data into pairs of two characters each
+        update_values = [update_data[i:i+2] for i in range(0, len(update_data), 2)]
+        # Depending on the impacted_group, update the first or last 6 values
+        if impacted_group == 1:
+            start_index = 0
+        elif impacted_group == 2:
+            start_index = len(self.json_state_data[address]) - 6
+        else:
+            _LOGGER.debug(f"*** Invalid impacted_group value. Must be 1 or 2.")
+        _LOGGER.debug(f"*** ORIGINAL JSON address {self.json_state_data[address]}")
+        # Update the selected part of the JSON
+        for i, value in enumerate(update_values):
+            if start_index + i < len(self.json_state_data[address]):
+                self.json_state_data[address][start_index + i] = value
+        _LOGGER.debug(f"*** UPDATED JSON address {self.json_state_data[address]}")
