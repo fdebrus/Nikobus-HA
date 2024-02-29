@@ -76,9 +76,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         return self._state
 
     # Update method
-    def update(self):
+    async def update(self):
         """Update the state of the light."""
-        output_state = self._dataservice.get_output_state(self._address, self._channel)
+        output_state = await self._dataservice.get_output_state(self._address, self._channel)
         self._state = bool(output_state['is_on'])
 
     # async_turn_on method
