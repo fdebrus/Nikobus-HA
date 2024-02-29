@@ -9,8 +9,10 @@ from pathlib import Path
 import aiofiles
 
 from .const import DOMAIN
+UPDATE_SIGNAL = "update_signal"
 
 from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
+from homeassistant.helpers.entity_registry import async_get
 
 from .helpers import (
     int_to_hex, 
@@ -180,7 +182,7 @@ class Nikobus:
         channel += 1
         group_number = calculate_group_number(channel)
         values = self.json_state_data[address]
-        _LOGGER.debug(f'*** New json for address {self.json_state_data[address]}')
+        _LOGGER.debug(f'*** set_value_at_address: new json for address {self.json_state_data[address]}')
         start_index = 0 if group_number == 1 else 6
         new_value = ''.join(values[i] for i in range(start_index, start_index + 6))
         _LOGGER.debug(f'*** Setting value {new_value} for {address} {channel}')
@@ -283,6 +285,10 @@ class Nikobus:
         """Close the cover."""
         await self.set_value_at_address_shutter(address, channel, '02')
 
+    async def button_press_cover(self, address, impacted_group, cover_command):
+        """Handle button press from Nikobus system for cover"""
+        await async_dispatcher_send(self._hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
+
 #### BUTTONS
     async def load_json_button_data(self):
         # Define the JSON config file path
@@ -300,10 +306,6 @@ class Nikobus:
 
     async def send_button_press(self, address) -> None:
         await self.queue_command(f'#N{address}\r#E1', address)
-
-    def button_press_cover(self, address, impacted_group, cover_command):
-        """Handle button press from Nikobus system for cover"""
-        async_dispatcher_send(self._hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
 
     async def button_discovery(self, address):
         _LOGGER.debug(f"*** Discovering button at {address}")
@@ -341,12 +343,12 @@ class Nikobus:
                     self.button_press_cover(impacted_module_address, impacted_group, module['command'])
                 else:
                     group_state = await self.get_output_state(impacted_module_address, impacted_group)
-                    _LOGGER.debug(f'*** Status {group_state}')
-                    self.update_json(impacted_module_address, int(impacted_group), group_state)
+                    await self.update_json(impacted_module_address, int(impacted_group), group_state)
+                    await self.refresh_entities(impacted_module_address, int(impacted_group))
             except Exception as e:
                 _LOGGER.error(f'Error handling button press for address {impacted_module_address}: {e}')
 
-    def update_json(self, address, impacted_group, update_data):
+    async def update_json(self, address, impacted_group, update_data):
         _LOGGER.debug(f"*** Update JSON address {address} impacted_group {impacted_group} update_data {update_data}")
         # Split the update_data into pairs of two characters each
         update_values = [update_data[i:i+2] for i in range(0, len(update_data), 2)]
@@ -363,3 +365,12 @@ class Nikobus:
             if start_index + i < len(self.json_state_data[address]):
                 self.json_state_data[address][start_index + i] = value
         _LOGGER.debug(f"*** UPDATED JSON address {self.json_state_data[address]}")
+
+    async def refresh_entities(self, impacted_module_address, impacted_group):
+        if impacted_group == 1:
+            values_range = range(0, 6)  # Will generate 0, 1, 2, 3, 4, 5
+        elif impacted_group == 2:
+            values_range = range(6, 12)  # Will generate 6, 7, 8, 9, 10, 11
+        for value in values_range:
+            _LOGGER.debug(f"AAA sending refresh request on {UPDATE_SIGNAL}_{impacted_module_address}{value}")
+            async_dispatcher_send(self._hass, f"{UPDATE_SIGNAL}_{impacted_module_address}{value}")
