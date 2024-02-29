@@ -218,6 +218,7 @@ class Nikobus:
                 try:
                     # Attempt to read data
                     data = await asyncio.wait_for(self._nikobus_reader.readuntil(separator=b'\r'), timeout=10)                    
+                    # data = await asyncio.wait_for(self._nikobus_reader.read(64), timeout=10)
                     if not data:
                         _LOGGER.warning("Nikobus connection closed")
                         break
@@ -235,12 +236,13 @@ class Nikobus:
             _LOGGER.error("Error in event listener: %s", str(e), exc_info=True)
 
     async def handle_message(self, message):
-        await self._response_queue.put(message)
         _button_command_prefix = '#N'  # The prefix of a button
         if message.startswith(_button_command_prefix):
             async with self._button_press_lock:
                 address = message[2:8]
                 await self.button_discovery(address)
+        else:
+            await self._response_queue.put(message)
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
@@ -343,6 +345,7 @@ class Nikobus:
                     self.button_press_cover(impacted_module_address, impacted_group, module['command'])
                 else:
                     group_state = await self.get_output_state(impacted_module_address, impacted_group)
+                    _LOGGER.debug(f"*** BUTTON PRESS group state {group_state}")
                     await self.update_json(impacted_module_address, int(impacted_group), group_state)
                     await self.refresh_entities(impacted_module_address, int(impacted_group))
             except Exception as e:
