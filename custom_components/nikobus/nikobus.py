@@ -92,31 +92,50 @@ class Nikobus:
             _LOGGER.warning(f"Timeout waiting for response from {self._host}:{self._port}")
 
 #### REFRESH DATA FROM THE NIKOBUS
-    async def refresh_nikobus_data(self):
+    async def refresh_nikobus_data(self, address=None, group=None):
         # Load configuration and button data
         await self.load_json_config_data()
         await self.load_json_button_data()
         result_dict = {}
-        for module_type, entries in self.json_config_data.items():
-            for entry in entries:
-                address = entry.get("address")
-                _LOGGER.debug(f'Refreshing data for module address {address}')
-                # Initialize state string
-                state = ""
-                # Attempt to get state for both groups if needed
-                for group in range(1, 3):
-                    group_state = await self.get_output_state(address=address, group=group) or ""
-                    state += group_state
-                    _LOGGER.debug(f'*** State for group {group}: {group_state}')
-                    # If there are not more than 6 channels, no need to query the second group
-                    if len(entry.get('channels', [])) <= 6:
-                        break
-                # Create state dictionary; assumes state is non-None and divisible by 2 characters
-                state_dict = {index: state[i:i+2] for index, i in enumerate(range(0, len(state), 2))}
-                result_dict[address] = state_dict
+    
+        # Filter for specific address if provided
+        filtered_entries = []
+        if address:
+            for module_type, entries in self.json_config_data.items():
+                for entry in entries:
+                    if entry.get("address") == address:
+                        filtered_entries.append((module_type, entry))
+                        break  # Assumes each address is unique and stops after finding the match
+        else:
+            for module_type, entries in self.json_config_data.items():
+                for entry in entries:
+                    filtered_entries.append((module_type, entry))
+                
+        for module_type, entry in filtered_entries:
+            address = entry.get("address")
+            _LOGGER.debug(f'Refreshing data for module address {address}')
+        
+            # Initialize state string
+            state = ""
+            # Adjusted to handle specific group if provided, else default behavior
+            groups_to_query = [group] if group else range(1, 3)
+        
+            for group in groups_to_query:
+                group_state = await self.get_output_state(address=address, group=group) or ""
+                state += group_state
+                _LOGGER.debug(f'*** State for group {group}: {group_state}')
+                # If there are not more than 6 channels, no need to query the second group (skip if a specific group is requested)
+                if not group and len(entry.get('channels', [])) <= 6:
+                    break
+                
+            # Create state dictionary; assumes state is non-None and divisible by 2 characters
+            state_dict = {index: state[i:i+2] for index, i in enumerate(range(0, len(state), 2))}
+            result_dict[address] = state_dict
+        
         self.json_state_data = result_dict
         _LOGGER.debug(f'JSON state data: {self.json_state_data}')
         return True
+
 
 #### SEND A COMMAND AND GET THE ANSWER
     async def send_command_get_answer(self, command, address):
@@ -212,7 +231,8 @@ class Nikobus:
 #### LISTENER FOR NIKOBUS EVENTS
     async def listen_for_events(self):
         _LOGGER.debug("*** Nikobus Event Listener started")
-        _last_message = ""
+        _last_message = None
+        _last_message_time = None
         try:
             while True:
                 try:
@@ -222,12 +242,19 @@ class Nikobus:
                     if not data:
                         _LOGGER.warning("Nikobus connection closed")
                         break
-                    message = data.decode('utf-8')
-                    if message != _last_message:
-                        await self.handle_message(message)
-                        _last_message = message
-                    else:
-                        _LOGGER.debug(f"*** Duplicate message received consecutively; ignoring {message}")
+                    message = data.decode('utf-8').strip()
+                    current_time = asyncio.get_event_loop().time()
+                    # Check if the message is repeating
+                    if message == _last_message:
+                        _last_message_time = current_time  # Update time for repeating message
+                        continue  # Skip further processing in this iteration
+                    # If there was a last message and it's been some time since it was updated, handle it
+                    if _last_message is not None and current_time - _last_message_time < 2:
+                        await self.handle_message(_last_message)
+                    # Update last message info and handle the current message
+                    _last_message = message
+                    _last_message_time = current_time
+                    await self.handle_message(message)
                 except asyncio.TimeoutError:
                     _LOGGER.debug("*** Read operation timed out. Waiting for next data...")
         except asyncio.CancelledError:
@@ -340,34 +367,15 @@ class Nikobus:
             _LOGGER.debug(f'*** Getting status for module {impacted_module_address} for group {impacted_group}')
             if not (impacted_module_address and impacted_group):
                 continue
-            try:
+            try: 
                 if 'command' in module:
+                    # WIP FOR COVERS 
                     self.button_press_cover(impacted_module_address, impacted_group, module['command'])
                 else:
-                    group_state = await self.get_output_state(impacted_module_address, impacted_group)
-                    _LOGGER.debug(f"*** BUTTON PRESS group state {group_state}")
-                    await self.update_json(impacted_module_address, int(impacted_group), group_state)
-                    await self.refresh_entities(impacted_module_address, int(impacted_group))
+                    await self.refresh_nikobus_data(impacted_module_address, impacted_group)
+                    await self.refresh_entities(impacted_module_address, impacted_group)
             except Exception as e:
                 _LOGGER.error(f'Error handling button press for address {impacted_module_address}: {e}')
-
-    async def update_json(self, address, impacted_group, update_data):
-        _LOGGER.debug(f"*** Update JSON address {address} impacted_group {impacted_group} update_data {update_data}")
-        # Split the update_data into pairs of two characters each
-        update_values = [update_data[i:i+2] for i in range(0, len(update_data), 2)]
-        # Depending on the impacted_group, update the first or last 6 values
-        if impacted_group == 1:
-            start_index = 0
-        elif impacted_group == 2:
-            start_index = len(self.json_state_data[address]) - 6
-        else:
-            _LOGGER.debug(f"*** Invalid impacted_group value. Must be 1 or 2.")
-        _LOGGER.debug(f"*** ORIGINAL JSON address {self.json_state_data[address]}")
-        # Update the selected part of the JSON
-        for i, value in enumerate(update_values):
-            if start_index + i < len(self.json_state_data[address]):
-                self.json_state_data[address][start_index + i] = value
-        _LOGGER.debug(f"*** UPDATED JSON address {self.json_state_data[address]}")
 
     async def refresh_entities(self, impacted_module_address, impacted_group):
         if impacted_group == 1:
