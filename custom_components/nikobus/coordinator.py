@@ -32,7 +32,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             update_method=async_update_data,
         )
 
-
 #### SWITCHES
     def get_switch_state(self, address, channel):
         """
