@@ -101,28 +101,50 @@ class Nikobus:
         for module_type, entries in self.json_config_data.items():
             for entry in entries:
                 address = entry.get("address")
-                # If a specific address is provided and it does not match the current entry, skip this entry
+                # Skip entries that do not match the specific_address, if provided
                 if specific_address and address != specific_address:
                     continue
                 _LOGGER.debug(f'Refreshing data for module address {address}')
                 state = ""
-                # Determine the number of groups to query based on the entry's channel count
+                # Determine the number of groups to query
                 channel_count = len(entry.get("channels", []))
                 groups_to_query = [1] if channel_count <= 6 else [1, 2]
-                # If a specific group is provided, only query that group
+                # Limit to specific_group if provided
                 if specific_group:
                     groups_to_query = [specific_group]
                 for group in groups_to_query:
                     group_state = await self.get_output_state(address=address, group=group) or ""
                     _LOGGER.debug(f'*** State for group {group}: {group_state}')
-                    state += group_state
-                if state:
-                    # Create state dictionary; state is non-None and divisible by 2 characters
+                    state += group_state  # Corrected line to concatenate group states
+
+                # If specific_group is defined, merge with existing state data
+                if specific_group and address in self.json_state_data:
+                    existing_state = self.json_state_data[address]
+                    _LOGGER.debug(f'*** Existing state {existing_state}')
+                    # Define start and end indexes based on specific_group
+                    if int(specific_group) == 1:
+                        start_index, end_index = 1, 6
+                    elif int(specific_group) == 2:
+                        start_index, end_index = 7, 12
+                    else:
+                        _LOGGER.warning(f'Invalid specific_group {specific_group} provided.')
+                        continue  # Continue with the next entry
+                
+                    # Update only the specified range
+                    new_state = {index + start_index - 1: state[i:i + 2] for index, i in enumerate(range(0, len(state), 2), start=start_index) if index + start_index - 1 <= end_index}
+                    # Merge and update the state
+                    merged_state = {**existing_state, **new_state}
+                    self.json_state_data[address] = merged_state
+                    _LOGGER.debug(f'*** Updated state {self.json_state_data[address]}')
+                elif state:
+                    # If no specific_group, or address not in existing data, create a new state dict
                     state_dict = {index + 1: state[i:i + 2] for index, i in enumerate(range(0, len(state), 2))}
                     result_dict[address] = state_dict
                 else:
                     _LOGGER.warning(f'No state data received for module address {address}. Skipping state dictionary creation.')
-        self.json_state_data = result_dict
+
+        # Update the entire json_state_data if no specific address or group is provided, or add to it
+        self.json_state_data.update(result_dict)
         _LOGGER.debug(f'JSON state data: {self.json_state_data}')
         return True
 
@@ -238,10 +260,12 @@ class Nikobus:
         try:
             while True:
                 try:
-                    data = await asyncio.wait_for(self._nikobus_reader.read(256), timeout=5)
+                    # data = await asyncio.wait_for(self._nikobus_reader.read(256), timeout=5)
+                    data = await asyncio.wait_for(self._nikobus_reader.readuntil(b'\r'), timeout=5)
                     if not data:
                         _LOGGER.warning("Nikobus connection closed")
                         break
+                    _LOGGER.debug(f"*** Listener - Receiving RAW message: {data}")
                     # Decode and append new data to buffer
                     message = data.decode('utf-8').strip()
                     _LOGGER.debug(f"*** Listener - Receiving message: {message}")
@@ -373,10 +397,10 @@ class Nikobus:
                 _LOGGER.error(f'Error handling button press for address {impacted_module_address}: {e}')
 
     async def refresh_entities(self, impacted_module_address, impacted_group):
-        if impacted_group == 1:
-            values_range = range(0, 6)  # Will generate 0, 1, 2, 3, 4, 5
-        elif impacted_group == 2:
-            values_range = range(6, 12)  # Will generate 6, 7, 8, 9, 10, 11
+        if int(impacted_group) == 1:
+            values_range = range(1, 7)
+        elif int(impacted_group) == 2:
+            values_range = range(7, 13)
         for value in values_range:
             _LOGGER.debug(f"AAA sending refresh request on {UPDATE_SIGNAL}_{impacted_module_address}{value}")
             async_dispatcher_send(self._hass, f"{UPDATE_SIGNAL}_{impacted_module_address}{value}")
