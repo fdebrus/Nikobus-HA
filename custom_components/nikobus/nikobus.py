@@ -235,7 +235,7 @@ class Nikobus:
 
     async def set_value_at_address_shutter(self, address, channel, value):
         original_string = '000000000000'
-        new_value = f"{original_string[:channel*2]}{value}{original_string[channel*2+2:]}"
+        new_value = original_string[:(channel-1)*2] + value + original_string[(channel-1)*2+2:]
         _LOGGER.debug(f'Shutters - Setting value {new_value} for {address}')
         await self.set_output_state(address, 1, new_value)
 
@@ -387,7 +387,8 @@ class Nikobus:
             try: 
                 if 'command' in module:
                     # WIP FOR COVERS 
-                    self.button_press_cover(impacted_module_address, impacted_group, module['command'])
+                    # self.button_press_cover(impacted_module_address, impacted_group, module['command'])
+                    pass
                 else:
                     _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
                     await self.refresh_nikobus_data(impacted_module_address, impacted_group)
