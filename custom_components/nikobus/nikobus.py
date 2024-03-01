@@ -307,7 +307,7 @@ class Nikobus:
             await file.write(json.dumps(self.json_button_data, indent=4))
 
     async def send_button_press(self, address) -> None:
-        await self.queue_command(f'#N{address}\r#E1', address)
+        await self.queue_command(f'#N{address}\r#E1')
 
     async def button_discovery(self, address):
         _LOGGER.debug(f"*** Discovering button at {address}")
