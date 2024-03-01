@@ -6,11 +6,14 @@ from typing import Optional
 from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 # Importing constants
 from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)
+
+UPDATE_SIGNAL = "update_signal"
 
 # Entry setup function
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
@@ -69,12 +72,16 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     def name(self):
         """Return the name of the light."""
         return self._name
+    
+    @property
+    def should_poll(self):
+        """Return True if the entity should be polled for updates."""
+        return True
 
     # brightness property
     @property
     def brightness(self):
         """Return the brightness of the light."""
-        self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
         return self._brightness
 
     @property
@@ -87,19 +94,30 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         """Return the supported color modes."""
         return {"brightness"}
 
-    # is_on property
     @property
     def is_on(self):
         """Return the current state of the light."""
-        self._state = bool(self._dataservice.get_light_state(self._address, self._channel))
         return self._state
 
+    async def async_added_to_hass(self):
+        """Call when the entity is added to hass."""
+        _LOGGER.debug(f"AAA request {UPDATE_SIGNAL}_{self._unique_id}")
+        async_dispatcher_connect(
+            self.hass,
+            f"{UPDATE_SIGNAL}_{self._unique_id}",
+            self._schedule_immediate_update,
+        )
+
+    async def _schedule_immediate_update(self):
+        """Schedule an immediate update."""
+        _LOGGER.debug(f"AAA {UPDATE_SIGNAL}_{self._unique_id} REFRESH")
+        self.async_schedule_update_ha_state(True)
+
     # update method
-    def update(self):
+    async def async_update(self):
         """Update the state of the light."""
-        output_state = self._dataservice.get_output_state(self._address, self._channel)
-        self._state = bool(output_state['is_on'])
-        self._brightness = output_state['brightness']
+        self._state = bool(self._dataservice.get_light_state(self._address, self._channel))
+        self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
 
     # async_turn_on method
     async def async_turn_on(self, **kwargs):
