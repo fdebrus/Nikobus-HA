@@ -33,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             channel["description"],
         )
         for dimmer_module in dataservice.api.json_config_data["dimmer_modules_addresses"]
-        for i, channel in enumerate(dimmer_module["channels"])
+        for i, channel in enumerate(dimmer_module["channels"], start=1)
     ]
 
     # Add created entities to Home Assistant
