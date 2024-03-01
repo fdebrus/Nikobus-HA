@@ -32,7 +32,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             channel["description"],
         )
         for switch_module in dataservice.api.json_config_data["switch_modules_addresses"]
-        for i, channel in enumerate(switch_module["channels"])
+        for i, channel in enumerate(switch_module["channels"], start=1)
     ]
 
     # Add created entities to Home Assistant
