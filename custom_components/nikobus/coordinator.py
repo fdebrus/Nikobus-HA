@@ -13,24 +13,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     """Nikobus custom coordinator."""
 
     def __init__(self, hass: HomeAssistant, api) -> None:
-        """
-        Initialize the coordinator.
+        """Initialize the coordinator."""
+        self.api = api
+        self.hass = hass
 
-        Parameters:
-        - hass: The Home Assistant instance.
-        - api: The API used for communication with Nikobus devices.
-        """
-        # Call the __init__ method of the superclass with necessary parameters
+        async def async_update_data():
+            """Fetch data from Nikobus."""
+            try:
+                return await api.refresh_nikobus_data()
+            except Exception as e:
+                _LOGGER.error("Error fetching Nikobus data: %s", e)
+                raise UpdateFailed(f"Error fetching data: {e}")
+
         super().__init__(
             hass,
             _LOGGER,
             name="Nikobus",
-            update_method=api.refresh_nikobus_data,
-            update_interval=timedelta(seconds=120)
+            update_method=async_update_data,
         )
-        # Store the API instance for later use
-        self.api = api
-        self.hass = hass
+
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
