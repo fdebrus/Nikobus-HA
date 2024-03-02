@@ -1,6 +1,7 @@
 import logging
 import select
 import asyncio
+import ipaddress
 import re
 import os
 import json
@@ -71,8 +72,30 @@ class Nikobus:
 
 #### CONNECT NIKOBUS
     async def connect(self):
+        
+        def validate_string(input_string):
+            try:
+                ipaddress.ip_address(input_string)
+                return "IP"
+            except ValueError:
+                pass
+            serial_pattern = re.compile(r'^/dev/tty(USB|S)\d+$')
+            if serial_pattern.match(input_string):
+                return "Serial"
+            return "Unknown"
+
+        result = validate_string(self._host)
+
         try:
-            self._nikobus_reader, self._nikobus_writer = await asyncio.open_connection(self._host, self._port)
+            if result == "IP":
+                self._nikobus_reader, self._nikobus_writer = await asyncio.open_connection(self._host, self._port)
+                connection_info = f"{self._host}:{self._port}"
+            elif result == "Serial":
+                self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(url='/dev/ttyUSB0', baudrate=9600)
+                connection_info = {self._host}
+            else:
+                _LOGGER.error(f"Invalid connection string: {self.connection_string}")
+                return
             self._event_listener_task = asyncio.create_task(self.listen_for_events())
         except OSError as err:
             _LOGGER.error(f"Connection error to {self._host}:{self._port} - {err}")
@@ -149,7 +172,7 @@ class Nikobus:
         return True
 
 #### SEND A COMMAND AND GET THE ANSWER
-    async def send_command_get_answer(self, command, address):
+    async def send_command_get_answer(self, command, address, max_attempts=3):
         _LOGGER.debug('----- Entering send_command_get_answer() -----')
         _LOGGER.debug(f'*** Command: {command} Address: {address}')
         _wait_command_ack = '$05' + command[3:5]
@@ -157,39 +180,50 @@ class Nikobus:
         ack_received = False
         answer_received = False
         state = None
-    
-        async with self._nikobus_writer_lock:
-            self._nikobus_writer.write(command.encode() + b'\r')
-            await self._nikobus_writer.drain()
-        _LOGGER.debug(f'*** Waiting for ACK: {_wait_command_ack} and then ANSWER: {_wait_command_answer}')
-    
-        end_time = asyncio.get_event_loop().time() + 10  # 10 seconds from now
-        while not (ack_received and answer_received) and asyncio.get_event_loop().time() < end_time:
-            try:
-                # Wait for the next message with a decreasing timeout, up to the end_time
-                timeout = end_time - asyncio.get_event_loop().time()
-                message = await asyncio.wait_for(self._response_queue.get(), timeout=max(timeout, 0.1))
-                _LOGGER.debug(f'*** Message in queue: {message}')
-            
-                # Check for ACK in the message
-                if _wait_command_ack in message and not ack_received:
-                    _LOGGER.debug(f'*** ACK received: {_wait_command_ack}')
-                    ack_received = True
-                
-                # Check for answer in the message; adjust extraction logic as needed
-                if _wait_command_answer in message and not answer_received:
-                    _LOGGER.debug(f'*** ANSWER received: {_wait_command_answer}')
-                    state = message[message.find(_wait_command_answer) + len(_wait_command_answer) + 2:][:12]
-                    answer_received = True
 
-            except asyncio.TimeoutError:
-                _LOGGER.debug('Waiting for next message timed out.')
+        for attempt in range(max_attempts):
+            _LOGGER.debug(f'Attempt {attempt + 1} of {max_attempts}')
+
+            async with self._nikobus_writer_lock:
+                self._nikobus_writer.write(command.encode() + b'\r')
+                await self._nikobus_writer.drain()
+            _LOGGER.debug(f'*** Sent command, waiting for ACK: {_wait_command_ack} and ANSWER: {_wait_command_answer}')
+
+            end_time = asyncio.get_event_loop().time() + 10  # Set timeout for 10 seconds from now
+
+            while asyncio.get_event_loop().time() < end_time:
+                try:
+                    # Calculate remaining time to adjust timeout dynamically
+                    timeout = end_time - asyncio.get_event_loop().time()
+                    message = await asyncio.wait_for(self._response_queue.get(), timeout=max(timeout, 0.1))
+                    _LOGGER.debug(f'*** Message in queue: {message}')
+                
+                    # Check for ACK and answer in the message
+                    if _wait_command_ack in message and not ack_received:
+                        _LOGGER.debug(f'*** ACK received: {_wait_command_ack}')
+                        ack_received = True
+
+                    if _wait_command_answer in message and not answer_received:
+                        _LOGGER.debug(f'*** ANSWER received: {_wait_command_answer}')
+                        state = message[message.find(_wait_command_answer) + len(_wait_command_answer) + 2:][:12]
+                        answer_received = True
+
+                    if ack_received and answer_received:
+                        break  # Exit loop if both ACK and answer have been received
+                
+                except asyncio.TimeoutError:
+                    _LOGGER.debug('Timeout waiting for ACK/Answer.')
+                    break  # Exit while loop to retry sending the command if necessary
+
+            if ack_received and answer_received:
+                _LOGGER.debug('Both ACK and Answer received successfully.')
+                break  # Exit for loop if both ACK and answer have been received
 
         if not ack_received:
-            _LOGGER.debug('ACK not received within timeout period')
+            _LOGGER.debug('ACK not received within timeout period after maximum attempts.')
         if not answer_received:
-            _LOGGER.debug('Answer not received within timeout period')
-    
+            _LOGGER.debug('Answer not received within timeout period after maximum attempts.')
+
         return state
 
 #### SEND A COMMAND
@@ -413,5 +447,5 @@ class Nikobus:
         elif int(impacted_group) == 2:
             values_range = range(7, 13)
         for value in values_range:
-            _LOGGER.debug(f"AAA sending refresh request on {UPDATE_SIGNAL}_{impacted_module_address}{value}")
+            _LOGGER.debug(f"*** Sending refresh request on {UPDATE_SIGNAL}_{impacted_module_address}{value}")
             async_dispatcher_send(self._hass, f"{UPDATE_SIGNAL}_{impacted_module_address}{value}")
