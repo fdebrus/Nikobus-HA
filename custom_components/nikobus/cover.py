@@ -33,7 +33,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             channel["operation_time"],
         )
         for cover_module in dataservice.api.json_config_data["roller_modules_addresses"]
-        for i, channel in enumerate(cover_module["channels"])
+        for i, channel in enumerate(cover_module["channels"], start=1)
     ]
 
     # Add created entities to Home Assistant
@@ -233,6 +233,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self.async_write_ha_state()  # Update the state in Home Assistant
             await asyncio.sleep(1)  # Throttle updates to avoid flooding Home Assistant with too many state changes
 
+        await self._dataservice.update_json_state(self._address, self._channel, '00')
         self._is_opening = False
         self._is_closing = False
         self.async_write_ha_state()
