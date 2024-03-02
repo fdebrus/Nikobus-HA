@@ -30,12 +30,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER,
             name="Nikobus",
             update_method=async_update_data,
+            update_interval=timedelta(seconds=120), 
         )
 
 #### UTILS
     async def update_json_state(self, address, channel, value):
         """Update the status of the cover in the json_state."""
-        await self.api.update_json(address, channel, value)
+        await self.api.update_json_state(address, channel, value)
 ####
 
 #### SWITCHES
