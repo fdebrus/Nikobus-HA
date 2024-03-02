@@ -234,9 +234,11 @@ class Nikobus:
         await self.set_output_state(address, group_number, new_value)
 
     async def set_value_at_address_shutter(self, address, channel, value):
-        original_string = '000000000000'
-        new_value = original_string[:(channel-1)*2] + value + original_string[(channel-1)*2+2:]
-        _LOGGER.debug(f'Shutters - Setting value {new_value} for {address}')
+        state = self.json_state_data[address]
+        current_state = "".join(str(value) for value in self.json_state_data[address].values()) 
+        _LOGGER.debug(f'*** Current states {current_state} for {address}')
+        new_value = current_state[:(channel-1)*2] + value + current_state[(channel-1)*2+2:]
+        _LOGGER.debug(f'*** Shutters - Setting value {new_value} for {address}')
         await self.set_output_state(address, 1, new_value)
 
 #### QUEUE FOR COMMANDS
@@ -260,7 +262,6 @@ class Nikobus:
         try:
             while True:
                 try:
-                    # data = await asyncio.wait_for(self._nikobus_reader.read(256), timeout=5)
                     data = await asyncio.wait_for(self._nikobus_reader.readuntil(b'\r'), timeout=5)
                     if not data:
                         _LOGGER.warning("Nikobus connection closed")
@@ -287,6 +288,12 @@ class Nikobus:
         elif not message.startswith(_button_command_prefix) and not message.startswith(_ignore_answer):
             _LOGGER.debug(f"*** Sending to queue - message: {message}")
             await self._response_queue.put(message)
+
+#### UTILS
+    async def update_json_state(self, address, channel, value):
+        """Update the status in the json_state."""
+        self.json_state_data.setdefault(address, {})[channel] = value
+####
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
@@ -321,14 +328,17 @@ class Nikobus:
 #### COVERS
     async def stop_cover(self, address, channel) -> None:
         """Stop the cover."""
+        await self.update_json_state(address, channel, '00')
         await self.set_value_at_address_shutter(address, channel, '00')
 
     async def open_cover(self, address, channel) -> None:
         """Open the cover."""
+        await self.update_json_state(address, channel, '01')
         await self.set_value_at_address_shutter(address, channel, '01')
 
     async def close_cover(self, address, channel) -> None:
         """Close the cover."""
+        await self.update_json_state(address, channel, '02')
         await self.set_value_at_address_shutter(address, channel, '02')
 
     async def button_press_cover(self, address, impacted_group, cover_command):
