@@ -32,6 +32,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             update_method=async_update_data,
         )
 
+#### UTILS
+    async def update_json_state(self, address, channel, value):
+        """Update the status of the cover in the json_state."""
+        await self.api.update_json(address, channel, value)
+####
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
