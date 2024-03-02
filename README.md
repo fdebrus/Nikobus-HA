@@ -58,6 +58,8 @@ As time allow, I will look at why it's not working directly from the integration
 **BREAKING CHANGES**
 The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
 Always restart from the nikobus_config.json as the template might have changed eg (added "operation_time" for shutters)
+
+
 **Install**
 
 You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
