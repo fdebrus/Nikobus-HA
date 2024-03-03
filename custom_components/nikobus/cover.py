@@ -34,6 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
         )
         for cover_module in dataservice.api.json_config_data["roller_modules_addresses"]
         for i, channel in enumerate(cover_module["channels"], start=1)
+        if not channel["description"].startswith("not_in_use")
     ]
 
     # Add created entities to Home Assistant
