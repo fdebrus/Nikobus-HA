@@ -1,26 +1,25 @@
 """Nikobus Switch entity."""
+
 import logging
 
-# Importing required modules from Home Assistant
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
-# Importing constants
 from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)
 
 UPDATE_SIGNAL = "update_signal"
 
-# Entry setup function
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
-    """Set up a config entry."""
-    # Getting data service from Home Assistant data using entry ID
+    """Set up Nikobus switch entities from a configuration entry.
+    
+    This function initializes switch entities based on the switch modules configured in the Nikobus system.
+    """
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    # Iterate over switch modules
     entities = [
         NikobusSwitchEntity(
             hass,
@@ -36,15 +35,13 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
         if not channel["description"].startswith("not_in_use")
     ]
 
-    # Add created entities to Home Assistant
     async_add_entities(entities)
 
-# NikobusSwitchEntity class
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
-    """Nikobus Switch Entity."""
+    """Represents a Nikobus switch entity within Home Assistant."""
 
     def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, initial_state=False) -> None:
-        """Initialize a Nikobus Switch Entity."""
+        """Initialize the Nikobus Switch Entity with specific parameters."""
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._name = channel_description
@@ -55,10 +52,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         self._channel = channel
         self._unique_id = f"{self._address}{self._channel}"
 
-    # Device info property
     @property
     def device_info(self):
-        """Return the device info."""
+        """Return device information for Home Assistant."""
         return {
             "identifiers": {(DOMAIN, self._address)},
             "name": self._description,
@@ -66,7 +62,6 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
             "model": self._model,
         }
 
-    # Name property
     @property
     def name(self):
         """Return the name of the switch."""
@@ -74,18 +69,16 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     @property
     def should_poll(self):
-        """Return True if the entity should be polled for updates."""
+        """Indicate that the entity should be polled for updates."""
         return True
 
-    # is_on property
     @property
     def is_on(self):
-        """Return the current state of the switch."""
+        """Return the current state of the switch (on/off)."""
         return self._state
 
     async def async_added_to_hass(self):
-        """Call when the entity is added to hass."""
-        _LOGGER.debug(f"AAA request {UPDATE_SIGNAL}_{self._unique_id}")
+        """Register for update signals when the entity is added to Home Assistant."""
         async_dispatcher_connect(
             self.hass,
             f"{UPDATE_SIGNAL}_{self._unique_id}",
@@ -93,42 +86,29 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         )
 
     async def _schedule_immediate_update(self):
-        """Schedule an immediate update."""
+        """Trigger an immediate update of the entity."""
         self.async_schedule_update_ha_state(True)
 
-    async def async_added_to_hass(self):
-        """Call when the entity is added to hass."""
-        async_dispatcher_connect(
-            self.hass,
-            f"{UPDATE_SIGNAL}_{self._unique_id}",
-            self._schedule_immediate_update,
-        )
-
-    async def _schedule_immediate_update(self):
-        """Schedule an immediate update."""
-        self.async_schedule_update_ha_state(True)
-
-    # Update method
     async def async_update(self):
-        """Update the state of the light."""
-        self._state= bool(self._dataservice.get_switch_state(self._address, self._channel))
+        """Fetch new state data for the switch.
+        
+        This is the method that updates the state of the switch entity from the Nikobus system.
+        """
+        self._state = bool(self._dataservice.get_switch_state(self._address, self._channel))
 
-    # async_turn_on method
     async def async_turn_on(self):
         """Turn the switch on."""
         self._state = True
         await self._dataservice.turn_on_switch(self._address, self._channel)
         self.async_write_ha_state()
 
-    # async_turn_off method
     async def async_turn_off(self):
         """Turn the switch off."""
         self._state = False
         await self._dataservice.turn_off_switch(self._address, self._channel)
         self.async_write_ha_state()
 
-    # unique_id property
     @property
     def unique_id(self):
-        """Return the unique ID of the switch."""
+        """Return the unique ID for this switch entity."""
         return self._unique_id
