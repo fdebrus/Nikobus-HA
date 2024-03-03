@@ -32,7 +32,9 @@ Always restart from the nikobus_config.json as the template might have changed e
 
 **Install**
 
-You will need a RS232 to IP bridge for this integration to work (like HF2211 or others), as work complete with this proof of concept, I'm planning to extend to serial connectivity.
+Integration with with a direct attached serial eg /dev/ttyUSB0 (currently available in the dev channel)
+or
+An RS232 to IP bridge (like HF2211 or others).
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/2451b88a-beff-46ce-85bf-f5486a69b37c)
 
@@ -49,7 +51,7 @@ Integration supports
   dimmer_modules_addresses 
   roller_modules_addresses
 
-Update each section to reflect your nikobus installation, module address can be found on your nikobus software.
+Update each section to reflect your nikobus installation, module address can be found in your nikobus software.
 
 Now add "Nikobus" as an integration
 
