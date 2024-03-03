@@ -5,7 +5,6 @@ import asyncio
 from homeassistant import config_entries, core
 from homeassistant.core import HomeAssistant
 from homeassistant.components import switch, light, cover, button
-from homeassistant.const import CONF_HOST, CONF_PORT
 
 from .const import DOMAIN
 from .nikobus import Nikobus
@@ -15,12 +14,22 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN, button.DOMAIN]
 
+CONF_CONNECTION_STRING="connection_string"
+
 async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Set up Nikobus from a config entry."""
-    api = await Nikobus.create(hass, entry.data[CONF_HOST], entry.data[CONF_PORT])
-    if api:
-        _LOGGER.debug("*****Nikobus connected*****")
+    # Directly use the connection_string from the config entry
+    connection_string = entry.data.get(CONF_CONNECTION_STRING)
 
+    # Create the Nikobus API instance with the connection string
+    api = await Nikobus.create(hass, connection_string)
+    if not api:
+        _LOGGER.error("Failed to connect to the Nikobus system.")
+        return False
+
+    _LOGGER.debug("*****Nikobus connected*****")
+
+    # Create and store the data coordinator
     coordinator = NikobusDataCoordinator(hass, api)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
