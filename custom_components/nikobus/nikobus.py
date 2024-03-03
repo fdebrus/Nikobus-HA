@@ -360,7 +360,7 @@ class Nikobus:
         values = self.json_state_data[address]
         _LOGGER.debug(f'Updating JSON state for address {address}: {values}')
         start_index = 1 if group_number == 1 else 7
-        new_value = ''.join(values[str(i)] for i in range(start_index, start_index + 6))
+        new_value = ''.join(values[i] for i in range(start_index, start_index + 6))
         _LOGGER.debug(f'Setting new value {new_value} for address {address}, channel {channel}')
         await self.set_output_state(address, group_number, new_value)
 
