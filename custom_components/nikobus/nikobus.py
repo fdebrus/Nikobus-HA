@@ -1,6 +1,7 @@
 import logging
 import select
 import asyncio
+import serial_asyncio
 import ipaddress
 import re
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import aiofiles
 
 from .const import DOMAIN
+
 UPDATE_SIGNAL = "update_signal"
 
 from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
@@ -37,10 +39,9 @@ __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
 class Nikobus:
-    def __init__(self, hass, host, port):
+    def __init__(self, hass, connection_string):
         self._hass = hass
-        self._host = host
-        self._port = port
+        self.connection_string = connection_string
         self._response_queue = asyncio.Queue()
         self._event_listener_task = None
         self._nikobus_reader = None
@@ -54,13 +55,83 @@ class Nikobus:
         self._managing_button = False
 
     @classmethod
-    async def create(cls, hass, host: str, port: str):
-        # Instantiate the class with the provided host and port arguments
-        instance = cls(hass, host, port)
+    async def create(cls, hass, connection_string: str):
+        # Instantiate the class with the provided unified connection_string argument
+        instance = cls(hass, connection_string)
         # Await the connection establishment
         await instance.connect()
         # Return the instantiated and connected instance
         return instance
+
+#### CONNECT NIKOBUS
+    async def connect(self):
+        def validate_string(input_string):
+            try:
+                ipaddress.ip_address(input_string.split(':')[0])
+                return "IP"
+            except ValueError:
+                pass
+            if re.match(r'^/dev/tty(USB|S)\d+$', input_string):
+                return "Serial"
+            return "Unknown"
+
+        connection_type = validate_string(self.connection_string)
+
+        try:
+            if connection_type == "IP":
+                host, port_str = self.connection_string.split(":")
+                port = int(port_str)
+                self._nikobus_reader, self._nikobus_writer = await asyncio.open_connection(host, port)
+                _LOGGER.info(f"Connected to Nikobus over IP at {host}:{port}")
+            elif connection_type == "Serial":
+                self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(url=self.connection_string, baudrate=9600)
+                _LOGGER.info(f"Connected to Nikobus over serial at {self.connection_string}")
+            else:
+                _LOGGER.error(f"Invalid Nikobus connection string: {self.connection_string}")
+                return False
+
+            self._event_listener_task = asyncio.create_task(self.listen_for_events())
+
+            await self.load_json_config_data()
+
+            await self.load_json_button_data()
+
+            return True
+        except Exception as err:
+            _LOGGER.error(f"Connection error with {self.connection_string} - {err}")
+            return False
+
+    async def listen_for_events(self):
+        _LOGGER.debug("*** Nikobus Event Listener started")
+        try:
+            while True:
+                try:
+                    data = await asyncio.wait_for(self._nikobus_reader.readuntil(b'\r'), timeout=5)
+                    if not data:
+                        _LOGGER.warning("Nikobus connection closed")
+                        break
+                    _LOGGER.debug(f"*** Listener - Receiving RAW message: {data}")
+                    # Decode and append new data to buffer
+                    message = data.decode('utf-8').strip()
+                    _LOGGER.debug(f"*** Listener - Receiving message: {message}")
+                    await self.handle_message(message)
+                except asyncio.TimeoutError:
+                    _LOGGER.debug("*** Listener - Read operation timed out. Waiting for next data...")
+        except asyncio.CancelledError:
+            _LOGGER.info("Event listener was cancelled.")
+        except Exception as e:
+            _LOGGER.error(f"Error in event listener: {e}", exc_info=True)
+
+    async def handle_message(self, message):
+        _button_command_prefix = '#N'
+        _ignore_answer = '$0E'
+        if message.startswith(_button_command_prefix) and not self._managing_button:
+            self._managing_button = True
+            address = message[2:8]
+            await self.button_discovery(address)
+        elif not message.startswith(_button_command_prefix) and not message.startswith(_ignore_answer):
+            _LOGGER.debug(f"*** Sending to queue - message: {message}")
+            await self._response_queue.put(message)
 
     async def load_json_config_data(self):
         # Get the path to the JSON config file
@@ -70,52 +141,12 @@ class Nikobus:
             # Load JSON data
             self.json_config_data = json.loads(await file.read())
 
-#### CONNECT NIKOBUS
-    async def connect(self):
-        
-        def validate_string(input_string):
-            try:
-                ipaddress.ip_address(input_string)
-                return "IP"
-            except ValueError:
-                pass
-            serial_pattern = re.compile(r'^/dev/tty(USB|S)\d+$')
-            if serial_pattern.match(input_string):
-                return "Serial"
-            return "Unknown"
-
-        result = validate_string(self._host)
-
-        try:
-            if result == "IP":
-                self._nikobus_reader, self._nikobus_writer = await asyncio.open_connection(self._host, self._port)
-                connection_info = f"{self._host}:{self._port}"
-            elif result == "Serial":
-                self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(url='/dev/ttyUSB0', baudrate=9600)
-                connection_info = {self._host}
-            else:
-                _LOGGER.error(f"Invalid connection string: {self.connection_string}")
-                return
-            self._event_listener_task = asyncio.create_task(self.listen_for_events())
-        except OSError as err:
-            _LOGGER.error(f"Connection error to {self._host}:{self._port} - {err}")
-            return
-        commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
-        for command in commands:
-            try:
-                self._nikobus_writer.write(command.encode())
-                await self._nikobus_writer.drain()
-            except OSError as err:
-                _LOGGER.error(f"Send error {command!r} to {self._host}:{self._port} - {err}")
-                return
-        try:
-            raw_response = await asyncio.wait_for(self._response_queue.get(), timeout=5)
-            _LOGGER.error(f"Connection status {raw_response}")
-        except asyncio.TimeoutError:
-            _LOGGER.warning(f"Timeout waiting for response from {self._host}:{self._port}")
-        # Load configuration and button data
-        await self.load_json_config_data()
-        await self.load_json_button_data()
+    async def load_json_button_data(self):
+        # Define the JSON config file path
+        config_file_path = self._hass.config.path("nikobus_button_config.json")
+        # Asynchronously read and load JSON data
+        async with aiofiles.open(config_file_path, 'r') as file:
+            self.json_button_data = json.loads(await file.read())
 
 #### REFRESH DATA FROM THE NIKOBUS
     async def refresh_nikobus_data(self, specific_address=None, specific_group=None):
@@ -123,6 +154,12 @@ class Nikobus:
         # Process each module based on the filtered criteria
         for module_type, entries in self.json_config_data.items():
             for entry in entries:
+                # model = entry.get("model")
+                # Skip entries with model "05-001-02" SHUTTERS
+                # if model == "05-001-02":
+                #     _LOGGER.debug(f'*** Skipping module with model {model}')
+                #  STILL THE JSON ENTRY NEED TO BE MANUALLY ADDED
+                #    continue
                 address = entry.get("address")
                 # Skip entries that do not match the specific_address, if provided
                 if specific_address and address != specific_address:
@@ -290,39 +327,6 @@ class Nikobus:
                 _LOGGER.debug(f"*** Command task failed to execute command: {e}")
             self._command_queue.task_done()
 
-#### LISTENER FOR NIKOBUS EVENTS
-    async def listen_for_events(self):
-        _LOGGER.debug("*** Nikobus Event Listener started")
-        try:
-            while True:
-                try:
-                    data = await asyncio.wait_for(self._nikobus_reader.readuntil(b'\r'), timeout=5)
-                    if not data:
-                        _LOGGER.warning("Nikobus connection closed")
-                        break
-                    _LOGGER.debug(f"*** Listener - Receiving RAW message: {data}")
-                    # Decode and append new data to buffer
-                    message = data.decode('utf-8').strip()
-                    _LOGGER.debug(f"*** Listener - Receiving message: {message}")
-                    await self.handle_message(message)
-                except asyncio.TimeoutError:
-                    _LOGGER.debug("*** Listener - Read operation timed out. Waiting for next data...")
-        except asyncio.CancelledError:
-            _LOGGER.info("Event listener was cancelled.")
-        except Exception as e:
-            _LOGGER.error(f"Error in event listener: {e}", exc_info=True)
-
-    async def handle_message(self, message):
-        _button_command_prefix = '#N'
-        _ignore_answer = '$0E'
-        if message.startswith(_button_command_prefix) and not self._managing_button:
-            self._managing_button = True
-            address = message[2:8]
-            await self.button_discovery(address)
-        elif not message.startswith(_button_command_prefix) and not message.startswith(_ignore_answer):
-            _LOGGER.debug(f"*** Sending to queue - message: {message}")
-            await self._response_queue.put(message)
-
 #### UTILS
     async def update_json_state(self, address, channel, value):
         """Update the status in the json_state."""
@@ -380,13 +384,6 @@ class Nikobus:
         await async_dispatcher_send(self._hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
 
 #### BUTTONS
-    async def load_json_button_data(self):
-        # Define the JSON config file path
-        config_file_path = self._hass.config.path("nikobus_button_config.json")
-        # Asynchronously read and load JSON data
-        async with aiofiles.open(config_file_path, 'r') as file:
-            self.json_button_data = json.loads(await file.read())
-
     async def write_json_button_data(self):
         # Path to the JSON button config file
         button_config_file_path = self._hass.config.path("nikobus_button_config.json")
