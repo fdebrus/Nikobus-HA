@@ -6,16 +6,17 @@
         "title": "Nikobus PC-Link",
         "description": "Please enter connectivity details.",
         "data": {
-          "host": "IP address of the bridge",
-          "port": "Port of the bridge"
+          "connection_string": "IP address:Port (e.g., 192.168.1.100:9999) or Serial device (e.g., /dev/ttyUSB0)"
         }
       }
     },
     "error": {
-      "invalid_api_key": "This message will be displayed if `invalid_api_key` is returned as a flow error."
+      "invalid_api_key": "This message will be displayed if `invalid_api_key` is returned as a flow error.",
+      "invalid_host_port_format": "This message will be displayed if the input does not match expected IP:Port or Serial device format."
     },
     "abort": {
-      "stale_api_key": "This message will be displayed if `stale_api_key` is returned as the abort reason."
+      "stale_api_key": "This message will be displayed if `stale_api_key` is returned as the abort reason.",
+      "reauth_successful": "Existing Nikobus PC-Link entry updated."
     },
     "progress": {
       "slow_task": "This message will be displayed if `slow_task` is returned as `progress_action` for `async_show_progress`."
