@@ -25,7 +25,7 @@ action:
 
 **Install**
 
-Integration with with a direct attached serial eg /dev/ttyUSB0
+Integration with a direct attached serial eg /dev/ttyUSB0
 
 or
 
