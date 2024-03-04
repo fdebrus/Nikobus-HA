@@ -154,7 +154,8 @@ class Nikobus:
                         break
                     message = data.decode('utf-8').strip()
                     _LOGGER.debug(f"Listener - Receiving message: {message}")
-                    await self.handle_message(message)
+                    asyncio.create_task(self.handle_message(message))
+                    # await self.handle_message(message)
                 except asyncio.TimeoutError:
                     _LOGGER.debug("Listener - Read operation timed out. Waiting for next data...")
         except asyncio.CancelledError:
