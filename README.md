@@ -23,17 +23,12 @@ action:
     entity_id: light.example_light
 ```
 
-**BREAKING CHANGES**
-
-The configuration files are no longer in the custom_integration directory but shall be placed in the HA/config. See install
-
-Always restart from the nikobus_config.json as the template might have changed eg (added "operation_time" for shutters)
-
-
 **Install**
 
-Integration with with a direct attached serial eg /dev/ttyUSB0 (currently available in the dev channel)
+Integration with with a direct attached serial eg /dev/ttyUSB0
+
 or
+
 An RS232 to IP bridge (like HF2211 or others).
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/2451b88a-beff-46ce-85bf-f5486a69b37c)
