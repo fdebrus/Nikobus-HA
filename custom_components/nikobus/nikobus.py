@@ -52,6 +52,7 @@ class Nikobus:
         self.json_state_data = {}
         self.json_button_data = {}
         self._nikobus_writer_lock = asyncio.Lock()
+        self._nikobus_reader_lock = asyncio.Lock()
         self._command_queue = asyncio.Queue()
         self._managing_button = False
 
@@ -166,9 +167,9 @@ class Nikobus:
         _LOGGER.debug(f"GOT MESSAGE : {message}")
         _button_command_prefix = '#N'
         _ignore_answer = '$0E'
-        if message.startswith(_button_command_prefix) and not self._managing_button:
-            self._managing_button = True
-            await asyncio.sleep(2)
+        if message.startswith(_button_command_prefix): # and not self._managing_button:
+            # self._managing_button = True
+            await asyncio.sleep(0.4)
             address = message[2:8]
             _LOGGER.debug(f"Handling button press for address: {address}")
             await self.button_discovery(address)
@@ -218,6 +219,7 @@ class Nikobus:
         - specific_group: Optional; specify to refresh data only for a given group within modules.
         """
         result_dict = {}
+
         # Iterate through each module in the configuration data.
         for module_type, entries in self.json_config_data.items():
             for entry in entries:
@@ -237,7 +239,7 @@ class Nikobus:
                 for group in groups_to_query:
                     # Query the state for each group.
                     group_state = await self.get_output_state(address=address, group=group) or ""
-                    _LOGGER.debug(f'State for group {group}: {group_state}')
+                    _LOGGER.debug(f'State for group {group}: {group_state} address : {address}')
                     state += group_state  # Concatenate states from each group.
 
                 # Merge the new state with existing state data if a specific group is targeted.
@@ -292,17 +294,16 @@ class Nikobus:
         for attempt in range(max_attempts):
             _LOGGER.debug(f'Attempt {attempt + 1} of {max_attempts}')
 
-            async with self._nikobus_writer_lock:
-                self._nikobus_writer.write(command.encode() + b'\r')
-                await self._nikobus_writer.drain()
-            _LOGGER.debug(f'Sent command, waiting for ACK: {_wait_command_ack} and ANSWER: {_wait_command_answer}')
+            self._nikobus_writer.write(command.encode() + b'\r')
+            await self._nikobus_writer.drain()
+            _LOGGER.debug(f'Sent command {command} waiting for ACK: {_wait_command_ack} and ANSWER: {_wait_command_answer}')
 
             end_time = asyncio.get_event_loop().time() + 10  # Set a 10-second timeout
 
             while asyncio.get_event_loop().time() < end_time:
                 try:
                     timeout = end_time - asyncio.get_event_loop().time()  # Calculate remaining time for dynamic timeout
-                    message = await asyncio.wait_for(self._response_queue.get(), timeout=max(timeout, 0.1))
+                    message = await asyncio.wait_for(self._response_queue.get(), timeout=5)
                     _LOGGER.debug(f'Message received: {message}')
                 
                     # Check for ACK and answer in the received message.
@@ -347,11 +348,8 @@ class Nikobus:
         """
         _LOGGER.debug('Entering send_command()')
         _LOGGER.debug(f'Command to send: {command}')
-        async with self._nikobus_writer_lock:
-            # Send the command encoded as bytes, appending carriage return for Nikobus protocol.
-            self._nikobus_writer.write(command.encode() + b'\r')
-            # Ensure the command is fully sent by flushing the writer's buffer.
-            await self._nikobus_writer.drain()
+        self._nikobus_writer.write(command.encode() + b'\r')
+        await self._nikobus_writer.drain()
         _LOGGER.debug('Command sent successfully')
         return None
 
@@ -599,6 +597,7 @@ class Nikobus:
         self.json_button_data["nikobus_button"].append(new_button)
         await self.write_json_button_data()
         _LOGGER.debug(f"New button configuration added for address {address}.")
+        # self._managing_button = False
 
     async def process_button_modules(self, button):
         """Process actions for each module impacted by the button press."""
