@@ -1,6 +1,7 @@
 import logging
 import select
 import asyncio
+import time
 import serial_asyncio
 import ipaddress
 import re
@@ -108,28 +109,53 @@ class Nikobus:
             else:
                 _LOGGER.error(f"Invalid Nikobus connection string: {self.connection_string}")
                 return False
-
-            await self.load_json_config_data()
-            await self.load_json_button_data()
-            self._event_listener_task = asyncio.create_task(self.listen_for_events())
-
-            return True
         except Exception as err:
             _LOGGER.error(f"Connection error with {self.connection_string}: {err}")
             return False
+
+        # Start listening for events
+        self._event_listener_task = asyncio.create_task(self.listen_for_events())
+
+        # Load JSON config data and button data
+        await self.load_json_config_data()
+        await self.load_json_button_data()
+
+        # Perform handshake with Nikobus
+        await self.perform_handshake()
+
+        return True
+
+    async def perform_handshake(self):
+        """Perform the handshake with the Nikobus system."""
+        commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
+        for command in commands:
+            try:
+                self._nikobus_writer.write(command.encode())
+                await self._nikobus_writer.drain()
+                raw_response = await asyncio.wait_for(self._response_queue.get(), timeout=5)
+                # Check if raw_response contains "#0511"
+                if "#0511" in raw_response:
+                    _LOGGER.debug(f"Successful handshake with Nikobus")
+                else:
+                    _LOGGER.error("Failed to receive connection handshake from Nikobus")
+            except OSError as err:
+                _LOGGER.error(f"Send error {command!r} to {self.connection_string} - {err}")
 
     async def listen_for_events(self):
         """Listen for events from the Nikobus system and handle them accordingly."""
         _LOGGER.debug("Nikobus Event Listener started")
         try:
             while True:
-                data = await asyncio.wait_for(self._nikobus_reader.readuntil(b'\r'), timeout=5)
-                if not data:
-                    _LOGGER.warning("Nikobus connection closed")
-                    break
-                message = data.decode('utf-8').strip()
-                _LOGGER.debug(f"Receiving message: {message}")
-                await self.handle_message(message)
+                try:
+                    data = await asyncio.wait_for(self._nikobus_reader.readuntil(b'\r'), timeout=5)
+                    if not data:
+                        _LOGGER.warning("Nikobus connection closed")
+                        break
+                    message = data.decode('utf-8').strip()
+                    _LOGGER.debug(f"Listener - Receiving message: {message}")
+                    await self.handle_message(message)
+                except asyncio.TimeoutError:
+                    _LOGGER.debug("Listener - Read operation timed out. Waiting for next data...")
         except asyncio.CancelledError:
             _LOGGER.info("Event listener was cancelled.")
         except Exception as e:
@@ -137,10 +163,12 @@ class Nikobus:
 
     async def handle_message(self, message):
         """Handle incoming messages from the Nikobus system."""
+        _LOGGER.debug(f"GOT MESSAGE : {message}")
         _button_command_prefix = '#N'
         _ignore_answer = '$0E'
         if message.startswith(_button_command_prefix) and not self._managing_button:
             self._managing_button = True
+            await asyncio.sleep(2)
             address = message[2:8]
             _LOGGER.debug(f"Handling button press for address: {address}")
             await self.button_discovery(address)
