@@ -133,14 +133,18 @@ class Nikobus:
             try:
                 self._nikobus_writer.write(command.encode())
                 await self._nikobus_writer.drain()
-                raw_response = await asyncio.wait_for(self._response_queue.get(), timeout=5)
-                # Check if raw_response contains "#0511"
-                if "#0511" in raw_response:
-                    _LOGGER.debug(f"Successful handshake with Nikobus")
-                else:
-                    _LOGGER.error("Failed to receive connection handshake from Nikobus")
             except OSError as err:
-                _LOGGER.error(f"Send error {command!r} to {self.connection_string} - {err}")
+                _LOGGER.error(f"Send error {command!r} to {self._host}:{self._port} - {err}")
+                return
+        try:
+            raw_response = await asyncio.wait_for(self._response_queue.get(), timeout=5)
+            # Check if raw_response contains "#0511"
+            if "#0511" in raw_response:
+                _LOGGER.debug(f"Successful handshake with Nikobus")
+            else:
+                _LOGGER.error("Failed to receive connection handshake from Nikobus")
+        except asyncio.TimeoutError:
+            _LOGGER.warning(f"Timeout waiting for response for handshake")
 
     async def listen_for_events(self):
         """Listen for events from the Nikobus system and handle them accordingly."""
@@ -560,7 +564,6 @@ class Nikobus:
 
         Parameters:
         - address: The address of the cover being controlled.
-        - impacted_group: The group of the cover being controlled.
         - cover_command: The command triggered by the button press ('open', 'close', or 'stop').
         """
         _LOGGER.debug(f"Handling button press for cover at address {address}, group {impacted_group} with command {cover_command}.")
@@ -588,7 +591,6 @@ class Nikobus:
                 self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
                 await self.process_button_modules(button)
                 return
-        
         _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration.")
         new_button = {
             "description": f"Nikobus Button #N{address}",
@@ -611,8 +613,14 @@ class Nikobus:
                 continue
             _LOGGER.debug(f"Refreshing status for module {impacted_module_address}, group {impacted_group}")
             try:
-                await self.refresh_nikobus_data(impacted_module_address, impacted_group)
-                await self.refresh_entities(impacted_module_address, impacted_group)
+                if 'command' in module:
+                    # WIP FOR COVERS 
+                    # self.button_press_cover(impacted_module_address, impacted_group, module['command'])
+                    pass
+                else:
+                    _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
+                    await self.refresh_nikobus_data(impacted_module_address, impacted_group)
+                    await self.refresh_entities(impacted_module_address, impacted_group)
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
 
