@@ -620,4 +620,4 @@ class Nikobus:
         group_range = range(1, 7) if int(impacted_group) == 1 else range(7, 13)
         for value in group_range:
             _LOGGER.debug(f"Requesting state refresh for entity with address {impacted_module_address} and value {value}.")
-            async_dispatcher_send(self._hass, f"{UPDATE_SIGNAL}_{impacted_module_address}{value}")
+            await async_dispatcher_send(self._hass, f"{UPDATE_SIGNAL}_{impacted_module_address}{value}")
