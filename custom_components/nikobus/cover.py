@@ -53,12 +53,13 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._in_motion = False
         self._nikobus_command = False
         self._operation_time = float(operation_time)  # Operation time in seconds to fully open/close the cover.
-        self._name = channel_description
         self._description = description
         self._model = model
         self._address = address
         self._channel = channel
-        self._unique_id = f"{self._address}{self._channel}"
+
+        self._attr_name = channel_description
+        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
     @property
     def device_info(self):
@@ -69,11 +70,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             "manufacturer": BRAND,
             "model": self._model,
         }
-
-    @property
-    def name(self):
-        """Returns the name of the cover entity."""
-        return self._name
 
     @property
     def current_cover_position(self):
@@ -104,11 +100,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def is_closing(self):
         """Checks if the cover is currently closing."""
         return self._is_closing
-
-    @property
-    def unique_id(self):
-        """Provides a unique identifier for the cover entity."""
-        return self._unique_id
 
     @callback
     def _handle_coordinator_update(self) -> None:
