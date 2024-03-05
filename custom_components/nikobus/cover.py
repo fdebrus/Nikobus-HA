@@ -8,7 +8,7 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
     ATTR_POSITION
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
@@ -110,32 +110,24 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Provides a unique identifier for the cover entity."""
         return self._unique_id
 
-    async def async_added_to_hass(self):
-        """Actions to perform when the entity is added to Home Assistant, such as registering update listeners."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"nikobus_cover_update_{self._unique_id}",
-                self._handle_signal
-            )
-        )
-
-    async def _handle_signal(self, message):
-        """Handles update signals for the cover, directing the entity to open or close based on received commands."""
-        # Process received commands to open or close the cover.
-        if message['command'] == 'close':
-            self._nikobus_command = True
-            if self._is_opening or self._is_closing:
-                await self.async_stop_cover()
-            else:            
-                await self.async_close_cover()
-        if message['command'] == 'open':
-            self._nikobus_command = True
-            if self._is_opening or self._is_closing:
-                await self.async_stop_cover()
-            else:
-                await self.async_open_cover()
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        state = self._dataservice.get_cover_state(self._address, self._channel)
+        _LOGGER.debug(f"COVER COORDINATOR UPDATE {state}.")
+        if state == "00":
+            self._is_opening = False
+            self._is_closing = False
+            self._in_motion = False
+        elif state == "01":
+            self._is_opening = True
+            self._is_closing = False
+            self._in_motion = True
+        elif state == "02":
+            self._is_opening = False
+            self._is_closing = True
+            self._in_motion = True
+        self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs):
         """Triggers the operation to fully open the cover."""
