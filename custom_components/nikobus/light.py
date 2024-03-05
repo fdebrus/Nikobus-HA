@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
@@ -94,25 +94,12 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         """Return the current state of the light (on/off)."""
         return self._state
 
-    async def async_added_to_hass(self):
-        """Register for update signals when the entity is added to Home Assistant."""
-        async_dispatcher_connect(
-            self.hass,
-            f"{UPDATE_SIGNAL}_{self._unique_id}",
-            self._schedule_immediate_update,
-        )
-
-    async def _schedule_immediate_update(self):
-        """Trigger an immediate update of the entity."""
-        self.async_schedule_update_ha_state(True)
-
-    async def async_update(self):
-        """Fetch new state data for the light.
-        
-        This is the method that updates the state and brightness of the light entity from the Nikobus system.
-        """
+    @callback
+    def _handle_coordinator_update(self) -> None:
         self._state = bool(self._dataservice.get_light_state(self._address, self._channel))
         self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
+        _LOGGER.debug(f"LIGHT COORDINATOR UPDATE {self._state} - {self._brightness}.")
+        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs):
         """Turn the light on with the specified brightness."""
