@@ -59,6 +59,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """
         await self.api.update_json_state(address, channel, value)
 
+#### SWITCH 
     def get_switch_state(self, address, channel):
         """
         Get the state of a switch.
@@ -92,6 +93,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """
         await self.api.turn_off_switch(address, channel)
 
+#### LIGHT
     def get_light_state(self, address, channel):
         """
         Get the state of a light.
@@ -139,6 +141,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """
         await self.api.turn_off_light(address, channel)
 
+#### COVER 
+    async def get_cover_state(self, address, channel):
+        return self.api.get_cover_state(address, channel)
+
     async def operate_cover(self, address, channel, direction):
         """Operate a cover to either open or close based on the direction.
 
@@ -182,6 +188,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """
         await self.api.stop_cover(address, channel)
 
+#### BUTTON
     async def send_button_press(self, address) -> None:
         """Send a button press command to Nikobus.
 
