@@ -401,15 +401,6 @@ class Nikobus:
         _LOGGER.debug(f'Setting new value {new_value} for address {address}, channel {channel}')
         await self.set_output_state(address, group_number, new_value)
 
-    async def set_value_at_address_shutter(self, address, channel, value):
-        """Adjust the shutter state by setting a new value at the given address and channel."""
-        state = self.json_state_data[address]
-        current_state = "".join(str(value) for value in state.values()) 
-        _LOGGER.debug(f'Current states for address {address}: {current_state}')
-        new_value = current_state[:(channel-1)*2] + value + current_state[(channel-1)*2+2:]
-        _LOGGER.debug(f'Setting shutter value {new_value} for address {address}')
-        await self.set_output_state(address, 1, new_value)
-
 #### QUEUE FOR COMMANDS
     async def queue_command(self, command):
         """Add a command to the queue for execution.
@@ -556,19 +547,19 @@ class Nikobus:
         """Stop the movement of a cover."""
         _LOGGER.debug(f"Stopping cover at address {address}, channel {channel}.")
         await self.update_json_state(address, channel, '00')
-        await self.set_value_at_address_shutter(address, channel, '00')
+        await self.set_value_at_address(address, channel)
 
     async def open_cover(self, address, channel) -> None:
         """Open a cover to its maximum extent."""
         _LOGGER.debug(f"Opening cover at address {address}, channel {channel}.")
         await self.update_json_state(address, channel, '01')
-        await self.set_value_at_address_shutter(address, channel, '01')
+        await self.set_value_at_address(address, channel)
 
     async def close_cover(self, address, channel) -> None:
         """Close a cover completely."""
         _LOGGER.debug(f"Closing cover at address {address}, channel {channel}.")
         await self.update_json_state(address, channel, '02')
-        await self.set_value_at_address_shutter(address, channel, '02')
+        await self.set_value_at_address(address, channel)
 
 #### BUTTONS
     async def write_json_button_data(self):
