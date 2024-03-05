@@ -114,7 +114,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         state = self._dataservice.get_cover_state(self._address, self._channel)
-        _LOGGER.debug(f"COVER COORDINATOR UPDATE {state}.")
+        _LOGGER.debug(f"COVER COORDINATOR UPDATE {state} - {self._position}.")
         if state == "00":
             self._is_opening = False
             self._is_closing = False
