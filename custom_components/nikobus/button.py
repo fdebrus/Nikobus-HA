@@ -59,6 +59,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         - impacted_module_group: The group of the module impacted by this button.
         """
         super().__init__(dataservice)
+        self._dataservice = dataservice
         self._description = description
         self._address = address 
         self.impacted_module_address = impacted_module_address
