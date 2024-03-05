@@ -59,20 +59,6 @@ class Nikobus:
 
     @classmethod
     async def create(cls, hass, connection_string: str):
-        """Asynchronously create and connect an instance of the class.
-
-        This class method facilitates the asynchronous creation of a NikobusSystem
-        instance, including connecting to the Nikobus system using the provided
-        connection string. This approach is particularly useful for asynchronous
-        initializations that cannot be performed in the __init__ method.
-
-        Parameters:
-        - hass: The Home Assistant instance.
-        - connection_string: The connection string used to connect to the Nikobus system.
-
-        Returns:
-        - An instance of NikobusSystem that is already connected.
-        """
         _LOGGER.debug(f"Creating NikobusSystem instance with connection string: {connection_string}")
         # Instantiate the class with the provided Home Assistant instance and connection string.
         instance = cls(hass, connection_string)
@@ -183,11 +169,6 @@ class Nikobus:
             await self._response_queue.put(message)
 
     async def load_json_config_data(self):
-        """Load the Nikobus module configuration data from a JSON file.
-
-        This asynchronous method reads the Nikobus configuration data, which includes information
-        about modules and channels, from a JSON file stored in the Home Assistant configuration directory.
-        """
         config_file_path = self._hass.config.path("nikobus_config.json")
         _LOGGER.debug(f'Loading Nikobus configuration data from {config_file_path}')
         try:
@@ -198,11 +179,6 @@ class Nikobus:
             _LOGGER.error(f'Failed to load Nikobus configuration data: {e}')
 
     async def load_json_button_data(self):
-        """Load the Nikobus button configuration data from a JSON file.
-
-        This method reads the button configuration data for the Nikobus system, such as button addresses
-        and their impacts on modules, from a JSON file located in the Home Assistant configuration directory.
-        """
         config_file_path = self._hass.config.path("nikobus_button_config.json")
         _LOGGER.debug(f'Loading Nikobus button configuration data from {config_file_path}')
         try:
@@ -214,15 +190,6 @@ class Nikobus:
 
 #### REFRESH DATA FROM THE NIKOBUS
     async def refresh_nikobus_data(self):
-        """Refresh the Nikobus system data, optionally filtering by specific address and/or group.
-
-        This method queries the state of Nikobus modules, updating the internal representation
-        of their states. It can be filtered to only refresh a specific module or group within a module.
-
-        Parameters:
-        - specific_address: Optional; specify to refresh data only for a given module address.
-        - specific_group: Optional; specify to refresh data only for a given group within modules.
-        """
         result_dict = {}
 
         specific_address = self._impacted_module_address
@@ -246,7 +213,7 @@ class Nikobus:
 
                 for group in groups_to_query:
                     # Query the state for each group.
-                    group_state = await self.get_output_state(address=address, group=group) or ""
+                    group_state = await self.get_output_state_nikobus(address=address, group=group) or ""
                     _LOGGER.debug(f'State for group {group}: {group_state} address : {address}')
                     state += group_state  # Concatenate states from each group.
 
@@ -280,19 +247,6 @@ class Nikobus:
 
 #### SEND A COMMAND AND GET THE ANSWER
     async def send_command_get_answer(self, command, address, max_attempts=3):
-        """Send a command to the Nikobus system and wait for a specific response.
-
-        This method sends a command and waits for both an acknowledgment and an answer
-        from the Nikobus system, retrying up to a maximum number of attempts.
-
-        Parameters:
-        - command: The command string to send.
-        - address: The address part of the command, used to identify the expected response.
-        - max_attempts: Maximum number of attempts to send the command and receive the expected response.
-        
-        Returns:
-        - The state extracted from the response, or None if no response was received.
-        """
         _LOGGER.debug('Entering send_command_get_answer()')
         _LOGGER.debug(f'Command: {command}, Address: {address}')
         # Define the expected acknowledgment and answer signals based on the command and address.
@@ -349,14 +303,6 @@ class Nikobus:
 
 #### SEND A COMMAND
     async def send_command(self, command):
-        """Send a command to the Nikobus system.
-
-        This asynchronous method sends a command to the Nikobus system, ensuring that each
-        command is sent sequentially by using a lock to prevent simultaneous writes.
-
-        Parameters:
-        - command: The command string to be sent to the Nikobus system.
-        """
         _LOGGER.debug('Entering send_command()')
         _LOGGER.debug(f'Command to send: {command}')
         self._nikobus_writer.write(command.encode() + b'\r')
@@ -365,9 +311,9 @@ class Nikobus:
         return None
 
 #### SET's AND GET's
-    async def get_output_state(self, address, group):
+    async def get_output_state_nikobus(self, address, group):
         """Retrieve the current state of an output based on its address and group."""
-        _LOGGER.debug('Entering get_output_state()')
+        _LOGGER.debug('Entering get_output_state_nikobus()')
         _LOGGER.debug(f'Address: {address}, Group: {group}')
         if int(group) in [1, 2]:
             command_code = 0x12 if int(group) == 1 else 0x17
@@ -378,9 +324,9 @@ class Nikobus:
         result = await self.send_command_get_answer(command, address)
         return result
 
-    async def set_output_state(self, address, group_number, value):
+    async def set_output_state_nikobus(self, address, group_number, value):
         """Set the state of an output based on its address, group number, and desired state value."""
-        _LOGGER.debug('Entering set_output_state()')
+        _LOGGER.debug('Entering set_output_state_nikobus()')
         _LOGGER.debug(f'Address: {address}, Group: {group_number}, Value: {value}')
         if int(group_number) in [1, 2]:
             command_code = 0x15 if int(group_number) == 1 else 0x16
@@ -399,28 +345,14 @@ class Nikobus:
         start_index = 1 if group_number == 1 else 7
         new_value = ''.join(values[i] for i in range(start_index, start_index + 6))
         _LOGGER.debug(f'Setting new value {new_value} for address {address}, channel {channel}')
-        await self.set_output_state(address, group_number, new_value)
+        await self.set_output_state_nikobus(address, group_number, new_value)
 
 #### QUEUE FOR COMMANDS
     async def queue_command(self, command):
-        """Add a command to the queue for execution.
-
-        This function queues a command to be sent to the Nikobus system. Each command
-        is processed asynchronously in the order they are queued.
-
-        Parameters:
-        - command: The command string to be queued for execution.
-        """
         _LOGGER.debug(f'Queueing command for execution: {command}')
         await self._command_queue.put(command)
 
     async def process_commands(self):
-        """Continuously process commands from the command queue.
-
-        This coroutine runs in an infinite loop, awaiting commands to be added to the queue.
-        Once a command is available, it attempts to send the command to the Nikobus system.
-        If the command fails, an error is logged.
-        """
         while True:
             command = await self._command_queue.get()
             _LOGGER.debug(f'Executing command from queue: {command}')
@@ -434,105 +366,43 @@ class Nikobus:
 
 #### UTILS
     async def update_json_state(self, address, channel, value):
-        """Update the JSON state data with a new value for a specific address and channel.
-        
-        This function updates the state of a device (light, switch, etc.) within the Nikobus system,
-        storing the new state in a JSON-like structure for easy access and manipulation.
-
-        Parameters:
-        - address: The address of the device whose state is being updated.
-        - channel: The channel of the device at the given address.
-        - value: The new state value to be set for the device.
-        """
         _LOGGER.debug(f"Updating JSON state for address {address}, channel {channel} to value {value}.")
         # Use setdefault to initialize the address key if not present, then update the channel with the new value.
         self.json_state_data.setdefault(address, {})[channel] = value
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
-        """Retrieve the current state (on/off) of a switch based on its address and channel.
-        
-        Parameters:
-        - address: The address of the switch.
-        - channel: The channel of the switch.
-        
-        Returns:
-        - True if the switch is on, False otherwise.
-        """
         _state = self.json_state_data.get(address, {}).get(channel)
         _LOGGER.debug(f"Getting switch state for address {address}, channel {channel}: {'on' if _state == 'FF' else 'off'}")
         return _state == "FF"
 
     async def turn_on_switch(self, address, channel):
-        """Turn on a switch.
-        
-        Parameters:
-        - address: The address of the switch to turn on.
-        - channel: The channel of the switch to turn on.
-        """
         _LOGGER.debug(f"Turning on switch at address {address}, channel {channel}.")
         self.json_state_data.setdefault(address, {})[channel] = 'FF'
         await self.set_value_at_address(address, channel)
 
     async def turn_off_switch(self, address, channel):
-        """Turn off a switch.
-        
-        Parameters:
-        - address: The address of the switch to turn off.
-        - channel: The channel of the switch to turn off.
-        """
         _LOGGER.debug(f"Turning off switch at address {address}, channel {channel}.")
         self.json_state_data.setdefault(address, {})[channel] = '00'
         await self.set_value_at_address(address, channel)
 
 #### DIMMERS
     def get_light_state(self, address, channel):
-        """Retrieve the current state (on/off) of a light based on its address and channel.
-        
-        Parameters:
-        - address: The address of the light.
-        - channel: The channel of the light.
-        
-        Returns:
-        - True if the light is on, False otherwise.
-        """
         _state = self.json_state_data.get(address, {}).get(channel)
         _LOGGER.debug(f"Getting light state for address {address}, channel {channel}: {'on' if _state != '00' else 'off'}")
         return _state != "00"
     
     def get_light_brightness(self, address, channel):
-        """Retrieve the current brightness level of a light based on its address and channel.
-        
-        Parameters:
-        - address: The address of the light.
-        - channel: The channel of the light.
-        
-        Returns:
-        - An integer representing the brightness level (0-255).
-        """
         _state = self.json_state_data.get(address, {}).get(channel)
         _LOGGER.debug(f"Getting light brightness for address {address}, channel {channel}: {int(_state, 16)}")
         return int(_state, 16)
 
     async def turn_on_light(self, address, channel, brightness):
-        """Turn on a light at a specific brightness level.
-        
-        Parameters:
-        - address: The address of the light to turn on.
-        - channel: The channel of the light to turn on.
-        - brightness: The brightness level to set (0-255).
-        """
         _LOGGER.debug(f"Turning on light at address {address}, channel {channel} to brightness {brightness}.")
         self.json_state_data.setdefault(address, {})[channel] = format(brightness, '02X')
         await self.set_value_at_address(address, channel)
 
     async def turn_off_light(self, address, channel):
-        """Turn off a light.
-        
-        Parameters:
-        - address: The address of the light to turn off.
-        - channel: The channel of the light to turn off.
-        """
         _LOGGER.debug(f"Turning off light at address {address}, channel {channel}.")
         self.json_state_data.setdefault(address, {})[channel] = '00'
         await self.set_value_at_address(address, channel)
@@ -610,4 +480,4 @@ class Nikobus:
                 await self.coordinator.async_refresh()
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
-
+                
