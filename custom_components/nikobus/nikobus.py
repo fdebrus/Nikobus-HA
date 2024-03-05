@@ -43,6 +43,7 @@ class Nikobus:
     def __init__(self, hass, connection_string):
         self._hass = hass
         self.connection_string = connection_string
+        self.coordinator = None 
         self._response_queue = asyncio.Queue()
         self._event_listener_task = None
         self._nikobus_reader = None
@@ -51,10 +52,10 @@ class Nikobus:
         self.json_config_data = {}
         self.json_state_data = {}
         self.json_button_data = {}
-        self._nikobus_writer_lock = asyncio.Lock()
-        self._nikobus_reader_lock = asyncio.Lock()
         self._command_queue = asyncio.Queue()
-        self._managing_button = False
+        self._impacted_module_address = None
+        self._impacted_group = None
+
 
     @classmethod
     async def create(cls, hass, connection_string: str):
@@ -172,8 +173,7 @@ class Nikobus:
         _LOGGER.debug(f"GOT MESSAGE : {message}")
         _button_command_prefix = '#N'
         _ignore_answer = '$0E'
-        if message.startswith(_button_command_prefix): # and not self._managing_button:
-            # self._managing_button = True
+        if message.startswith(_button_command_prefix):
             await asyncio.sleep(0.4)
             address = message[2:8]
             _LOGGER.debug(f"Handling button press for address: {address}")
@@ -213,7 +213,7 @@ class Nikobus:
             _LOGGER.error(f'Failed to load Nikobus button configuration data: {e}')
 
 #### REFRESH DATA FROM THE NIKOBUS
-    async def refresh_nikobus_data(self, specific_address=None, specific_group=None):
+    async def refresh_nikobus_data(self):
         """Refresh the Nikobus system data, optionally filtering by specific address and/or group.
 
         This method queries the state of Nikobus modules, updating the internal representation
@@ -224,6 +224,9 @@ class Nikobus:
         - specific_group: Optional; specify to refresh data only for a given group within modules.
         """
         result_dict = {}
+
+        specific_address = self._impacted_module_address
+        specific_group = self._impacted_group
 
         # Iterate through each module in the configuration data.
         for module_type, entries in self.json_config_data.items():
@@ -269,6 +272,9 @@ class Nikobus:
         if result_dict:
             self.json_state_data.update(result_dict)
             _LOGGER.debug('JSON state data updated.')
+        
+        self._impacted_module_address = None
+        self._impacted_group = None
 
         return True
 
@@ -541,6 +547,11 @@ class Nikobus:
         await self.set_value_at_address(address, channel)
 
 #### COVERS
+    def get_cover_state(self, address, channel):
+        _state = self.json_state_data.get(address, {}).get(channel)
+        _LOGGER.debug(f"Getting cover state for address {address}, channel {channel}")
+        return _state
+
     async def stop_cover(self, address, channel) -> None:
         """Stop the movement of a cover."""
         _LOGGER.debug(f"Stopping cover at address {address}, channel {channel}.")
@@ -558,16 +569,6 @@ class Nikobus:
         _LOGGER.debug(f"Closing cover at address {address}, channel {channel}.")
         await self.update_json_state(address, channel, '02')
         await self.set_value_at_address_shutter(address, channel, '02')
-
-    async def button_press_cover(self, address, impacted_group, cover_command):
-        """Handle a button press event from the Nikobus system intended for a cover control.
-
-        Parameters:
-        - address: The address of the cover being controlled.
-        - cover_command: The command triggered by the button press ('open', 'close', or 'stop').
-        """
-        _LOGGER.debug(f"Handling button press for cover at address {address}, group {impacted_group} with command {cover_command}.")
-        await async_dispatcher_send(self._hass, f"nikobus_cover_update_{address}{impacted_group}", {'command': cover_command})
 
 #### BUTTONS
     async def write_json_button_data(self):
@@ -600,7 +601,6 @@ class Nikobus:
         self.json_button_data["nikobus_button"].append(new_button)
         await self.write_json_button_data()
         _LOGGER.debug(f"New button configuration added for address {address}.")
-        # self._managing_button = False
 
     async def process_button_modules(self, button):
         """Process actions for each module impacted by the button press."""
@@ -613,20 +613,10 @@ class Nikobus:
                 continue
             _LOGGER.debug(f"Refreshing status for module {impacted_module_address}, group {impacted_group}")
             try:
-                if 'command' in module:
-                    # WIP FOR COVERS 
-                    # self.button_press_cover(impacted_module_address, impacted_group, module['command'])
-                    pass
-                else:
-                    _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
-                    await self.refresh_nikobus_data(impacted_module_address, impacted_group)
-                    await self.refresh_entities(impacted_module_address, impacted_group)
+                _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
+                self._impacted_module_address = impacted_module_address
+                self._impacted_group = impacted_group
+                await coordinator.async_refresh()
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
 
-    async def refresh_entities(self, impacted_module_address, impacted_group):
-        """Send a signal to refresh the state of entities impacted by a button press."""
-        group_range = range(1, 7) if int(impacted_group) == 1 else range(7, 13)
-        for value in group_range:
-            _LOGGER.debug(f"Requesting state refresh for entity with address {impacted_module_address} and value {value}.")
-            async_dispatcher_send(self._hass, f"{UPDATE_SIGNAL}_{impacted_module_address}{value}")
