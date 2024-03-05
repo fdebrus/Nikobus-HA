@@ -616,7 +616,7 @@ class Nikobus:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
                 self._impacted_module_address = impacted_module_address
                 self._impacted_group = impacted_group
-                await coordinator.async_refresh()
+                await self.coordinator.async_refresh()
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
 
