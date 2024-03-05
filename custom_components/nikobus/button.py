@@ -14,16 +14,6 @@ from .const import DOMAIN, BRAND
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
-    """Set up Nikobus button entities for a specific configuration entry.
-
-    This function is called by Home Assistant when setting up a configuration entry
-    for Nikobus. It initializes all button entities based on the Nikobus configuration.
-
-    Parameters:
-    - hass: Instance of HomeAssistant.
-    - entry: The configuration entry being set up.
-    - async_add_entities: Callback to add new entities to Home Assistant.
-    """
     # Retrieve the data service associated with the configuration entry
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
@@ -48,24 +38,15 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     """Represents a Nikobus Button in Home Assistant."""
 
     def __init__(self, hass: HomeAssistant, dataservice, description, address, impacted_module_address, impacted_module_group) -> None:
-        """Initialize the Nikobus Button Entity.
-
-        Parameters:
-        - hass: Instance of HomeAssistant.
-        - dataservice: The dataservice associated with this entity.
-        - description: The human-readable description of the button.
-        - address: The unique address of the button.
-        - impacted_module_address: The address of the module impacted by this button.
-        - impacted_module_group: The group of the module impacted by this button.
-        """
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._description = description
         self._address = address 
         self.impacted_module_address = impacted_module_address
         self.impacted_module_group = impacted_module_group
+
         self._attr_name = f"Nikobus Push Button {address}"
-        self._attr_unique_id = f"{self._address}"
+        self._attr_unique_id = f"{DOMAIN}_{self._address}"
 
     @property
     def device_info(self):
