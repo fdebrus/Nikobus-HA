@@ -142,7 +142,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         await self.api.turn_off_light(address, channel)
 
 #### COVER 
-    async def get_cover_state(self, address, channel):
+    def get_cover_state(self, address, channel):
         return self.api.get_cover_state(address, channel)
 
     async def operate_cover(self, address, channel, direction):
