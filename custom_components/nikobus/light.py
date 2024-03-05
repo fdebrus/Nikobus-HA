@@ -45,14 +45,15 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         """Initialize the Nikobus Light Entity with specific parameters."""
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._name = channel_description
         self._state = initial_state
         self._brightness = brightness
         self._description = description
         self._model = model
         self._address = address
         self._channel = channel
-        self._unique_id = f"{self._address}{self._channel}"
+
+        self._attr_name = channel_description
+        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
     @property
     def device_info(self):
@@ -63,16 +64,6 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
             "manufacturer": BRAND,
             "model": self._model,
         }
-
-    @property
-    def name(self):
-        """Return the name of the light."""
-        return self._name
-    
-    @property
-    def should_poll(self):
-        """Indicate that the entity should be polled for updates."""
-        return True
 
     @property
     def brightness(self):
@@ -113,8 +104,3 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self._state = False
         await self._dataservice.turn_off_light(self._address, self._channel)
         self.async_write_ha_state()
-
-    @property
-    def unique_id(self):
-        """Return the unique ID for this light entity."""
-        return self._unique_id
