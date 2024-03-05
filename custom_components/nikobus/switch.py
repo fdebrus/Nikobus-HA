@@ -3,7 +3,7 @@
 import logging
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
@@ -68,33 +68,16 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         return self._name
 
     @property
-    def should_poll(self):
-        """Indicate that the entity should be polled for updates."""
-        return True
-
-    @property
     def is_on(self):
         """Return the current state of the switch (on/off)."""
         return self._state
 
-    async def async_added_to_hass(self):
-        """Register for update signals when the entity is added to Home Assistant."""
-        async_dispatcher_connect(
-            self.hass,
-            f"{UPDATE_SIGNAL}_{self._unique_id}",
-            self._schedule_immediate_update,
-        )
-
-    async def _schedule_immediate_update(self):
-        """Trigger an immediate update of the entity."""
-        self.async_schedule_update_ha_state(True)
-
-    async def async_update(self):
-        """Fetch new state data for the switch.
-        
-        This is the method that updates the state of the switch entity from the Nikobus system.
-        """
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
         self._state = bool(self._dataservice.get_switch_state(self._address, self._channel))
+        _LOGGER.debug(f"SWITCH COORDINATOR UPDATE {self._state}.")
+        self.async_write_ha_state()
 
     async def async_turn_on(self):
         """Turn the switch on."""
