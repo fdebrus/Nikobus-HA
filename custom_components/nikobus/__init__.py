@@ -26,15 +26,10 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
 
     # Initialize the Nikobus API with the provided connection string
     api = await Nikobus.create(hass, connection_string)
-    if not api:
-        # Log an error and return False if the API initialization fails
-        _LOGGER.error("Failed to connect to the Nikobus system.")
-        return False
-
-    _LOGGER.debug("*****Nikobus connected*****")
 
     # Create a data coordinator for the Nikobus system
     coordinator = NikobusDataCoordinator(hass, api)
+    
     # Store the coordinator in Home Assistant's data dictionary under the integration's domain
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
