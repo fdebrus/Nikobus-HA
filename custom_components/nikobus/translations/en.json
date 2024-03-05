@@ -6,7 +6,7 @@
         "title": "Nikobus PC-Link",
         "description": "Please enter connectivity details.",
         "data": {
-          "connection_string": "IP address:Port (e.g., 192.168.1.100:9999) or Serial device (e.g., /dev/ttyUSB0)"
+          "connection_string": "IP address:Port or Serial device"
         }
       }
     },
