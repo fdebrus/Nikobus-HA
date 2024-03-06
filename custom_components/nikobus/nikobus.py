@@ -450,6 +450,6 @@ class Nikobus:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
                 value = await self.get_output_state_nikobus(impacted_module_address, impacted_group)
                 await self.update_json_group_state(impacted_module_address, impacted_group, value)
-                await self._async_event_handler("nikobus_button_pressed", address)
+                await self._async_event_handler("nikobus_button_pressed", impacted_module_address)
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
