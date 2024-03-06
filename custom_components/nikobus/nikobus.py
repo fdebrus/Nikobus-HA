@@ -40,9 +40,10 @@ __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
 class Nikobus:
-    def __init__(self, hass, connection_string):
+    def __init__(self, hass, connection_string, async_event_handler):
         self._hass = hass
         self.connection_string = connection_string
+        self._async_event_handler = async_event_handler
         self.coordinator = None 
         self._response_queue = asyncio.Queue()
         self._event_listener_task = None
@@ -56,12 +57,11 @@ class Nikobus:
         self._impacted_module_address = None
         self._impacted_group = None
 
-
     @classmethod
-    async def create(cls, hass, connection_string: str):
+    async def create(cls, hass, connection_string, async_event_handler):
         _LOGGER.debug(f"Creating NikobusSystem instance with connection string: {connection_string}")
         # Instantiate the class with the provided Home Assistant instance and connection string.
-        instance = cls(hass, connection_string)
+        instance = cls(hass, connection_string, async_event_handler)
         # Await the connection establishment to the Nikobus system.
         await instance.connect()
         _LOGGER.info("NikobusSystem instance created and connected successfully.")
@@ -106,6 +106,7 @@ class Nikobus:
 
         # Load JSON config data and button data
         await self.load_json_config_data()
+        _LOGGER.debug(f"JSON CONFIG {self.json_config_data}")
         await self.load_json_button_data()
 
         # Perform handshake with Nikobus
@@ -120,18 +121,10 @@ class Nikobus:
             try:
                 self._nikobus_writer.write(command.encode())
                 await self._nikobus_writer.drain()
+                _LOGGER.debug(f"COMMAND {command.encode()}")
             except OSError as err:
                 _LOGGER.error(f"Send error {command!r} to {self._host}:{self._port} - {err}")
                 return
-        try:
-            raw_response = await asyncio.wait_for(self._response_queue.get(), timeout=5)
-            # Check if raw_response contains "#0511"
-            if "#0511" in raw_response:
-                _LOGGER.debug(f"Successful handshake with Nikobus")
-            else:
-                _LOGGER.error("Failed to receive connection handshake from Nikobus")
-        except asyncio.TimeoutError:
-            _LOGGER.warning(f"Timeout waiting for response for handshake")
 
     async def listen_for_events(self):
         """Listen for events from the Nikobus system and handle them accordingly."""
