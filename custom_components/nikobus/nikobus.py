@@ -337,6 +337,7 @@ class Nikobus:
 
     async def update_json_group_state(self, address, group, value):
         _LOGGER.debug(f"Updating JSON state for address {address} group {group} to value {value}.")
+        existing_state = self.json_state_data[address]
         start_index, end_index = (1, 6) if int(group) == 1 else (7, 12)
         new_state = {index + start_index - 1: value[i:i + 2] for index, i in enumerate(range(0, len(value), 2), start=start_index) if index + start_index - 1 <= end_index}
         merged_state = {**existing_state, **new_state}
