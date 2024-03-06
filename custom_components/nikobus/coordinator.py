@@ -38,9 +38,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Error fetching Nikobus data: %s", e)
             raise UpdateFailed(f"Error fetching data: {e}")
 
-    async def async_event_handler(self, event):
-        """Handles events from the api"""
-        # button press as event
+    async def async_event_handler(self, event, data):
+        if "ha_button_pressed" in event:
+            await self.api.queue_command(f'#N{data}\r#E1')
+        elif "nikobus_button_pressed" in event:
+            self.hass.bus.async_fire('nikobus_button_pressed', {'address': data})
         self.async_update_listeners()
 
     async def update_json_state(self, address, channel, value):
