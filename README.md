@@ -1,14 +1,26 @@
-# Nikobus-HA
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-**fully implemented**
-- Switches control.
-- Lights control (dimmers).
-- Cover/shutter support, (open/stop/close/set position).
-- Buttons support. When a HA button is pressed, it will trigger the command on Nikobus. When a wall switch is pressed, it will trigger the refresh in HA.
-    
-You can create "virtual button" in HA and link them to an action in Nikobus. eg 000001
+# Nikobus Integration (v2024.3.6)
 
-Automation example 
+Home Assistant integration for Nikobus.
+
+# Functionality
+
+Supported and tested
+	Nikobus switch module 05-000-02 and 05-002-02.
+	Nikobus dimmer module 05-007-02.
+	Nikobus shutter module 05-001-02.
+	Nikobus buttons.
+
+Switches can be operated on/off.
+Dimmers can be operated on/off/set brightness.
+Covers can be operated open/close/set position.
+Button press event can be added as a trigger in Home Assistant, eg (Automation)
+Virtual button can be created in HA and defined in Nikobus (virtual button)
+
+Support direct connectivity eg /dev/ttyUSB0 or IP:Port eg 192.168.2.1:123
+
+## Automation example 
 
 ```
 alias: "React to Nikobus Button Push"
@@ -23,32 +35,33 @@ action:
     entity_id: light.example_light
 ```
 
-**Install**
-
-Integration with a direct attached serial eg /dev/ttyUSB0
-
-or
-
-An RS232 to IP bridge (like HF2211 or others).
-
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/2451b88a-beff-46ce-85bf-f5486a69b37c)
-
-**Install Instruction**
+# Setup process 
 
 One you have installed the custom integration using HACS, go to the custom_repository/nikobus
-copy nikobus_conf.json.default to your HA config directory / nikobus_conf.json
-copy nikobus_button_conf.json.default to your HA config directory / nikobus_button_conf.json
+Copy nikobus_conf.json.default to your HA config directory / nikobus_conf.json
+Copy nikobus_button_conf.json.default to your HA config directory / nikobus_button_conf.json
+Update the files to reflect your installation.
 
-update the file to reflect your installation. Button are discovery when pushed and registered in the nikobus_button_conf.json
+The nikobus installation in refreshed every 2 minutes and update the various states on Home Assistant.
 
-Integration supports
-  switch_modules_addresses
-  dimmer_modules_addresses 
-  roller_modules_addresses
+Buttons are discovered when pushed and registered in the nikobus_button_conf.json, they will need manual update as below :
 
-Update each section to reflect your nikobus installation, module address can be found in your nikobus software.
+For each button, you will have to define with module address and which module group is impacted
+	On a 12 outputs module, 1-6 is module group 1 and 7-12 module group 2
+	On a 6 outputs module, only module group 1 exist
 
-Now add "Nikobus" as an integration
+List the impacted modules as show below for each button of your installation.
+
+            "impacted_module": [
+                {
+                    "address": "0E6C",
+                    "group": "1"
+                }
+            ]
+
+* Note: I button can have multiple impacted_module address and group.
+** Note: If you do not plan to use your button as HA trigger, and you can accomodate to wait for the next refresh cycle to have Nikobus in sync with HA, you do not need to create buttons
+
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/70cbd1c8-2e2b-4114-9cf3-f0d618e2ce52)
 
@@ -60,13 +73,4 @@ Now add "Nikobus" as an integration
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/a5cbb377-9274-42e6-bee7-abe58c62ca82)
 
-
-
-
-
-References
-
-  https://github.com/timschuerewegen/homebridge-nikobus
-  
-  https://github.com/openhab/openhab-addons/tree/main/bundles/org.openhab.binding.nikobus
 
