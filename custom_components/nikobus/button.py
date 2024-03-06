@@ -53,4 +53,4 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         return {"impacted_module": f"{self.impacted_module_address}_{self.impacted_module_group}"}
 
     async def async_press(self) -> None:
-        await self._dataservice.api.send_button_press(self._address)
+        await self._dataservice.async_event_handler("ha_button_pressed", self._address)
