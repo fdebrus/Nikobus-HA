@@ -7,7 +7,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dis
 
 from .const import DOMAIN, BRAND
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
@@ -57,15 +57,15 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        self._state = bool(self._dataservice.get_switch_state(self._address, self._channel))
+        self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
         self.async_write_ha_state()
 
     async def async_turn_on(self):
         self._state = True
-        await self._dataservice.turn_on_switch(self._address, self._channel)
+        await self._dataservice.api.turn_on_switch(self._address, self._channel)
         self.async_write_ha_state()
 
     async def async_turn_off(self):
         self._state = False
-        await self._dataservice.turn_off_switch(self._address, self._channel)
+        await self._dataservice.api.turn_off_switch(self._address, self._channel)
         self.async_write_ha_state()
