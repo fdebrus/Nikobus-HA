@@ -7,7 +7,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dis
 
 from .const import DOMAIN, BRAND
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
@@ -70,17 +70,17 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        self._state = bool(self._dataservice.get_light_state(self._address, self._channel))
-        self._brightness = self._dataservice.get_light_brightness(self._address, self._channel)
+        self._state = bool(self._dataservice.api.get_light_state(self._address, self._channel))
+        self._brightness = self._dataservice.api.get_light_brightness(self._address, self._channel)
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs):
         self._brightness = kwargs.get("brightness", 255)
         self._state = True
-        await self._dataservice.turn_on_light(self._address, self._channel, self._brightness)
+        await self._dataservice.api.turn_on_light(self._address, self._channel, self._brightness)
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         self._state = False
-        await self._dataservice.turn_off_light(self._address, self._channel)
+        await self._dataservice.api.turn_off_light(self._address, self._channel)
         self.async_write_ha_state()
