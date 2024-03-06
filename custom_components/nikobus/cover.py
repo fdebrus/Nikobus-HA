@@ -127,7 +127,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_opening = True
             self._is_closing = False
             if not self._nikobus_command:
-                await self._dataservice._operate_cover(self._address, self._channel, "open")
+                await self._operate_cover(self._address, self._channel, "open")
             self._nikobus_command = False
             await self._complete_movement(100)
 
@@ -138,7 +138,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_closing = True
             self._is_opening = False
             if not self._nikobus_command:
-                await self._dataservice._operate_cover(self._address, self._channel, "close")
+                await self._operate_cover(self._address, self._channel, "close")
             self._nikobus_command = False
             await self._complete_movement(0)
 
@@ -163,7 +163,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_closing = True
             self._is_opening = False
         if not self._nikobus_command:
-            await self._dataservice._operate_cover(self._address, self._channel, direction)
+            await self._operate_cover(self._address, self._channel, direction)
         self._nikobus_command = False
         await self._complete_movement(expected_position)
         
