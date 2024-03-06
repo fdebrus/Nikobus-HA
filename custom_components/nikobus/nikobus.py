@@ -13,8 +13,6 @@ import aiofiles
 
 from .const import DOMAIN
 
-UPDATE_SIGNAL = "update_signal"
-
 from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
 from homeassistant.helpers.entity_registry import async_get
 
