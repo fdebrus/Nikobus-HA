@@ -8,7 +8,7 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
     ATTR_POSITION
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
@@ -16,7 +16,7 @@ from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus cover entities from a configuration entry. This function initializes cover entities based on the Nikobus system's configuration and adds them to Home Assistant for management."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
@@ -53,12 +53,13 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._in_motion = False
         self._nikobus_command = False
         self._operation_time = float(operation_time)  # Operation time in seconds to fully open/close the cover.
-        self._name = channel_description
         self._description = description
         self._model = model
         self._address = address
         self._channel = channel
-        self._unique_id = f"{self._address}{self._channel}"
+
+        self._attr_name = channel_description
+        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
     @property
     def device_info(self):
@@ -69,11 +70,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             "manufacturer": BRAND,
             "model": self._model,
         }
-
-    @property
-    def name(self):
-        """Returns the name of the cover entity."""
-        return self._name
 
     @property
     def current_cover_position(self):
@@ -105,37 +101,24 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Checks if the cover is currently closing."""
         return self._is_closing
 
-    @property
-    def unique_id(self):
-        """Provides a unique identifier for the cover entity."""
-        return self._unique_id
-
-    async def async_added_to_hass(self):
-        """Actions to perform when the entity is added to Home Assistant, such as registering update listeners."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"nikobus_cover_update_{self._unique_id}",
-                self._handle_signal
-            )
-        )
-
-    async def _handle_signal(self, message):
-        """Handles update signals for the cover, directing the entity to open or close based on received commands."""
-        # Process received commands to open or close the cover.
-        if message['command'] == 'close':
-            self._nikobus_command = True
-            if self._is_opening or self._is_closing:
-                await self.async_stop_cover()
-            else:            
-                await self.async_close_cover()
-        if message['command'] == 'open':
-            self._nikobus_command = True
-            if self._is_opening or self._is_closing:
-                await self.async_stop_cover()
-            else:
-                await self.async_open_cover()
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        state = self._dataservice.api.get_cover_state(self._address, self._channel)
+        _LOGGER.debug(f"COVER COORDINATOR UPDATE {state} - {self._position}.")
+        if state == "00":
+            self._is_opening = False
+            self._is_closing = False
+            self._in_motion = False
+        elif state == "01":
+            self._is_opening = True
+            self._is_closing = False
+            self._in_motion = True
+        elif state == "02":
+            self._is_opening = False
+            self._is_closing = True
+            self._in_motion = True
+        self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs):
         """Triggers the operation to fully open the cover."""
@@ -144,7 +127,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_opening = True
             self._is_closing = False
             if not self._nikobus_command:
-                await self._dataservice.operate_cover(self._address, self._channel, "open")
+                await self._operate_cover(self._address, self._channel, "open")
             self._nikobus_command = False
             await self._complete_movement(100)
 
@@ -155,7 +138,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_closing = True
             self._is_opening = False
             if not self._nikobus_command:
-                await self._dataservice.operate_cover(self._address, self._channel, "close")
+                await self._operate_cover(self._address, self._channel, "close")
             self._nikobus_command = False
             await self._complete_movement(0)
 
@@ -166,7 +149,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._is_closing = False
         self._in_motion = False
         self.async_write_ha_state()
-        await self._dataservice.stop_cover(self._address, self._channel)
+        await self._dataservice.api.stop_cover(self._address, self._channel)
 
     async def async_set_cover_position(self, **kwargs):
         """Sets the cover to a specific position."""
@@ -180,7 +163,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_closing = True
             self._is_opening = False
         if not self._nikobus_command:
-            await self._dataservice.operate_cover(self._address, self._channel, direction)
+            await self._operate_cover(self._address, self._channel, direction)
         self._nikobus_command = False
         await self._complete_movement(expected_position)
         
@@ -215,7 +198,13 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self.async_write_ha_state()
             await asyncio.sleep(1)
 
-        await self._dataservice.update_json_state(self._address, self._channel, '00')
+        await self._dataservice.api.update_json_state(self._address, self._channel, '00')
         self._is_opening = False
         self._is_closing = False
         self.async_write_ha_state()
+
+    async def _operate_cover(self, address, channel, direction):
+        if direction == 'open':
+            await self._dataservice.api.open_cover(address, channel)
+        else:
+            await self._dataservice.api.close_cover(address, channel)

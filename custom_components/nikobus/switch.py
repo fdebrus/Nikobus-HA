@@ -1,23 +1,14 @@
 """Nikobus Switch entity."""
 
-import logging
-
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, BRAND
 
-_LOGGER = logging.getLogger(__name__)
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
-UPDATE_SIGNAL = "update_signal"
-
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
-    """Set up Nikobus switch entities from a configuration entry.
-    
-    This function initializes switch entities based on the switch modules configured in the Nikobus system.
-    """
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     entities = [
@@ -38,23 +29,21 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     async_add_entities(entities)
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
-    """Represents a Nikobus switch entity within Home Assistant."""
 
     def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, initial_state=False) -> None:
-        """Initialize the Nikobus Switch Entity with specific parameters."""
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._name = channel_description
         self._state = initial_state
         self._description = description
         self._model = model
         self._address = address
         self._channel = channel
-        self._unique_id = f"{self._address}{self._channel}"
+
+        self._attr_name = channel_description
+        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
     @property
     def device_info(self):
-        """Return device information for Home Assistant."""
         return {
             "identifiers": {(DOMAIN, self._address)},
             "name": self._description,
@@ -63,52 +52,20 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         }
 
     @property
-    def name(self):
-        """Return the name of the switch."""
-        return self._name
-
-    @property
-    def should_poll(self):
-        """Indicate that the entity should be polled for updates."""
-        return True
-
-    @property
     def is_on(self):
-        """Return the current state of the switch (on/off)."""
         return self._state
 
-    async def async_added_to_hass(self):
-        """Register for update signals when the entity is added to Home Assistant."""
-        async_dispatcher_connect(
-            self.hass,
-            f"{UPDATE_SIGNAL}_{self._unique_id}",
-            self._schedule_immediate_update,
-        )
-
-    async def _schedule_immediate_update(self):
-        """Trigger an immediate update of the entity."""
-        self.async_schedule_update_ha_state(True)
-
-    async def async_update(self):
-        """Fetch new state data for the switch.
-        
-        This is the method that updates the state of the switch entity from the Nikobus system.
-        """
-        self._state = bool(self._dataservice.get_switch_state(self._address, self._channel))
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
+        self.async_write_ha_state()
 
     async def async_turn_on(self):
-        """Turn the switch on."""
         self._state = True
-        await self._dataservice.turn_on_switch(self._address, self._channel)
+        await self._dataservice.api.turn_on_switch(self._address, self._channel)
         self.async_write_ha_state()
 
     async def async_turn_off(self):
-        """Turn the switch off."""
         self._state = False
-        await self._dataservice.turn_off_switch(self._address, self._channel)
+        await self._dataservice.api.turn_off_switch(self._address, self._channel)
         self.async_write_ha_state()
-
-    @property
-    def unique_id(self):
-        """Return the unique ID for this switch entity."""
-        return self._unique_id
