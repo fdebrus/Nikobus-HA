@@ -44,7 +44,6 @@ class Nikobus:
         self._hass = hass
         self.connection_string = connection_string
         self._async_event_handler = async_event_handler
-        self.coordinator = None 
         self._response_queue = asyncio.Queue()
         self._event_listener_task = None
         self._nikobus_reader = None
@@ -54,8 +53,6 @@ class Nikobus:
         self.json_state_data = {}
         self.json_button_data = {}
         self._command_queue = asyncio.Queue()
-        self._impacted_module_address = None
-        self._impacted_group = None
 
     @classmethod
     async def create(cls, hass, connection_string, async_event_handler):
@@ -185,24 +182,15 @@ class Nikobus:
     async def refresh_nikobus_data(self):
         result_dict = {}
 
-        specific_address = self._impacted_module_address
-        specific_group = self._impacted_group
-
         # Iterate through each module in the configuration data.
         for module_type, entries in self.json_config_data.items():
             for entry in entries:
                 address = entry.get("address")
-                if specific_address and address != specific_address:
-                    continue  # Skip modules not matching the specific address, if provided.
-                
                 _LOGGER.debug(f'Refreshing data for module address: {address}')
                 state = ""
                 # Determine how many groups need to be queried based on channel count.
                 channel_count = len(entry.get("channels", []))
                 groups_to_query = [1] if channel_count <= 6 else [1, 2]
-
-                if specific_group:
-                    groups_to_query = [specific_group]  # Override with specific group if provided.
 
                 for group in groups_to_query:
                     # Query the state for each group.
@@ -210,19 +198,8 @@ class Nikobus:
                     _LOGGER.debug(f'State for group {group}: {group_state} address : {address}')
                     state += group_state  # Concatenate states from each group.
 
-                # Merge the new state with existing state data if a specific group is targeted.
-                if specific_group and address in self.json_state_data:
-                    existing_state = self.json_state_data[address]
-                    _LOGGER.debug(f'Existing state: {existing_state}')
-                    
-                    # Calculate start and end indexes for state update based on group number.
-                    start_index, end_index = (1, 6) if int(specific_group) == 1 else (7, 12)
-                    new_state = {index + start_index - 1: state[i:i + 2] for index, i in enumerate(range(0, len(state), 2), start=start_index) if index + start_index - 1 <= end_index}
-                    merged_state = {**existing_state, **new_state}
-                    self.json_state_data[address] = merged_state
-                    _LOGGER.debug(f'Updated state: {self.json_state_data[address]}')
-                elif state:
-                    # Create a new state dictionary if no specific group is targeted, or if the address is new.
+                if state:
+                    # Create a new state dictionary.
                     state_dict = {index + 1: state[i:i + 2] for index, i in enumerate(range(0, len(state), 2))}
                     result_dict[address] = state_dict
                 else:
@@ -233,11 +210,8 @@ class Nikobus:
             self.json_state_data.update(result_dict)
             _LOGGER.debug('JSON state data updated.')
         
-        self._impacted_module_address = None
-        self._impacted_group = None
-
         return True
-
+        
 #### SEND A COMMAND AND GET THE ANSWER
     async def send_command_get_answer(self, command, address, max_attempts=3):
         _LOGGER.debug('Entering send_command_get_answer()')
@@ -363,6 +337,13 @@ class Nikobus:
         # Use setdefault to initialize the address key if not present, then update the channel with the new value.
         self.json_state_data.setdefault(address, {})[channel] = value
 
+    async def update_json_group_state(self, address, group, value):
+        _LOGGER.debug(f"Updating JSON state for address {address} group {group} to value {value}.")
+        start_index, end_index = (1, 6) if int(group) == 1 else (7, 12)
+        new_state = {index + start_index - 1: value[i:i + 2] for index, i in enumerate(range(0, len(value), 2), start=start_index) if index + start_index - 1 <= end_index}
+        merged_state = {**existing_state, **new_state}
+        self.json_state_data[address] = merged_state
+
 #### SWITCHES
     def get_switch_state(self, address, channel):
         _state = self.json_state_data.get(address, {}).get(channel)
@@ -443,7 +424,7 @@ class Nikobus:
         for button in self.json_button_data.get('nikobus_button', []):
             if button['address'] == address:
                 _LOGGER.debug(f"Button at address {address} found in configuration. Processing...")
-                self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
+                await self._async_event_handler("nikobus_button_pressed", address)
                 await self.process_button_modules(button)
                 return
         _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration.")
@@ -468,9 +449,8 @@ class Nikobus:
             _LOGGER.debug(f"Refreshing status for module {impacted_module_address}, group {impacted_group}")
             try:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
-                self._impacted_module_address = impacted_module_address
-                self._impacted_group = impacted_group
-                await self.coordinator.async_refresh()
+                value = await self.get_output_state_nikobus(impacted_module_address, impacted_group)
+                await self.update_json_group_state(impacted_module_address, impacted_group, value)
+                await self._async_event_handler("nikobus_button_pressed", address)
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
-                
