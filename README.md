@@ -7,9 +7,13 @@ Home Assistant integration for Nikobus.
 # Functionality
 
 Supported and tested
+
 	Nikobus switch module 05-000-02 and 05-002-02.
+ 
 	Nikobus dimmer module 05-007-02.
+ 
 	Nikobus shutter module 05-001-02.
+ 
 	Nikobus buttons.
 
 Switches can be operated on/off.
