@@ -44,7 +44,3 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         elif "nikobus_button_pressed" in event:
             self.hass.bus.async_fire('nikobus_button_pressed', {'address': data})
         self.async_update_listeners()
-
-    async def update_json_state(self, address, channel, value):
-        await self.api.update_json_state(address, channel, value)
-
