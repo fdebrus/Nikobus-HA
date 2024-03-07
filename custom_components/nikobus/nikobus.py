@@ -33,16 +33,17 @@ from .helpers import (
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.2.x"
+__version__ = "2024.3.7"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
 class Nikobus:
     def __init__(self, hass, connection_string, async_event_handler):
         self._hass = hass
-        self.connection_string = connection_string
+        self._connection_string = connection_string
         self._async_event_handler = async_event_handler
         self._response_queue = asyncio.Queue()
+        self._command_queue = asyncio.Queue()
         self._event_listener_task = None
         self._nikobus_reader = None
         self._nikobus_writer = None
@@ -50,7 +51,7 @@ class Nikobus:
         self.json_config_data = {}
         self.json_state_data = {}
         self.json_button_data = {}
-        self._command_queue = asyncio.Queue()
+        
 
     @classmethod
     async def create(cls, hass, connection_string, async_event_handler):
@@ -78,22 +79,22 @@ class Nikobus:
                 return "Serial"
             return "Unknown"
 
-        connection_type = validate_string(self.connection_string)
+        connection_type = validate_string(self._connection_string)
 
         try:
             if connection_type == "IP":
-                host, port_str = self.connection_string.split(":")
+                host, port_str = self._connection_string.split(":")
                 port = int(port_str)
                 self._nikobus_reader, self._nikobus_writer = await asyncio.open_connection(host, port)
                 _LOGGER.info(f"Connected to Nikobus over IP at {host}:{port}")
             elif connection_type == "Serial":
                 self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(url=self.connection_string, baudrate=9600)
-                _LOGGER.info(f"Connected to Nikobus over serial at {self.connection_string}")
+                _LOGGER.info(f"Connected to Nikobus over serial at {self._connection_string}")
             else:
-                _LOGGER.error(f"Invalid Nikobus connection string: {self.connection_string}")
+                _LOGGER.error(f"Invalid Nikobus connection string: {self._connection_string}")
                 return False
         except Exception as err:
-            _LOGGER.error(f"Connection error with {self.connection_string}: {err}")
+            _LOGGER.error(f"Connection error with {self._connection_string}: {err}")
             return False
 
         # Start listening for events
@@ -162,9 +163,9 @@ class Nikobus:
         try:
             async with aiofiles.open(config_file_path, mode='r') as file:
                 self.json_config_data = json.loads(await file.read())
-            _LOGGER.info('Nikobus configuration data successfully loaded.')
+            _LOGGER.info('Nikobus module configuration data successfully loaded.')
         except Exception as e:
-            _LOGGER.error(f'Failed to load Nikobus configuration data: {e}')
+            _LOGGER.error(f'Failed to load Nikobus module configuration data: {e}')
 
     async def load_json_button_data(self):
         config_file_path = self._hass.config.path("nikobus_button_config.json")
@@ -275,7 +276,7 @@ class Nikobus:
         _LOGGER.debug('Command sent successfully')
         return None
 
-#### SET's AND GET's
+#### SET's AND GET's for Nikobus
     async def get_output_state_nikobus(self, address, group):
         """Retrieve the current state of an output based on its address and group."""
         _LOGGER.debug('Entering get_output_state_nikobus()')
@@ -332,8 +333,12 @@ class Nikobus:
 #### UTILS
     async def update_json_state(self, address, channel, value):
         _LOGGER.debug(f"Updating JSON state for address {address}, channel {channel} to value {value}.")
-        # Use setdefault to initialize the address key if not present, then update the channel with the new value.
         self.json_state_data.setdefault(address, {})[channel] = value
+
+    def get_json_state(self, address, channel):
+        _state = self.json_state_data.get(address, {}).get(channel)
+        _LOGGER.debug(f"Getting JSON state for address {address}, channel {channel} current value {_state}.")
+        return _state
 
     async def update_json_group_state(self, address, group, value):
         _LOGGER.debug(f"Updating JSON state for address {address} group {group} to value {value}.")
@@ -345,62 +350,48 @@ class Nikobus:
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
-        _state = self.json_state_data.get(address, {}).get(channel)
-        _LOGGER.debug(f"Getting switch state for address {address}, channel {channel}: {'on' if _state == 'FF' else 'off'}")
+        _state = self.get_json_state(address, channel)
         return _state == "FF"
 
     async def turn_on_switch(self, address, channel):
-        _LOGGER.debug(f"Turning on switch at address {address}, channel {channel}.")
-        self.json_state_data.setdefault(address, {})[channel] = 'FF'
+        await self.update_json_state(address, channel, 'FF')
         await self.set_value_at_address(address, channel)
 
     async def turn_off_switch(self, address, channel):
-        _LOGGER.debug(f"Turning off switch at address {address}, channel {channel}.")
-        self.json_state_data.setdefault(address, {})[channel] = '00'
+        await self.update_json_state(address, channel, '00')
         await self.set_value_at_address(address, channel)
 
 #### DIMMERS
     def get_light_state(self, address, channel):
-        _state = self.json_state_data.get(address, {}).get(channel)
-        _LOGGER.debug(f"Getting light state for address {address}, channel {channel}: {'on' if _state != '00' else 'off'}")
+        _state = self.get_json_state(address, channel)
         return _state != "00"
     
     def get_light_brightness(self, address, channel):
-        _state = self.json_state_data.get(address, {}).get(channel)
-        _LOGGER.debug(f"Getting light brightness for address {address}, channel {channel}: {int(_state, 16)}")
+        _state = self.get_json_state(address, channel)
         return int(_state, 16)
 
     async def turn_on_light(self, address, channel, brightness):
-        _LOGGER.debug(f"Turning on light at address {address}, channel {channel} to brightness {brightness}.")
-        self.json_state_data.setdefault(address, {})[channel] = format(brightness, '02X')
+        await self.update_json_state(address, channel, format(brightness, '02X'))
         await self.set_value_at_address(address, channel)
 
     async def turn_off_light(self, address, channel):
-        _LOGGER.debug(f"Turning off light at address {address}, channel {channel}.")
-        self.json_state_data.setdefault(address, {})[channel] = '00'
+        await self.update_json_state(address, channel, '00')
         await self.set_value_at_address(address, channel)
 
 #### COVERS
     def get_cover_state(self, address, channel):
-        _state = self.json_state_data.get(address, {}).get(channel)
-        _LOGGER.debug(f"Getting cover state for address {address}, channel {channel}")
+        _state = self.get_json_state(address, channel)
         return _state
 
     async def stop_cover(self, address, channel) -> None:
-        """Stop the movement of a cover."""
-        _LOGGER.debug(f"Stopping cover at address {address}, channel {channel}.")
         await self.update_json_state(address, channel, '00')
         await self.set_value_at_address(address, channel)
 
     async def open_cover(self, address, channel) -> None:
-        """Open a cover to its maximum extent."""
-        _LOGGER.debug(f"Opening cover at address {address}, channel {channel}.")
         await self.update_json_state(address, channel, '01')
         await self.set_value_at_address(address, channel)
 
     async def close_cover(self, address, channel) -> None:
-        """Close a cover completely."""
-        _LOGGER.debug(f"Closing cover at address {address}, channel {channel}.")
         await self.update_json_state(address, channel, '02')
         await self.set_value_at_address(address, channel)
 
@@ -412,18 +403,12 @@ class Nikobus:
             await file.write(json.dumps(self.json_button_data, indent=4))
             _LOGGER.debug("Button configuration data successfully written to JSON file.")
 
-    async def send_button_press(self, address) -> None:
-        """Simulate a button press by sending the appropriate command to the Nikobus system."""
-        _LOGGER.debug(f"Sending button press command for address: {address}")
-        await self.queue_command(f'#N{address}\r#E1')
-
     async def button_discovery(self, address):
         """Discover a button by its address and update configuration if it's new, or process it if it exists."""
         _LOGGER.debug(f"Discovering button at address: {address}")
         for button in self.json_button_data.get('nikobus_button', []):
             if button['address'] == address:
                 _LOGGER.debug(f"Button at address {address} found in configuration. Processing...")
-                await self._async_event_handler("nikobus_button_pressed", address)
                 await self.process_button_modules(button)
                 return
         _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration.")
