@@ -67,7 +67,7 @@ List the impacted modules as show below for each button of your installation.
 ** Note: If you do not plan to use your button as HA trigger, and you can accomodate to wait for the next refresh cycle to have Nikobus in sync with HA, you do not need to create buttons
 
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/70cbd1c8-2e2b-4114-9cf3-f0d618e2ce52)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/d0e82ca4-9a75-4a15-b471-a747b3abda1f)
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/ec3e56de-5b9e-404a-b97f-341c4c96331a)
 
