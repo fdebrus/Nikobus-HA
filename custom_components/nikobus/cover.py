@@ -47,7 +47,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Initialize the cover entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._position = None
+        self._position = 100
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
