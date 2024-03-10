@@ -1,11 +1,15 @@
 """Nikobus Dimmer / Light entity."""
 
+import logging
+
 from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, BRAND
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
@@ -30,7 +34,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
 class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, initial_state=False, brightness=255) -> None:
+    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, initial_state=None, brightness=None) -> None:
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._state = initial_state
@@ -68,10 +72,16 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     def is_on(self):
         return self._state
 
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.coordinator.async_add_listener(self._handle_coordinator_update)
+        self._handle_coordinator_update()
+
     @callback
     def _handle_coordinator_update(self) -> None:
         self._state = bool(self._dataservice.api.get_light_state(self._address, self._channel))
         self._brightness = self._dataservice.api.get_light_brightness(self._address, self._channel)
+        _LOGGER.debug(f"STATE {self._state} - {self._brightness}")
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs):
