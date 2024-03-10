@@ -6,6 +6,7 @@ import logging
 from .nikobus import Nikobus
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
@@ -24,11 +25,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER,
             name="Nikobus",
             update_method=self.async_update_data,
-            update_interval=timedelta(seconds=120),  # Defines how often data should be updated.
+            update_interval=timedelta(seconds=120),
         )
 
     async def connect(self):
         self.api = await Nikobus.create(self.hass, self.connection_string, self.async_event_handler)
+
+    async def async_config_entry_first_refresh(self):
+        """Perform the initial data refresh."""
+        try:
+            _LOGGER.debug("Calling initial REFRESH")
+            return await self.api.refresh_nikobus_data()
+        except Exception as e:
+            _LOGGER.error("Error fetching Nikobus data: %s", e)
+            raise UpdateFailed(f"Error fetching data: {e}")
 
     async def async_update_data(self):
         try:
