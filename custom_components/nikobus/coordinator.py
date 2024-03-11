@@ -44,6 +44,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         try:
             _LOGGER.debug("calling REFRESH")
             return await self.api.refresh_nikobus_data()
+            # await self.hass.async_add_executor_job(self.api.refresh_nikobus_data)
         except Exception as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
             raise UpdateFailed(f"Error fetching data: {e}")
