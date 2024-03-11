@@ -115,10 +115,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Handle updated data from the coordinator."""
         state = self._dataservice.api.get_cover_state(self._address, self._channel)
         _LOGGER.debug(f"STATE {state}")
-        if state == "00":
+        if state == 0x00:
             _LOGGER.debug(f"00 {state}")
             self._in_motion = False
-        elif state == "01":
+        elif state == 0x01:
             _LOGGER.debug(f"01 {state}")
             if self._in_motion:
                 self._in_motion = False
@@ -126,7 +126,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             else:
                 self._in_motion = True
                 self.hass.async_add_job(self.async_set_cover_position(position=100))
-        elif state == "02":
+        elif state == 0x02:
             _LOGGER.debug(f"02 {state}")
             if self._in_motion:
                 self._in_motion = False
