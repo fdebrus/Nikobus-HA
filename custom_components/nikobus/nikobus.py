@@ -42,7 +42,6 @@ class Nikobus:
         self._hass = hass
         self._connection_string = connection_string
         self._async_event_handler = async_event_handler
-        self._last_pressed_button_address = None
         self._response_queue = asyncio.Queue()
         self._command_queue = asyncio.Queue()
         self._event_listener_task = None
@@ -55,19 +54,22 @@ class Nikobus:
 
     @classmethod
     async def create(cls, hass, connection_string, async_event_handler):
-        _LOGGER.debug(f"Creating NikobusSystem instance with connection string: {connection_string}")
+        _LOGGER.debug(f"Creating Nikobus instance with connection string: {connection_string}")
+    
         # Instantiate the class with the provided Home Assistant instance and connection string.
         instance = cls(hass, connection_string, async_event_handler)
-        # Await the connection establishment to the Nikobus system.
-        await instance.connect()
-        _LOGGER.info("NikobusSystem instance created and connected successfully.")
-        # Return the instantiated and connected instance.
-        return instance
+    
+        if await instance.connect():
+            _LOGGER.info("Nikobus instance created and connected successfully.")
+            return instance
+        else:
+            _LOGGER.error("Nikobus instance could not be created.")
+            return None
 
 #### CONNECT NIKOBUS
     async def connect(self):
         """Establish a connection to the Nikobus system based on the provided connection string."""
-
+    
         def validate_string(input_string):
             """Validate the format of the connection string to determine connection type."""
             try:
@@ -78,9 +80,9 @@ class Nikobus:
             if re.match(r'^/dev/tty(USB|S)\d+$', input_string):
                 return "Serial"
             return "Unknown"
-
+    
         connection_type = validate_string(self._connection_string)
-
+    
         try:
             if connection_type == "IP":
                 host, port_str = self._connection_string.split(":")
@@ -91,42 +93,45 @@ class Nikobus:
                 self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(url=self._connection_string, baudrate=9600)
                 _LOGGER.info(f"Connected to Nikobus over serial at {self._connection_string}")
             else:
-                _LOGGER.error(f"Invalid Nikobus connection string: {self._connection_string}")
-                return False
+                raise ValueError(f"Invalid Nikobus connection string: {self._connection_string}")
         except Exception as err:
             _LOGGER.error(f"Nikobus connection error with {self._connection_string}: {err}")
             return False
-
+    
         # Start listening for events
         self._event_listener_task = asyncio.create_task(self.listen_for_events())
-
+    
         # Load JSON config data and button data
         try:
             await self.load_json_config_data()
             await self.load_json_button_data()
         except Exception as err:
-            _LOGGER.error(f"Nikobus configuration file {err}")
-
+            _LOGGER.error(f"Nikobus configuration file load error - {err}")
+            return False
+    
         # Perform handshake with Nikobus
-        await self.perform_handshake()
-
-        return True
+        if await self.perform_handshake():
+            return True
+        else:
+            return False
 
     async def perform_handshake(self):
         """Perform the handshake with the Nikobus system."""
         commands = ["++++\r", "ATH0\r", "ATZ\r", "$10110000B8CF9D\r", "#L0\r", "#E0\r", "#L0\r", "#E1\r"]
-        for command in commands:
-            try:
+        try:
+            for command in commands:
                 self._nikobus_writer.write(command.encode())
                 await self._nikobus_writer.drain()
                 _LOGGER.debug(f"COMMAND {command.encode()}")
-            except OSError as err:
-                _LOGGER.error(f"Send error {command!r} to {self._host}:{self._port} - {err}")
-                return
+        except OSError as err:
+            _LOGGER.error(f"Handshake error {command!r} to {self._host}:{self._port} - {err}")
+            return False
+        return True
 
     async def listen_for_events(self):
         """Listen for events from the Nikobus system and handle them accordingly."""
         _LOGGER.debug("Nikobus Event Listener started")
+
         try:
             while True:
                 try:
@@ -146,11 +151,13 @@ class Nikobus:
 
     async def handle_message(self, message):
         """Handle incoming messages from the Nikobus system."""
-        _LOGGER.debug(f"Listener got message : {message}")
+        _LOGGER.debug(f"Handler got message: {message}")
+
         _button_command_prefix = '#N'
         _ignore_answer = '$0E'
+
         if message.startswith(_button_command_prefix):
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(0.4)  # Wait for Nikobus to fully process the command
             address = message[2:8]
             _LOGGER.debug(f"Handling button press for address: {address}")
             await self.button_discovery(address)
@@ -161,26 +168,38 @@ class Nikobus:
     async def load_json_config_data(self):
         config_file_path = self._hass.config.path("nikobus_config.json")
         _LOGGER.debug(f'Loading Nikobus configuration data from {config_file_path}')
+    
         try:
             async with aiofiles.open(config_file_path, mode='r') as file:
                 self.json_config_data = json.loads(await file.read())
             _LOGGER.info('Nikobus module configuration data successfully loaded.')
             return True
+        except FileNotFoundError:
+            _LOGGER.error(f'Nikobus configuration file not found: {config_file_path}')
+        except json.JSONDecodeError as e:
+            _LOGGER.error(f'Failed to decode JSON data in Nikobus configuration file: {e}')
         except Exception as e:
             _LOGGER.error(f'Failed to load Nikobus module configuration data: {e}')
-            return False
+    
+        return False
 
     async def load_json_button_data(self):
         config_file_path = self._hass.config.path("nikobus_button_config.json")
         _LOGGER.debug(f'Loading Nikobus button configuration data from {config_file_path}')
+    
         try:
             async with aiofiles.open(config_file_path, 'r') as file:
                 self.json_button_data = json.loads(await file.read())
             _LOGGER.info('Nikobus button configuration data successfully loaded.')
             return True
+        except FileNotFoundError:
+            _LOGGER.error(f'Nikobus button configuration file not found: {config_file_path}')
+        except json.JSONDecodeError as e:
+            _LOGGER.error(f'Failed to decode JSON data in Nikobus button configuration file: {e}')
         except Exception as e:
             _LOGGER.error(f'Failed to load Nikobus button configuration data: {e}')
-            return False
+    
+        return False
 
 #### REFRESH DATA FROM THE NIKOBUS
     async def refresh_nikobus_data(self):
@@ -195,16 +214,16 @@ class Nikobus:
                 groups_to_query = [1] if channel_count <= 6 else [1, 2]
 
                 for group in groups_to_query:
-                    # Query the state for each group. asyncio.gather
+                    # Query the state for each group. asyncio.gather ?
                     group_state = await self.get_output_state_nikobus(address, group) or ""
                     _LOGGER.debug(f'*** State for group {group}: {group_state} address : {address} ***')
                     state += group_state  # Concatenate states from each group.
 
                 self.nikobus_module_states[address] = bytearray.fromhex(state)
-                _LOGGER.debug(f'*** ARRAY module address: {address} - {self.nikobus_module_states[address]}')
+                _LOGGER.debug(f'*** {self.nikobus_module_states[address]}')
 
         return True
-        
+
 #### SEND A COMMAND AND GET THE ANSWER
     async def send_command_get_answer(self, command, address, max_attempts=3):
         _LOGGER.debug('Entering send_command_get_answer()')
@@ -265,148 +284,173 @@ class Nikobus:
     async def send_command(self, command):
         _LOGGER.debug('Entering send_command()')
         _LOGGER.debug(f'Command to send: {command}')
-        self._nikobus_writer.write(command.encode() + b'\r')
-        await self._nikobus_writer.drain()
-        _LOGGER.debug('Command sent successfully')
-        return None
+    
+        try:
+            self._nikobus_writer.write(command.encode() + b'\r')
+            await self._nikobus_writer.drain()
+            _LOGGER.debug('Command sent successfully')
+            return True
+        except Exception as e:
+            _LOGGER.error(f'Error sending command: {e}')
+            return False
 
 #### SET's AND GET's for Nikobus
     async def get_output_state_nikobus(self, address, group):
         """Retrieve the current state of an output based on its address and group."""
-        _LOGGER.debug('Entering get_output_state_nikobus()')
-        _LOGGER.debug(f'Address: {address}, Group: {group}')
-        if int(group) in [1, 2]:
-            command_code = 0x12 if int(group) == 1 else 0x17
-            command = make_pc_link_command(command_code, address)
-        else:
+        _LOGGER.debug(f'Entering get_output_state_nikobus() - Address: {address}, Group: {group}')
+    
+        if int(group) not in [1, 2]:
             _LOGGER.error(f'Invalid group number: {group}')
-            return
+            return None
+    
+        command_code = 0x12 if int(group) == 1 else 0x17
+        command = make_pc_link_command(command_code, address)
+    
         result = await self.send_command_get_answer(command, address)
         return result
 
     async def set_output_state_nikobus(self, address, channel, value):
-        """Set the state of an output based on its address, group number."""
-        _LOGGER.debug('Entering set_output_state_nikobus()')
-        _LOGGER.debug(f'Address: {address}, Channel: {channel}')
+        """Set the state of an output based on its address, channel, and value."""
+        _LOGGER.debug(f'Entering set_output_state_nikobus() - Address: {address}, Channel: {channel}')
+    
         self.set_bytearray_state(address, channel, value)
+    
         group_number = calculate_group_number(channel)
-        if int(group_number) in [1, 2]:
-            if int(group_number) == 1:
-                command_code = 0x15
-                values = self.nikobus_module_states[address][:6]
-            elif int(group_number) == 2:
-                command_code = 0x16
-                values = self.nikobus_module_states[address][6:12]
-            values = values + bytearray([0xFF])
-            command = make_pc_link_command(command_code, address, values)
-        else:
+        if int(group_number) not in [1, 2]:
             _LOGGER.error(f'Invalid group number: {group_number}')
             return
+    
+        command_code = 0x15 if int(group_number) == 1 else 0x16
+        values = self.nikobus_module_states[address][(int(group_number) - 1) * 6:int(group_number) * 6] + bytearray([0xFF])
+        command = make_pc_link_command(command_code, address, values)
+    
         _LOGGER.debug(f'Sending command: {command}')
         await self.queue_command(command)
 
 #### QUEUE FOR COMMANDS
     async def queue_command(self, command):
+        """Queue a command for execution."""
         _LOGGER.debug(f'Queueing command for execution: {command}')
         await self._command_queue.put(command)
 
     async def process_commands(self):
+        """Continuously process commands from the command queue."""
         while True:
             command = await self._command_queue.get()
             _LOGGER.debug(f'Executing command from queue: {command}')
+        
             try:
                 result = await self.send_command(command)
                 _LOGGER.debug(f'Command executed successfully: {command}')
             except Exception as e:
                 _LOGGER.error(f"Failed to execute command '{command}': {e}")
+        
             finally:
                 self._command_queue.task_done()
 
 #### UTILS
     def get_bytearray_state(self, address, channel):
-        return self.nikobus_module_states[address][channel-1]
+        """Get the state of a specific channel within the Nikobus module states."""
+        return self.nikobus_module_states.get(address, bytearray())[channel - 1]
 
     def set_bytearray_state(self, address, channel, value):
-        self.nikobus_module_states[address][channel-1] = value
+        """Set the state of a specific channel within the Nikobus module states."""
+        if address in self.nikobus_module_states:
+            self.nikobus_module_states[address][channel - 1] = value
+        else:
+            _LOGGER.error(f'Address {address} not found in Nikobus module states.')
 
     def set_bytearray_group_state(self, address, group, value):
+        """Update the state of a specific group within the Nikobus module states."""
         _LOGGER.debug(f"Updating ARRAY state for address {address} group {group} to value {value}")
         byte_value = bytearray.fromhex(value)
-        if int(group) == 1:
-            self.nikobus_module_states[address][:6] = byte_value
-        elif int(group) == 2:
-            self.nikobus_module_states[address][6:12] = byte_value
+        group_start_index = (int(group) - 1) * 6
+        group_end_index = int(group) * 6
+        if address in self.nikobus_module_states:
+            if int(group) == 1:
+                self.nikobus_module_states[address][:6] = byte_value
+            elif int(group) == 2:
+                self.nikobus_module_states[address][6:12] = byte_value
+        else:
+            _LOGGER.error(f'Address {address} not found in Nikobus module states.')
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
-        _state = self.get_bytearray_state(address, channel)
-        return _state == 0xFF
+        """Get the state of a switch based on its address and channel."""
+        return self.get_bytearray_state(address, channel) == 0xFF
 
     async def turn_on_switch(self, address, channel):
+        """Turn on a switch specified by its address and channel."""
         await self.set_output_state_nikobus(address, channel, 0xFF)
 
     async def turn_off_switch(self, address, channel):
+        """Turn off a switch specified by its address and channel."""
         await self.set_output_state_nikobus(address, channel, 0x00)
 
 #### DIMMERS
     def get_light_state(self, address, channel):
-        _state = self.get_bytearray_state(address, channel)
-        return _state != 0x00
+        """Get the state of a light based on its address and channel."""
+        return self.get_bytearray_state(address, channel) != 0x00
     
     def get_light_brightness(self, address, channel):
-        _state = self.get_bytearray_state(address, channel)
-        return _state
+        """Get the brightness of a light based on its address and channel."""
+        return self.get_bytearray_state(address, channel)
 
     async def turn_on_light(self, address, channel, brightness):
+        """Turn on a light specified by its address and channel with the given brightness."""
         await self.set_output_state_nikobus(address, channel, brightness)
 
     async def turn_off_light(self, address, channel):
+        """Turn off a light specified by its address and channel."""
         await self.set_output_state_nikobus(address, channel, 0x00)
 
 #### COVERS
     def get_cover_state(self, address, channel):
-        _state = self.get_bytearray_state(address, channel)
-        return _state
+        """Get the state of a cover based on its address and channel."""
+        return self.get_bytearray_state(address, channel)
 
-    async def stop_cover(self, address, channel) -> None:
+    async def stop_cover(self, address, channel):
+        """Stop a cover specified by its address and channel."""
         await self.set_output_state_nikobus(address, channel, 0x00)
 
-    async def open_cover(self, address, channel) -> None:
+    async def open_cover(self, address, channel):
+        """Open a cover specified by its address and channel."""
         await self.set_output_state_nikobus(address, channel, 0x01)
 
-    async def close_cover(self, address, channel) -> None:
+    async def close_cover(self, address, channel):
+        """Close a cover specified by its address and channel."""
         await self.set_output_state_nikobus(address, channel, 0x02)
 
 #### BUTTONS
     async def write_json_button_data(self):
         """Write the current state of button configurations to a JSON file asynchronously."""
         button_config_file_path = self._hass.config.path("nikobus_button_config.json")
-        async with aiofiles.open(button_config_file_path, 'w') as file:
-            await file.write(json.dumps(self.json_button_data, indent=4))
-            _LOGGER.debug("Button configuration data successfully written to JSON file.")
+        try:
+            async with aiofiles.open(button_config_file_path, 'w') as file:
+                await file.write(json.dumps(self.json_button_data, indent=4))
+                _LOGGER.debug("Button configuration data successfully written to JSON file.")
+        except Exception as e:
+            _LOGGER.error(f"Failed to write button configuration data to JSON file: {e}")
 
     async def button_discovery(self, address):
         """Discover a button by its address and update configuration if it's new, or process it if it exists."""
-        # if address == self._last_pressed_button_address:
-        #    _LOGGER.debug(f"Button at address {address} was already processed recently. Skipping...")
-        #    return
-        #else:
-        #    self._last_pressed_button_address = address
         _LOGGER.debug(f"Discovering button at address: {address}")
-        for button in self.json_button_data.get('nikobus_button', []):
-            if button['address'] == address:
-                _LOGGER.debug(f"Button at address {address} found in configuration. Processing...")
-                await self.process_button_modules(button, address)
-                return
-        _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration.")
-        new_button = {
-            "description": f"DISCOVERED - Nikobus Button #N{address}",
-            "address": address,
-            "impacted_module": [{"address": "", "group": ""}]
-        }
-        self.json_button_data["nikobus_button"].append(new_button)
-        await self.write_json_button_data()
-        _LOGGER.debug(f"New button configuration added for address {address}.")
+
+        existing_button = next((button for button in self.json_button_data.get('nikobus_button', []) if button['address'] == address), None)
+
+        if existing_button:
+            _LOGGER.debug(f"Button at address {address} found in configuration. Processing...")
+            await self.process_button_modules(existing_button, address)
+        else:
+            _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration.")
+            new_button = {
+                "description": f"DISCOVERED - Nikobus Button #N{address}",
+                "address": address,
+                "impacted_module": [{"address": "", "group": ""}]
+            }
+            self.json_button_data.setdefault("nikobus_button", []).append(new_button)
+            await self.write_json_button_data()
+            _LOGGER.debug(f"New button configuration added for address {address}.")
 
     async def process_button_modules(self, button, address):
         """Process actions for each module impacted by the button press."""
@@ -416,13 +460,18 @@ class Nikobus:
         for module in button.get('impacted_module', []):
             impacted_module_address = module.get('address')
             impacted_group = module.get('group')
+        
             if not (impacted_module_address and impacted_group):
+                _LOGGER.warning("Missing 'address' or 'group' information for an impacted module. Skipping.")
                 continue
+        
             _LOGGER.debug(f"Refreshing status for module {impacted_module_address}, group {impacted_group}")
+        
             try:
-                _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
                 value = await self.get_output_state_nikobus(impacted_module_address, impacted_group)
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
+                _LOGGER.debug(f"Status refreshed for module {impacted_module_address}, group {impacted_group}")
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
+
         await self._async_event_handler("nikobus_button_pressed", address)
