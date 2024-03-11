@@ -318,9 +318,9 @@ class Nikobus:
         group_number = calculate_group_number(channel)
         if int(group_number) in [1, 2]:
             command_code = 0x15 if int(group_number) == 1 else 0x16
-            if int(group) == 1:
+            if int(group_number) == 1:
                 values = self.nikobus_module_states[address][:6] + bytearray([0xFF])
-            elif int(group) == 2:
+            elif int(group_number) == 2:
                 values = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
             command = make_pc_link_command(command_code, address, values)
             _LOGGER.debug(f'Sending command: {command}')
