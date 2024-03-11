@@ -316,16 +316,18 @@ class Nikobus:
         self.set_bytearray_state(address, channel, value)
     
         group_number = calculate_group_number(channel)
-        if int(group_number) not in [1, 2]:
+        if int(group_number) in [1, 2]:
+            command_code = 0x15 if int(group_number) == 1 else 0x16
+            if int(group) == 1:
+                values = self.nikobus_module_states[address][:6] + bytearray([0xFF])
+            elif int(group) == 2:
+                values = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
+            command = make_pc_link_command(command_code, address, values)
+            _LOGGER.debug(f'Sending command: {command}')
+            await self.queue_command(command)
+        else:
             _LOGGER.error(f'Invalid group number: {group_number}')
             return
-    
-        command_code = 0x15 if int(group_number) == 1 else 0x16
-        values = self.nikobus_module_states[address][(int(group_number) - 1) * 6:int(group_number) * 6] + bytearray([0xFF])
-        command = make_pc_link_command(command_code, address, values)
-    
-        _LOGGER.debug(f'Sending command: {command}')
-        await self.queue_command(command)
 
 #### QUEUE FOR COMMANDS
     async def queue_command(self, command):
@@ -364,8 +366,6 @@ class Nikobus:
         """Update the state of a specific group within the Nikobus module states."""
         _LOGGER.debug(f"Updating ARRAY state for address {address} group {group} to value {value}")
         byte_value = bytearray.fromhex(value)
-        group_start_index = (int(group) - 1) * 6
-        group_end_index = int(group) * 6
         if address in self.nikobus_module_states:
             if int(group) == 1:
                 self.nikobus_module_states[address][:6] = byte_value
