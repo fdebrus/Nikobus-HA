@@ -1,4 +1,5 @@
-import logging
+"""Nikobus Cover entity."""
+
 import json
 import asyncio
 from datetime import datetime
@@ -8,13 +9,12 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
     ATTR_POSITION
 )
+
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, BRAND
-
-_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus cover entities from a configuration entry. This function initializes cover entities based on the Nikobus system's configuration and adds them to Home Assistant for management."""
@@ -114,23 +114,17 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         state = self._dataservice.api.get_cover_state(self._address, self._channel)
-        _LOGGER.debug(f"STATE {state}")
         if state == 0x00:
-            _LOGGER.debug(f"00 {state}")
             self._in_motion = False
         elif state == 0x01:
-            _LOGGER.debug(f"01 {state}")
             if self._in_motion:
                 self._in_motion = False
-                _LOGGER.debug("in motion")
             else:
                 self._in_motion = True
                 self.hass.async_add_job(self.async_set_cover_position(position=100))
         elif state == 0x02:
-            _LOGGER.debug(f"02 {state}")
             if self._in_motion:
                 self._in_motion = False
-                _LOGGER.debug("in motion")
             else:
                 self._in_motion = True
                 self.hass.async_add_job(self.async_set_cover_position(position=0))
@@ -163,7 +157,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     async def async_set_cover_position(self, **kwargs):
         """Sets the cover to a specific position."""
         expected_position = int(kwargs.get(ATTR_POSITION))
-        _LOGGER.debug(f"FUTURE POSITION {expected_position}")
         direction = "open" if expected_position > self._position else "close"
         if direction == "open":
             self._is_opening = True
@@ -177,14 +170,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         
     async def _complete_movement(self, expected_position):
         """Completes the movement of the cover to the expected position."""
-        _LOGGER.debug(f"Completes the movement {expected_position}")
         position_diff = abs(self._position - expected_position)
         proportional_time_needed = (position_diff / 100.0) * self._operation_time
         await self._update_position_in_real_time(expected_position, proportional_time_needed)
 
     async def _update_position_in_real_time(self, expected_position, total_time):
         """Updates the cover's position in real time until the movement is completed."""
-        _LOGGER.debug(f"update {expected_position} {total_time}")
         start_time = datetime.now()
         initial_position = self._position
         direction = 1 if expected_position > initial_position else -1
