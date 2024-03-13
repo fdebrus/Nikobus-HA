@@ -30,10 +30,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, initial_state=False) -> None:
+    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._state = initial_state
+        self._state = None
         self._description = description
         self._model = model
         self._address = address
@@ -54,6 +54,11 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self):
         return self._state
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.coordinator.async_add_listener(self._handle_coordinator_update)
+        self._handle_coordinator_update()
 
     @callback
     def _handle_coordinator_update(self) -> None:
