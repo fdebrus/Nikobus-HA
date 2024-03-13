@@ -403,12 +403,10 @@ class Nikobus:
 #### DIMMERS
     def get_light_state(self, address, channel):
         """Get the state of a light based on its address and channel."""
-        _LOGGER.debug(f'Getting light state {address} {channel} {self.get_bytearray_state(address, channel)}')
         return self.get_bytearray_state(address, channel) != 0x00
     
     def get_light_brightness(self, address, channel):
         """Get the brightness of a light based on its address and channel."""
-        _LOGGER.debug(f'Getting light brightness {address} {channel} {self.get_bytearray_state(address, channel)}')
         return self.get_bytearray_state(address, channel)
 
     async def turn_on_light(self, address, channel, brightness):
