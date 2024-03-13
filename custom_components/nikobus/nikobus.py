@@ -24,7 +24,7 @@ from .helpers import (
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.3.7"
+__version__ = "2024.3.14"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
