@@ -55,7 +55,8 @@ def make_pc_link_command(func, addr, args=None):
     addr_int = int(addr, 16)
     data = int_to_hex(func, 2) + int_to_hex((addr_int >> 0) & 0xFF, 2) + int_to_hex((addr_int >> 8) & 0xFF, 2)
     if args is not None:
-        data += args
+        args_hex = args.hex().upper()
+        data += args_hex
     return append_crc2('$' + int_to_hex(len(data) + 10, 2) + append_crc1(data))
 
 def calculate_group_output_number(channel):
