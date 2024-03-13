@@ -1,6 +1,6 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-# Nikobus Integration (v2024.3.6)
+# Nikobus Integration (v2024.3.13)
 
 Home Assistant integration for Nikobus.
 
