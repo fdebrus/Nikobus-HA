@@ -361,7 +361,7 @@ class Nikobus:
         
             finally:
                 self._command_queue.task_done()
-            await asyncio.sleep(0.6) 
+            await asyncio.sleep(0.3) 
 
 #### UTILS
     def get_bytearray_state(self, address, channel):
@@ -475,9 +475,8 @@ class Nikobus:
             _LOGGER.debug(f"Refreshing status for module {impacted_module_address}, group {impacted_group}")
             try:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
-                await asyncio.sleep(2)  # Wait for Nikobus to fully process the command
+                await asyncio.sleep(0.3)
                 value = await self.get_output_state_nikobus(impacted_module_address, impacted_group)
-                _LOGGER.debug(f"GOT VALUE '{value}'")
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
