@@ -51,6 +51,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
+        self._nikobus_command = False
         self._operation_time = float(operation_time)  # Operation time in seconds to fully open/close the cover.
         self._description = description
         self._model = model
@@ -114,6 +115,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         state = self._dataservice.api.get_cover_state(self._address, self._channel)
+        self._nikobus_command = True
         if state == 0x00:
             self._in_motion = False
         elif state == 0x01:
@@ -121,13 +123,13 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 self._in_motion = False
             else:
                 self._in_motion = True
-                self.hass.async_add_job(self.async_set_cover_position(position=100))
+                self.hass.async_add_job(self._complete_movement(100))
         elif state == 0x02:
             if self._in_motion:
                 self._in_motion = False
             else:
                 self._in_motion = True
-                self.hass.async_add_job(self.async_set_cover_position(position=0))
+                self.hass.async_add_job(self._complete_movement(0))
         self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs):
@@ -187,7 +189,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             if elapsed_time >= total_time:
                 self._position = expected_position
                 self._in_motion = False
-                await self.async_stop_cover()
+                if not self._nikobus_command:
+                    await self.async_stop_cover()
                 break
 
             progress = elapsed_time / total_time
@@ -200,6 +203,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
         self._is_opening = False
         self._is_closing = False
+        self._nikobus_command = False
         self.async_write_ha_state()
 
     async def _operate_cover(self, address, channel, direction):
