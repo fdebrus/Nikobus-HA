@@ -67,7 +67,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self):
         self._state = True
         await self._dataservice.api.turn_on_switch(self._address, self._channel)
+        self.async_write_ha_state()
 
     async def async_turn_off(self):
         self._state = False
         await self._dataservice.api.turn_off_switch(self._address, self._channel)
+        self.async_write_ha_state()
