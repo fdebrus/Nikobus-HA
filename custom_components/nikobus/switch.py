@@ -1,11 +1,14 @@
 """Nikobus Switch entity."""
 
+import logging
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, BRAND
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
@@ -55,22 +58,16 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     def is_on(self):
         return self._state
 
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
-        self._handle_coordinator_update()
-
     @callback
     def _handle_coordinator_update(self) -> None:
         self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
         self.async_write_ha_state()
+        _LOGGER.debug(f"SWITCH _handle_coordinator_update {self._address} {self._channel} {self._state}")
 
     async def async_turn_on(self):
         self._state = True
         await self._dataservice.api.turn_on_switch(self._address, self._channel)
-        self.async_write_ha_state()
 
     async def async_turn_off(self):
         self._state = False
         await self._dataservice.api.turn_off_switch(self._address, self._channel)
-        self.async_write_ha_state()
