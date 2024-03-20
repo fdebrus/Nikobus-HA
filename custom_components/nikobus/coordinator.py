@@ -31,20 +31,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     async def connect(self):
         self.api = await Nikobus.create(self.hass, self.connection_string, self.async_event_handler)
 
-    async def async_config_entry_first_refresh(self):
-        """Perform the initial data refresh."""
-        try:
-            _LOGGER.debug("Calling initial REFRESH")
-            return await self.api.refresh_nikobus_data()
-        except Exception as e:
-            _LOGGER.error("Error fetching Nikobus data: %s", e)
-            raise UpdateFailed(f"Error fetching data: {e}")
-
     async def async_update_data(self):
         try:
             _LOGGER.debug("calling REFRESH")
             return await self.api.refresh_nikobus_data()
-            # await self.hass.async_add_executor_job(self.api.refresh_nikobus_data)
         except Exception as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
             raise UpdateFailed(f"Error fetching data: {e}")
