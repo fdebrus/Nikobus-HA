@@ -14,7 +14,6 @@ from homeassistant.components.cover import (
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, BRAND
 
@@ -110,15 +109,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Checks if the cover is currently stopped."""
         return not (self._is_opening or self._is_closing)
 
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
-        self._handle_coordinator_update()
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
+        _LOGGER.debug(f"COVER _handle_coordinator_update {self._address} {self._channel} {current_state}")
         self._nikobus_command = True
         if current_state == 0x00:
             self._in_motion = False
@@ -133,22 +128,22 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 self._is_opening = True
                 self._is_closing = False
                 self._in_motion = True
-                self.hass.async_add_job(self._complete_movement(100))
+                self.hass.async_create_task(self._complete_movement(100))
         elif current_state == 0x02:
             if self._in_motion:
                 self._in_motion = False
                 self._is_opening = False
                 self._is_closing = False
             else:
-                self._in_motion = True
                 self._is_opening = False
                 self._is_closing = True
-                self.hass.async_add_job(self._complete_movement(0))
+                self._in_motion = True
+                self.hass.async_create_task(self._complete_movement(0))
         self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs):
+        _LOGGER.debug("open cover")
         """Triggers the operation to fully open the cover."""
-        _LOGGER.debug("OPEN")
         if self._position < 100:  # Verify the cover is not already fully open.
             self._is_opening = True
             self._is_closing = False
@@ -157,7 +152,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             await self._complete_movement(100)
 
     async def async_close_cover(self, **kwargs):
-        _LOGGER.debug("CLOSE")
+        _LOGGER.debug("close cover")
         """Triggers the operation to fully close the cover."""
         if self._position > 0:  # Verify the cover is not already fully closed.
             self._is_closing = True
@@ -167,36 +162,37 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             await self._complete_movement(0)
 
     async def async_stop_cover(self):
-        _LOGGER.debug("STOP")
+        _LOGGER.debug("stop cover")
         """Stops any ongoing movement of the cover."""
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
-        self.async_write_ha_state()
         await self._dataservice.api.stop_cover(self._address, self._channel)
 
     async def async_set_cover_position(self, **kwargs):
+        _LOGGER.debug("set position")
         """Sets the cover to a specific position."""
         expected_position = int(kwargs.get(ATTR_POSITION))
         direction = "open" if expected_position > self._position else "close"
         if direction == "open":
             self._is_opening = True
             self._is_closing = False
-            self._in_motion = False
         else:
             self._is_closing = True
             self._is_opening = False
-            self._in_motion = False
+        self._in_motion = False
         await self._operate_cover(self._address, self._channel, direction)
         await self._complete_movement(expected_position)
         
     async def _complete_movement(self, expected_position):
+        _LOGGER.debug(f"complete movement {expected_position}")
         """Completes the movement of the cover to the expected position."""
         position_diff = abs(self._position - expected_position)
         proportional_time_needed = (position_diff / 100.0) * self._operation_time
         await self._update_position_in_real_time(expected_position, proportional_time_needed)
 
     async def _update_position_in_real_time(self, expected_position, total_time):
+        _LOGGER.debug(f"update real time {expected_position} {total_time}")
         """Updates the cover's position in real time until the movement is completed."""
         start_time = datetime.now()
         initial_position = self._position
@@ -204,6 +200,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         position_change = abs(expected_position - initial_position)
 
         self._in_motion = True
+
         while self._in_motion: 
             elapsed_time = (datetime.now() - start_time).total_seconds()
             if elapsed_time >= total_time:
@@ -217,16 +214,15 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._position = initial_position + int(progress * position_change) if direction == 1 else initial_position - int(progress * position_change)
             self._position = max(0, min(100, self._position))
 
-            self.async_write_ha_state()
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
 
-        self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
         self._is_opening = False
         self._is_closing = False
         self._nikobus_command = False
         self.async_write_ha_state()
 
     async def _operate_cover(self, address, channel, direction):
+        _LOGGER.debug("operate")
         if direction == 'open':
             await self._dataservice.api.open_cover(address, channel)
         else:
