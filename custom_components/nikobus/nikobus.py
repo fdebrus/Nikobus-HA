@@ -163,6 +163,7 @@ class Nikobus:
 
                 if current_time_millis - self._last_nikobus_command_received_timestamp > 150:
                     self._last_nikobus_command_received_timestamp = current_time_millis
+                    await self._async_event_handler("nikobus_button_pressed", address)
                     await self.button_discovery(address)
                     self._button_address_occurrences[address] = 0
                 else:
@@ -221,13 +222,12 @@ class Nikobus:
                 groups_to_query = [1] if channel_count <= 6 else [1, 2]
 
                 for group in groups_to_query:
-                    # Query the state for each group. asyncio.gather ?
                     group_state = await self.get_output_state_nikobus(address, group) or ""
                     _LOGGER.debug(f'*** State for group {group}: {group_state} address : {address} ***')
                     state += group_state  # Concatenate states from each group.
 
                 self.nikobus_module_states[address] = bytearray.fromhex(state)
-                _LOGGER.debug(f'*** {self.nikobus_module_states[address]}')
+                _LOGGER.debug(f'{self.nikobus_module_states[address]}')
 
         return True
         
@@ -479,5 +479,4 @@ class Nikobus:
                 value = await self.get_output_state_nikobus(impacted_module_address, impacted_group)
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
             except Exception as e:
-                _LOGGER.error(f"Error processing button press for module {impacted_module_address}: {e}")
-        await self._async_event_handler("nikobus_button_pressed", address)
+                _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group}: {e}")
