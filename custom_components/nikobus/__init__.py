@@ -25,12 +25,10 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
     hass.loop.create_task(coordinator.api.process_commands())
     hass.loop.create_task(coordinator.api.listen_for_events())
 
-    await coordinator.async_config_entry_first_refresh()
-
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    _LOGGER.debug("Coordinator data dump: %s", coordinator.data)
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    await coordinator.async_config_entry_first_refresh()
 
     return True
