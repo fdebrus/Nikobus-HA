@@ -1,21 +1,23 @@
 """Nikobus helpers"""
+
 import math
+import ipaddress
+import re
+
+def validate_connection_string(input_string: str) -> str:
+    """Validate the format of the connection string to determine connection type."""
+    try:
+        ipaddress.ip_address(input_string.split(':')[0])
+        return "IP"
+    except ValueError:
+        pass
+    if re.match(r'^/dev/tty(USB|S)\d+$', input_string):
+        return "Serial"
+    return "Unknown"
 
 def int_to_hex(value, digits):
     """Convert an integer to a hexadecimal string with specified number of digits."""
     return ('00000000' + format(value, 'x').upper())[-digits:]
-
-def hex_to_int(value):
-    """Convert a hexadecimal string to an integer."""
-    return int(value, 16)
-
-def int_to_dec(value, digits):
-    """Convert an integer to a decimal string with specified number of digits."""
-    return ('00000000' + str(value)).upper()[-digits:]
-
-def dec_to_int(value):
-    """Convert a decimal string to an integer."""
-    return int(value, 10)
 
 def calc_crc1(data):
     """Calculate CRC-16/ANSI X3.28 (CRC-16-IBM) for the given data."""
@@ -58,11 +60,6 @@ def make_pc_link_command(func, addr, args=None):
         args_hex = args.hex().upper()
         data += args_hex
     return append_crc2('$' + int_to_hex(len(data) + 10, 2) + append_crc1(data))
-
-def calculate_group_output_number(channel):
-    """Calculate the sequence number of a channel within a group."""
-    group_output_number = (int(channel) - 1) % 6
-    return group_output_number
 
 def calculate_group_number(channel):
     """Calculate the group number of a channel."""
