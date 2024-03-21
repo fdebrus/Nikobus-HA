@@ -37,7 +37,6 @@ class Nikobus:
         self._command_queue = asyncio.Queue()
         self._event_listener_task = None
         self._last_nikobus_command_received_timestamp = 0
-        self._button_address_occurrences = {}
         self._nikobus_reader = None
         self._nikobus_writer = None
         self._answer = None
@@ -153,21 +152,14 @@ class Nikobus:
             address = message[2:8]
             _LOGGER.debug(f"Handling button press for address: {address}")
 
-            # Only process the 2nd button press message
-            self._button_address_occurrences[address] = self._button_address_occurrences.get(address, 0) + 1
+            # Skip button press if time between 2 commands < 150ms
+            current_time_millis = int(time.time() * 1000)
 
-            if self._button_address_occurrences[address] == 2:
-
-                # Skip button press if time between 2 commands < 150ms
-                current_time_millis = int(time.time() * 1000)
-
-                if current_time_millis - self._last_nikobus_command_received_timestamp > 150:
-                    self._last_nikobus_command_received_timestamp = current_time_millis
-                    await self._async_event_handler("nikobus_button_pressed", address)
-                    await self.button_discovery(address)
-                    self._button_address_occurrences[address] = 0
-                else:
-                    _LOGGER.debug("Skipping command processing due to time constraint.")
+            if current_time_millis - self._last_nikobus_command_received_timestamp > 150:
+                self._last_nikobus_command_received_timestamp = current_time_millis
+                await self.button_discovery(address)
+            else:
+                _LOGGER.debug("Skipping command processing due to time constraint.")
 
         elif not message.startswith(_ignore_answer):
             _LOGGER.debug(f"Adding message to response queue: {message}")
@@ -377,6 +369,7 @@ class Nikobus:
 
     def set_bytearray_group_state(self, address, group, value):
         """Update the state of a specific group within the Nikobus module states."""
+        _LOGGER.debug(f'*** set_bytearray_group_state {address} {group} {value}')
         byte_value = bytearray.fromhex(value)
         if address in self.nikobus_module_states:
             if int(group) == 1:
@@ -475,8 +468,9 @@ class Nikobus:
             _LOGGER.debug(f"Refreshing status for module {impacted_module_address}, group {impacted_group}")
             try:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
-                await asyncio.sleep(0.3)
+                await asyncio.sleep(1)
                 value = await self.get_output_state_nikobus(impacted_module_address, impacted_group)
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group}: {e}")
+        await self._async_event_handler("nikobus_button_pressed", address)
