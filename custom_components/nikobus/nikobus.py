@@ -3,8 +3,6 @@ import select
 import asyncio
 import serial_asyncio
 import time
-import ipaddress
-import re
 import os
 import json
 import textwrap
@@ -17,6 +15,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispat
 from homeassistant.helpers.entity_registry import async_get
 
 from .helpers import (
+    validate_connection_string,
     make_pc_link_command, 
     calculate_group_number
 )
@@ -61,20 +60,8 @@ class Nikobus:
 #### CONNECT NIKOBUS
     async def connect(self):
         """Establish a connection to the Nikobus system based on the provided connection string."""
-    
-        def validate_string(input_string):
-            """Validate the format of the connection string to determine connection type."""
-            try:
-                ipaddress.ip_address(input_string.split(':')[0])
-                return "IP"
-            except ValueError:
-                pass
-            if re.match(r'^/dev/tty(USB|S)\d+$', input_string):
-                return "Serial"
-            return "Unknown"
-    
-        connection_type = validate_string(self._connection_string)
-    
+
+        connection_type = validate_connection_string(self._connection_string)
         try:
             if connection_type == "IP":
                 host, port_str = self._connection_string.split(":")
@@ -288,40 +275,25 @@ class Nikobus:
             self._nikobus_writer.write(command.encode() + b'\r')
             await self._nikobus_writer.drain()
             _LOGGER.debug('Command sent successfully')
-            return True
         except Exception as e:
             _LOGGER.error(f'Error sending command: {e}')
-            return False
-        
 
 #### SET's AND GET's for Nikobus
     async def get_output_state_nikobus(self, address, group):
         """Retrieve the current state of an output based on its address and group."""
-        
-        _LOGGER.debug(f'Entering get_output_state_nikobus() - Address: {address}, Group: {group}')
-    
-        if int(group) not in [1, 2]:
-            _LOGGER.error(f'Invalid group number: {group}')
-            return None
+        _LOGGER.debug(f'get_output_state_nikobus() - Address: {address}, Group: {group}')
     
         command_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(command_code, address)
     
-        result = await self.send_command_get_answer(command, address)
-        return result
+        return await self.send_command_get_answer(command, address)
 
     async def set_output_state_nikobus(self, address, channel, value):
         """Set the state of an output based on its address, channel, and value."""
-
-        _LOGGER.debug(f'Entering set_output_state_nikobus() - Address: {address}, Channel: {channel}, Value: {value}')
+        _LOGGER.debug(f'set_output_state_nikobus() - Address: {address}, Channel: {channel}, Value: {value}')
 
         group = calculate_group_number(channel)
-        if int(group) not in [1, 2]:
-            _LOGGER.error(f'Invalid group number: {group} for channel {channel}')
-            return None
-
         self.set_bytearray_state(address, channel, value)
-
         command_code = 0x15 if int(group) == 1 else 0x16
 
         if int(group) == 1:
@@ -335,8 +307,8 @@ class Nikobus:
 #### QUEUE FOR COMMANDS
     async def queue_command(self, command):
         """Queue a command for execution."""
-
         _LOGGER.debug(f'Queueing command for execution: {command}')
+
         await self._command_queue.put(command)
 
     async def process_commands(self):
@@ -346,7 +318,7 @@ class Nikobus:
             _LOGGER.debug(f'Executing command from queue: {command}')
         
             try:
-                result = await self.send_command(command)
+                await self.send_command(command)
                 _LOGGER.debug(f'Command executed successfully: {command}')
             except Exception as e:
                 _LOGGER.error(f"Failed to execute command '{command}': {e}")
@@ -357,19 +329,18 @@ class Nikobus:
 
 #### UTILS
     def get_bytearray_state(self, address, channel):
-        """Get the state of a specific channel within the Nikobus module states."""
+        """Get the state of a specific channel within the Nikobus module."""
         return self.nikobus_module_states.get(address, bytearray())[channel - 1]
 
     def set_bytearray_state(self, address, channel, value):
-        """Set the state of a specific channel within the Nikobus module states."""
+        """Set the state of a specific channel within the Nikobus module."""
         if address in self.nikobus_module_states:
             self.nikobus_module_states[address][channel - 1] = value
         else:
-            _LOGGER.error(f'Address {address} not found in Nikobus module states.')
+            _LOGGER.error(f'Address {address} not found in Nikobus module.')
 
     def set_bytearray_group_state(self, address, group, value):
-        """Update the state of a specific group within the Nikobus module states."""
-        _LOGGER.debug(f'*** set_bytearray_group_state {address} {group} {value}')
+        """Update the state of a specific group within the Nikobus module."""
         byte_value = bytearray.fromhex(value)
         if address in self.nikobus_module_states:
             if int(group) == 1:
@@ -378,7 +349,7 @@ class Nikobus:
                 self.nikobus_module_states[address][6:12] = byte_value
             _LOGGER.debug(f'New value set for array {self.nikobus_module_states[address]}')
         else:
-            _LOGGER.error(f'Address {address} not found in Nikobus module states.')
+            _LOGGER.error(f'Address {address} not found in Nikobus module.')
 
 #### SWITCHES
     def get_switch_state(self, address, channel):
@@ -429,15 +400,14 @@ class Nikobus:
 
 #### BUTTONS
     async def write_json_button_data(self):
-        """Write the current state of button configurations to a JSON file asynchronously."""
+        """Write the discovered button to a JSON file."""
         button_config_file_path = self._hass.config.path("nikobus_button_config.json")
         async with aiofiles.open(button_config_file_path, 'w') as file:
             await file.write(json.dumps(self.json_button_data, indent=4))
-            _LOGGER.debug("Button configuration data successfully written to JSON file.")
+            _LOGGER.debug("Discovered button successfully written to JSON file.")
 
     async def button_discovery(self, address):
         """Discover a button by its address and update configuration if it's new, or process it if it exists."""
-
         _LOGGER.debug(f"Discovering button at address: {address}")
 
         for button in self.json_button_data.get('nikobus_button', []):
