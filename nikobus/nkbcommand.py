@@ -47,6 +47,7 @@ class NikobusCommandHandler:
 
     async def process_commands(self) -> None:
         """Continuously process commands from the command queue."""
+        _LOGGER.info(f'Nikobus Command Processing Queue started')
         while True:
             command = await self._command_queue.get()
             _LOGGER.debug(f'Executing command from queue: {command}')
