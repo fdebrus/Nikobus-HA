@@ -76,7 +76,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self._state = bool(self._dataservice.api.get_light_state(self._address, self._channel))
         self._brightness = self._dataservice.api.get_light_brightness(self._address, self._channel)
         self.async_write_ha_state()
-        _LOGGER.debug(f"LIGHT _handle_coordinator_update {self._address} {self._channel} {self._state} {self._brightness}")
+        _LOGGER.debug(f"LIGHT _handle_coordinator_update {self._attr_name} {self._address} {self._channel} {self._state} {self._brightness}")
 
     async def async_turn_on(self, **kwargs):
         self._brightness = kwargs.get("brightness", 255)
