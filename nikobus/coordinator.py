@@ -42,7 +42,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def async_event_handler(self, event, data):
         if "ha_button_pressed" in event:
-            await self.api.queue_command(f'#N{data}\r#E1')
+            await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
         elif "nikobus_button_pressed" in event:
             self.hass.bus.async_fire('nikobus_button_pressed', {'address': data})
         self.async_update_listeners()
