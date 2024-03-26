@@ -62,7 +62,7 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     def _handle_coordinator_update(self) -> None:
         self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
         self.async_write_ha_state()
-        _LOGGER.debug(f"SWITCH _handle_coordinator_update {self._address} {self._channel} {self._state}")
+        _LOGGER.debug(f"SWITCH _handle_coordinator_update {self._attr_name} {self._address} {self._channel} {self._state}")
 
     async def async_turn_on(self):
         self._state = True
