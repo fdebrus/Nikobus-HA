@@ -19,8 +19,7 @@ class NikobusEventListener:
 
     async def listen_for_events(self) -> None:
         """Listen for events from the Nikobus system and handle them accordingly."""
-        _LOGGER.debug("Nikobus Event Listener started")
-
+        _LOGGER.info("Nikobus Event Listener started")
         try:
             while True:
                 try:
