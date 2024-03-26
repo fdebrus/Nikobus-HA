@@ -1,7 +1,6 @@
 import logging
 import select
 import asyncio
-import serial_asyncio
 import time
 import os
 import textwrap
@@ -64,11 +63,11 @@ class Nikobus:
 
     async def listen_for_events(self):
         self.nikobus_listener = NikobusEventListener(self.nikobus_connection, self.button_discovery)
-        await self.nikobus_listener.listen_for_events()
+        self._hass.loop.create_task(self.nikobus_listener.listen_for_events())
 
     async def command_handler(self):
         self.nikobus_command_handler = NikobusCommandHandler(self.nikobus_connection, self.nikobus_listener, self.nikobus_module_states)
-        await self.nikobus_command_handler.process_commands()
+        self._hass.loop.create_task(self.nikobus_command_handler.process_commands())
 
 #### CONFIG FILES
     async def load_json_config_data(self) -> bool:
