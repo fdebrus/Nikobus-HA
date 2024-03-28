@@ -1,21 +1,14 @@
-import logging
-import select
+"""API for Nikobus."""
+
 import asyncio
-import time
-import os
-import textwrap
+import logging
 import json
-from pathlib import Path
-import aiofiles
+from aiofiles import open as aio_open
 
 from .const import DOMAIN
-
 from .nkbconnect import NikobusConnect
 from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
-
-from homeassistant.helpers.dispatcher import async_dispatcher_send, async_dispatcher_connect
-from homeassistant.helpers.entity_registry import async_get
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,77 +25,61 @@ class Nikobus:
         self.json_config_data = {}
         self.json_button_data = {}
 
-        self.nikobus_connection = None
-        self.nikobus_listener = None
-        self.nikobus_command_handler = None
+        self.nikobus_connection = NikobusConnect(connection_string)
+        self.nikobus_listener = NikobusEventListener(self.nikobus_connection, self.button_discovery)
+        self.nikobus_command_handler = NikobusCommandHandler(self.nikobus_connection, self.nikobus_listener, self.nikobus_module_states)
 
     @classmethod
     async def create(cls, hass, connection_string, async_event_handler):
         _LOGGER.debug(f"Creating Nikobus instance with connection string: {connection_string}")
-    
         instance = cls(hass, connection_string, async_event_handler)
-    
-        if await instance.connect(connection_string):
+        if await instance.connect():
             _LOGGER.info("Nikobus instance created and connected successfully.")
             return instance
-        else:
-            _LOGGER.error("Nikobus instance could not be created.")
-            return None
+        _LOGGER.error("Failed to create Nikobus instance.")
+        return None
 
-    async def connect(self, connection_string: str) -> bool:
-        self.nikobus_connection = NikobusConnect(connection_string)
-        connected = await self.nikobus_connection.connect()
-
-        try:
-            await self.load_json_config_data()
-            await self.load_json_button_data()
-        except Exception as err:
-            _LOGGER.error(f"Nikobus configuration file load error - {err}")
-            return False
-        return True
+    async def connect(self) -> bool:
+        if await self.nikobus_connection.connect():
+            try:
+                await self.load_json_config_data()
+                await self.load_json_button_data()
+                return True
+            except Exception as err:
+                _LOGGER.error(f"Configuration load error: {err}")
+        return False
 
     async def listen_for_events(self):
-        self.nikobus_listener = NikobusEventListener(self.nikobus_connection, self.button_discovery)
         self._hass.loop.create_task(self.nikobus_listener.listen_for_events())
 
     async def command_handler(self):
-        self.nikobus_command_handler = NikobusCommandHandler(self.nikobus_connection, self.nikobus_listener, self.nikobus_module_states)
         self._hass.loop.create_task(self.nikobus_command_handler.process_commands())
 
 #### CONFIG FILES
     async def load_json_config_data(self) -> bool:
-        config_file_path = self._hass.config.path("nikobus_config.json")
-        _LOGGER.debug(f'Loading Nikobus configuration data from {config_file_path}')
-        try:
-            async with aiofiles.open(config_file_path, mode='r') as file:
-                self.json_config_data = json.loads(await file.read())
-            _LOGGER.info('Nikobus module configuration data successfully loaded.')
-            return True
-        except FileNotFoundError:
-            _LOGGER.error(f'Nikobus configuration file not found: {config_file_path}')
-        except json.JSONDecodeError as e:
-            _LOGGER.error(f'Failed to decode JSON data in Nikobus configuration file: {e}')
-        except Exception as e:
-            _LOGGER.error(f'Failed to load Nikobus module configuration data: {e}')
-    
-        return False
+        return await self._load_json_data("nikobus_config.json", "config")
 
     async def load_json_button_data(self) -> bool:
-        config_file_path = self._hass.config.path("nikobus_button_config.json")
-        _LOGGER.debug(f'Loading Nikobus button configuration data from {config_file_path}')
-    
+        return await self._load_json_data("nikobus_button_config.json", "button")
+
+    async def _load_json_data(self, file_name: str, data_type: str) -> bool:
+        file_path = self._hass.config.path(file_name)
+        _LOGGER.debug(f'Loading Nikobus {data_type} data from {file_path}')
         try:
-            async with aiofiles.open(config_file_path, 'r') as file:
-                self.json_button_data = json.loads(await file.read())
-            _LOGGER.info('Nikobus button configuration data successfully loaded.')
+            async with aio_open(file_path, mode='r') as file:
+                data = json.loads(await file.read())
+                if data_type == "config":
+                    self.json_config_data = data
+                else:
+                    self.json_button_data = data
+            _LOGGER.info(f'Nikobus {data_type} data successfully loaded.')
             return True
         except FileNotFoundError:
-            _LOGGER.error(f'Nikobus button configuration file not found: {config_file_path}')
+            _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
         except json.JSONDecodeError as e:
-            _LOGGER.error(f'Failed to decode JSON data in Nikobus button configuration file: {e}')
+            _LOGGER.error(f'Failed to decode JSON in {data_type} file: {e}')
         except Exception as e:
-            _LOGGER.error(f'Failed to load Nikobus button configuration data: {e}')
-    
+            _LOGGER.error(f'Failed to load {data_type} data: {e}')
         return False
 
 #### REFRESH DATA FROM THE NIKOBUS
@@ -250,3 +227,10 @@ class Nikobus:
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group}: {e}")
         await self._async_event_handler("nikobus_button_pressed", address)
+
+
+class NikobusConnectionError(Exception):
+    pass
+
+class NikobusDataError(Exception):
+    pass
