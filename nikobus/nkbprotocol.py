@@ -1,4 +1,4 @@
-import math
+"""Nikobus Protocol."""
 
 def int_to_hex(value, digits):
     """Convert an integer to a hexadecimal string with specified number of digits."""
@@ -48,5 +48,4 @@ def make_pc_link_command(func, addr, args=None):
 
 def calculate_group_number(channel):
     """Calculate the group number of a channel."""
-    group_number = math.floor((int(channel) + 5) / 6)
-    return group_number
+    return (int(channel) + 5) // 6
