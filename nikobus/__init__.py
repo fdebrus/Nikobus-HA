@@ -1,39 +1,41 @@
 """The Nikobus integration."""
 
 import logging
-import asyncio
 
-from homeassistant import config_entries, core
+from homeassistant import config_entries, core, exceptions
 from homeassistant.core import HomeAssistant
 from homeassistant.components import switch, light, cover, binary_sensor, button
-from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN
-from .nikobus import Nikobus
-from .coordinator import NikobusDataCoordinator
+from .coordinator import NikobusDataCoordinator, NikobusConnectError
 
 _LOGGER = logging.getLogger(__name__)
-
 PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN, binary_sensor.DOMAIN, button.DOMAIN]
 
-async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+    _LOGGER.debug("Starting setup of the Nikobus integration.")
 
     coordinator = NikobusDataCoordinator(hass, entry)
-
-    await coordinator.connect()
-
-    await coordinator.api.listen_for_events()
-
-    await coordinator.api.command_handler()
-
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
-    await coordinator.async_config_entry_first_refresh()
-    
+    try:
+        await coordinator.connect()
+    except NikobusConnectError as connect_error:
+        _LOGGER.error(f"Failed to connect to Nikobus: {connect_error}")
+        return False
+    except exceptions.HomeAssistantError as ha_error:
+        _LOGGER.error(f"An error occurred in the Home Assistant core while setting up Nikobus: {ha_error}")
+        return False
+    except Exception as unexpected_error:
+        _LOGGER.error(f"An unexpected error occurred during Nikobus setup: {unexpected_error}")
+        return False
+
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except exceptions.UpdateFailed:
+        _LOGGER.error("Initial data refresh failed. Nikobus integration setup cannot continue.")
+        return False
+
+    _LOGGER.debug("Nikobus integration setup completed successfully. Forwarding entry setups for platforms.")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
     return True
-
-async def on_hass_stop(event):
-    """Close connection when hass stops."""
-    coordinator.api.close()
