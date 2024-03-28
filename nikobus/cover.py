@@ -63,6 +63,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
         self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
+        self._attr_device_class = CoverDeviceClass.SHUTTER
 
     @property
     def device_info(self):
@@ -76,8 +77,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     @property
     def device_class(self):
-        """Return the class of this device, from CoverDeviceClass."""
-        return CoverDeviceClass.SHUTTER
+        """Return the class of this device."""
+        return self._attr_device_class
 
     @property
     def current_cover_position(self):
