@@ -1,3 +1,5 @@
+"""Nikobus Binary_Sesor entity."""
+
 import asyncio
 import logging
 
