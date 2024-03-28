@@ -1,3 +1,5 @@
+"""Nikobus Button entity."""
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
