@@ -51,12 +51,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._position = 100 # Assume we start with open shutters
-        self._last_known_state = 0x00
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
         self._movement_task = None
-        self._nikobus_command = False
         self._operation_time = float(operation_time)  # Operation time in seconds to fully open/close the cover.
         self._description = description
         self._model = model
@@ -232,7 +230,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Resets the state after movement is complete or cancelled."""
         self._is_opening = False
         self._is_closing = False
-        self._nikobus_command = False
         self._in_motion = False
         self.async_write_ha_state()
 
@@ -246,11 +243,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 _LOGGER.debug("Movement task cancelled.")
             self._movement_task = None
             self._in_motion = False
-
-    def _stop_cover_due_to_new_command(self):
-        _LOGGER.debug("New command received before reaching the target state, stopping the cover.")
-        self.hass.async_create_task(self.async_stop_cover())
-        self._in_motion = False
 
     async def _operate_cover(self, address, channel, direction):
         _LOGGER.debug(f"{self._address} {self._channel} operate")
