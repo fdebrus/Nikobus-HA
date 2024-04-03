@@ -17,6 +17,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     def __init__(self, hass: HomeAssistant, entry) -> None:
         self.hass = hass
         self.api = None
+        self.nikobus_is_refreshing = False
         self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
         
         super().__init__(
@@ -35,16 +36,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             await self.api.command_handler()
         except NikobusConnectionError as e:
             _LOGGER.error("Failed to connect to Nikobus: %s", e)
-            raise NikobusConnectError from e        
+            raise NikobusConnectError from e
 
     async def async_update_data(self):
         """Fetch the latest data from Nikobus."""
+        self.nikobus_is_refreshing = True
         try:
             _LOGGER.debug("Refreshing Nikobus data")
             return await self.api.refresh_nikobus_data()
         except NikobusDataError as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
             raise UpdateFailed(f"Error fetching data: {e}")
+        finally:
+            self.nikobus_is_refreshing = False
 
     async def async_event_handler(self, event, data):
         """Handle events from Nikobus."""
@@ -52,7 +56,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
         elif "nikobus_button_pressed" in event:
             self.hass.bus.async_fire('nikobus_button_pressed', {'address': data})
-        self.async_set_updated_data(self.data)
+        self.async_update_listeners()
 
 class NikobusConnectError(Exception):
     pass
