@@ -51,6 +51,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._position = 100 # Assume we start with open shutters
+        self._last_known_state = 0x00
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
@@ -125,23 +126,22 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
+        _LOGGER.debug(f"COVER _handle_coordinator_update button : {self._dataservice.nikobus_is_refreshing} : {self._attr_name} : {self._address} : {self._channel} : {current_state}")
 
-        if self._in_motion:
-            self._stop_cover_due_to_new_command()
-            return
-
-        _LOGGER.debug(f"COVER _handle_coordinator_update {self._attr_name} {self._address} {self._channel} {current_state}")
-        self._in_motion = current_state != 0x00
-        self._is_opening = current_state == 0x01
-        self._is_closing = current_state == 0x02
-        if current_state == 0x01:
-            self.hass.async_create_task(self._complete_movement(100))
-        elif current_state == 0x02:
-            self.hass.async_create_task(self._complete_movement(0))
+        if self._movement_task is None or (self._movement_task is not None and self._movement_task.done()):
+            self._in_motion = current_state != 0x00
+            self._is_opening = current_state == 0x01
+            self._is_closing = current_state == 0x02
+        
+            if current_state == 0x01:
+                self.hass.async_create_task(self._complete_movement(100))
+            elif current_state == 0x02:
+                self.hass.async_create_task(self._complete_movement(0))
 
     async def async_open_cover(self, **kwargs):
         _LOGGER.debug(f"{self._description} open cover")
-        await self.async_cancel_current_movement()
+        if self._in_motion: 
+            await self.async_cancel_current_movement()
         """Triggers the operation to fully open the cover."""
         self._is_closing = False
         self._is_opening = True
@@ -151,7 +151,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def async_close_cover(self, **kwargs):
         _LOGGER.debug(f"{self._address} {self._channel} close cover")
-        await self.async_cancel_current_movement()
+        if self._in_motion:
+            await self.async_cancel_current_movement()
         """Triggers the operation to fully close the cover."""
         self._is_closing = True
         self._is_opening = False
@@ -161,7 +162,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def async_stop_cover(self):
         _LOGGER.debug(f"{self._address} {self._channel} stop cover at position {self._position}")
-        await self.async_cancel_current_movement()
+        if self._in_motion:
+            await self.async_cancel_current_movement()
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
@@ -172,7 +174,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Sets the cover to a specific position."""
         target_position = kwargs.get(ATTR_POSITION)
         _LOGGER.info(f"Setting cover position to {target_position}")
-        await self.async_cancel_current_movement()
+        if self._in_motion:
+            await self.async_cancel_current_movement()
         direction = "open" if target_position > self._position else "close"
         self._in_motion = False
         if direction == "open":
@@ -245,7 +248,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._in_motion = False
 
     def _stop_cover_due_to_new_command(self):
-        """Stops the cover due to a new command received before reaching the target state."""
         _LOGGER.debug("New command received before reaching the target state, stopping the cover.")
         self.hass.async_create_task(self.async_stop_cover())
         self._in_motion = False
