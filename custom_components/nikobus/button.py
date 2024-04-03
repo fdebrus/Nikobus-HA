@@ -1,7 +1,8 @@
 """Nikobus Button entity."""
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
@@ -11,7 +12,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
     entities = []
 
-    for button in dataservice.api.json_button_data["nikobus_button"]:
+    for button in dataservice.api.json_button_data["nikobus_button"].values():
         impacted_modules_info = [
             {"address": impacted_module["address"], "group": impacted_module["group"]}
             for impacted_module in button["impacted_module"]
