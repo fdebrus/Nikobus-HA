@@ -15,11 +15,15 @@ COMMAND_ANSWER_WAIT_TIMEOUT = 5  # Timeout for waiting for command answer in eac
 MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an answer
 
 class NikobusCommandHandler:
-    def __init__(self, nikobus_connection, nikobus_listener, nikobus_module_states):
+    def __init__(self, hass, nikobus_connection, nikobus_listener, nikobus_module_states):
+        self._hass = hass
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
         self.nikobus_module_states = nikobus_module_states
         self._command_queue = asyncio.Queue()
+
+    async def start(self):
+        command_task = self._hass.async_add_job(self.process_commands())
 
     async def get_output_state(self, address: str, group: int) -> str:
         _LOGGER.debug(f'Getting output state - Address: {address}, Group: {group}')
@@ -40,7 +44,7 @@ class NikobusCommandHandler:
         await self._command_queue.put(command)
 
     async def process_commands(self) -> None:
-        _LOGGER.info('Starting command processing queue')
+        _LOGGER.info("Nikobus Command Processing started")
         while True:
             command = await self._command_queue.get()
             _LOGGER.debug(f'Processing command: {command}')
@@ -56,7 +60,7 @@ class NikobusCommandHandler:
             _LOGGER.error(f'Error sending command: {e}')
 
     async def send_command_get_answer(self, command: str, address: str) -> str | None:
-        _LOGGER.debug(f'Sending command and waiting for answer: {command}: {address}')
+        _LOGGER.debug(f'Sending command {command} address {address} waiting for answer')
         _wait_command_ack, _wait_command_answer = self._prepare_ack_and_answer_signals(command, address)
         return await self._wait_for_ack_and_answer(command, _wait_command_ack, _wait_command_answer)
 
@@ -84,7 +88,7 @@ class NikobusCommandHandler:
         state = None
 
         for attempt in range(MAX_ATTEMPTS):
-            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS}')
+            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} {_wait_command_answer}')
             await self.nikobus_connection.send(command)
 
             end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
