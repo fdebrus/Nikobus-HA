@@ -30,12 +30,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
         _LOGGER.error(f"An unexpected error occurred during Nikobus setup: {unexpected_error}")
         return False
 
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
     try:
         await coordinator.async_config_entry_first_refresh()
     except exceptions.UpdateFailed:
         _LOGGER.error("Initial data refresh failed. Nikobus integration setup cannot continue.")
         return False
 
-    _LOGGER.debug("Nikobus integration setup completed successfully. Forwarding entry setups for platforms.")
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
