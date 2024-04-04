@@ -124,16 +124,15 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
-        _LOGGER.debug(f"COVER _handle_coordinator_update button : {self._dataservice.nikobus_is_refreshing} : {self._attr_name} : {self._address} : {self._channel} : {current_state}")
 
         if self._movement_task is None or (self._movement_task is not None and self._movement_task.done()):
             self._in_motion = current_state != 0x00
             self._is_opening = current_state == 0x01
             self._is_closing = current_state == 0x02
         
-            if current_state == 0x01:
+            if current_state == 0x01 and self._position != 100:
                 self.hass.async_create_task(self._complete_movement(100))
-            elif current_state == 0x02:
+            elif current_state == 0x02 and self._position != 0:
                 self.hass.async_create_task(self._complete_movement(0))
 
     async def async_open_cover(self, **kwargs):
