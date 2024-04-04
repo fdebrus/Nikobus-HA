@@ -33,7 +33,7 @@ class NikobusConnect:
             self._is_connected = True
 
             if await self._perform_handshake():
-                _LOGGER.info("Handshake successful")
+                _LOGGER.info("Nikobus handshake successful")
                 return True
             return False
         except (OSError, asyncio.TimeoutError) as err:
