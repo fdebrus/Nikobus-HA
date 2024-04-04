@@ -187,8 +187,6 @@ class Nikobus:
             try:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
                 
-                # await asyncio.sleep(1)
-
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
                 await self._async_event_handler("nikobus_button_pressed", address)
