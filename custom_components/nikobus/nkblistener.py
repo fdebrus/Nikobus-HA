@@ -11,6 +11,8 @@ __version__ = '0.1'
 class NikobusEventListener:
     def __init__(self, hass, nikobus_connection, button_discovery_callback):
         self._hass = hass
+        self._listener_task = None
+        self._running = False
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
         self._button_discovery_callback = button_discovery_callback
@@ -18,12 +20,23 @@ class NikobusEventListener:
         self._continuous_press_detected = False
 
     async def start(self):
-        listener_task = self._hass.async_add_job(self.listen_for_events())
+        self._running = True
+        self._listener_task = self._hass.loop.create_task(self.listen_for_events())
+
+    async def stop(self):
+        self._running = False
+        if self._listener_task:
+            self._listener_task.cancel()
+            try:
+                await self._listener_task
+            except asyncio.CancelledError:
+                _LOGGER.info("Nikobus event listener has been stopped.")
+            self._listener_task = None
 
     async def listen_for_events(self) -> None:
         """Continuously listen for and handle events from the Nikobus system."""
         _LOGGER.info("Nikobus Event Listener started")
-        while True:
+        while self._running:
             try:
                 data = await asyncio.wait_for(self.nikobus_connection.read(), timeout=10)
                 if not data:
@@ -31,7 +44,7 @@ class NikobusEventListener:
                     break
                 message = data.decode('utf-8').strip()
                 _LOGGER.debug(f"Listener - Receiving message: {message}")
-                self._hass.async_add_job(self.handle_message(message))
+                self._hass.async_create_task(self.handle_message(message))
             except asyncio.TimeoutError:
                 _LOGGER.debug("Listener - Read operation timed out. Waiting for next data...")
             except asyncio.CancelledError:
@@ -52,6 +65,8 @@ class NikobusEventListener:
             address = message[2:8]
             _LOGGER.debug(f"Handling button press for address: {address}")
 
+            self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
+
             current_time = time.monotonic()
 
             # Calculate the time difference since the last command
@@ -65,16 +80,15 @@ class NikobusEventListener:
                     _LOGGER.debug("End of Continuous Press Detected")
                 else:
                     _LOGGER.debug("Single Press Detected")
+                await asyncio.sleep(1)
                 await self._button_discovery_callback(address)
-            elif time_diff > 40:
-                # If commands are coming in every ~40ms, it's a continuous press
+            elif time_diff < 100:
                 if not self._continuous_press_detected:
                     self._continuous_press_detected = True
-                    _LOGGER.debug("Continuous Press Detected - Initial Processing")
+                    _LOGGER.debug("Continuous Press Detected - Skipping Processing")
                 else:
                     _LOGGER.debug("Continuous Press Ongoing - Skipping Processing")
             else:
-                # If less than 40ms, it might be noise or an anomaly, so ignore
                 _LOGGER.debug("Command Ignored - Too Close to Previous Command")
 
         elif not message.startswith(_ignore_answer):
