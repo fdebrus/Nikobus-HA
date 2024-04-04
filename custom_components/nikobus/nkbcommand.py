@@ -17,13 +17,26 @@ MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an ans
 class NikobusCommandHandler:
     def __init__(self, hass, nikobus_connection, nikobus_listener, nikobus_module_states):
         self._hass = hass
+        self._command_task = None
+        self._running = False
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
         self.nikobus_module_states = nikobus_module_states
         self._command_queue = asyncio.Queue()
 
     async def start(self):
-        command_task = self._hass.async_add_job(self.process_commands())
+        self._running = True
+        self._command_task = self._hass.loop.create_task(self.process_commands())
+
+    async def stop(self):
+        self._running = False
+        if self._command_task:
+            self._command_task.cancel()  # Request cancellation of the task
+            try:
+                await self._command_task  # Wait for the task to be cancelled
+            except asyncio.CancelledError:
+                _LOGGER.info("Command processing task was cancelled.")
+            self._command_task = None  # Reset the task reference
 
     async def get_output_state(self, address: str, group: int) -> str:
         _LOGGER.debug(f'Getting output state - Address: {address}, Group: {group}')
@@ -45,7 +58,7 @@ class NikobusCommandHandler:
 
     async def process_commands(self) -> None:
         _LOGGER.info("Nikobus Command Processing started")
-        while True:
+        while self._running:
             command = await self._command_queue.get()
             _LOGGER.debug(f'Processing command: {command}')
             await self._execute_command(command)
