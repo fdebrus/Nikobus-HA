@@ -44,7 +44,6 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
         self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
-        # self._attr_device_class = "light"
 
     @property
     def device_info(self):
@@ -55,11 +54,6 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
             "model": self._model,
         }
 
-    # @property
-    # def device_class(self):
-    #    """Return the class of this device."""
-    #    return self._attr_device_class
-
     @property
     def is_on(self):
         return self._state
@@ -68,7 +62,6 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     def _handle_coordinator_update(self) -> None:
         self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
         self.async_write_ha_state()
-        _LOGGER.debug(f"SWITCH _handle_coordinator_update {self._attr_name} {self._address} {self._channel} {self._state}")
 
     async def async_turn_on(self):
         self._state = True
