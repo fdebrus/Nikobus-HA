@@ -16,7 +16,7 @@ class NikobusConfig:
 
     async def load_json_data(self, file_name: str, data_type: str) -> dict | None:
         file_path = self._hass.config.path(file_name)
-        _LOGGER.info(f'Loading Nikobus {data_type} data from {file_path}')
+        _LOGGER.info(f'Loading {data_type} data from {file_path}')
         try:
             async with aio_open(file_path, mode='r') as file:
                 data = json.loads(await file.read())
