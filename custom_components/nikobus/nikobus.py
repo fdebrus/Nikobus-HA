@@ -203,7 +203,7 @@ class Nikobus:
 
                 if impacted_module_address in self.dict_module_data.get('dimmer_module', {}):
                     _LOGGER.debug("DIMMER - WAITING")
-                    await asyncio.sleep(0.4)
+                    await asyncio.sleep(0.8)
 
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
