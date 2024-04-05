@@ -13,7 +13,7 @@ from .nkbcommand import NikobusCommandHandler
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.4.1"
+__version__ = "2024.4.5"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
@@ -22,8 +22,8 @@ class Nikobus:
         self._hass = hass
         self._async_event_handler = async_event_handler
         self.nikobus_module_states = {}
-        self.json_config_data = {}
-        self.json_button_data = {}
+        self.dict_module_data = {}
+        self.dict_button_data = {}
 
         self.nikobus_connection = NikobusConnect(connection_string)
         self.nikobus_config = NikobusConfig(self._hass)
@@ -44,8 +44,8 @@ class Nikobus:
     async def connect(self) -> bool:
         if await self.nikobus_connection.connect():
             try:
-                self.json_config_data = await self.nikobus_config.load_json_data("nikobus_config.json", "config")
-                self.json_button_data = await self.nikobus_config.load_json_data("nikobus_button_config.json", "button")
+                self.dict_module_data = await self.nikobus_config.load_json_data("nikobus_module_config.json", "module")
+                self.dict_button_data = await self.nikobus_config.load_json_data("nikobus_button_config.json", "button")
                 return True
             except Exception as err:
                 _LOGGER.error(f"Configuration load error: {err}")
@@ -58,24 +58,34 @@ class Nikobus:
     async def command_handler(self):
         await self.nikobus_command_handler.start()
 
-#### REFRESH DATA FROM THE NIKOBUS
     async def refresh_nikobus_data(self) -> bool:
-        # Iterate through each module in the configuration data.
-        for module_type, entries in self.json_config_data.items():
-            for entry in entries:
-                address = entry.get("address")
-                _LOGGER.debug(f'Refreshing data for module address: {address}')
-                state = ""
-                channel_count = len(entry.get("channels", []))
-                groups_to_query = [1] if channel_count <= 6 else [1, 2]
+        # Refresh Switch Module
+        if 'switch_module' in self.dict_module_data:
+            await self._refresh_module_type(self.dict_module_data['switch_module'])
 
-                for group in groups_to_query:
-                    group_state = await self.nikobus_command_handler.get_output_state(address, group) or ""
-                    _LOGGER.debug(f'*** State for group {group}: {group_state} address : {address} ***')
-                    state += group_state  # Concatenate states from each group.
-                self.nikobus_module_states[address] = bytearray.fromhex(state)
-                _LOGGER.debug(f'{self.nikobus_module_states[address]}')
+        # Refresh Dimmer Module
+        if 'dimmer_module' in self.dict_module_data:
+            await self._refresh_module_type(self.dict_module_data['dimmer_module'])
+
+        # Refresh Roller Module
+        if 'roller_module' in self.dict_module_data:
+            await self._refresh_module_type(self.dict_module_data['roller_module'])
+
         return True
+
+    async def _refresh_module_type(self, modules_dict):
+        for address, module_data in modules_dict.items():
+            _LOGGER.debug(f'Refreshing data for module address: {address}')
+            state = ""
+            channel_count = len(module_data.get("channels", []))
+            groups_to_query = [1] if channel_count <= 6 else [1, 2]
+
+            for group in groups_to_query:
+                group_state = await self.nikobus_command_handler.get_output_state(address, group) or ""
+                _LOGGER.debug(f'*** State for group {group}: {group_state} address : {address} ***')
+                state += group_state  # Concatenate states from each group.
+            self.nikobus_module_states[address] = bytearray.fromhex(state)
+            _LOGGER.debug(f'{self.nikobus_module_states[address]}')
 
 #### UTILS
     def get_bytearray_state(self, address: str, channel: int) -> int:
@@ -159,9 +169,9 @@ class Nikobus:
     async def button_discovery(self, address: str) -> None:
         _LOGGER.debug(f"Discovering button at address: {address}")
 
-        if address in self.json_button_data["nikobus_button"]:
+        if address in self.dict_button_data.get("nikobus_button", {}):
             _LOGGER.debug(f"Button at address {address} found in configuration. Processing...")
-            await self.process_button_modules(self.json_button_data["nikobus_button"][address], address)
+            await self.process_button_modules(self.dict_button_data["nikobus_button"][address], address)
         else:
             _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration.")
             new_button = {
@@ -169,8 +179,11 @@ class Nikobus:
                 "address": address,
                 "impacted_module": [{"address": "", "group": ""}]
             }
-            self.json_button_data["nikobus_button"][address] = new_button
-            await self.nikobus_config.write_json_button_data("nikobus_button_config.json", "button", self.json_button_data)
+            # Safely updating the configuration dictionary
+            if "nikobus_button" not in self.dict_button_data:
+                self.dict_button_data["nikobus_button"] = {}
+            self.dict_button_data["nikobus_button"][address] = new_button
+            await self.nikobus_config.write_json_button_data("nikobus_button_config.json", "button", self.dict_button_data)
             _LOGGER.debug(f"New button configuration added for address {address}.")
 
     async def process_button_modules(self, button: dict, address: str) -> None:
@@ -178,18 +191,24 @@ class Nikobus:
         button_description = button.get('description')
         _LOGGER.debug(f"Processing button press for '{button_description}'")
 
-        for module in button.get('impacted_module', []):
-            impacted_module_address = module.get('address')
-            impacted_group = module.get('group')
+        for impacted_module_info in button.get('impacted_module', []):
+            impacted_module_address = impacted_module_info.get('address')
+            impacted_group = impacted_module_info.get('group')
+
             if not (impacted_module_address and impacted_group):
                 _LOGGER.debug("Skipping module due to missing address or group.")
                 continue
             try:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
-                
+
+                if impacted_module_address in self.dict_module_data.get('dimmer_module', {}):
+                    _LOGGER.debug("DIMMER - WAITING")
+                    await asyncio.sleep(0.4)
+
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
                 await self._async_event_handler("nikobus_button_pressed", address)
+
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group}: {e}")
 
