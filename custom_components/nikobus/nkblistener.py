@@ -80,7 +80,7 @@ class NikobusEventListener:
                     _LOGGER.debug("End of Continuous Press Detected")
                 else:
                     _LOGGER.debug("Single Press Detected")
-                await asyncio.sleep(1)
+                    
                 await self._button_discovery_callback(address)
             elif time_diff < 100:
                 if not self._continuous_press_detected:
