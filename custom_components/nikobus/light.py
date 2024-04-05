@@ -18,14 +18,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
         NikobusLightEntity(
             hass,
             dataservice,
-            dimmer_module.get("description"),
-            dimmer_module.get("model"),
-            dimmer_module.get("address"),
+            dimmer_module_data.get("description"),
+            dimmer_module_data.get("model"),
+            address,  # Use the address directly since it's now the key in the dictionary
             i,
             channel["description"],
         )
-        for dimmer_module in dataservice.api.json_config_data["dimmer_modules_addresses"]
-        for i, channel in enumerate(dimmer_module["channels"], start=1)
+        for address, dimmer_module_data in dataservice.api.dict_module_data['dimmer_module'].items() 
+        for i, channel in enumerate(dimmer_module_data["channels"], start=1)
         if not channel["description"].startswith("not_in_use")
     ]
 
@@ -76,7 +76,6 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self._state = bool(self._dataservice.api.get_light_state(self._address, self._channel))
         self._brightness = self._dataservice.api.get_light_brightness(self._address, self._channel)
         self.async_write_ha_state()
-        _LOGGER.debug(f"LIGHT _handle_coordinator_update {self._attr_name} {self._address} {self._channel} {self._state} {self._brightness}")
 
     async def async_turn_on(self, **kwargs):
         self._brightness = kwargs.get("brightness", 255)
