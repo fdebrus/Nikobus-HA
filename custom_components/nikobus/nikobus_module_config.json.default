@@ -1,5 +1,5 @@
 {
-    "switch_modules_addresses": [
+    "switch_module": [
         {
             "description": "Switch Module S1",
             "model": "05-000-02",
@@ -50,7 +50,7 @@
             ]
         }
     ],
-    "dimmer_modules_addresses": [
+    "dimmer_module": [
         {
             "description": "Dimmer Module D1",
             "model": "05-007-02",
@@ -71,7 +71,7 @@
             ]
         }
     ],
-    "roller_modules_addresses": [
+    "roller_module": [
         {
             "description": "Rollershutter Module R1",
             "model": "05-001-02",
