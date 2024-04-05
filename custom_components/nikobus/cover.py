@@ -28,19 +28,18 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
         NikobusCoverEntity(
             hass,
             dataservice,
-            cover_module.get("description"),
-            cover_module.get("model"),
-            cover_module.get("address"),
+            cover_module_data.get("description"),
+            cover_module_data.get("model"),
+            address,  # Now using the key from the dictionary as the address
             i,
             channel["description"],
-            channel["operation_time"],
+            channel.get("operation_time", "00"),  # Providing a default value in case it's missing
         )
-        for cover_module in dataservice.api.json_config_data["roller_modules_addresses"]
-        for i, channel in enumerate(cover_module["channels"], start=1)
+        for address, cover_module_data in dataservice.api.dict_module_data['roller_module'].items() 
+        for i, channel in enumerate(cover_module_data["channels"], start=1)  # Using cover_module_data to access channels
         if not channel["description"].startswith("not_in_use")
     ]
 
-    # Add the cover entities to Home Assistant.
     async_add_entities(entities)
 
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
