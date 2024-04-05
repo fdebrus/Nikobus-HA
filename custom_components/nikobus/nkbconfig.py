@@ -20,9 +20,13 @@ class NikobusConfig:
         try:
             async with aio_open(file_path, mode='r') as file:
                 data = json.loads(await file.read())
-            # Transform 'nikobus_button' list to a dictionary for 'button' data_type
-            if data_type == "button" and "nikobus_button" in data:
+            # Transform list to dictionary
+            if data_type == "button":
                 data['nikobus_button'] = {button['address']: button for button in data['nikobus_button']}
+            elif data_type == "module":
+                data['switch_module'] = {module['address']: module for module in data['switch_module']}
+                data['dimmer_module'] = {module['address']: module for module in data['dimmer_module']}
+                data['roller_module'] = {module['address']: module for module in data['roller_module']}
             return data
         except FileNotFoundError:
             _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
