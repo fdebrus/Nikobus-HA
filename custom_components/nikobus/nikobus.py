@@ -58,6 +58,7 @@ class Nikobus:
     async def command_handler(self):
         await self.nikobus_command_handler.start()
 
+#### REFRESH DATA FROM NIKOBUS
     async def refresh_nikobus_data(self) -> bool:
         # Refresh Switch Module
         if 'switch_module' in self.dict_module_data:
@@ -83,13 +84,15 @@ class Nikobus:
             for group in groups_to_query:
                 group_state = await self.nikobus_command_handler.get_output_state(address, group) or ""
                 _LOGGER.debug(f'*** State for group {group}: {group_state} address : {address} ***')
-                state += group_state  # Concatenate states from each group.
+                state += group_state
+
             self.nikobus_module_states[address] = bytearray.fromhex(state)
             _LOGGER.debug(f'{self.nikobus_module_states[address]}')
 
 #### UTILS
     def get_bytearray_state(self, address: str, channel: int) -> int:
         """Get the state of a specific channel."""
+        # _LOGGER.info(f"nikobus_module_states {address} {channel}")
         return self.nikobus_module_states.get(address, bytearray())[channel - 1]
 
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
@@ -179,7 +182,6 @@ class Nikobus:
                 "address": address,
                 "impacted_module": [{"address": "", "group": ""}]
             }
-            # Safely updating the configuration dictionary
             if "nikobus_button" not in self.dict_button_data:
                 self.dict_button_data["nikobus_button"] = {}
             self.dict_button_data["nikobus_button"][address] = new_button
