@@ -39,8 +39,6 @@ class NikobusConfig:
                     data['roller_module'] = {module['address']: module for module in data['roller_module']}
                 else:
                     _LOGGER.warning(f"'roller_module' key not found in {data_type} data.")
-        return data
-
             return data
         except FileNotFoundError:
             _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
