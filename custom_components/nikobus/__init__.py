@@ -1,4 +1,4 @@
-"""The Nikobus integration."""
+"""The Nikobus integration"""
 
 import logging
 
@@ -13,7 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN, binary_sensor.DOMAIN, button.DOMAIN]
 
 async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
-    _LOGGER.debug("Starting setup of the Nikobus integration.")
+    _LOGGER.debug("Starting setup of the Nikobus integration")
 
     coordinator = NikobusDataCoordinator(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
@@ -35,7 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
     try:
         await coordinator.async_config_entry_first_refresh()
     except exceptions.UpdateFailed:
-        _LOGGER.error("Initial data refresh failed. Nikobus integration setup cannot continue.")
+        _LOGGER.error("Initial data refresh failed. Nikobus integration setup cannot continue")
         return False
 
     return True
