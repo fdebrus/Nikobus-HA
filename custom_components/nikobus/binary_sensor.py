@@ -1,4 +1,4 @@
-"""Nikobus Binary_Sensor entity."""
+"""Nikobus Binary_Sensor entity"""
 
 import asyncio
 import logging
