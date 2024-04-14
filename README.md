@@ -63,8 +63,10 @@ Upon button press, buttons are discovered and can be registered in `nikobus_butt
 
 ## Gallery
 
-![Control Interface](https://github.com/fdebrus/Nikobus-HA/assets/33791533/d0e82ca4-9a75-4a15-b471-a747b3abda1f)
-![Setup Example](https://github.com/fdebrus/Nikobus-HA/assets/33791533/ec3e56de-5b9e-404a-b97f-341c4c96331a)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/7c31210b-54a6-4d7d-99f5-51ff891828eb)
+
 ![Module Overview](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4eb7a4e5-0789-45c0-bd80-1c8af84d6bd0)
-![Device Management](https://github.com/fdebrus/Nikobus-HA/assets/33791533/0e92763a-cfbd-4b9c-ae97-b06d317f9544)
-![Home Assistant Integration](https://github.com/fdebrus/Nikobus-HA/assets/33791533/a5cbb377-9274-42e6-bee7-abe58c62ca82)
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10fdd3a6-06a5-41d5-acd2-994730882b0c)
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/efc9af7e-fe8d-400e-9ccf-036c8e1b842c)
