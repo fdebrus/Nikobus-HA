@@ -1,4 +1,4 @@
-"""Nikobus Switch entity."""
+"""Nikobus Switch entity"""
 
 import logging
 
