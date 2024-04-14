@@ -1,4 +1,4 @@
-"""Nikobus Cover entity."""
+"""Nikobus Cover entity"""
 
 import logging
 
