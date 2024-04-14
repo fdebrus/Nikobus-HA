@@ -25,20 +25,20 @@ class NikobusConfig:
                 if 'nikobus_button' in data:
                     data['nikobus_button'] = {button['address']: button for button in data['nikobus_button']}
                 else:
-                    _LOGGER.warning(f"'nikobus_button' key not found in {data_type} data.")
+                    _LOGGER.warning(f"'nikobus_button' key not found in {data_type} data")
             elif data_type == "module":
                 if 'switch_module' in data:
                     data['switch_module'] = {module['address']: module for module in data['switch_module']}
                 else:
-                    _LOGGER.warning(f"'switch_module' key not found in {data_type} data.")
+                    _LOGGER.warning(f"'switch_module' key not found in {data_type} data")
                 if 'dimmer_module' in data:
                     data['dimmer_module'] = {module['address']: module for module in data['dimmer_module']}
                 else:
-                    _LOGGER.warning(f"'dimmer_module' key not found in {data_type} data.")
+                    _LOGGER.warning(f"'dimmer_module' key not found in {data_type} data")
                 if 'roller_module' in data:
                     data['roller_module'] = {module['address']: module for module in data['roller_module']}
                 else:
-                    _LOGGER.warning(f"'roller_module' key not found in {data_type} data.")
+                    _LOGGER.warning(f"'roller_module' key not found in {data_type} data")
             return data
         except FileNotFoundError:
             _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
@@ -49,7 +49,7 @@ class NikobusConfig:
         return None
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
-        """Write the discovered button to a JSON file."""
+        """Write the discovered button to a JSON file"""
         button_config_file_path = self._hass.config.path(file_name)
         try:
             async with aio_open(button_config_file_path, 'w') as file:
