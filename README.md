@@ -21,7 +21,7 @@ Connectivity is supported via direct connections such as `/dev/ttyUSB0` or over 
 
 ## Automation Example
 
-\```yaml
+```yaml
 alias: "React to Nikobus Button Push"
 description: "Perform actions when a Nikobus button is reported as pushed."
 trigger:
@@ -32,7 +32,7 @@ trigger:
 action:
   - service: homeassistant.toggle
     entity_id: light.example_light
-\```
+```
 
 ## Setup Process
 
@@ -49,14 +49,15 @@ Upon button press, buttons are discovered and can be registered in `nikobus_butt
 - For a 12 outputs module, groups 1-6 correspond to module group 1, and 7-12 to module group 2.
 - For a 6 outputs module, only module group 1 exists.
 - Example configuration:
-  \```json
+
+  ```json
   "impacted_module": [
     {
       "address": "0E6C",
       "group": "1"
     }
   ]
-  \```
+  ```
 
 - **Note**: A button can affect multiple modules. If you do not plan to use your button as an HA trigger, updates will sync during the next refresh cycle.
 
