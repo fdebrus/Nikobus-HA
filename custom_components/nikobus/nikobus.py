@@ -1,4 +1,4 @@
-"""API for Nikobus."""
+"""API for Nikobus"""
 
 import asyncio
 import logging
@@ -35,9 +35,9 @@ class Nikobus:
         _LOGGER.debug(f"Creating Nikobus instance with connection string: {connection_string}")
         instance = cls(hass, connection_string, async_event_handler)
         if await instance.connect():
-            _LOGGER.info("Nikobus instance created and connected successfully.")
+            _LOGGER.info("Nikobus instance created and connected successfully")
             return instance
-        _LOGGER.error("Failed to create Nikobus instance.")
+        _LOGGER.error("Failed to create Nikobus instance")
         return None
 
 #### CONNECT TO NIKOBUS
@@ -60,15 +60,12 @@ class Nikobus:
 
 #### REFRESH DATA FROM NIKOBUS
     async def refresh_nikobus_data(self) -> bool:
-        # Refresh Switch Module
         if 'switch_module' in self.dict_module_data:
             await self._refresh_module_type(self.dict_module_data['switch_module'])
 
-        # Refresh Dimmer Module
         if 'dimmer_module' in self.dict_module_data:
             await self._refresh_module_type(self.dict_module_data['dimmer_module'])
 
-        # Refresh Roller Module
         if 'roller_module' in self.dict_module_data:
             await self._refresh_module_type(self.dict_module_data['roller_module'])
 
@@ -91,92 +88,91 @@ class Nikobus:
 
 #### UTILS
     def get_bytearray_state(self, address: str, channel: int) -> int:
-        """Get the state of a specific channel."""
-        # _LOGGER.info(f"nikobus_module_states {address} {channel}")
+        """Get the state of a specific channel"""
         return self.nikobus_module_states.get(address, bytearray())[channel - 1]
 
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
-        """Set the state of a specific channel."""
+        """Set the state of a specific channel"""
         if address in self.nikobus_module_states:
             self.nikobus_module_states[address][channel - 1] = value
         else:
-            _LOGGER.error(f'Address {address} not found in Nikobus module.')
+            _LOGGER.error(f'Address {address} not found in Nikobus module')
 
     def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
-        """Update the state of a specific group."""
+        """Update the state of a specific group"""
         byte_value = bytearray.fromhex(value)
         if address in self.nikobus_module_states:
             if int(group) == 1:
                 self.nikobus_module_states[address][:6] = byte_value
             elif int(group) == 2:
                 self.nikobus_module_states[address][6:12] = byte_value
-            _LOGGER.debug(f'New value set for array {self.nikobus_module_states[address]}')
+            _LOGGER.debug(f'New value set for array {self.nikobus_module_states[address]}.')
         else:
-            _LOGGER.error(f'Address {address} not found in Nikobus module.')
+            _LOGGER.error(f'Address {address} not found in Nikobus module')
 
 #### SWITCHES
     def get_switch_state(self, address: str, channel: int) -> bool:
-        """Get the state of a switch based on its address and channel."""
+        """Get the state of a switch based on its address and channel"""
         return self.get_bytearray_state(address, channel) == 0xFF
 
     async def turn_on_switch(self, address: str, channel: int) -> None:
-        """Turn on a switch specified by its address and channel."""
+        """Turn on a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0xFF)
         await self.nikobus_command_handler.set_output_state(address, channel, 0xFF)
 
     async def turn_off_switch(self, address: str, channel: int) -> None:
-        """Turn off a switch specified by its address and channel."""
+        """Turn off a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
 #### DIMMERS
     def get_light_state(self, address: str, channel: int) -> bool:
-        """Get the state of a light based on its address and channel."""
+        """Get the state of a light based on its address and channel"""
         return self.get_bytearray_state(address, channel) != 0x00
     
     def get_light_brightness(self, address: str, channel: int) -> int:
-        """Get the brightness of a light based on its address and channel."""
+        """Get the brightness of a light based on its address and channel"""
         return self.get_bytearray_state(address, channel)
 
     async def turn_on_light(self, address: str, channel: int, brightness: int) -> None:
-        """Turn on a light specified by its address and channel with the given brightness."""
+        """Turn on a light specified by its address and channel with the given brightness"""
         self.set_bytearray_state(address, channel, brightness)
         await self.nikobus_command_handler.set_output_state(address, channel, brightness)
 
     async def turn_off_light(self, address: str, channel: int) -> None:
-        """Turn off a light specified by its address and channel."""
+        """Turn off a light specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
 #### COVERS
     def get_cover_state(self, address: str, channel: int) -> int:
-        """Get the state of a cover based on its address and channel."""
+        """Get the state of a cover based on its address and channel"""
         return self.get_bytearray_state(address, channel)
 
     async def stop_cover(self, address: str, channel: int) -> None:
-        """Stop a cover specified by its address and channel."""
+        """Stop a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
     async def open_cover(self, address: str, channel: int) -> None:
-        """Open a cover specified by its address and channel."""
+        """Open a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x01)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x01)
 
     async def close_cover(self, address: str, channel: int) -> None:
-        """Close a cover specified by its address and channel."""
+        """Close a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x02)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x02)
 
 #### BUTTONS
     async def button_discovery(self, address: str) -> None:
-        _LOGGER.debug(f"Discovering button at address: {address}")
+        _LOGGER.debug(f"Discovering button at address: {address}.")
 
         if address in self.dict_button_data.get("nikobus_button", {}):
             _LOGGER.debug(f"Button at address {address} found in configuration. Processing...")
             await self.process_button_modules(self.dict_button_data["nikobus_button"][address], address)
         else:
-            _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration.")
+            _LOGGER.warning(f"No existing configuration found for button at address {address}. Adding new configuration")
             new_button = {
                 "description": f"DISCOVERED - Nikobus Button #N{address}",
                 "address": address,
@@ -191,20 +187,19 @@ class Nikobus:
     async def process_button_modules(self, button: dict, address: str) -> None:
         """Process actions for each module impacted by the button press."""
         button_description = button.get('description')
-        _LOGGER.debug(f"Processing button press for '{button_description}'")
+        _LOGGER.debug(f"Processing button press for {button_description}")
 
         for impacted_module_info in button.get('impacted_module', []):
             impacted_module_address = impacted_module_info.get('address')
             impacted_group = impacted_module_info.get('group')
 
             if not (impacted_module_address and impacted_group):
-                _LOGGER.debug("Skipping module due to missing address or group.")
+                _LOGGER.debug("Skipping module due to missing address or group")
                 continue
             try:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
 
                 if impacted_module_address in self.dict_module_data.get('dimmer_module', {}):
-                    _LOGGER.debug("DIMMER - WAITING")
                     await asyncio.sleep(0.8)
 
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
@@ -212,7 +207,7 @@ class Nikobus:
                 await self._async_event_handler("nikobus_button_pressed", address)
 
             except Exception as e:
-                _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group}: {e}")
+                _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group} value {value} error {e}")
 
 class NikobusConnectionError(Exception):
     pass
