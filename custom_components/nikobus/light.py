@@ -1,4 +1,4 @@
-"""Nikobus Dimmer / Light entity."""
+"""Nikobus Dimmer / Light entity"""
 
 import logging
 
