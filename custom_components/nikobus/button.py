@@ -1,4 +1,4 @@
-"""Nikobus Button entity."""
+"""Nikobus Button entity"""
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.binary_sensor import BinarySensorEntity
