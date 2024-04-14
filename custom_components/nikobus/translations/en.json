@@ -1,25 +1,29 @@
 {
-  "config": {
-    "flow_title": "Discovered Device ({host})",
-    "step": {
-      "user": {
-        "title": "Nikobus PC-Link",
-        "description": "Please enter connectivity details.",
-        "data": {
-          "connection_string": "IP address:Port or Serial device"
+    "config": {
+        "step": {
+            "configure": {
+                "title": "Nikobus PC-Link",
+                "description": "Please enter connectivity details.",
+                "data": {
+                    "connection_string": "IP address:Port or Serial device",
+                    "refresh_interval": "Refresh interval in seconds (60-3600)"
+                }
+            } 
         }
-      }
     },
     "error": {
-      "invalid_api_key": "This message will be displayed if `invalid_api_key` is returned as a flow error.",
-      "invalid_host_port_format": "This message will be displayed if the input does not match expected IP:Port or Serial device format."
+        "connection_error_ip": "Unable to connect to the server.",
+        "connection_error_local": "Unable to connect to the local port."
     },
-    "abort": {
-      "stale_api_key": "This message will be displayed if `stale_api_key` is returned as the abort reason.",
-      "reauth_successful": "Existing Nikobus PC-Link entry updated."
-    },
-    "progress": {
-      "slow_task": "This message will be displayed if `slow_task` is returned as `progress_action` for `async_show_progress`."
+    "options": {
+        "step": {
+            "config": {
+                "title": "Nikobus PC-Link",
+                "description": "Update Nikobus refresh interval",
+                "data": {
+                    "refresh_interval": "Refresh interval in seconds (60-3600)"
+                }
+            }
+        }
     }
-  }
 }
