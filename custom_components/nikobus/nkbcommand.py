@@ -1,4 +1,4 @@
-"""Command Processing for Nikobus."""
+"""Command Processing for Nikobus"""
 
 import asyncio
 import logging
@@ -15,6 +15,7 @@ COMMAND_ANSWER_WAIT_TIMEOUT = 5  # Timeout for waiting for command answer in eac
 MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an answer
 
 class NikobusCommandHandler:
+
     def __init__(self, hass, nikobus_connection, nikobus_listener, nikobus_module_states):
         self._hass = hass
         self._command_task = None
@@ -35,7 +36,7 @@ class NikobusCommandHandler:
             try:
                 await self._command_task  # Wait for the task to be cancelled
             except asyncio.CancelledError:
-                _LOGGER.info("Command processing task was cancelled.")
+                _LOGGER.info("Command processing task was cancelled")
             self._command_task = None  # Reset the task reference
 
     async def get_output_state(self, address: str, group: int) -> str:
@@ -113,11 +114,11 @@ class NikobusCommandHandler:
                     _LOGGER.debug(f'Message received: {message}')
 
                     if _wait_command_ack in message and not ack_received:
-                        _LOGGER.debug('ACK received.')
+                        _LOGGER.debug('ACK received')
                         ack_received = True
 
                     if _wait_command_answer in message and not answer_received:
-                        _LOGGER.debug('Answer received.')
+                        _LOGGER.debug('Answer received')
                         state = self._parse_state_from_message(message, _wait_command_answer)
                         answer_received = True
 
@@ -125,17 +126,17 @@ class NikobusCommandHandler:
                         break
                 
                 except asyncio.TimeoutError:
-                    _LOGGER.debug('Timeout waiting for ACK/Answer.')
+                    _LOGGER.warning(f'Timeout waiting for ACK/Answer on attempt {attempt}')
                     break
 
             if ack_received and answer_received:
-                _LOGGER.debug('Both ACK and Answer received successfully.')
+                _LOGGER.debug('Both ACK and Answer received successfully')
                 return state
 
         if not ack_received:
-            _LOGGER.debug('ACK not received within timeout period.')
+            _LOGGER.error('ACK not received within timeout period')
         if not answer_received:
-            _LOGGER.debug('Answer not received within timeout period.')
+            _LOGGER.error('Answer not received within timeout period')
 
         return state
 
