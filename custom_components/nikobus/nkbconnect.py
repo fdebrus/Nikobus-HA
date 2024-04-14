@@ -74,7 +74,7 @@ class NikobusConnect:
 
     async def send(self, s: str):
         if not self._is_connected:
-            _LOGGER.error("Attempting to send data on a closed or uninitialized connection.")
+            _LOGGER.error("Attempting to send data on a closed or uninitialized connection")
             return
         self._nikobus_writer.write(s.encode() + b'\r')
         await self._nikobus_writer.drain()
