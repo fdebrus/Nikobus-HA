@@ -13,8 +13,7 @@
             "impacted_module": [
                 {
                     "address": "9105",
-                    "group": "6",
-                    "command": "open"
+                    "group": "6"
                 }
             ]
         }

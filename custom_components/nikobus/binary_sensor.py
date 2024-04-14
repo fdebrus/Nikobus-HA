@@ -1,11 +1,15 @@
-"""Nikobus Button entity"""
+"""Nikobus Binary_Sensor entity"""
 
-from homeassistant.components.button import ButtonEntity
+import asyncio
+import logging
+
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
@@ -18,7 +22,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             for impacted_module in button["impacted_module"]
         ]
 
-        entity = NikobusButtonEntity(
+        entity = NikobusButtonBinarySensor(
             hass,
             dataservice,
             button.get("description"),
@@ -30,17 +34,38 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
     async_add_entities(entities)
 
-class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
+class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def __init__(self, hass: HomeAssistant, dataservice, description, address, impacted_modules_info) -> None:
         super().__init__(dataservice)
         self._hass = hass
         self._dataservice = dataservice
         self._description = description
         self._address = address
-        self.impacted_modules_info = impacted_modules_info  # Now correctly accepting the list of impacted modules
+        self.impacted_modules_info = impacted_modules_info
+        self._state = False
 
-        self._attr_name = f"Nikobus Push Button {address}"
+        self._attr_name = f"Nikobus Sensor {address}"
         self._attr_unique_id = f"{DOMAIN}_{address}"
+        self._attr_device_class = "push"
+
+        self._hass.bus.async_listen('nikobus_button_pressed', self.handle_button_press_event)
+
+    @callback
+    async def handle_button_press_event(self, event):
+        """Handle the nikobus_button_pressed event."""
+        if event.data['address'] == self._address:
+            self._state = True
+            self.async_write_ha_state()
+
+            await asyncio.sleep(0.5)
+            
+            self._state = False
+            self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the button is pressed, else False."""
+        return self._state
 
     @property
     def device_info(self):
@@ -58,5 +83,6 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         )
         return {"impacted_modules": impacted_modules_str}
 
-    async def async_press(self) -> None:
-        await self._dataservice.async_event_handler("ha_button_pressed", self._address)
+    async def async_update(self):
+        """Update method for the binary sensor."""
+        pass

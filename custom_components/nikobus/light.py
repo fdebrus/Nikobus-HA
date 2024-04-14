@@ -1,11 +1,14 @@
-"""Nikobus Dimmer / Light entity."""
+"""Nikobus Dimmer / Light entity"""
+
+import logging
 
 from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, BRAND
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
@@ -15,14 +18,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
         NikobusLightEntity(
             hass,
             dataservice,
-            dimmer_module.get("description"),
-            dimmer_module.get("model"),
-            dimmer_module.get("address"),
+            dimmer_module_data.get("description"),
+            dimmer_module_data.get("model"),
+            address,  # Use the address directly since it's now the key in the dictionary
             i,
             channel["description"],
         )
-        for dimmer_module in dataservice.api.json_config_data["dimmer_modules_addresses"]
-        for i, channel in enumerate(dimmer_module["channels"], start=1)
+        for address, dimmer_module_data in dataservice.api.dict_module_data['dimmer_module'].items() 
+        for i, channel in enumerate(dimmer_module_data["channels"], start=1)
         if not channel["description"].startswith("not_in_use")
     ]
 
@@ -67,11 +70,6 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     @property
     def is_on(self):
         return self._state
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
-        self._handle_coordinator_update()
 
     @callback
     def _handle_coordinator_update(self) -> None:

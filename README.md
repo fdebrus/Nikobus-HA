@@ -1,81 +1,72 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-# Nikobus Integration (v2024.3.14)
+[![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-Home Assistant integration for Nikobus.
+# Nikobus Integration for Home Assistant (v2.2024.4.5)
 
-# Functionality
+This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant setup.
 
-Supported and tested
+## Supported Modules
 
-	Nikobus switch module 05-000-02 and 05-002-02.
- 
-	Nikobus dimmer module 05-007-02.
- 
-	Nikobus shutter module 05-001-02.
- 
-	Nikobus buttons.
+- **Switch Modules**: `05-000-02` and `05-002-02`
+  - Commands: Operate switches on/off.
+- **Dimmer Module**: `05-007-02`
+  - Commands: Operate dimmers on/off and set brightness.
+- **Shutter Module**: `05-001-02`
+  - Commands: Operate covers open/close and set position.
+- **Nikobus Buttons**:
+  - Button press events can be used as triggers in Home Assistant automations.
+  - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
-Switches can be operated on/off.
-Dimmers can be operated on/off/set brightness.
-Covers can be operated open/close/set position.
-Button press event can be added as a trigger in Home Assistant, eg (Automation)
-Virtual button can be created in HA and defined in Nikobus (virtual button)
+Connectivity is supported via direct connections such as `/dev/ttyUSB0` or over the network using an IP and port, e.g., `192.168.2.1:123`.
 
-Support direct connectivity eg /dev/ttyUSB0 or IP:Port eg 192.168.2.1:123
+## Automation Example
 
-## Automation example 
-
-```
+```yaml
 alias: "React to Nikobus Button Push"
-description: "Perform actions when a Nikobus button is reported as pushed"
+description: "Perform actions when a Nikobus button is reported as pushed."
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
     event_data:
-      address: "specific_button_address"  # Optional: Specify if you want to react to a specific button
+      address: "specific_button_address"  # Optional: Specify to react to a specific button
 action:
   - service: homeassistant.toggle
     entity_id: light.example_light
 ```
 
-# Setup process 
+## Setup Process
 
-One you have installed the custom integration using HACS, go to the custom_repository/nikobus
-Copy nikobus_conf.json.default to your HA config directory / nikobus_conf.json
-Copy nikobus_button_conf.json.default to your HA config directory / nikobus_button_conf.json
-Update the files to reflect your installation.
+1. Install the custom integration using HACS.
+2. Navigate to `custom_repository/nikobus`.
+3. Copy `nikobus_module_conf.json.default` and `nikobus_button_conf.json.default` to your Home Assistant configuration directory.
+4. Update the files to reflect your specific installation settings.
 
-The nikobus installation in refreshed every 2 minutes and update the various states on Home Assistant.
+### Button Configuration
 
-Buttons are discovered when pushed and registered in the nikobus_button_conf.json, they will need manual update as below :
+Upon button press, buttons are discovered and can be registered in `nikobus_button_conf.json`. For manual updates:
 
-For each button, you will have to define with module address and which module group is impacted
-	On a 12 outputs module, 1-6 is module group 1 and 7-12 module group 2
-	On a 6 outputs module, only module group 1 exist
+- Define each button with the corresponding module address and group.
+- For a 12 outputs module, groups 1-6 correspond to module group 1, and 7-12 to module group 2.
+- For a 6 outputs module, only module group 1 exists.
+- Example configuration:
 
-List the impacted modules as show below for each button of your installation.
+  ```json
+  "impacted_module": [
+    {
+      "address": "0E6C",
+      "group": "1"
+    }
+  ]
+  ```
 
-            "impacted_module": [
-                {
-                    "address": "0E6C",
-                    "group": "1"
-                }
-            ]
+- **Note**: A button can affect multiple modules. If you do not plan to use your button as an HA trigger, updates will sync during the next refresh cycle.
 
-* Note: I button can have multiple impacted_module address and group.
-** Note: If you do not plan to use your button as HA trigger, and you can accomodate to wait for the next refresh cycle to have Nikobus in sync with HA, you do not need to create buttons
+## Gallery
 
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/7c31210b-54a6-4d7d-99f5-51ff891828eb)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/d0e82ca4-9a75-4a15-b471-a747b3abda1f)
+![Module Overview](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4eb7a4e5-0789-45c0-bd80-1c8af84d6bd0)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/ec3e56de-5b9e-404a-b97f-341c4c96331a)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10fdd3a6-06a5-41d5-acd2-994730882b0c)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4eb7a4e5-0789-45c0-bd80-1c8af84d6bd0)
-
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/0e92763a-cfbd-4b9c-ae97-b06d317f9544)
-
-
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/a5cbb377-9274-42e6-bee7-abe58c62ca82)
-
-
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/efc9af7e-fe8d-400e-9ccf-036c8e1b842c)

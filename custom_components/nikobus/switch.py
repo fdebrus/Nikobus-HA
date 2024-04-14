@@ -1,11 +1,14 @@
-"""Nikobus Switch entity."""
+"""Nikobus Switch entity"""
+
+import logging
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 
 from .const import DOMAIN, BRAND
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
@@ -15,14 +18,14 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
         NikobusSwitchEntity(
             hass,
             dataservice,
-            switch_module.get("description"),
-            switch_module.get("model"),
-            switch_module.get("address"),
+            switch_module_data.get("description"),
+            switch_module_data.get("model"),
+            address,
             i,
             channel["description"],
         )
-        for switch_module in dataservice.api.json_config_data["switch_modules_addresses"]
-        for i, channel in enumerate(switch_module["channels"], start=1)
+        for address, switch_module_data in dataservice.api.dict_module_data['switch_module'].items()
+        for i, channel in enumerate(switch_module_data["channels"], start=1) 
         if not channel["description"].startswith("not_in_use")
     ]
 
@@ -54,11 +57,6 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self):
         return self._state
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self.coordinator.async_add_listener(self._handle_coordinator_update)
-        self._handle_coordinator_update()
 
     @callback
     def _handle_coordinator_update(self) -> None:

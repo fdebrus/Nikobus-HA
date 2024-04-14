@@ -1,87 +1,93 @@
-"""Nikobus Config Flow."""
+"""Nikobus Config Flow"""
 
-from typing import Any, Optional
+from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 import homeassistant.helpers.config_validation as cv
 import logging
 
 from .const import DOMAIN
-from .nikobus import Nikobus
 
 _LOGGER = logging.getLogger(__name__)
 
-# Define constants for error handling
-AUTH_ERROR = 'auth_error'
 CONF_CONNECTION_STRING = "connection_string"
+CONF_REFRESH_INTERVAL = "refresh_interval"
 
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handles the configuration flow for Nikobus integration.
-
-    This class manages the dialogue between the user and the integration
-    for setting up Nikobus within Home Assistant. It handles initial setup,
-    input validation, and updating of connection settings.
-    """
+    """Handle a config flow for Nikobus integration."""
+    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(self, user_input=None):
-        """Handle a flow initialized by the user.
+        """Handle a flow initiated by the user."""
+        return await self.async_step_configure(user_input)
 
-        This step is invoked when the user initiates the configuration process.
-        It asks the user for the connection string to communicate with Nikobus.
-        """
+    async def async_step_configure(self, user_input=None):
+        """Handle the 'configure' step of the flow."""
         errors = {}
         if user_input is not None:
-            # Attempt to process the user-provided connection string
             connection_string = user_input.get(CONF_CONNECTION_STRING, "")
+            refresh_interval = user_input.get(CONF_REFRESH_INTERVAL)
             if not connection_string:
-                # Report back to the user if the connection string is missing or invalid
                 errors['base'] = 'invalid_connection_string'
+            elif refresh_interval is None or not (60 <= int(refresh_interval) <= 3600):
+                errors['base'] = 'invalid_refresh_interval'
             else:
-                # Proceed to create an entry with the valid connection string
-                return await self._create_entry({CONF_CONNECTION_STRING: connection_string})
+                data = {
+                    CONF_CONNECTION_STRING: connection_string,
+                    CONF_REFRESH_INTERVAL: refresh_interval
+                }
+                return await self._create_entry(data)
 
-        # Schema defining the configuration options the user can set, currently only the connection string
         user_input_schema = vol.Schema({
             vol.Required(CONF_CONNECTION_STRING): str,
+            vol.Optional(CONF_REFRESH_INTERVAL, default=120): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
         })
 
-        # Render the configuration form in the UI with any validation errors
         return self.async_show_form(
-            step_id="user", 
+            step_id="configure", 
             data_schema=user_input_schema, 
             errors=errors
         )
 
     async def _create_entry(self, data: dict[str, Any]):
-        """Helper function to create the entry with a meaningful title.
-
-        The title is derived from the connection string, making it easier for the user
-        to identify their Nikobus connection in the Home Assistant UI.
-        """
-        # Default title includes the connection string for clarity
+        """Create entry for configuration."""
         title = f"Nikobus PC-Link - {data.get(CONF_CONNECTION_STRING, 'Unknown Connection')}"
-        
-        # Complete the creation or update of the configuration entry
-        return super().async_create_entry(title=title, data=data)
+        return self.async_create_entry(title=title, data=data)
 
-    async def async_create_entry(self, title: str, data: dict) -> dict:
-        """Override the creation of a config entry to handle duplicates.
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
 
-        If an entry with the same connection string already exists, update it instead of creating a new one.
-        This prevents duplicate entries for the same Nikobus connection.
-        """
-        # Search for an existing entry with the same connection string
-        existing_entry = next(
-            (entry for entry in self._async_current_entries()
-            if entry.data.get(CONF_CONNECTION_STRING) == data.get(CONF_CONNECTION_STRING)), None)
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options flow for Nikobus integration."""
 
-        if existing_entry:
-            # Update the existing entry and reload its configuration
-            self.hass.config_entries.async_update_entry(existing_entry, data=data)
-            await self.hass.config_entries.async_reload(existing_entry.entry_id)
-            _LOGGER.info("Existing Nikobus entry updated with new connection string.")
-            # Stop the flow as the entry has been updated
-            return self.async_abort(reason="reauth_successful")
+    def __init__(self, config_entry):
+        self.config_entry = config_entry
 
-        # If no existing entry is found, proceed to create a new one
-        return super().async_create_entry(title=title, data=data)
+    async def async_step_init(self, user_input=None):
+        """Handle the initial step by redirecting to the 'config' step."""
+        return await self.async_step_config(user_input)
+
+    async def async_step_config(self, user_input=None):
+        """Handle the 'config' step in options flow."""
+        errors = {}
+        options = self.config_entry.options
+
+        options_schema = vol.Schema({
+            vol.Optional(CONF_REFRESH_INTERVAL, default=options.get(CONF_REFRESH_INTERVAL, 120)): vol.All(cv.positive_int, vol.Range(min=120, max=3600)),
+        })
+
+        if user_input is not None:
+            try:
+                valid_input = options_schema(user_input)
+                return self.async_create_entry(title="Options Configured", data=valid_input)
+            except vol.Invalid as e:
+                _LOGGER.error(f"Validation error in options step: {e}")
+                errors['base'] = 'invalid_input'
+
+        return self.async_show_form(
+            step_id="config",
+            data_schema=options_schema,
+            errors=errors
+        )

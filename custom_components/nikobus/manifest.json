@@ -6,7 +6,7 @@
   "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
   "domain": "nikobus",
   "name": "Nikobus",
-  "todorequirements": ["Nikobus==0.0.0"],
+  "requirements": ["aiofiles==0.7.0"],
   "version": "0.0.0",
   "iot_class": "local_polling",
   "loggers": "custom_components.nikobus"
