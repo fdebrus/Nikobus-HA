@@ -13,7 +13,7 @@ from .nkbcommand import NikobusCommandHandler
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.4.5"
+__version__ = "2024.4.15"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
