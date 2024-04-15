@@ -20,7 +20,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             dataservice,
             dimmer_module_data.get("description"),
             dimmer_module_data.get("model"),
-            address,  # Use the address directly since it's now the key in the dictionary
+            address,
             i,
             channel["description"],
         )
