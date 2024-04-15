@@ -56,9 +56,7 @@ class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
         if event.data['address'] == self._address:
             self._state = True
             self.async_write_ha_state()
-
             await asyncio.sleep(0.5)
-            
             self._state = False
             self.async_write_ha_state()
 
