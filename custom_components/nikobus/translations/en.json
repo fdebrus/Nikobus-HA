@@ -11,10 +11,6 @@
             } 
         }
     },
-    "error": {
-        "connection_error_ip": "Unable to connect to the server.",
-        "connection_error_local": "Unable to connect to the local port."
-    },
     "options": {
         "step": {
             "config": {
@@ -23,6 +19,15 @@
                 "data": {
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
                 }
+            }
+        }
+    },
+    "component": {
+        "nikobus": {
+            "error": {
+                "base": "An error has occurred, please try again.",
+                "invalid_connection": "Invalid connection string. Please check your input and try again.",
+                "invalid_input": "Invalid input, please check your data."
             }
         }
     }
