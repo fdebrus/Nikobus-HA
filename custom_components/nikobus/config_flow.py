@@ -2,9 +2,13 @@
 
 from typing import Any
 import voluptuous as vol
+import ipaddress
+import re
+
 from homeassistant import config_entries
 import homeassistant.helpers.config_validation as cv
 import logging
+
 
 from .const import DOMAIN
 
@@ -17,6 +21,15 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Nikobus integration."""
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
+    def _validate_connection_string(self) -> str:
+        try:
+            ipaddress.ip_address(self._connection_string.split(':')[0])
+            return True
+        except ValueError:
+            if re.match(r'^/dev/tty(USB|S)\d+$', self._connection_string):
+                return True
+        return False
+
     async def async_step_user(self, user_input=None):
         """Handle a flow initiated by the user."""
         return await self.async_step_configure(user_input)
@@ -27,15 +40,15 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             connection_string = user_input.get(CONF_CONNECTION_STRING, "")
             refresh_interval = user_input.get(CONF_REFRESH_INTERVAL)
-            if not connection_string:
-                errors['base'] = 'invalid_connection_string'
-            elif refresh_interval is None or not (60 <= int(refresh_interval) <= 3600):
-                errors['base'] = 'invalid_refresh_interval'
-            else:
-                data = {
-                    CONF_CONNECTION_STRING: connection_string,
-                    CONF_REFRESH_INTERVAL: refresh_interval
-                }
+
+            data = {
+                CONF_CONNECTION_STRING: connection_string,
+                CONF_REFRESH_INTERVAL: refresh_interval
+            }
+
+            if not self._validate_connection_string(connection_string):
+                errors['connection_string'] = 'invalid_connection'
+            else:    
                 return await self._create_entry(data)
 
         user_input_schema = vol.Schema({
@@ -75,7 +88,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         options = self.config_entry.options
 
         options_schema = vol.Schema({
-            vol.Optional(CONF_REFRESH_INTERVAL, default=options.get(CONF_REFRESH_INTERVAL, 120)): vol.All(cv.positive_int, vol.Range(min=120, max=3600)),
+            vol.Optional(CONF_REFRESH_INTERVAL, default=options.get(CONF_REFRESH_INTERVAL, 120)): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
         })
 
         if user_input is not None:
