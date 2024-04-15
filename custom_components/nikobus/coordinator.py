@@ -39,7 +39,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             await self.api.command_handler()
         except NikobusConnectionError as e:
             _LOGGER.error("Failed to connect to Nikobus: %s", e)
-            raise NikobusConnectError from e
+            raise NikobusConnectError("Failed to connect to Nikobus.", original_exception=e)
 
     async def async_update_data(self):
         """Fetch the latest data from Nikobus"""
@@ -48,7 +48,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             return await self.api.refresh_nikobus_data()
         except NikobusDataError as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
-            raise UpdateFailed(f"Error fetching data: {e}")
+            raise UpdateFailed(f"Error fetching Nikobus data: {e}")
 
     async def async_event_handler(self, event, data):
         """Handle events from Nikobus."""
@@ -65,5 +65,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER.info("Updated the Nikobus refresh interval to %s seconds", self.refresh_interval)
 
 class NikobusConnectError(Exception):
-    """Exception raised when connection to Nikobus fails."""
-    pass
+    def __init__(self, message="Failed to connect to Nikobus system", original_exception=None):
+        super().__init__(message)
+        self.original_exception = original_exception
