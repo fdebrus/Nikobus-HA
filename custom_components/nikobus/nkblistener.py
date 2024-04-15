@@ -39,7 +39,7 @@ class NikobusEventListener:
 
     async def listen_for_events(self) -> None:
         """Continuously listen for and handle events from the Nikobus system"""
-        _LOGGER.info("Nikobus Event Listener started")
+        _LOGGER.info("Nikobus Event Listener starting")
         while self._running:
             try:
                 data = await asyncio.wait_for(self.nikobus_connection.read(), timeout=10)
