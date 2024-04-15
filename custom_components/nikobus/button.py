@@ -37,7 +37,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         self._dataservice = dataservice
         self._description = description
         self._address = address
-        self.impacted_modules_info = impacted_modules_info  # Now correctly accepting the list of impacted modules
+        self.impacted_modules_info = impacted_modules_info
 
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{DOMAIN}_{address}"
