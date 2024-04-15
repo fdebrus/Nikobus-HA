@@ -58,7 +58,7 @@ class NikobusCommandHandler:
         await self._command_queue.put(command)
 
     async def process_commands(self) -> None:
-        _LOGGER.info("Nikobus Command Processing started")
+        _LOGGER.info("Nikobus Command Processing starting")
         while self._running:
             command = await self._command_queue.get()
             _LOGGER.debug(f'Processing command: {command}')
@@ -102,7 +102,7 @@ class NikobusCommandHandler:
         state = None
 
         for attempt in range(MAX_ATTEMPTS):
-            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} {_wait_command_answer}')
+            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer}')
             await self.nikobus_connection.send(command)
 
             end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
