@@ -23,20 +23,19 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus cover entities from a configuration entry. This function initializes cover entities based on the Nikobus system's configuration and adds them to Home Assistant for management."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    # Create cover entities for each configured roller module and its channels not marked as "not_in_use".
     entities = [
         NikobusCoverEntity(
             hass,
             dataservice,
             cover_module_data.get("description"),
             cover_module_data.get("model"),
-            address,  # Now using the key from the dictionary as the address
+            address,
             i,
             channel["description"],
-            channel.get("operation_time", "00"),  # Providing a default value in case it's missing
+            channel.get("operation_time", "00"),
         )
         for address, cover_module_data in dataservice.api.dict_module_data['roller_module'].items() 
-        for i, channel in enumerate(cover_module_data["channels"], start=1)  # Using cover_module_data to access channels
+        for i, channel in enumerate(cover_module_data["channels"], start=1)
         if not channel["description"].startswith("not_in_use")
     ]
 
