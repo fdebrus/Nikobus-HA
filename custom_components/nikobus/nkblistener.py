@@ -61,7 +61,6 @@ class NikobusEventListener:
     async def handle_message(self, message: str) -> None:
         """Handle incoming messages from the Nikobus system"""
         _LOGGER.debug(f"Handler got message: {message}.")
-
         if message.startswith(BUTTON_COMMAND_PREFIX):
             await self._handle_button_press(message[2:8])
         elif not message.startswith(IGNORE_ANSWER):
