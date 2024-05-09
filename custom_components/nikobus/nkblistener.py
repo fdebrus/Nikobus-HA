@@ -76,6 +76,7 @@ class NikobusEventListener:
         time_diff = (current_time - self._last_nikobus_command_received_timestamp) * 1000
         
         if time_diff > 150:
+            await self._button_discovery_callback(address)
             self._process_new_command(current_time, address)
         elif time_diff < 100:
             self._detect_continuous_press()
@@ -88,8 +89,6 @@ class NikobusEventListener:
             _LOGGER.debug("End of Continuous Press Detected")
         else:
             _LOGGER.debug("Single Press Detected")
-            
-        await self._button_discovery_callback(address)
 
     def _detect_continuous_press(self):
         """Detect continuous press"""
