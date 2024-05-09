@@ -5,6 +5,8 @@
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant setup.
 
+**!! Only one client on the Nikobus at a time, do not connect anything else in parallel of this integration. **
+
 ## Supported Modules
 
 - **Switch Modules**: `05-000-02` and `05-002-02`
