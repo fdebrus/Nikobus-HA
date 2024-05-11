@@ -1,70 +1,68 @@
-"""Coordinator for Nikobus"""
+"""Coordinator for Aquarite."""
 
+import asyncio
 import logging
-from datetime import timedelta
+from typing import Any
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.config_entries import ConfigEntry
-
-from .nikobus import Nikobus, NikobusConnectionError, NikobusDataError
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_CONNECTION_STRING = "connection_string"
-CONF_REFRESH_INTERVAL = "refresh_interval"
+class AquariteDataCoordinator(DataUpdateCoordinator):
+    """Aquarite custom coordinator."""
 
-class NikobusDataCoordinator(DataUpdateCoordinator):
-    """Coordinator for asynchronous management of Nikobus updates"""
+    def __init__(self, hass: HomeAssistant, api) -> None:
+        """Initialize the coordinator."""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
-        self.hass = hass
-        self.api = None
-        self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
-        self.refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, 120)
-        
         super().__init__(
             hass,
-            _LOGGER,
-            name="Nikobus",
-            update_method=self.async_update_data,
-            update_interval=timedelta(seconds=self.refresh_interval),
+            logger=_LOGGER,
+            name="Aquarite"
         )
+        self.api = api
 
-    async def connect(self):
-        """Connect to the Nikobus system"""
+    async def async_updated_data(self, data) -> None:
+        """Update data."""
+        super().async_set_updated_data(data)
+
+    def set_updated_data(self, data) -> None:
+        """Receive Data."""
+        asyncio.run_coroutine_threadsafe(self.async_updated_data(data), self.hass.loop).result()
+
+    def get_value(self, path) -> Any:
+        """Return part from document."""
+        return self.data.get(path)
+
+    def set_value(self, value_path: str, value: any) -> None:
+        """Update data by a dynamic path."""
+        nested_dict = self.data.to_dict()
+        keys = value_path.split('.')
+        current_dict = nested_dict
+        for key in keys[:-1]:
+            current_dict = current_dict.setdefault(key, {})
+        current_dict[keys[-1]] = value
+        self.data = nested_dict
+        _LOGGER.debug(f"{self.data}")
+
+    def get_pool_name(self, pool_id):
+        """Return the name of the pool from document."""
+        data_dict = self.data.to_dict()
+        if data_dict.get("id") == pool_id:
+            try:
+                pool_name = data_dict["form"]["names"][0]["name"]
+            except (KeyError, IndexError):
+                pool_name = data_dict.get("form", {}).get("name", "Unknown")
+        else:
+            _LOGGER.error(f"Pool ID {pool_id} does not match the document's ID.")
+            pool_name = "Unknown"
+        return pool_name
+
+    def handle_update(self, doc_snapshot, changes, read_time):
         try:
-            self.api = await Nikobus.create(self.hass, self.connection_string, self.async_event_handler)
-            await self.api.listen_for_events()
-            await self.api.command_handler()
-        except NikobusConnectionError as e:
-            _LOGGER.error("Failed to connect to Nikobus: %s", e)
-            raise NikobusConnectError("Failed to connect to Nikobus.", original_exception=e)
-
-    async def async_update_data(self):
-        """Fetch the latest data from Nikobus"""
-        try:
-            _LOGGER.debug("Refreshing Nikobus data")
-            return await self.api.refresh_nikobus_data()
-        except NikobusDataError as e:
-            _LOGGER.error("Error fetching Nikobus data: %s", e)
-            raise UpdateFailed(f"Error fetching Nikobus data: {e}")
-
-    async def async_event_handler(self, event, data):
-        """Handle events from Nikobus."""
-        if "ha_button_pressed" in event:
-            await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
-        self.async_update_listeners()
-
-    async def async_config_entry_updated(self, entry: ConfigEntry) -> None:
-        """Handle updates to the configuration entry."""
-        new_refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, 120)
-        if new_refresh_interval != self.refresh_interval:
-            self.refresh_interval = new_refresh_interval
-            self.update_interval = timedelta(seconds=self.refresh_interval)
-            _LOGGER.info("Updated the Nikobus refresh interval to %s seconds", self.refresh_interval)
-
-class NikobusConnectError(Exception):
-    def __init__(self, message="Failed to connect to Nikobus system", original_exception=None):
-        super().__init__(message)
-        self.original_exception = original_exception
+            for change in changes:
+                if change.type == 'modified':
+                    _LOGGER.debug("Data modified")
+                    self.set_updated_data(change.document)
+        except Exception as e:
+            _LOGGER.error(f"Error handling data update: {e}")
