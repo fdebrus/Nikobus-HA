@@ -1,80 +1,89 @@
-"""Aquarite Light entity."""
+"""Nikobus Dimmer / Light entity"""
 
-from homeassistant.components.light import LightEntity
-from homeassistant.core import HomeAssistant
+import logging
+
+from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, BRAND, MODEL
+from .const import DOMAIN, BRAND
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+_LOGGER = logging.getLogger(__name__)
+
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    if not dataservice:
-        return False
-        
-    pool_id = dataservice.get_value("id")
-    pool_name = dataservice.get_pool_name(pool_id)
-    
     entities = [
-        AquariteLightEntity(hass, dataservice, pool_id, pool_name, "Light", "light.status")
+        NikobusLightEntity(
+            hass,
+            dataservice,
+            dimmer_module_data.get("description"),
+            dimmer_module_data.get("model"),
+            address,
+            i,
+            channel["description"],
+        )
+        for address, dimmer_module_data in dataservice.api.dict_module_data['dimmer_module'].items() 
+        for i, channel in enumerate(dimmer_module_data["channels"], start=1)
+        if not channel["description"].startswith("not_in_use")
     ]
 
     async_add_entities(entities)
 
-    return True
+class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
-class AquariteLightEntity(CoordinatorEntity, LightEntity):
-
-    def __init__(self, hass: HomeAssistant, dataservice, pool_id, pool_name, name, value_path) -> None:
-
+    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._pool_id = pool_id
-        self._pool_name = pool_name
-        self._attr_name = f"{self._pool_name}_{name}"
-        self._value_path = value_path
-        self._unique_id = f"{self._pool_id}{name}"
+        self._state = None
+        self._brightness = None
+        self._description = description
+        self._model = model
+        self._address = address
+        self._channel = channel
+
+        self._attr_name = channel_description
+        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
     @property
     def device_info(self):
-        """Return the device info."""
         return {
-            "identifiers": {(DOMAIN, self._pool_id)},
-            "name": self._pool_name,
+            "identifiers": {(DOMAIN, self._address)},
+            "name": self._description,
             "manufacturer": BRAND,
-            "model": MODEL,
+            "model": self._model,
         }
 
     @property
-    def unique_id(self):
-        """The unique id of the sensor."""
-        return self._unique_id
+    def brightness(self):
+        return self._brightness
 
     @property
     def color_mode(self):
-        return "ONOFF"
+        return "brightness"
 
     @property
     def supported_color_modes(self):
-        return {"ONOFF"}
+        return {"brightness"}
 
     @property
     def is_on(self):
-        """Return true if the device is on."""
-        return bool(self._dataservice.get_value(self._value_path))
+        return self._state
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._state = bool(self._dataservice.api.get_light_state(self._address, self._channel))
+        self._brightness = self._dataservice.api.get_light_brightness(self._address, self._channel)
+        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs):
-        """Turn the entity on."""
-        # self._dataservice.set_value(self._value_path, "1")
-        # self.async_write_ha_state()
-        await self._dataservice.api.turn_on_switch(self._pool_id, self._value_path)
-        
+        self._brightness = kwargs.get("brightness", 255)
+        self._state = True
+        await self._dataservice.api.turn_on_light(self._address, self._channel, self._brightness)
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
-        """Turn the entity off."""
-        # self._dataservice.set_value(self._value_path, "0")
-        # self.async_write_ha_state()
-        await self._dataservice.api.turn_off_switch(self._pool_id, self._value_path)
-        
-
+        self._state = False
+        await self._dataservice.api.turn_off_light(self._address, self._channel)
+        self.async_write_ha_state()

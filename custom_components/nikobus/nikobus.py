@@ -181,7 +181,7 @@ class Nikobus:
             if "nikobus_button" not in self.dict_button_data:
                 self.dict_button_data["nikobus_button"] = {}
             self.dict_button_data["nikobus_button"][address] = new_button
-            await self.nikobus_config.write_json_button_data("nikobus_button_config.json", "button", self.dict_button_data)
+            await self.nikobus_config.write_json_data("nikobus_button_config.json", "button", self.dict_button_data)
             _LOGGER.debug(f"New button configuration added for address {address}.")
 
     async def process_button_modules(self, button: dict, address: str) -> None:

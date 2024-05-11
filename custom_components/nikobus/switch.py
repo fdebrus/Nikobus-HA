@@ -1,77 +1,74 @@
-"""Aquarite Switch entity."""
+"""Nikobus Switch entity"""
+
+import logging
+
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, BRAND, MODEL
+from .const import DOMAIN, BRAND
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
-    """Set up a config entry."""
+_LOGGER = logging.getLogger(__name__)
+
+async def async_setup_entry(hass, entry, async_add_entities) -> bool:
+
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    if not dataservice:
-        return False
-
-    pool_id = dataservice.get_value("id")
-    pool_name = dataservice.get_pool_name(pool_id)
-
     entities = [
-        AquariteSwitchEntity(hass, dataservice, pool_id, pool_name, "Electrolysis Cover", "hidro.cover_enabled"),
-        AquariteSwitchEntity(hass, dataservice, pool_id, pool_name, "Electrolysis Boost", "hidro.cloration_enabled"),
-        AquariteSwitchEntity(hass, dataservice, pool_id, pool_name, "Relay1", "relays.relay1.info.onoff"),
-        AquariteSwitchEntity(hass, dataservice, pool_id, pool_name, "Relay2", "relays.relay2.info.onoff"),
-        AquariteSwitchEntity(hass, dataservice, pool_id, pool_name, "Relay3", "relays.relay3.info.onoff"),
-        AquariteSwitchEntity(hass, dataservice, pool_id, pool_name, "Relay4", "relays.relay4.info.onoff"),
-        AquariteSwitchEntity(hass, dataservice, pool_id, pool_name, "Filtration Status", "filtration.status")
+        NikobusSwitchEntity(
+            hass,
+            dataservice,
+            switch_module_data.get("description"),
+            switch_module_data.get("model"),
+            address,
+            i,
+            channel["description"],
+        )
+        for address, switch_module_data in dataservice.api.dict_module_data['switch_module'].items()
+        for i, channel in enumerate(switch_module_data["channels"], start=1) 
+        if not channel["description"].startswith("not_in_use")
     ]
-    
+
     async_add_entities(entities)
 
-    return True
+class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
-class AquariteSwitchEntity(CoordinatorEntity, SwitchEntity):
-    """Aquarite Switch Entity."""
-
-    def __init__(self, hass: HomeAssistant, dataservice, pool_id, pool_name, name, value_path) -> None:
-        """Initialize a Aquarite Switch Entity."""
+    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
         super().__init__(dataservice)
         self._dataservice = dataservice
-        self._pool_id = pool_id
-        self._pool_name = pool_name
-        self._attr_name = f"{self._pool_name}_{name}"
-        self._value_path = value_path
-        self._unique_id = f"{self._pool_id}{name}"
+        self._state = None
+        self._description = description
+        self._model = model
+        self._address = address
+        self._channel = channel
+
+        self._attr_name = channel_description
+        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
     @property
     def device_info(self):
-        """Return the device info."""
         return {
-            "identifiers": {(DOMAIN, self._pool_id)},
-            "name": self._pool_name,
+            "identifiers": {(DOMAIN, self._address)},
+            "name": self._description,
             "manufacturer": BRAND,
-            "model": MODEL,
+            "model": self._model,
         }
 
     @property
-    def extra_state_attributes(self) -> dict[str, str] | None:
-        """Return extra attributes."""
-        if "relay" in self._attr_name: 
-            return {"name": self._dataservice.get_value(f"relays.{self._value_path}.name")}
-
-    @property
     def is_on(self):
-        """Return true if the device is on."""
-        return bool(self._dataservice.get_value(self._value_path))
-        
+        return self._state
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
+        self.async_write_ha_state()
+
     async def async_turn_on(self):
-        """Turn the entity on."""
-        await self._dataservice.api.turn_on_switch(self._pool_id, self._value_path)
+        self._state = True
+        await self._dataservice.api.turn_on_switch(self._address, self._channel)
+        self.async_write_ha_state()
 
     async def async_turn_off(self):
-        """Turn the entity off."""
-        await self._dataservice.api.turn_off_switch(self._pool_id, self._value_path)
-
-    @property
-    def unique_id(self):
-        """The unique id of the sensor."""
-        return self._unique_id
+        self._state = False
+        await self._dataservice.api.turn_off_switch(self._address, self._channel)
+        self.async_write_ha_state()
