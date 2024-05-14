@@ -21,12 +21,12 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Nikobus integration."""
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    def _validate_connection_string(self) -> str:
+    def _validate_connection_string(self, connection_string) -> str:
         try:
-            ipaddress.ip_address(self._connection_string.split(':')[0])
+            ipaddress.ip_address(connection_string.split(':')[0])
             return True
         except ValueError:
-            if re.match(r'^/dev/tty(USB|S)\d+$', self._connection_string):
+            if re.match(r'^/dev/tty(USB|S)\d+$', connection_string):
                 return True
         return False
 

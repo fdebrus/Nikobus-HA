@@ -23,8 +23,7 @@ class NikobusConfig:
             # Transform list to dictionary
             if data_type == "button":
                 if 'nikobus_button' in data:
-                    # data['nikobus_button'] = {button['address']: button for button in data['nikobus_button']}
-                    pass
+                    data['nikobus_button'] = {button['address']: button for button in data['nikobus_button']}
                 else:
                     _LOGGER.warning(f"'nikobus_button' key not found in {data_type} data")
             elif data_type == "module":
