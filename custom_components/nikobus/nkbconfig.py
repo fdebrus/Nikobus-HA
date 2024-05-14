@@ -49,13 +49,28 @@ class NikobusConfig:
         return None
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
-        """Write the discovered button to a JSON file"""
+        """Write button data to a JSON file, transforming it into a list format."""
         button_config_file_path = self._hass.config.path(file_name)
+    
         try:
+
+            nikobus_button_data = data.get("nikobus_button", {})
+            data_list = []
+            for address, details in nikobus_button_data.items():
+            
+                button_data = {
+                    "description": details["description"],
+                    "address": address,
+                    "impacted_module": details["impacted_module"]
+                }
+                data_list.append(button_data)
+        
+            final_data = {"nikobus_button": data_list}
+        
             async with aio_open(button_config_file_path, 'w') as file:
-                json_data = json.dumps(data, indent=4)
+                json_data = json.dumps(final_data, indent=4)
                 await file.write(json_data)
-            _LOGGER.debug(f"{data_type.capitalize()} data successfully written to JSON file: {file_name}")
+
         except IOError as e:
             _LOGGER.error(f"Failed to write {data_type} data to file {file_name}: {e}")
         except TypeError as e:
