@@ -65,6 +65,23 @@ Upon button press, buttons are discovered and can be registered in `nikobus_butt
 
 - **Note**: A button can affect multiple modules. If you do not plan to use your button as an HA trigger, updates will sync during the next refresh cycle.
 
+## How does it work... 
+
+**nkbconfig** 
+
+It is responsible for reading configuration files created by the user. Since the inventory cannot be directly obtained from the bus yet, the user must define files for all modules and buttons. The configuration is then stored for further processing by the integration.
+
+**nkblistener** 
+
+It creates a continuous loop to listen for messages on the Nikobus.
+Upon receiving a message, it submits the message to the handle_message function for processing.
+The handle_message function determines the appropriate action based on the initial characters of the message and identifies whether:
+- A physical button has been pushed
+- The feedback module has sent a command
+- A module is responding to a feedback module command
+- Any other messages, except those flagged to be ignored, are placed in a response queue for further processing
+- There is a draft logic to handle long button presses, which is under review and subject to change with the introduction of support for buttons with feedback LEDs [WIP].
+
 ## Gallery
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/7c31210b-54a6-4d7d-99f5-51ff891828eb)
