@@ -93,7 +93,7 @@ xxxxxxxxxxxxxx
 
 ## Gallery
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/7c31210b-54a6-4d7d-99f5-51ff891828eb)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/b4c98775-eecf-4902-a413-889cc4ba9456)
 
 ![Module Overview](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4eb7a4e5-0789-45c0-bd80-1c8af84d6bd0)
 
