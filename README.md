@@ -1,7 +1,7 @@
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-# Nikobus Integration for Home Assistant (v2.2024.5.14)
+# Nikobus Integration for Home Assistant (v2.2024.6.xx)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant setup.
 
@@ -15,6 +15,8 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   - Commands: Operate dimmers on/off and set brightness.
 - **Shutter Module**: `05-001-02`
   - Commands: Operate covers open/close and set position.
+- **Feedback Module**: `05-207`
+  - The Feedback module's internal refresh mechanism can be utilized for integration updates instead of relying on user-defined periodic polling by the Nikobus integration.
 - **Nikobus Buttons**:
   - Button press events can be used as triggers in Home Assistant automations.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
