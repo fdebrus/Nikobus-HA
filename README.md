@@ -99,7 +99,8 @@ xxxxxxxxxxxxxx
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10fdd3a6-06a5-41d5-acd2-994730882b0c)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/efc9af7e-fe8d-400e-9ccf-036c8e1b842c)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/0678ba24-e7ba-433f-92d9-076bffccc279)
+
 
 
 <a href="https://buymeacoffee.com/fdebrus" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/black_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a><br>
