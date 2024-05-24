@@ -1,5 +1,3 @@
-"""Nikobus Config Flow"""
-
 from typing import Any
 import voluptuous as vol
 import ipaddress
@@ -9,19 +7,19 @@ from homeassistant import config_entries
 import homeassistant.helpers.config_validation as cv
 import logging
 
-
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 CONF_CONNECTION_STRING = "connection_string"
 CONF_REFRESH_INTERVAL = "refresh_interval"
+CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
 
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Nikobus integration."""
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    def _validate_connection_string(self, connection_string) -> str:
+    def _validate_connection_string(self, connection_string) -> bool:
         try:
             ipaddress.ip_address(connection_string.split(':')[0])
             return True
@@ -39,26 +37,34 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             connection_string = user_input.get(CONF_CONNECTION_STRING, "")
-            refresh_interval = user_input.get(CONF_REFRESH_INTERVAL)
+            has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
+            refresh_interval = user_input.get(CONF_REFRESH_INTERVAL, 120)
 
             data = {
                 CONF_CONNECTION_STRING: connection_string,
+                CONF_HAS_FEEDBACK_MODULE: has_feedback_module,
                 CONF_REFRESH_INTERVAL: refresh_interval
             }
 
             if not self._validate_connection_string(connection_string):
                 errors['connection_string'] = 'invalid_connection'
-            else:    
+            else:
                 return await self._create_entry(data)
 
+        # Default values for the form
+        default_refresh_interval = 120
+        default_has_feedback_module = False
+
+        # Create schema with all fields
         user_input_schema = vol.Schema({
             vol.Required(CONF_CONNECTION_STRING): str,
-            vol.Optional(CONF_REFRESH_INTERVAL, default=120): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+            vol.Optional(CONF_REFRESH_INTERVAL, default=default_refresh_interval): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+            vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=default_has_feedback_module): bool,
         })
 
         return self.async_show_form(
-            step_id="configure", 
-            data_schema=user_input_schema, 
+            step_id="configure",
+            data_schema=user_input_schema,
             errors=errors
         )
 
@@ -86,18 +92,24 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Handle the 'config' step in options flow."""
         errors = {}
         options = self.config_entry.options
+        has_feedback_module = options.get(CONF_HAS_FEEDBACK_MODULE, False)
+        refresh_interval = options.get(CONF_REFRESH_INTERVAL, 120)
 
         options_schema = vol.Schema({
-            vol.Optional(CONF_REFRESH_INTERVAL, default=options.get(CONF_REFRESH_INTERVAL, 120)): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+            vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+            vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool,
         })
 
         if user_input is not None:
-            try:
-                valid_input = options_schema(user_input)
-                return self.async_create_entry(title="Options Configured", data=valid_input)
-            except vol.Invalid as e:
-                _LOGGER.error(f"Validation error in options step: {e}")
-                errors['base'] = 'invalid_input'
+            has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
+            refresh_interval = user_input.get(CONF_REFRESH_INTERVAL, 120)
+
+            data = {
+                CONF_HAS_FEEDBACK_MODULE: has_feedback_module,
+                CONF_REFRESH_INTERVAL: refresh_interval
+            }
+
+            return self.async_create_entry(title="Options Configured", data=data)
 
         return self.async_show_form(
             step_id="config",

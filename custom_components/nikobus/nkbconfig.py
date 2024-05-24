@@ -29,16 +29,10 @@ class NikobusConfig:
             elif data_type == "module":
                 if 'switch_module' in data:
                     data['switch_module'] = {module['address']: module for module in data['switch_module']}
-                else:
-                    _LOGGER.warning(f"'switch_module' key not found in {data_type} data")
                 if 'dimmer_module' in data:
                     data['dimmer_module'] = {module['address']: module for module in data['dimmer_module']}
-                else:
-                    _LOGGER.warning(f"'dimmer_module' key not found in {data_type} data")
                 if 'roller_module' in data:
                     data['roller_module'] = {module['address']: module for module in data['roller_module']}
-                else:
-                    _LOGGER.warning(f"'roller_module' key not found in {data_type} data")
             return data
         except FileNotFoundError:
             _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')

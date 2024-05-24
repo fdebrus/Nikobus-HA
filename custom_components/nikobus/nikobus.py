@@ -18,22 +18,22 @@ __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
 class Nikobus:
-    def __init__(self, hass, connection_string, async_event_handler):
+    def __init__(self, hass, connection_string, async_event_handler, coordinator):
         self._hass = hass
         self._async_event_handler = async_event_handler
+        self._coordinator = coordinator 
         self.nikobus_module_states = {}
         self.dict_module_data = {}
         self.dict_button_data = {}
-
         self.nikobus_connection = NikobusConnect(connection_string)
         self.nikobus_config = NikobusConfig(self._hass)
-        self.nikobus_listener = NikobusEventListener(self._hass, self.nikobus_connection, self.button_discovery)
+        self.nikobus_listener = NikobusEventListener(self._hass, self.nikobus_connection, self.button_discovery, self.process_feedback_data)
         self.nikobus_command_handler = NikobusCommandHandler(self._hass, self.nikobus_connection, self.nikobus_listener, self.nikobus_module_states)
 
     @classmethod
-    async def create(cls, hass, connection_string, async_event_handler):
+    async def create(cls, hass, connection_string, async_event_handler, coordinator):
         _LOGGER.debug(f"Creating Nikobus instance with connection string: {connection_string}")
-        instance = cls(hass, connection_string, async_event_handler)
+        instance = cls(hass, connection_string, async_event_handler, coordinator)
         if await instance.connect():
             _LOGGER.info("Nikobus instance created and connected successfully")
             return instance
@@ -86,6 +86,28 @@ class Nikobus:
             self.nikobus_module_states[address] = bytearray.fromhex(state)
             _LOGGER.debug(f'{self.nikobus_module_states[address]}')
 
+    async def process_feedback_data(self, module_group, event):
+        """Process feedback data from Nikobus"""
+        try:
+            module_address_raw = event[3:7]
+            module_address = module_address_raw[2:] + module_address_raw[:2]
+
+            module_state_raw = event[9:21]
+
+            _LOGGER.debug(f"Processed feedback module data: module_address={module_address}, group={module_group}, module_state={module_state_raw}")
+
+            state_bytes = bytearray.fromhex(module_state_raw)
+            if module_group == 1:
+                self.nikobus_module_states[module_address][:6] = state_bytes
+            elif module_group == 2:
+                self.nikobus_module_states[module_address][6:] = state_bytes
+
+            _LOGGER.debug(f'{self.nikobus_module_states[module_address]}')
+            self._coordinator.async_update_listeners()
+
+        except Exception as e:
+            _LOGGER.error(f"Error processing feedback data: {e}")
+
 #### UTILS
     def get_bytearray_state(self, address: str, channel: int) -> int:
         """Get the state of a specific channel"""
@@ -117,12 +139,18 @@ class Nikobus:
 
     async def turn_on_switch(self, address: str, channel: int) -> None:
         """Turn on a switch specified by its address and channel"""
+        _LOGGER.debug(f"{address} - {channel}")
         self.set_bytearray_state(address, channel, 0xFF)
+        # led_address = self.dict_module_data["switch_module"][address]["channels"][channel]["led_address"]
+        # _LOGGER.debug(f"{led_address}")
         await self.nikobus_command_handler.set_output_state(address, channel, 0xFF)
 
     async def turn_off_switch(self, address: str, channel: int) -> None:
         """Turn off a switch specified by its address and channel"""
+        _LOGGER.debug(f"{address} - {channel}")
         self.set_bytearray_state(address, channel, 0x00)
+        # led_address = self.dict_module_data["switch_module"][address]["channels"][channel]["led_address"]
+        # _LOGGER.debug(f"{led_address}")
         await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
 #### DIMMERS
@@ -200,7 +228,8 @@ class Nikobus:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
 
                 if impacted_module_address in self.dict_module_data.get('dimmer_module', {}):
-                    await asyncio.sleep(0.8)
+                    _LOGGER.debug("Dimmer DETECTED")
+                    await asyncio.sleep(1)
 
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
                 self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
