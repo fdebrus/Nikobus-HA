@@ -67,6 +67,10 @@ Upon button press, buttons are discovered and can be registered in `nikobus_butt
 
 ## How does it work... 
 
+**nkbconnect**
+
+Connects Home Assistant to Nikobus over a user-defined TCP/IP socket or USB port and performs a handshake to instruct Nikobus to echo commands on the bus..
+
 **nkbconfig** 
 
 It is responsible for reading configuration files created by the user. Since the inventory cannot be directly obtained from the bus yet, the user must define files for all modules and buttons. The configuration is then stored for further processing by the integration.
@@ -80,7 +84,12 @@ The handle_message function determines the appropriate action based on the initi
 - The feedback module has sent a command
 - A module is responding to a feedback module command
 - Any other messages, except those flagged to be ignored, are placed in a response queue for further processing
-- There is a draft logic to handle long button presses, which is under review and subject to change with the introduction of support for buttons with feedback LEDs [WIP].
+It also includes a draft logic to handle long button presses, which is under review and subject to change with the introduction of support for buttons with feedback LEDs [WIP].
+
+**nkbcommand**
+
+xxxxxxxxxxxxxx
+
 
 ## Gallery
 
