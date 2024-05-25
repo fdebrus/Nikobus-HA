@@ -63,6 +63,10 @@ Upon button press, buttons are discovered and can be registered in `nikobus_butt
 
 - **Note**: A button can affect multiple modules. If you do not plan to use your button as an HA trigger, updates will sync during the next refresh cycle.
 
+# Issues/Discussion
+
+For discussions/general requests, please refer to https://community.home-assistant.io/t/custom-component-nikobus/732832 thread in HA community.
+
 ## Gallery
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/7c31210b-54a6-4d7d-99f5-51ff891828eb)
