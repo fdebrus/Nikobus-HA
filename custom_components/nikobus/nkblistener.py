@@ -12,6 +12,7 @@ BUTTON_COMMAND_PREFIX = '#N'
 IGNORE_ANSWER = '$0E'
 FEEDBACK_MODULE_COMMAND = '$10'
 FEEDBACK_MODULE_ANSWER = '$1'
+CONTROLLER_ADDRESS = '$18'
 
 class NikobusEventListener:
 
@@ -67,17 +68,20 @@ class NikobusEventListener:
         _LOGGER.debug(f"Handler got message: {message}")
 
         if message.startswith(BUTTON_COMMAND_PREFIX):
-            # await self._handle_button_press(message[2:8])
-            pass
+            await self._handle_button_press(message[2:8])
 
         elif message.startswith(FEEDBACK_MODULE_COMMAND):
-            _LOGGER.debug(f"Processing Feedback Module refresh command: {message}")
+            _LOGGER.debug(f"Feedback Module refresh command: {message}")
             module_group_identifier = message[3:5]
             self._module_group = 2 if module_group_identifier == '17' else 1 if module_group_identifier == '12' else None
 
         elif message.startswith(FEEDBACK_MODULE_ANSWER):
-            _LOGGER.debug(f"Processing Feedback Module refresh command answer: {message}")
+            _LOGGER.debug(f"Feedback Module refresh command answer: {message}")
             await self._feedback_callback(self._module_group, message)
+
+        elif message.startswith(CONTROLLER_ADDRESS):
+            controller_address = message[3:7]
+            _LOGGER.info(f"Nikobus Controller Address: {controller_address}")
 
         elif not message.startswith(IGNORE_ANSWER):
             _LOGGER.debug(f"Adding message to response queue: {message} - will be processed")

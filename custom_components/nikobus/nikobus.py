@@ -22,6 +22,7 @@ class Nikobus:
         self._hass = hass
         self._async_event_handler = async_event_handler
         self._coordinator = coordinator 
+        self.controller_address = None
         self.nikobus_module_states = {}
         self.dict_module_data = {}
         self.dict_button_data = {}
@@ -58,6 +59,10 @@ class Nikobus:
     async def command_handler(self):
         await self.nikobus_command_handler.start()
 
+#### Nikobus Discovery
+    async def nikobus_discovery(self):
+        await self.nikobus_command_handler.send_command("#A")
+        
 #### REFRESH DATA FROM NIKOBUS
     async def refresh_nikobus_data(self) -> bool:
         if 'switch_module' in self.dict_module_data:
@@ -80,7 +85,7 @@ class Nikobus:
 
             for group in groups_to_query:
                 group_state = await self.nikobus_command_handler.get_output_state(address, group) or ""
-                _LOGGER.debug(f'*** State for group {group}: {group_state} address : {address} ***')
+                _LOGGER.debug(f'State for group {group}: {group_state} address : {address} ***')
                 state += group_state
 
             self.nikobus_module_states[address] = bytearray.fromhex(state)
@@ -94,15 +99,14 @@ class Nikobus:
 
             module_state_raw = event[9:21]
 
-            _LOGGER.debug(f"Processed feedback module data: module_address={module_address}, group={module_group}, module_state={module_state_raw}")
+            _LOGGER.debug(f"Processing feedback module data: module_address={module_address}, group={module_group}, module_state={module_state_raw}")
 
-            state_bytes = bytearray.fromhex(module_state_raw)
             if module_group == 1:
-                self.nikobus_module_states[module_address][:6] = state_bytes
+                self.nikobus_module_states[module_address][:6] = bytearray.fromhex(module_state_raw)
             elif module_group == 2:
-                self.nikobus_module_states[module_address][6:] = state_bytes
+                self.nikobus_module_states[module_address][6:] = bytearray.fromhex(module_state_raw)
 
-            _LOGGER.debug(f'{self.nikobus_module_states[module_address]}')
+            _LOGGER.debug(f'Full state of module {module_address} - {self.nikobus_module_states[module_address]}')
             self._coordinator.async_update_listeners()
 
         except Exception as e:

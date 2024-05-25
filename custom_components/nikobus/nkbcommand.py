@@ -10,8 +10,8 @@ _LOGGER = logging.getLogger(__name__)
 __version__ = '0.1'
 
 COMMAND_EXECUTION_DELAY = 0.3  # Delay between command executions in seconds
-COMMAND_ACK_WAIT_TIMEOUT = 15  # Timeout for waiting for command ACK in seconds
-COMMAND_ANSWER_WAIT_TIMEOUT = 5  # Timeout for waiting for command answer in each loop
+COMMAND_ACK_WAIT_TIMEOUT = 30  # Timeout for waiting for command ACK in seconds
+COMMAND_ANSWER_WAIT_TIMEOUT = 10  # Timeout for waiting for command answer in each loop
 MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an answer
 
 class NikobusCommandHandler:
@@ -38,6 +38,12 @@ class NikobusCommandHandler:
             except asyncio.CancelledError:
                 _LOGGER.info("Command processing task was cancelled")
             self._command_task = None  # Reset the task reference
+
+    async def get_module_list(self, address: str) -> str:
+        _LOGGER.debug(f'Getting module list from controller - Address: {address}')
+        command_code = 0x11
+        command = make_pc_link_command(command_code, address)
+        return await self.send_command_get_answer(command, address)
 
     async def get_output_state(self, address: str, group: int) -> str:
         _LOGGER.debug(f'Getting output state - Address: {address}, Group: {group}')
@@ -92,8 +98,10 @@ class NikobusCommandHandler:
             return self.nikobus_module_states[address][6:12] + bytearray([0xFF])
 
     def _prepare_ack_and_answer_signals(self, command: str, address: str) -> tuple:
-        ack_signal = f'$05{command[3:5]}'
-        answer_signal = f'$1C{address[2:]}{address[:2]}'
+        command_part = command[3:5]
+        ack_signal = f'$05{command_part}'
+        answer_prefix = '$18' if command_part == '11' else '$1C'
+        answer_signal = f'{answer_prefix}{address[2:]}{address[:2]}'
         return ack_signal, answer_signal
 
     async def _wait_for_ack_and_answer(self, command:str, _wait_command_ack: str, _wait_command_answer: str) -> str | None:
@@ -126,7 +134,7 @@ class NikobusCommandHandler:
                         break
                 
                 except asyncio.TimeoutError:
-                    _LOGGER.warning(f'Timeout waiting for ACK/Answer on attempt {attempt}')
+                    _LOGGER.debug(f'Timeout waiting for ACK/Answer on attempt {attempt}')
                     break
 
             if ack_received and answer_received:

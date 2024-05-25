@@ -32,7 +32,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     try:
-        # Call async_update_data once during startup to initialize entities with their status
         await coordinator.initial_update_data()
     except UpdateFailed as update_failed_error:
         _LOGGER.error(f"Initial data refresh failed: {update_failed_error}")

@@ -22,7 +22,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
         self.refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, 120)
         self.has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, False)
-        
+
         # Set update_interval to None if feedback module is present, disabling periodic updates
         update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
         
@@ -38,8 +38,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Connect to the Nikobus system"""
         try:
             self.api = await Nikobus.create(self.hass, self.connection_string, self.async_event_handler, self)
-            await self.api.listen_for_events()
             await self.api.command_handler()
+
+            # Ensure that listen_for_events is called after the entities are set up
+            self.hass.async_create_task(self.api.listen_for_events())
+
         except NikobusConnectionError as e:
             _LOGGER.error("Failed to connect to Nikobus: %s", e)
             raise NikobusConnectError("Failed to connect to Nikobus.", original_exception=e)
@@ -53,6 +56,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Error fetching Nikobus data: %s", e)
             raise UpdateFailed(f"Error fetching Nikobus data: {e}")
 
+    async def async_event_handler(self, event, data):
+        """Handle events from Nikobus."""
+        if "ha_button_pressed" in event:
+            await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
+        self.async_update_listeners()
+
     async def initial_update_data(self):
         """Fetch the latest data from Nikobus initially"""
         try:
@@ -61,12 +70,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         except NikobusDataError as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
             raise UpdateFailed(f"Error fetching Nikobus data: {e}")
-
-    async def async_event_handler(self, event, data):
-        """Handle events from Nikobus."""
-        if "ha_button_pressed" in event:
-            await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
-        self.async_update_listeners()
 
     async def async_config_entry_updated(self, entry: ConfigEntry) -> None:
         """Handle updates to the configuration entry."""
