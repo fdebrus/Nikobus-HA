@@ -65,7 +65,7 @@ Upon button press, buttons are discovered and can be registered in `nikobus_butt
 
 # Issues/Discussion
 
-For discussions/general requests, please refer to https://community.home-assistant.io/t/custom-component-nikobus/732832 thread in HA community.
+For discussions/general requests, please refer to [this](https://community.home-assistant.io/t/custom-component-nikobus/732832) thread in HA community.
 
 ## Gallery
 
