@@ -90,6 +90,10 @@ It also includes a draft logic to handle long button presses, which is under rev
 
 xxxxxxxxxxxxxx
 
+# Issues/Discussion
+
+For discussions/general requests, please refer to [this](https://community.home-assistant.io/t/custom-component-nikobus/732832) thread in HA community.
+
 
 ## Gallery
 
