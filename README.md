@@ -9,14 +9,14 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 
 ## Supported Modules
 
-- **Switch Modules**: `05-000-02` and `05-002-02`
+- **Switch Module**: `05-000-02` and **Compact Switch Module** `05-002-02`
   - Commands: Operate switches on/off.
 - **Dimmer Module**: `05-007-02`
   - Commands: Operate dimmers on/off and set brightness.
 - **Shutter Module**: `05-001-02`
   - Commands: Operate covers open/close and set position.
 - **Feedback Module**: `05-207`
-  - The Feedback module's internal refresh mechanism can be utilized for integration updates instead of relying on user-defined periodic polling by the Nikobus integration.
+  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **It's highly recommanded to use feedback module vs custom refresh interval when module is present to avoid heavy traffic on the bus.**
 - **Nikobus Buttons**:
   - Button press events can be used as triggers in Home Assistant automations.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
