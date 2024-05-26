@@ -1,34 +1,32 @@
 {
     "config": {
         "step": {
-            "configure": {
+            "user": {
                 "title": "Nikobus PC-Link",
                 "description": "Please enter connectivity details.",
                 "data": {
                     "connection_string": "IP address:Port or Serial device",
-                    "refresh_interval": "Refresh interval in seconds (60-3600)"
+                    "refresh_interval": "Refresh interval in seconds (60-3600)",
+                    "has_feedback_module": "Nikobus Feedback Module present?"
                 }
-            } 
-        }
-    },
-    "options": {
-        "step": {
-            "config": {
-                "title": "Nikobus PC-Link",
+            },
+            "options": {
+                "title": "Nikobus PC-Link Options",
                 "description": "Update Nikobus refresh interval",
                 "data": {
-                    "refresh_interval": "Refresh interval in seconds (60-3600)"
+                    "refresh_interval": "Refresh interval in seconds (60-3600)",
+                    "has_feedback_module": "Does your setup include a feedback module?"
                 }
             }
-        }
-    },
-    "component": {
-        "nikobus": {
-            "error": {
-                "base": "An error has occurred, please try again.",
-                "invalid_connection": "Invalid connection string. Please check your input and try again.",
-                "invalid_input": "Invalid input, please check your data."
-            }
+        },
+        "error": {
+            "base": {
+                "title": "Error",
+                "description": "An error has occurred, please try again."
+            },
+            "invalid_connection": "Invalid connection string. Please check your input and try again.",
+            "invalid_input": "Invalid input, please check your data.",
+            "device_not_found_or_no_access": "Serial device not found or no access. Please check the device and permissions."
         }
     }
 }
