@@ -35,7 +35,10 @@ class NikobusConfig:
                     data['roller_module'] = {module['address']: module for module in data['roller_module']}
             return data
         except FileNotFoundError:
-            _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
+            if data_type == "button":
+                _LOGGER.info(f'Button configuration file not found: {file_path}. A new file will be created upon discovering the first button.')
+            else:
+                _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
         except json.JSONDecodeError as e:
             _LOGGER.error(f'Failed to decode JSON in {data_type} file: {e}')
         except Exception as e:
@@ -45,9 +48,7 @@ class NikobusConfig:
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
         """Write button data to a JSON file, transforming it into a list format."""
         button_config_file_path = self._hass.config.path(file_name)
-    
         try:
-
             nikobus_button_data = data.get("nikobus_button", {})
             data_list = []
             for address, details in nikobus_button_data.items():

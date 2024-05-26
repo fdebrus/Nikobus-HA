@@ -134,7 +134,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 self.hass.async_create_task(self._complete_movement(0))
 
     async def async_open_cover(self, **kwargs):
-        _LOGGER.debug(f"{self._description} open cover")
         if self._in_motion: 
             await self.async_cancel_current_movement()
         """Triggers the operation to fully open the cover."""
@@ -145,7 +144,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._movement_task = asyncio.create_task(self._complete_movement(100))
 
     async def async_close_cover(self, **kwargs):
-        _LOGGER.debug(f"{self._address} {self._channel} close cover")
         if self._in_motion:
             await self.async_cancel_current_movement()
         """Triggers the operation to fully close the cover."""
@@ -156,7 +154,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._movement_task = asyncio.create_task(self._complete_movement(0))
 
     async def async_stop_cover(self):
-        _LOGGER.debug(f"{self._address} {self._channel} stop cover at position {self._position}")
         if self._in_motion:
             await self.async_cancel_current_movement()
         self._is_opening = False
@@ -168,7 +165,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     async def async_set_cover_position(self, **kwargs):
         """Sets the cover to a specific position."""
         target_position = kwargs.get(ATTR_POSITION)
-        _LOGGER.info(f"Setting cover position to {target_position}")
         if self._in_motion:
             await self.async_cancel_current_movement()
         direction = "open" if target_position > self._position else "close"
@@ -183,7 +179,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._movement_task = asyncio.create_task(self._complete_movement(target_position))
 
     async def _complete_movement(self, expected_position):
-        _LOGGER.debug(f"{self._address} {self._channel} complete movement {expected_position}")
         """Completes the movement of the cover to the expected position."""
         position_diff = abs(self._position - expected_position)
         proportional_time_needed = (position_diff / 100.0) * self._operation_time
@@ -191,7 +186,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             await self._update_position_in_real_time(expected_position, proportional_time_needed)
 
     async def _update_position_in_real_time(self, expected_position, total_time):
-        _LOGGER.debug(f"{self._address} {self._channel} update real time target {expected_position} current {self._position} time needed {total_time} ")
         """Updates the cover's position in real time until the movement is completed."""
         start_time = datetime.now()
         initial_position = self._position
@@ -203,7 +197,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         while self._in_motion: 
             try:
                 elapsed_time = (datetime.now() - start_time).total_seconds()
-                _LOGGER.debug(f"{self._address} {self._channel} elapsed_time {elapsed_time} motion {self._in_motion} expected_position {expected_position} self._position {self._position}")
                 if (direction == 1 and self._position >= expected_position) or (direction == -1 and self._position <= expected_position):
                     self._position = expected_position
                     self._in_motion = False
@@ -218,7 +211,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 self.async_write_ha_state()
 
             except asyncio.CancelledError:
-                _LOGGER.info("Movement operation cancelled.")
+                _LOGGER.error("Movement operation error.")
                 break 
 
         await self._reset_movement_state()
@@ -237,12 +230,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             try:
                 await self._movement_task
             except asyncio.CancelledError:
-                _LOGGER.debug("Movement task cancelled.")
+                _LOGGER.error("Movement task error.")
             self._movement_task = None
             self._in_motion = False
 
     async def _operate_cover(self, address, channel, direction):
-        _LOGGER.debug(f"{self._address} {self._channel} operate")
         if direction == 'open':
             await self._dataservice.api.open_cover(address, channel)
         else:
