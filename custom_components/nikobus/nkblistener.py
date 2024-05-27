@@ -10,8 +10,8 @@ __version__ = '0.1'
 
 BUTTON_COMMAND_PREFIX = '#N'
 IGNORE_ANSWER = '$0E'
-FEEDBACK_MODULE_COMMAND = '$10'
-FEEDBACK_MODULE_ANSWER = '$1'
+FEEDBACK_MODULE_COMMAND = '$101' # not 10 so we make sure it's followed bu 17 or 12 
+FEEDBACK_MODULE_ANSWER = '$1C'
 CONTROLLER_ADDRESS = '$18'
 
 class NikobusEventListener:

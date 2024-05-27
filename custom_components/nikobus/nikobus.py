@@ -126,8 +126,7 @@ class Nikobus:
                 self.nikobus_module_states[module_address][6:] = bytearray.fromhex(module_state_raw)
             else:
                 raise ValueError(f"Invalid module group: {module_group}")
-
-            _LOGGER.debug(f'Full state of module {module_address} - {self.nikobus_module_states[module_address]}')
+                
             self._coordinator.async_update_listeners()
 
         except Exception as e:

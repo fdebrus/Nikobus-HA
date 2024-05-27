@@ -25,8 +25,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
         # Set update_interval to None if feedback module is present, disabling periodic updates
         update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
-
-        _LOGGER.debug(f'FEEDBACK {self.has_feedback_module} {self.connection_string} {self.refresh_interval}')
         
         super().__init__(
             hass,
