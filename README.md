@@ -95,7 +95,6 @@ xxxxxxxxxxxxxx
 
 For discussions/general requests, please refer to [this](https://community.home-assistant.io/t/custom-component-nikobus/732832) thread in HA community.
 
-
 ## Gallery
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/b4c98775-eecf-4902-a413-889cc4ba9456)
