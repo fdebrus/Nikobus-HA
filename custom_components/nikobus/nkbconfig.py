@@ -39,10 +39,13 @@ class NikobusConfig:
                 _LOGGER.info(f'Button configuration file not found: {file_path}. A new file will be created upon discovering the first button.')
             else:
                 _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
+                raise
         except json.JSONDecodeError as e:
             _LOGGER.error(f'Failed to decode JSON in {data_type} file: {e}')
+            raise
         except Exception as e:
             _LOGGER.error(f'Failed to load {data_type} data: {e}')
+            raise
         return None
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:

@@ -1,3 +1,5 @@
+"""Discovery for Nikobus"""
+import logging
 
 COMMAND_GET_CONTROLLER = '#A'
 
@@ -11,3 +13,13 @@ DIMMER_MODULE  = '000003000000'
 PC_LOGIC_MODULE = '000008000000'
 PC_LINK_MODULE  = '00000A000000'
 FEEDBACK_MODULE = '000042000000'
+
+class NikobusDiscovery:
+
+    def __init__(self, nikobus_command_handler):
+        self.nikobus_command = nikobus_command_handler
+
+    async def get_controller_address(self) -> str:
+        controller_address = await self.send_discovery_get_answer(command, address)
+        _LOGGER.debug(f'Controller Addrress: {controller_address}')
+

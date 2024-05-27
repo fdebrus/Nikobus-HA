@@ -13,7 +13,7 @@ from .nkbcommand import NikobusCommandHandler
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.5.27"
+__version__ = "2024.5.25"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
@@ -48,8 +48,15 @@ class Nikobus:
                 self.dict_module_data = await self.nikobus_config.load_json_data("nikobus_module_config.json", "module")
                 self.dict_button_data = await self.nikobus_config.load_json_data("nikobus_button_config.json", "button")
                 return True
-            except Exception as err:
-                _LOGGER.error(f"Configuration load error: {err}")
+            except FileNotFoundError as e:
+                _LOGGER.error(f"Configuration file not found: {e}")
+                return False
+            except json.JSONDecodeError as e:
+                _LOGGER.error(f"Failed to decode configuration JSON: {e}")
+                return False
+            except Exception as e:
+                _LOGGER.error(f"Configuration load error: {e}")
+                return False
         return False
 
 #### EVENT AND COMMAND LOOPS
@@ -98,23 +105,33 @@ class Nikobus:
     async def process_feedback_data(self, module_group, event):
         """Process feedback data from Nikobus"""
         try:
+            if len(event) < 21:
+                raise ValueError("Event data is too short")
+
             module_address_raw = event[3:7]
             module_address = module_address_raw[2:] + module_address_raw[:2]
 
             module_state_raw = event[9:21]
-
+        
             _LOGGER.debug(f"Processing feedback module data: module_address={module_address}, group={module_group}, module_state={module_state_raw}")
+
+            # Ensure the module_address exists in nikobus_module_states
+            if module_address not in self.nikobus_module_states:
+                # Initialize with 12 zero bytes if the address does not exist
+                self.nikobus_module_states[module_address] = bytearray(12)
 
             if module_group == 1:
                 self.nikobus_module_states[module_address][:6] = bytearray.fromhex(module_state_raw)
             elif module_group == 2:
                 self.nikobus_module_states[module_address][6:] = bytearray.fromhex(module_state_raw)
+            else:
+                raise ValueError(f"Invalid module group: {module_group}")
 
             _LOGGER.debug(f'Full state of module {module_address} - {self.nikobus_module_states[module_address]}')
             self._coordinator.async_update_listeners()
 
         except Exception as e:
-            _LOGGER.error(f"Error processing feedback data: {e}")
+            _LOGGER.error(f"Error processing feedback data: {e}", exc_info=True)
 
 #### UTILS
     def get_bytearray_state(self, address: str, channel: int) -> int:

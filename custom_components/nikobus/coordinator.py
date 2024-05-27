@@ -20,11 +20,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.api = None
         self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
-        self.refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, 120)
-        self.has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, False)
+        self.refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, entry.data.get(CONF_REFRESH_INTERVAL, 120))
+        self.has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
 
         # Set update_interval to None if feedback module is present, disabling periodic updates
         update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
+
+        _LOGGER.debug(f'FEEDBACK {self.has_feedback_module} {self.connection_string} {self.refresh_interval}')
         
         super().__init__(
             hass,
@@ -40,7 +42,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             self.api = await Nikobus.create(self.hass, self.connection_string, self.async_event_handler, self)
             await self.api.command_handler()
 
-            # Ensure that listen_for_events is called after the entities are set up
             self.hass.async_create_task(self.api.listen_for_events())
 
         except NikobusConnectionError as e:

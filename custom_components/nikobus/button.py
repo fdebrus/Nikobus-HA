@@ -12,23 +12,24 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
     entities = []
 
-    for button in dataservice.api.dict_button_data["nikobus_button"].values():
-        impacted_modules_info = [
-            {"address": impacted_module["address"], "group": impacted_module["group"]}
-            for impacted_module in button["impacted_module"]
-        ]
+    if dataservice.api.dict_button_data is not None:
+        for button in dataservice.api.dict_button_data["nikobus_button"].values():
+            impacted_modules_info = [
+                {"address": impacted_module["address"], "group": impacted_module["group"]}
+                for impacted_module in button["impacted_module"]
+            ]
 
-        entity = NikobusButtonEntity(
-            hass,
-            dataservice,
-            button.get("description"),
-            button.get("address"),
-            impacted_modules_info,
-        )
+            entity = NikobusButtonEntity(
+                hass,
+                dataservice,
+                button.get("description"),
+                button.get("address"),
+                impacted_modules_info,
+            )
 
-        entities.append(entity)
+            entities.append(entity)
 
-    async_add_entities(entities)
+        async_add_entities(entities)
 
 class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     def __init__(self, hass: HomeAssistant, dataservice, description, address, impacted_modules_info) -> None:

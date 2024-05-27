@@ -39,12 +39,6 @@ class NikobusCommandHandler:
                 _LOGGER.info("Command processing task was cancelled")
             self._command_task = None  # Reset the task reference
 
-    async def get_module_list(self, address: str) -> str:
-        _LOGGER.debug(f'Getting module list from controller - Address: {address}')
-        command_code = 0x11
-        command = make_pc_link_command(command_code, address)
-        return await self.send_command_get_answer(command, address)
-
     async def get_output_state(self, address: str, group: int) -> str:
         _LOGGER.debug(f'Getting output state - Address: {address}, Group: {group}')
         command_code = 0x12 if int(group) == 1 else 0x17

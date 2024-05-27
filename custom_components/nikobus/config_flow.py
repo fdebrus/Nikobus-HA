@@ -1,3 +1,5 @@
+"""Nikobus Config Flow"""
+
 import voluptuous as vol
 import ipaddress
 import re
@@ -140,9 +142,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_config(self, user_input=None):
         """Handle the configuration step in options flow."""
         errors = {}
+        data = self.config_entry.data
         options = self.config_entry.options
-        has_feedback_module = options.get(CONF_HAS_FEEDBACK_MODULE, False)
-        refresh_interval = options.get(CONF_REFRESH_INTERVAL, 120)
+        has_feedback_module = options.get(CONF_HAS_FEEDBACK_MODULE, data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        refresh_interval = options.get(CONF_REFRESH_INTERVAL, data.get(CONF_REFRESH_INTERVAL, 120))
 
         options_schema = {
             vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool,
