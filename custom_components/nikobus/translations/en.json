@@ -3,19 +3,25 @@
         "step": {
             "user": {
                 "title": "Nikobus PC-Link",
-                "description": "Please enter connectivity details.",
+                "description": "Please enter your connectivity details",
                 "data": {
                     "connection_string": "IP address:Port or Serial device",
-                    "refresh_interval": "Refresh interval in seconds (60-3600)",
-                    "has_feedback_module": "Nikobus Feedback Module present?"
+                    "has_feedback_module": "Nikobus Feedback Module installed?"
                 }
             },
             "options": {
-                "title": "Nikobus PC-Link Options",
-                "description": "Update Nikobus refresh interval",
+                "title": "Nikobus PC-Link",
+                "description": "Set your refresh interval",
                 "data": {
-                    "refresh_interval": "Refresh interval in seconds (60-3600)",
-                    "has_feedback_module": "Does your setup include a feedback module?"
+                    "refresh_interval": "Refresh interval in seconds (60-3600)"
+                }
+            },
+            "config": {
+                "title": "Nikobus PC-Link",
+                "description": "Update configuration",
+                "data": {
+                    "has_feedback_module": "Nikobus Feedback Module installed?",
+                    "refresh_interval": "Refresh interval in seconds (60-3600)"
                 }
             }
         },
