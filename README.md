@@ -47,9 +47,10 @@ action:
 
 ### Button Configuration
 
-Upon button press, buttons are discovered and can be registered in `nikobus_button_conf.json`. For manual updates:
+Upon button press, buttons will be discovered and registered in `nikobus_button_conf.json` in your home assistant /config folder. 
+If the file does not exist, it will be created. Next the file needs manual updates:
 
-- Define each button with the corresponding module address and group.
+- Add to each button the corresponding module address and group that is impacted. So the corresponding module state is refreshed.
 - For a 12 outputs module, groups 1-6 correspond to module group 1, and 7-12 to module group 2.
 - For a 6 outputs module, only module group 1 exists.
 - Example configuration:
