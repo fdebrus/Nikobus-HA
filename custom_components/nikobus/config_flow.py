@@ -130,16 +130,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for Nikobus integration."""
 
     def __init__(self, config_entry):
+        """Initialize options flow."""
         self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
-        """Handle the initial step by redirecting to the 'config' step."""
-        _LOGGER.debug("Starting init step with input: %s", user_input)
+        """Handle the initial step."""
         return await self.async_step_config(user_input)
 
     async def async_step_config(self, user_input=None):
-        """Handle the 'config' step in options flow."""
-        _LOGGER.debug("Starting config step with input: %s", user_input)
+        """Handle the configuration step in options flow."""
         errors = {}
         options = self.config_entry.options
         has_feedback_module = options.get(CONF_HAS_FEEDBACK_MODULE, False)
@@ -149,8 +148,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool,
         }
 
-        if user_input is None or user_input.get(CONF_HAS_FEEDBACK_MODULE) is not True:
-            options_schema[vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval)] = vol.All(cv.positive_int, vol.Range(min=60, max=3600))
+        if user_input is None or not user_input.get(CONF_HAS_FEEDBACK_MODULE):
+            options_schema[vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval)] = vol.All(
+                cv.positive_int, 
+                vol.Range(min=60, max=3600)
+            )
 
         if user_input is not None:
             has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
