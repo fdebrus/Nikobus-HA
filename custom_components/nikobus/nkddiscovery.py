@@ -1,4 +1,7 @@
 """Discovery for Nikobus"""
+
+### PLACE HOLDER / NOT USED FOR NOW ###
+
 import logging
 
 COMMAND_GET_CONTROLLER = '#A'

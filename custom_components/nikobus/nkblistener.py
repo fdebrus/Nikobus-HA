@@ -52,7 +52,7 @@ class NikobusEventListener:
                     _LOGGER.warning("Nikobus connection closed")
                     break
                 message = data.decode('utf-8').strip()
-                _LOGGER.debug(f"Listener - Receiving message: {message} - Forwarding to Handler")
+                _LOGGER.debug(f"Listener - Receiving message: {message}")
                 self._hass.async_create_task(self.handle_message(message))
             except asyncio.TimeoutError:
                 _LOGGER.debug("Listener - Read operation timed out. Waiting for next data...")
@@ -65,7 +65,6 @@ class NikobusEventListener:
 
     async def handle_message(self, message: str) -> None:
         """Handle incoming messages from the Nikobus system"""
-        _LOGGER.debug(f"Handler got message: {message}")
 
         if message.startswith(BUTTON_COMMAND_PREFIX):
             await self._handle_button_press(message[2:8])

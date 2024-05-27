@@ -74,7 +74,7 @@ class Nikobus:
 #### REFRESH DATA FROM NIKOBUS
     async def refresh_nikobus_data(self) -> bool:
         
-        await self.nikobus_discovery()
+        # await self.nikobus_discovery()
 
         if 'switch_module' in self.dict_module_data:
             await self._refresh_module_type(self.dict_module_data['switch_module'])
@@ -102,16 +102,14 @@ class Nikobus:
             self.nikobus_module_states[address] = bytearray.fromhex(state)
             _LOGGER.debug(f'{self.nikobus_module_states[address]}')
 
-    async def process_feedback_data(self, module_group, event):
+    async def process_feedback_data(self, module_group, data):
         """Process feedback data from Nikobus"""
         try:
-            if len(event) < 21:
-                raise ValueError("Event data is too short")
 
-            module_address_raw = event[3:7]
+            module_address_raw = data[3:7]
             module_address = module_address_raw[2:] + module_address_raw[:2]
 
-            module_state_raw = event[9:21]
+            module_state_raw = data[9:21]
         
             _LOGGER.debug(f"Processing feedback module data: module_address={module_address}, group={module_group}, module_state={module_state_raw}")
 
@@ -126,8 +124,8 @@ class Nikobus:
                 self.nikobus_module_states[module_address][6:] = bytearray.fromhex(module_state_raw)
             else:
                 raise ValueError(f"Invalid module group: {module_group}")
-                
-            self._coordinator.async_update_listeners()
+
+            await self._async_event_handler("nikobus_refreshed", module_address)
 
         except Exception as e:
             _LOGGER.error(f"Error processing feedback data: {e}", exc_info=True)
