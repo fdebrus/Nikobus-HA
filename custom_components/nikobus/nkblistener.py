@@ -10,18 +10,23 @@ __version__ = '0.1'
 
 BUTTON_COMMAND_PREFIX = '#N'
 IGNORE_ANSWER = '$0E'
+FEEDBACK_MODULE_COMMAND = '$101' # not 10 so we make sure it's followed bu 17 or 12 
+FEEDBACK_MODULE_ANSWER = '$1C'
+CONTROLLER_ADDRESS = '$18'
 
 class NikobusEventListener:
 
-    def __init__(self, hass, nikobus_connection, button_discovery_callback):
+    def __init__(self, hass, nikobus_connection, button_discovery_callback, feedback_callback):
         self._hass = hass
         self._listener_task = None
         self._running = False
+        self._button_discovery_callback = button_discovery_callback
+        self._feedback_callback = feedback_callback
+        self._last_nikobus_command_received_timestamp = 0
+        self._module_group = 1
+        self._continuous_press_detected = False
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
-        self._button_discovery_callback = button_discovery_callback
-        self._last_nikobus_command_received_timestamp = 0
-        self._continuous_press_detected = False
 
     async def start(self):
         self._running = True
@@ -60,12 +65,28 @@ class NikobusEventListener:
 
     async def handle_message(self, message: str) -> None:
         """Handle incoming messages from the Nikobus system"""
-        _LOGGER.debug(f"Handler got message: {message}.")
+
         if message.startswith(BUTTON_COMMAND_PREFIX):
             await self._handle_button_press(message[2:8])
+
+        elif message.startswith(CONTROLLER_ADDRESS):
+            controller_address = message[3:7]
+            _LOGGER.info(f"Nikobus Controller Address: {controller_address}")
+
+        elif message.startswith(FEEDBACK_MODULE_COMMAND):
+            _LOGGER.debug(f"Feedback Module refresh command: {message}")
+            module_group_identifier = message[3:5]
+            self._module_group = 2 if module_group_identifier == '17' else 1 if module_group_identifier == '12' else None
+
+        elif message.startswith(FEEDBACK_MODULE_ANSWER):
+            _LOGGER.debug(f"Feedback Module refresh command answer: {message}")
+            await self._feedback_callback(self._module_group, message)
+
         elif not message.startswith(IGNORE_ANSWER):
-            _LOGGER.debug(f"Adding message to response queue: {message}")
+            _LOGGER.debug(f"Adding message to response queue: {message} - will be processed")
             await self.response_queue.put(message)
+        else:
+            _LOGGER.info(f"Ignored message: {message}")
 
     async def _handle_button_press(self, address: str) -> None:
         """Handle button press events."""

@@ -1,14 +1,10 @@
 """Nikobus Dimmer / Light entity"""
 
-import logging
-
 from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
-
-_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 

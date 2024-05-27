@@ -29,31 +29,29 @@ class NikobusConfig:
             elif data_type == "module":
                 if 'switch_module' in data:
                     data['switch_module'] = {module['address']: module for module in data['switch_module']}
-                else:
-                    _LOGGER.warning(f"'switch_module' key not found in {data_type} data")
                 if 'dimmer_module' in data:
                     data['dimmer_module'] = {module['address']: module for module in data['dimmer_module']}
-                else:
-                    _LOGGER.warning(f"'dimmer_module' key not found in {data_type} data")
                 if 'roller_module' in data:
                     data['roller_module'] = {module['address']: module for module in data['roller_module']}
-                else:
-                    _LOGGER.warning(f"'roller_module' key not found in {data_type} data")
             return data
         except FileNotFoundError:
-            _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
+            if data_type == "button":
+                _LOGGER.info(f'Button configuration file not found: {file_path}. A new file will be created upon discovering the first button.')
+            else:
+                _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
+                raise
         except json.JSONDecodeError as e:
             _LOGGER.error(f'Failed to decode JSON in {data_type} file: {e}')
+            raise
         except Exception as e:
             _LOGGER.error(f'Failed to load {data_type} data: {e}')
+            raise
         return None
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
         """Write button data to a JSON file, transforming it into a list format."""
         button_config_file_path = self._hass.config.path(file_name)
-    
         try:
-
             nikobus_button_data = data.get("nikobus_button", {})
             data_list = []
             for address, details in nikobus_button_data.items():

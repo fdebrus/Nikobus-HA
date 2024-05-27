@@ -1,7 +1,6 @@
 """Nikobus Binary_Sensor entity"""
 
 import asyncio
-import logging
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant, callback
@@ -9,30 +8,29 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
 
-_LOGGER = logging.getLogger(__name__)
-
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     entities = []
 
-    for button in dataservice.api.dict_button_data["nikobus_button"].values():
-        impacted_modules_info = [
-            {"address": impacted_module["address"], "group": impacted_module["group"]}
-            for impacted_module in button["impacted_module"]
-        ]
+    if dataservice.api.dict_button_data is not None:
+        for button in dataservice.api.dict_button_data["nikobus_button"].values():
+            impacted_modules_info = [
+                {"address": impacted_module["address"], "group": impacted_module["group"]}
+                for impacted_module in button["impacted_module"]
+            ]
 
-        entity = NikobusButtonBinarySensor(
-            hass,
-            dataservice,
-            button.get("description"),
-            button.get("address"),
-            impacted_modules_info,
-        )
+            entity = NikobusButtonBinarySensor(
+                hass,
+                dataservice,
+                button.get("description"),
+                button.get("address"),
+                impacted_modules_info,
+            )
 
-        entities.append(entity)
+            entities.append(entity)
 
-    async_add_entities(entities)
+        async_add_entities(entities)
 
 class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def __init__(self, hass: HomeAssistant, dataservice, description, address, impacted_modules_info) -> None:

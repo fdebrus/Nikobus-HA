@@ -1,10 +1,10 @@
-"""The Nikobus integration"""
-
 import logging
+import json
 
 from homeassistant import config_entries, core, exceptions
 from homeassistant.core import HomeAssistant
 from homeassistant.components import switch, light, cover, binary_sensor, button
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator, NikobusConnectError
@@ -20,6 +20,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
 
     try:
         await coordinator.connect()
+    except FileNotFoundError as file_error:
+        _LOGGER.error(f"Configuration file not found: {file_error}")
+        return False
+    except json.JSONDecodeError as json_error:
+        _LOGGER.error(f"Failed to decode configuration JSON: {json_error}")
+        return False
     except NikobusConnectError as connect_error:
         _LOGGER.error(f"Failed to connect to Nikobus: {connect_error}")
         return False
@@ -30,12 +36,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
         _LOGGER.error(f"An unexpected error occurred during Nikobus setup: {unexpected_error}")
         return False
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception as forward_setup_error:
+        _LOGGER.error(f"An error occurred while forwarding entry setups: {forward_setup_error}")
+        return False
 
     try:
-        await coordinator.async_config_entry_first_refresh()
-    except exceptions.UpdateFailed:
-        _LOGGER.error("Initial data refresh failed. Nikobus integration setup cannot continue")
+        await coordinator.initial_update_data()
+    except UpdateFailed as update_failed_error:
+        _LOGGER.error(f"Initial data refresh failed: {update_failed_error}")
         return False
 
     return True

@@ -5,18 +5,18 @@
             "model": "05-000-02",
             "address": "C9A5",
             "channels": [
-                {"description": "Output 1"},
-                {"description": "Output 2"},
-                {"description": "Output 3"},
-                {"description": "Output 4"},
-                {"description": "Output 5"},
-                {"description": "Output 6"},
-                {"description": "Output 7"},
-                {"description": "Output 8"},
-                {"description": "Output 9"},
-                {"description": "Output 10"},
-                {"description": "Output 11"},
-                {"description": "Output 12"}
+                {"description": "S1 Output 1"},
+                {"description": "S1 Output 2"},
+                {"description": "S1 Output 3"},
+                {"description": "S1 Output 4"},
+                {"description": "S1 Output 5"},
+                {"description": "S1 Output 6"},
+                {"description": "S1 Output 7"},
+                {"description": "S1 Output 8"},
+                {"description": "S1 Output 9"},
+                {"description": "S1 Output 10"},
+                {"description": "S1 Output 11"},
+                {"description": "S1 Output 12"}
             ]
         },
         {
@@ -24,10 +24,10 @@
             "model": "05-002-02",
             "address": "5B05",
             "channels": [
-                {"description": "Output 1"},
-                {"description": "Output 2"},
-                {"description": "Output 3"},
-                {"description": "Output 4"}
+                {"description": "S2 Output 1"},
+                {"description": "S2 Output 2"},
+                {"description": "S2 Output 3"},
+                {"description": "S2 Output 4"}
             ]
         },
         {
@@ -35,18 +35,18 @@
             "model": "05-000-02",
             "address": "4707",
             "channels": [
-                {"description": "Output 1"},
-                {"description": "Output 2"},
-                {"description": "Output 3"},
-                {"description": "Output 4"},
-                {"description": "Output 5"},
-                {"description": "Output 6"},
-                {"description": "Output 7"},
-                {"description": "Output 8"},
-                {"description": "Output 9"},
-                {"description": "Output 10"},
-                {"description": "Output 11"},
-                {"description": "Output 12"}
+                {"description": "S3 Output 1"},
+                {"description": "S3 Output 2"},
+                {"description": "S3 Output 3"},
+                {"description": "S3 Output 4"},
+                {"description": "S3 Output 5"},
+                {"description": "S3 Output 6"},
+                {"description": "S3 Output 7"},
+                {"description": "S3 Output 8"},
+                {"description": "S3 Output 9"},
+                {"description": "S3 Output 10"},
+                {"description": "S3 Output 11"},
+                {"description": "S3 Output 12"}
             ]
         }
     ],
@@ -56,18 +56,18 @@
             "model": "05-007-02",
             "address": "0E6C",
             "channels": [
-                {"description": "Output 1"},
-                {"description": "Output 2"},
-                {"description": "Output 3"},
-                {"description": "Output 4"},
-                {"description": "Output 5"},
-                {"description": "Output 6"},
-                {"description": "Output 7"},
-                {"description": "Output 8"},
-                {"description": "Output 9"},
-                {"description": "Output 10"},
-                {"description": "Output 11"},
-                {"description": "Output 12"}
+                {"description": "D1 Output 1"},
+                {"description": "D1 Output 2"},
+                {"description": "D1 Output 3"},
+                {"description": "D1 Output 4"},
+                {"description": "D1 Output 5"},
+                {"description": "D1 Output 6"},
+                {"description": "D1 Output 7"},
+                {"description": "D1 Output 8"},
+                {"description": "D1 Output 9"},
+                {"description": "D1 Output 10"},
+                {"description": "D1 Output 11"},
+                {"description": "D1 Output 12"}
             ]
         }
     ],
@@ -77,12 +77,12 @@
             "model": "05-001-02",
             "address": "9105",
             "channels": [
-                {"description": "Output 1", "operation_time": "40"},
-                {"description": "Output 2", "operation_time": "40"},
-                {"description": "Output 3", "operation_time": "40"},
-                {"description": "Output 4", "operation_time": "40"},
-                {"description": "Output 5", "operation_time": "40"},
-                {"description": "Output 6", "operation_time": "40"}
+                {"description": "R1 Output 1", "operation_time": "40"},
+                {"description": "R1 Output 2", "operation_time": "40"},
+                {"description": "R1 Output 3", "operation_time": "40"},
+                {"description": "R1 Output 4", "operation_time": "40"},
+                {"description": "R1 Output 5", "operation_time": "40"},
+                {"description": "R1 Output 6", "operation_time": "40"}
             ]
         },
         {
@@ -90,12 +90,12 @@
             "model": "05-001-02",
             "address": "8394",
             "channels": [
-                {"description": "Output 1", "operation_time": "40"},
-                {"description": "Output 2", "operation_time": "40"},
-                {"description": "Output 3", "operation_time": "40"},
-                {"description": "Output 4", "operation_time": "40"},
-                {"description": "Output 5", "operation_time": "40"},
-                {"description": "Output 6", "operation_time": "40"}
+                {"description": "R2 Output 1", "operation_time": "40"},
+                {"description": "R2 Output 2", "operation_time": "40"},
+                {"description": "R2 Output 3", "operation_time": "40"},
+                {"description": "R2 Output 4", "operation_time": "40"},
+                {"description": "R2 Output 5", "operation_time": "40"},
+                {"description": "R2 Output 6", "operation_time": "40"}
             ]
         }
     ]
