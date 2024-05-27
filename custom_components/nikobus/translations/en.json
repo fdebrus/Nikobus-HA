@@ -3,7 +3,7 @@
         "step": {
             "user": {
                 "title": "Nikobus PC-Link",
-                "description": "Please enter your connectivity details",
+                "description": "Please enter your connectivity details.",
                 "data": {
                     "connection_string": "IP address:Port or Serial device",
                     "has_feedback_module": "Nikobus Feedback Module installed?"
@@ -15,7 +15,20 @@
                 "data": {
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
                 }
+            }
+        },
+        "error": {
+            "base": {
+                "title": "Error",
+                "description": "An error has occurred, please try again."
             },
+            "invalid_connection": "Invalid connection string.",
+            "invalid_input": "Invalid input, please check your data.",
+            "device_not_found_or_no_access": "Serial device not found or no access."
+        }
+    },
+    "options": {
+        "step": {
             "config": {
                 "title": "Nikobus PC-Link",
                 "description": "Update configuration",
@@ -24,15 +37,6 @@
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
                 }
             }
-        },
-        "error": {
-            "base": {
-                "title": "Error",
-                "description": "An error has occurred, please try again."
-            },
-            "invalid_connection": "Invalid connection string. Please check your input and try again.",
-            "invalid_input": "Invalid input, please check your data.",
-            "device_not_found_or_no_access": "Serial device not found or no access. Please check the device and permissions."
         }
     }
 }
