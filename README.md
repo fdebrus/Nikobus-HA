@@ -42,8 +42,8 @@ action:
 
 1. Install the custom integration using HACS.
 2. Navigate to `custom_repository/nikobus`.
-3. Copy `nikobus_module_conf.json.default` and `nikobus_button_conf.json.default` to your Home Assistant configuration directory.
-4. Update the files to reflect your specific installation settings.
+3. Copy `nikobus_module_conf.json.default` to your Home Assistant configuration directory, remove the .default extension.
+4. Update the file to reflect your specific installation settings.
 
 ### Button Configuration
 
