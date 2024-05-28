@@ -163,7 +163,7 @@ If you do not have a Nikobus Feedback Module, leave the box unchecked. You will 
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/f68b85fe-7f1d-4b8d-b9c2-9048705ef8dd)
 
-You can always revisit these options after setup by selecting the "CONFIGURE" option from the integration menu. If you need to change your connectivity method, delete and recreate the integration with the new parameters.
+You can always revisit these options after setup by selecting the "CONFIGURE" option from the integration menu. If you need to change your connectivity method (IP vs USB), delete and recreate the integration with the new parameters.
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/850f151a-72a9-47a3-8514-bab665849377)
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/c6ae485a-a969-48d2-99e4-5687c02c5a85)
