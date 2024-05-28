@@ -10,7 +10,7 @@ __version__ = '0.1'
 
 BUTTON_COMMAND_PREFIX = '#N'
 IGNORE_ANSWER = '$0E'
-FEEDBACK_MODULE_COMMAND = '$101' # not 10 so we make sure it's followed bu 17 or 12 
+FEEDBACK_MODULE_COMMAND = '$101' # not 10 so we make sure it's followed by 17 or 12 
 FEEDBACK_MODULE_ANSWER = '$1C'
 CONTROLLER_ADDRESS = '$18'
 
@@ -91,19 +91,21 @@ class NikobusEventListener:
     async def _handle_button_press(self, address: str) -> None:
         """Handle button press events."""
         _LOGGER.debug(f"Handling button press for address: {address}")
+
+        # This is needed for the automation to catch a button press, we fire an event with the button address.
         self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
 
         current_time = time.monotonic()
         time_diff = (current_time - self._last_nikobus_command_received_timestamp) * 1000
-        
+
         if time_diff > 150:
             await self._button_discovery_callback(address)
             self._process_new_command(current_time, address)
-        elif time_diff < 100:
-            self._detect_continuous_press()
+        else:
+            self._handle_continuous_press(time_diff)
 
     def _process_new_command(self, current_time, address):
-        """Process a new command or end of a continuous press"""
+        """Process a new command or end of a continuous press."""
         self._last_nikobus_command_received_timestamp = current_time
         if self._continuous_press_detected:
             self._continuous_press_detected = False
@@ -111,10 +113,11 @@ class NikobusEventListener:
         else:
             _LOGGER.debug("Single Press Detected")
 
-    def _detect_continuous_press(self):
-        """Detect continuous press"""
-        if not self._continuous_press_detected:
-            self._continuous_press_detected = True
-            _LOGGER.debug("Continuous Press Detected - Skipping Processing")
-        else:
-            _LOGGER.debug("Continuous Press Ongoing - Skipping Processing")
+    def _handle_continuous_press(self, time_diff):
+        """Handle continuous press detection."""
+        if time_diff < 100:
+            if not self._continuous_press_detected:
+                self._continuous_press_detected = True
+                _LOGGER.debug("Continuous Press Detected - Skipping Processing")
+            else:
+                _LOGGER.debug("Continuous Press Ongoing - Skipping Processing")
