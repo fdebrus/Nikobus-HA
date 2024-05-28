@@ -89,7 +89,7 @@ It also includes a draft logic to handle long button presses, which is under rev
 
 **nkbcommand**
 
-xxxxxxxxxxxxxx
+xxxxxxxxxxxxxx (further documentation to come)
 
 # Issues/Discussion
 
@@ -97,14 +97,19 @@ For discussions/general requests, please refer to [this](https://community.home-
 
 ## Gallery
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/b4c98775-eecf-4902-a413-889cc4ba9456)
+During the integration setup, you will be asked to provide your connection string, which can be either an IP
+or a USB port. If your setup includes a Nikobus Feedback Module, check the box. In this case, the integration will refresh based on the Feedback Module's refresh cycle and feedback data instead of the custom refresh rate.
 
-![Module Overview](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4eb7a4e5-0789-45c0-bd80-1c8af84d6bd0)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/bc32fa94-2e3c-4d25-aa0f-0f964f539d37)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10fdd3a6-06a5-41d5-acd2-994730882b0c)
+If you do not have a Nikobus Feedback Module, leave the box unchecked. You will then be presented with another screen to set up your custom integration refresh rate. Avoid setting the refresh interval too low to prevent excessive traffic on the bus.
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/0678ba24-e7ba-433f-92d9-076bffccc279)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/f68b85fe-7f1d-4b8d-b9c2-9048705ef8dd)
 
+You can always revisit these options after setup by selecting the "CONFIGURE" option from the integration menu. If you need to change your connectivity method, delete and recreate the integration with the new parameters.
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/850f151a-72a9-47a3-8514-bab665849377)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/c6ae485a-a969-48d2-99e4-5687c02c5a85)
 
 
 <a href="https://buymeacoffee.com/fdebrus" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/black_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a><br>
