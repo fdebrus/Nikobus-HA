@@ -55,7 +55,8 @@ class NikobusEventListener:
                 _LOGGER.debug(f"Listener - Receiving message: {message}")
                 self._hass.async_create_task(self.handle_message(message))
             except asyncio.TimeoutError:
-                _LOGGER.debug("Listener - Read operation timed out. Waiting for next data...")
+                # _LOGGER.debug("Listener - Read operation timed out. Waiting for next data...")
+                pass
             except asyncio.CancelledError:
                 _LOGGER.info("Event listener was cancelled")
                 break
