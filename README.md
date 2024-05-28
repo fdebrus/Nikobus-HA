@@ -127,6 +127,8 @@ or if multiples modules impacted by the same button
         }
   ```
 
+For the changes to be reflected, re-start HA
+
 **nkblistener** 
 
 It creates a continuous loop to listen for messages on the Nikobus.
@@ -140,7 +142,11 @@ It also includes a draft logic to handle long button presses, which is under rev
 
 **nkbcommand**
 
-xxxxxxxxxxxxxx (further documentation to come)
+It established a command processing queue, which is essential for handling a rapid sequence of commands. For instance, if you use HomeKit to send a command to close all shutters, this generates a rapid series of commands to close each shutter individually. Without queuing, Nikobus cannot manage the speed at which these commands are sent. The queue will introduce a 0.3-second pause between every consecutive commands.
+
+To read from the bus, it employs a three-strike approach, waiting for the expected data from the bus. Since the bus can be busy, it may be necessary to wait for the signal that corresponds to our command.
+
+It has also all logic needed to send and receive data on Nikobus.
 
 # Issues/Discussion
 
