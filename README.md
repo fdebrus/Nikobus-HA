@@ -74,7 +74,58 @@ Connects Home Assistant to Nikobus over a user-defined TCP/IP socket or USB port
 
 **nkbconfig** 
 
-It is responsible for reading configuration files created by the user. Since the inventory cannot be directly obtained from the bus yet, the user must define files for all modules and buttons. The configuration is then stored for further processing by the integration.
+It is responsible for reading configuration files created by the user. Since the inventory cannot be directly obtained from the bus yet, the user must define files for all modules and buttons. The configuration is then stored for further processing by the integration. Button file does not need to be created but updated, each time a button is physically pressed, its address will be added to the button file (file will be created by first button pressed and be placed in your HA /config directory).
+
+Next you need to update the name to your preference, and list the impacted module(s) so the integration will refresh status of this(those) module(s) to reflect the change of state in HA wuthout having to wait for the next module(s) refresh cycle.
+
+Discovered button will look like
+
+  ```json
+        {
+            "description": "DISCOVERED - Nikobus Button #N4ECB1A",
+            "address": "4ECB1A",
+            "impacted_module": [
+                {
+                    "address": "",
+                    "group": ""
+                }
+            ]
+        }
+  ```
+
+You have to update it to
+
+  ```json
+        {
+            "description": "Kitchen Light On",
+            "address": "4ECB1A",
+            "impacted_module": [
+                {
+                    "address": "4707",
+                    "group": "1"
+                }
+            ]
+        }
+  ```
+
+or if multiples modules impacted by the same button
+
+  ```json
+        {
+            "description": "Kitchen Light On",
+            "address": "4ECB1A",
+            "impacted_module": [
+                {
+                    "address": "4707",
+                    "group": "1"
+                },
+                {
+                    "address": "C9A5",
+                    "group": "2"
+                }
+            ]
+        }
+  ```
 
 **nkblistener** 
 
