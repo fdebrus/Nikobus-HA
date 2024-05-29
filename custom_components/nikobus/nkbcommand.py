@@ -10,7 +10,7 @@ _LOGGER = logging.getLogger(__name__)
 __version__ = '0.1'
 
 COMMAND_EXECUTION_DELAY = 0.3  # Delay between command executions in seconds
-COMMAND_ACK_WAIT_TIMEOUT = 35  # Timeout for waiting for command ACK in seconds
+COMMAND_ACK_WAIT_TIMEOUT = 30  # Timeout for waiting for command ACK in seconds
 COMMAND_ANSWER_WAIT_TIMEOUT = 10  # Timeout for waiting for command answer in each loop
 MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an answer
 
@@ -103,15 +103,16 @@ class NikobusCommandHandler:
         answer_received = False
         state = None
 
-        await self.nikobus_connection.send(command)
-
         for attempt in range(MAX_ATTEMPTS):
-            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer}')
 
+            await self.nikobus_connection.send(command)
+
+            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer}')
+            
             end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
             
             while asyncio.get_event_loop().time() < end_time:
-                timeout = end_time - asyncio.get_event_loop().time()
+                
                 try:
                     message = await asyncio.wait_for(self.nikobus_listener.response_queue.get(), timeout=COMMAND_ANSWER_WAIT_TIMEOUT)
                     _LOGGER.debug(f'Message received: {message}')
@@ -131,7 +132,6 @@ class NikobusCommandHandler:
 
                 except asyncio.TimeoutError:
                     _LOGGER.debug(f'Timeout waiting for ACK/Answer on attempt {attempt + 1}')
-                    break
 
         if not ack_received:
             _LOGGER.error(f'ACK not received on {command} after {attempt + 1} attempts waiting for {_wait_command_ack}')

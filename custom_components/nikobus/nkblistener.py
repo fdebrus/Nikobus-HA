@@ -22,11 +22,13 @@ class NikobusEventListener:
         self._running = False
         self._button_discovery_callback = button_discovery_callback
         self._feedback_callback = feedback_callback
-        self._last_nikobus_command_received_timestamp = 0
         self._module_group = 1
-        self._continuous_press_detected = False
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
+        self._debounce_time_ms = 150
+        self._last_address = None
+        self._last_press_time = None
+        self._press_task = None
 
     async def start(self):
         self._running = True
@@ -84,7 +86,7 @@ class NikobusEventListener:
             await self._feedback_callback(self._module_group, message)
 
         elif not message.startswith(IGNORE_ANSWER):
-            _LOGGER.debug(f"Adding message to response queue: {message} - will be processed")
+            _LOGGER.debug(f"Adding message to response queue: {message}")
             await self.response_queue.put(message)
         else:
             _LOGGER.info(f"Ignored message: {message}")
@@ -97,28 +99,35 @@ class NikobusEventListener:
         self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
 
         current_time = time.monotonic()
-        time_diff = (current_time - self._last_nikobus_command_received_timestamp) * 1000
-
-        if time_diff > 150:
-            await self._button_discovery_callback(address)
-            self._process_new_command(current_time, address)
+        
+        if self._last_address != address:
+            self._last_address = address
+            self._last_press_time = current_time
+            self._start_press_task(address)
         else:
-            self._handle_continuous_press(time_diff)
+            self._last_press_time = current_time
 
-    def _process_new_command(self, current_time, address):
-        """Process a new command or end of a continuous press."""
-        self._last_nikobus_command_received_timestamp = current_time
-        if self._continuous_press_detected:
-            self._continuous_press_detected = False
-            _LOGGER.debug("End of Continuous Press Detected")
-        else:
-            _LOGGER.debug("Single Press Detected")
+    def _start_press_task(self, address: str):
+        """Start a task to wait for the button release."""
+        if self._press_task is not None:
+            self._press_task.cancel()
 
-    def _handle_continuous_press(self, time_diff):
-        """Handle continuous press detection."""
-        if time_diff < 100:
-            if not self._continuous_press_detected:
-                self._continuous_press_detected = True
-                _LOGGER.debug("Continuous Press Detected - Skipping Processing")
-            else:
-                _LOGGER.debug("Continuous Press Ongoing - Skipping Processing")
+        self._press_task = asyncio.create_task(self._wait_for_release(address))
+
+    async def _wait_for_release(self, address: str):
+        """Wait for the button release by ensuring no new presses within the debounce time."""
+        try:
+            while True:
+                await asyncio.sleep(self._debounce_time_ms / 1000)
+                current_time = time.monotonic()
+                time_diff = (current_time - self._last_press_time) * 1000
+                
+                if time_diff >= self._debounce_time_ms:
+                    _LOGGER.debug(f"Button release detected for address: {address}")
+                    self._hass.bus.async_fire('nikobus_button_released', {'address': address})
+                    await self._button_discovery_callback(address)
+                    self._last_address = None
+                    self._press_task = None
+                    break
+        except asyncio.CancelledError:
+            _LOGGER.debug("Press task cancelled")
