@@ -1,7 +1,7 @@
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-# Nikobus Integration for Home Assistant (v2.2024.5.27)
+# Nikobus Integration for Home Assistant (2024.5.29)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant setup.
 

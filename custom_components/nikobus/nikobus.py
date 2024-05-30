@@ -13,7 +13,7 @@ from .nkbcommand import NikobusCommandHandler
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.5.27"
+__version__ = "2024.5.29"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
@@ -257,8 +257,9 @@ class Nikobus:
                     await asyncio.sleep(1)
 
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
-                self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
-                await self._async_event_handler("nikobus_button_pressed", address)
+                if value is not None:
+                    self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
+                    await self._async_event_handler("nikobus_button_pressed", address)
 
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group} value {value} error {e}")

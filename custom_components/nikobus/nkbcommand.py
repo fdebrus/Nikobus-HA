@@ -98,49 +98,47 @@ class NikobusCommandHandler:
         answer_signal = f'{answer_prefix}{address[2:]}{address[:2]}'
         return ack_signal, answer_signal
 
-    async def _wait_for_ack_and_answer(self, command:str, _wait_command_ack: str, _wait_command_answer: str) -> str | None:
+    async def _wait_for_ack_and_answer(self, command:str, _wait_command_ack: str, _wait_command_answer: str):
         ack_received = False
         answer_received = False
         state = None
 
         for attempt in range(MAX_ATTEMPTS):
-            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer}')
+
             await self.nikobus_connection.send(command)
 
+            _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer}')
+            
             end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
-
+            
             while asyncio.get_event_loop().time() < end_time:
+                
                 try:
-                    timeout = end_time - asyncio.get_event_loop().time()
                     message = await asyncio.wait_for(self.nikobus_listener.response_queue.get(), timeout=COMMAND_ANSWER_WAIT_TIMEOUT)
                     _LOGGER.debug(f'Message received: {message}')
 
-                    if _wait_command_ack in message and not ack_received:
+                    if _wait_command_ack in message:
                         _LOGGER.debug('ACK received')
                         ack_received = True
 
-                    if _wait_command_answer in message and not answer_received:
+                    if _wait_command_answer in message:
                         _LOGGER.debug('Answer received')
                         state = self._parse_state_from_message(message, _wait_command_answer)
+                        _LOGGER.debug(f'State from message received: {state}')
                         answer_received = True
 
                     if ack_received and answer_received:
-                        break
-                
-                except asyncio.TimeoutError:
-                    _LOGGER.debug(f'Timeout waiting for ACK/Answer on attempt {attempt}')
-                    break
+                        return state
 
-            if ack_received and answer_received:
-                _LOGGER.debug('Both ACK and Answer received successfully')
-                return state
+                except asyncio.TimeoutError:
+                    _LOGGER.debug(f'Timeout waiting for ACK/Answer on attempt {attempt + 1}')
 
         if not ack_received:
-            _LOGGER.error('ACK not received within timeout period')
+            _LOGGER.error(f'ACK not received on {command} after {attempt + 1} attempts waiting for {_wait_command_ack}')
         if not answer_received:
-            _LOGGER.error('Answer not received within timeout period')
+            _LOGGER.error(f'Answer not received on {command} after {attempt + 1} attempts waiting for {_wait_command_answer}')
 
-        return state
+        return None
 
     def _parse_state_from_message(self, message: str, answer_signal: str) -> str:
         state_index = message.find(answer_signal) + len(answer_signal) + 2
