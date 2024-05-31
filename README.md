@@ -45,6 +45,48 @@ action:
 3. Copy `nikobus_module_conf.json.default` to your Home Assistant configuration directory, remove the .default extension.
 4. Update the file to reflect your specific installation settings.
 
+### Module Configuration
+
+You can begin by locating the example file in the integration directory after installation via HACS. This file will be available in your HA installation at /config/custom_components/nikobus/nikobus_module_config.json.default. Copy this file to the /config directory and rename it to nikobus_module_config.json.
+
+The description field is free text and can include anything that helps you identify the module.
+For example: "description": "Switch Module S1"
+
+The model should reflect the Nikobus reference of the module.
+For example: "model": "05-000-02"
+
+Each channel can have a free text description to help you identify them. Ensure that these descriptions are unique both within the module and across different modules to avoid duplicates in the integration entities.
+
+  ```json
+{
+    "switch_module": [
+        {
+            "description": "Switch Module S1",
+            "model": "05-000-02",
+            "address": "C9A5",
+            "channels": [
+                {"description": "S1 Output 1"},
+                {"description": "S1 Output 2"},
+                {"description": "S1 Output 3"} .....
+
+```json
+    "roller_module": [
+        {
+            "description": "Rollershutter Module R1",
+            "model": "05-001-02",
+            "address": "9105",
+            "channels": [
+                {"description": "R1 Output 1", "operation_time": "40"},
+                {"description": "R1 Output 2", "operation_time": "40"},
+                {"description": "R1 Output 3", "operation_time": "40"},
+                {"description": "R1 Output 4", "operation_time": "40"},
+                {"description": "R1 Output 5", "operation_time": "40"},
+                {"description": "R1 Output 6", "operation_time": "40"}
+            ]
+        }
+    ]
+```
+
 ### Button Configuration
 
 Upon button press, buttons will be discovered and registered in `nikobus_button_conf.json` in your home assistant /config folder. 
