@@ -3,7 +3,7 @@
 
 # Nikobus Integration for Home Assistant (2024.5.29)
 
-This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant setup.
+This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
 **Only one client on the Nikobus at a time, do not connect anything else in parallel of this integration.**
 
