@@ -7,6 +7,11 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 
 **Only one client on the Nikobus at a time, do not connect anything else in parallel of this integration.**
 
+Connectivity is supported through direct connections, such as /dev/ttyUSB0, or over the network using an IP address and port, for example, 192.168.2.1:123. Modules like PC-Link, Feedback-Module, and PC-Logic can be utilized for establishing these connections.
+
+Network connectivity can also be achieved by adding a bridge, such as...
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
+
 ## Supported Modules
 
 - **Switch Module**: `05-000-02` and **Compact Switch Module** `05-002-02`
@@ -20,8 +25,6 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 - **Nikobus Buttons**:
   - Button press events can be used as triggers in Home Assistant automations.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
-
-Connectivity is supported via direct connections such as `/dev/ttyUSB0` or over the network using an IP and port, e.g., `192.168.2.1:123`.
 
 ## Automation Example
 
