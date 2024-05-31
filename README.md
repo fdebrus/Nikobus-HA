@@ -68,6 +68,7 @@ Each channel can have a free text description to help you identify them. Ensure 
                 {"description": "S1 Output 1"},
                 {"description": "S1 Output 2"},
                 {"description": "S1 Output 3"} .....
+```
 
 ```json
     "roller_module": [
