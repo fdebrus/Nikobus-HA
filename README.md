@@ -9,9 +9,18 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 
 Connectivity is supported through direct connections, such as /dev/ttyUSB0, or over the network using an IP address and port, for example, 192.168.2.1:123. Modules like PC-Link, Feedback-Module, and PC-Logic can be utilized for establishing these connections.
 
-Network connectivity can be achieved by adding a bridge, such as...
+Network connectivity can be achieved by adding a bridge. This could come handy is your Nikobus installation is distant from your HA server.
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
+
+Serial connection to Nikobus
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/8a1934e9-6dbe-41c7-92a7-4487690b692d)
+
+
+TCP Server
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/8be886ae-6337-4e0f-a19c-748b82d3011b)
 
 ## Supported Modules
 
