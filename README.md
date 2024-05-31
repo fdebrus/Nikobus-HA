@@ -67,8 +67,22 @@ Each channel can have a free text description to help you identify them. Ensure 
             "channels": [
                 {"description": "S1 Output 1"},
                 {"description": "S1 Output 2"},
-                {"description": "S1 Output 3"} .....
+                {"description": "S1 Output 3"},
+                {"description": "S1 Output 4"},
+                {"description": "S1 Output 5"},
+                {"description": "S1 Output 6"},
+                {"description": "S1 Output 7"},
+                {"description": "S1 Output 8"},
+                {"description": "S1 Output 9"},
+                {"description": "S1 Output 10"},
+                {"description": "S1 Output 11"},
+                {"description": "S1 Output 12"}
+            ]
+        }
+    ],
 ```
+
+Entries that define roller output include an additional argument, operation_time, which specifies the total time (in seconds) that a shutter takes to fully open or close. Update this value to reflect your shutter's actual operation time. This parameter is crucial as it allows the integration to simulate setting the shutter position, a feature not natively supported by Nikobus, by operating the shutter for a calculated period.
 
 ```json
     "roller_module": [
@@ -87,6 +101,9 @@ Each channel can have a free text description to help you identify them. Ensure 
         }
     ]
 ```
+
+To avoid setting up entries and entities for unused module outputs, prefix any output description with "not_in_use" so it will not be imported into the integration.
+For example:{"description": "**not_in_use** output_10"} 
 
 ### Button Configuration
 
