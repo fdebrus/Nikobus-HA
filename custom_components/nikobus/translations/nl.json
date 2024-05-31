@@ -1,0 +1,42 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Nikobus PC-Link",
+                "description": "Voer uw verbindingsgegevens in.",
+                "data": {
+                    "connection_string": "IP-adres:Poort of serieel apparaat",
+                    "has_feedback_module": "Nikobus Feedback Module geïnstalleerd?"
+                }
+            },
+            "options": {
+                "title": "Nikobus PC-Link",
+                "description": "Stel uw vernieuwingsinterval in",
+                "data": {
+                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)"
+                }
+            }
+        },
+        "error": {
+            "base": {
+                "title": "Fout",
+                "description": "Er is een fout opgetreden, probeer het opnieuw."
+            },
+            "invalid_connection": "Ongeldige verbindingsreeks.",
+            "invalid_input": "Ongeldige invoer, controleer uw gegevens.",
+            "device_not_found_or_no_access": "Serieel apparaat niet gevonden of geen toegang."
+        }
+    },
+    "options": {
+        "step": {
+            "config": {
+                "title": "Nikobus PC-Link",
+                "description": "Configuratie bijwerken",
+                "data": {
+                    "has_feedback_module": "Nikobus Feedback Module geïnstalleerd?",
+                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)"
+                }
+            }
+        }
+    }
+}
