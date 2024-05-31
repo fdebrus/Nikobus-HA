@@ -13,14 +13,10 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
 
-Serial connection to Nikobus
-
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/8a1934e9-6dbe-41c7-92a7-4487690b692d)
-
-
-TCP Server
-
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/8be886ae-6337-4e0f-a19c-748b82d3011b)
+<div style="display: flex; justify-content: space-between;">
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8a1934e9-6dbe-41c7-92a7-4487690b692d" alt="TCP Server" style="width: 48%;">
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8be886ae-6337-4e0f-a19c-748b82d3011b" alt="TCP Server" style="width: 48%;">
+</div>
 
 ## Supported Modules
 
