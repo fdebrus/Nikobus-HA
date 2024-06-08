@@ -5,19 +5,6 @@
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
-**Only one client on the Nikobus at a time, do not connect anything else in parallel of this integration.**
-
-Connectivity is supported through direct connections, such as **/dev/ttyUSB0**, or over the network using an IP address and port, for example, **192.168.2.50:9999**.
-
-Network connectivity can be achieved by adding a bridge. This could come handy is your Nikobus installation is distant from your HA server.
-
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
-
-<div style="display: flex; justify-content: space-between;">
-    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8a1934e9-6dbe-41c7-92a7-4487690b692d" alt="TCP Server" style="width: 48%;">
-    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8be886ae-6337-4e0f-a19c-748b82d3011b" alt="TCP Server" style="width: 48%;">
-</div>
-
 ## Supported Modules
 
 - **Switch Module**: `05-000-02` and **Compact Switch Module** `05-002-02`
@@ -33,6 +20,19 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
 - **Nikobus Buttons**:
   - Button press events can be used as triggers in Home Assistant automations.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
+
+**Only one client on the Nikobus at a time, do not connect anything else in parallel of this integration.**
+
+Connectivity is supported through direct connections, such as **/dev/ttyUSB0**, or over the network using an IP address and port, for example, **192.168.2.50:9999**.
+
+Network connectivity can be achieved by adding a bridge. This could come handy is your Nikobus installation is distant from your HA server.
+
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
+
+<div style="display: flex; justify-content: space-between;">
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8a1934e9-6dbe-41c7-92a7-4487690b692d" alt="TCP Server" style="width: 48%;">
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8be886ae-6337-4e0f-a19c-748b82d3011b" alt="TCP Server" style="width: 48%;">
+</div>
 
 ## Automation Example
 
