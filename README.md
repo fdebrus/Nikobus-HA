@@ -26,6 +26,8 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
   - Commands: Operate dimmers on/off and set brightness.
 - **Shutter Module**: `05-001-02`
   - Commands: Operate covers open/close and set position.
+- **Modules with Digital Entries**  `05-201` - `05-205` - `05-206`
+  - Digital Entries: All digital entries will be detected as button (when triggered the first time) and corresponding entries will be created in HA after restart.
 - **Feedback Module**: `05-207`
   - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **It is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**
 - **Nikobus Buttons**:
