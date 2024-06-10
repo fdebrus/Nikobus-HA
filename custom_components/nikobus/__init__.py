@@ -1,3 +1,5 @@
+"""Nikobus Init"""
+
 import logging
 import json
 
@@ -42,10 +44,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
         _LOGGER.error(f"An error occurred while forwarding entry setups: {forward_setup_error}")
         return False
 
-    try:
-        await coordinator.initial_update_data()
-    except UpdateFailed as update_failed_error:
-        _LOGGER.error(f"Initial data refresh failed: {update_failed_error}")
-        return False
+    # try:
+    #    await coordinator.initial_update_data()
+    # except UpdateFailed as update_failed_error:
+    #    _LOGGER.error(f"Initial data refresh failed: {update_failed_error}")
+    #    return False
 
     return True

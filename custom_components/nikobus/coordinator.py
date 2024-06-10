@@ -9,19 +9,21 @@ from .nikobus import Nikobus, NikobusConnectionError, NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_CONNECTION_STRING = "connection_string"
-CONF_REFRESH_INTERVAL = "refresh_interval"
-CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
+from .const import (
+    CONF_CONNECTION_STRING,
+    CONF_REFRESH_INTERVAL,
+    CONF_HAS_FEEDBACK_MODULE)
 
 class NikobusDataCoordinator(DataUpdateCoordinator):
     """Coordinator for asynchronous management of Nikobus updates"""
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         self.hass = hass
         self.api = None
-        self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
-        self.refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, entry.data.get(CONF_REFRESH_INTERVAL, 120))
-        self.has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        self._config_entry = config_entry
+        self.connection_string = self._config_entry.data.get(CONF_CONNECTION_STRING)
+        self.refresh_interval = self._config_entry.options.get(CONF_REFRESH_INTERVAL, self._config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
+        self.has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
 
         # Set update_interval to None if feedback module is present, disabling periodic updates
         update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
@@ -37,7 +39,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     async def connect(self):
         """Connect to the Nikobus system"""
         try:
-            self.api = await Nikobus.create(self.hass, self.connection_string, self.async_event_handler, self)
+            self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler, self)
             await self.api.command_handler()
 
             self.hass.async_create_task(self.api.listen_for_events())

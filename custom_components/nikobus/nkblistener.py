@@ -4,24 +4,32 @@ import logging
 import asyncio
 import time
 
+from homeassistant.config_entries import ConfigEntry
+
 _LOGGER = logging.getLogger(__name__)
 
 __version__ = '0.1'
 
-BUTTON_COMMAND_PREFIX = '#N'
-IGNORE_ANSWER = '$0E'
-FEEDBACK_MODULE_COMMAND = '$101' # not 10 so we make sure it's followed by 17 or 12 
-FEEDBACK_MODULE_ANSWER = '$1C'
-CONTROLLER_ADDRESS = '$18'
+from .const import (
+        CONF_HAS_FEEDBACK_MODULE, 
+        BUTTON_COMMAND_PREFIX, 
+        IGNORE_ANSWER, 
+        FEEDBACK_REFRESH_COMMAND,
+        MANUAL_REFRESH_COMMAND, 
+        FEEDBACK_MODULE_ANSWER, 
+        COMMAND_PROCESSED, 
+        CONTROLLER_ADDRESS )
 
 class NikobusEventListener:
 
-    def __init__(self, hass, nikobus_connection, button_discovery_callback, feedback_callback):
+    def __init__(self, hass, config_entry: ConfigEntry, nikobus_connection, button_discovery_callback, feedback_callback):
         self._hass = hass
+        self._config_entry = config_entry
         self._listener_task = None
         self._running = False
         self._button_discovery_callback = button_discovery_callback
         self._feedback_callback = feedback_callback
+        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._module_group = 1
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
@@ -76,16 +84,25 @@ class NikobusEventListener:
             controller_address = message[3:7]
             _LOGGER.info(f"Nikobus Controller Address: {controller_address}")
 
-        elif message.startswith(FEEDBACK_MODULE_COMMAND):
-            _LOGGER.debug(f"Feedback Module refresh command: {message}")
+        elif message.startswith(FEEDBACK_REFRESH_COMMAND):
+            _LOGGER.debug(f"Feedback module refresh command: {message}")
             module_group_identifier = message[3:5]
             self._module_group = 2 if module_group_identifier == '17' else 1 if module_group_identifier == '12' else None
 
         elif message.startswith(FEEDBACK_MODULE_ANSWER):
-            _LOGGER.debug(f"Feedback Module refresh command answer: {message}")
+            _LOGGER.debug(f"Feedback module refresh command answer: {message}")
             await self._feedback_callback(self._module_group, message)
 
-        elif not message.startswith(IGNORE_ANSWER):
+        elif any(refresh in message for refresh in MANUAL_REFRESH_COMMAND):
+            _LOGGER.debug(f"Manual refresh command answer: {message}")
+            await self.response_queue.put(message)
+
+            if self._has_feedback_module:   
+                feedback_sequence = message[-27:]
+                _LOGGER.debug(f"Feedback led dedicated refresh: {feedback_sequence}")
+                await self.nikobus_connection.send(feedback_sequence)
+
+        elif not message.startswith(IGNORE_ANSWER) and not message.startswith(COMMAND_PROCESSED):
             _LOGGER.debug(f"Adding message to response queue: {message}")
             await self.response_queue.put(message)
         else:
