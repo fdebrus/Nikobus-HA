@@ -20,7 +20,7 @@ from .const import DOMAIN, BRAND
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
-    """Set up Nikobus cover entities from a configuration entry. This function initializes cover entities based on the Nikobus system's configuration and adds them to Home Assistant for management."""
+    
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     entities = [

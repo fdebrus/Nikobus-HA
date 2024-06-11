@@ -8,6 +8,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, BRAND
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     entities = []

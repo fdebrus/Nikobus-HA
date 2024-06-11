@@ -29,7 +29,7 @@ class NikobusEventListener:
         self._running = False
         self._button_discovery_callback = button_discovery_callback
         self._feedback_callback = feedback_callback
-        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        self._has_feedback_module = None
         self._module_group = 1
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
@@ -77,36 +77,44 @@ class NikobusEventListener:
     async def handle_message(self, message: str) -> None:
         """Handle incoming messages from the Nikobus system"""
 
+        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+
         if message.startswith(BUTTON_COMMAND_PREFIX):
             await self._handle_button_press(message[2:8])
+            return
 
-        elif message.startswith(CONTROLLER_ADDRESS):
-            controller_address = message[3:7]
-            _LOGGER.info(f"Nikobus Controller Address: {controller_address}")
+        if message.startswith(IGNORE_ANSWER) or message.startswith(COMMAND_PROCESSED):
+            _LOGGER.info(f"Ignored message: {message}")
+            return
+
+        if message.startswith(CONTROLLER_ADDRESS):
+            _LOGGER.info(f"Nikobus Controller Address: {message[3:7]}")
+            return
 
         elif message.startswith(FEEDBACK_REFRESH_COMMAND):
-            _LOGGER.debug(f"Feedback module refresh command: {message}")
-            module_group_identifier = message[3:5]
-            self._module_group = 2 if module_group_identifier == '17' else 1 if module_group_identifier == '12' else None
+            if self._has_feedback_module:
+                _LOGGER.debug(f"** Feedback module refresh command: {message}")
+                module_group_identifier = message[3:5]
+                self._module_group = 2 if module_group_identifier == '17' else 1 if module_group_identifier == '12' else None
+            return
 
         elif message.startswith(FEEDBACK_MODULE_ANSWER):
-            _LOGGER.debug(f"Feedback module refresh command answer: {message}")
-            await self._feedback_callback(self._module_group, message)
+            if self._has_feedback_module:
+                _LOGGER.debug(f"** Feedback module refresh command answer: {message}")
+                await self._feedback_callback(self._module_group, message)
+            return
 
         elif any(refresh in message for refresh in MANUAL_REFRESH_COMMAND):
             _LOGGER.debug(f"Manual refresh command answer: {message}")
             await self.response_queue.put(message)
 
-            if self._has_feedback_module:   
+            if self._has_feedback_module:
                 feedback_sequence = message[-27:]
-                _LOGGER.debug(f"Feedback led dedicated refresh: {feedback_sequence}")
+                _LOGGER.debug(f"** Feedback led dedicated refresh: {feedback_sequence}")
                 await self.nikobus_connection.send(feedback_sequence)
-
-        elif not message.startswith(IGNORE_ANSWER) and not message.startswith(COMMAND_PROCESSED):
+        else:
             _LOGGER.debug(f"Adding message to response queue: {message}")
             await self.response_queue.put(message)
-        else:
-            _LOGGER.info(f"Ignored message: {message}")
 
     async def _handle_button_press(self, address: str) -> None:
         """Handle button press events."""

@@ -12,7 +12,8 @@ _LOGGER = logging.getLogger(__name__)
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_REFRESH_INTERVAL,
-    CONF_HAS_FEEDBACK_MODULE)
+    CONF_HAS_FEEDBACK_MODULE
+)
 
 class NikobusDataCoordinator(DataUpdateCoordinator):
     """Coordinator for asynchronous management of Nikobus updates"""
@@ -35,11 +36,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             update_method=self.async_update_data if not self.has_feedback_module else self.initial_update_data,
             update_interval=update_interval,
         )
+        self._unsub_update_listener = None
+
+    async def async_config_entry_first_refresh(self):
+        """Handle the first refresh and ensure listener is set."""
+        await self.async_refresh()
+        self._unsub_update_listener = self._config_entry.add_update_listener(self.async_config_entry_updated)
 
     async def connect(self):
         """Connect to the Nikobus system"""
         try:
-            self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler, self)
+            self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler)
             await self.api.command_handler()
 
             self.hass.async_create_task(self.api.listen_for_events())
@@ -82,8 +89,23 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             self.has_feedback_module = new_has_feedback_module
             self.update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
             self.update_method = self.async_update_data if not self.has_feedback_module else self.initial_update_data
-            _LOGGER.info("Updated the Nikobus refresh interval to %s seconds", self.refresh_interval)
-            _LOGGER.info("Feedback module status updated: %s", self.has_feedback_module)
+            
+            # Updating the DataUpdateCoordinator to apply the new settings
+            await self._async_update_interval()
+
+            if self.has_feedback_module:
+                _LOGGER.info(f'Feedback module status set to {self.has_feedback_module}')
+            else:
+                _LOGGER.info(f'Nikobus refresh interval updated to {self.refresh_interval} seconds.')
+
+    async def _async_update_interval(self):
+        """Update the coordinator's update interval and method."""
+        # Update the coordinator with new update method and interval
+        self.update_method = self.async_update_data if not self.has_feedback_module else self.initial_update_data
+        self.update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
+        
+        # Restart the coordinator to apply new settings
+        await self.async_refresh()
 
 class NikobusConnectError(Exception):
     def __init__(self, message="Failed to connect to Nikobus system", original_exception=None):

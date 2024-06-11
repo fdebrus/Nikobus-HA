@@ -18,16 +18,15 @@ from .nkbprotocol import calculate_group_number
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.6.10"
+__version__ = "2024.5.29"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
 class Nikobus:
-    def __init__(self, hass, config_entry: ConfigEntry, connection_string, async_event_handler, coordinator):
+    def __init__(self, hass, config_entry: ConfigEntry, connection_string, async_event_handler):
         self._hass = hass
         self._config_entry = config_entry
-        self._coordinator = coordinator 
-        self._has_feedback_module = config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        self._has_feedback_module = None
         self._async_event_handler = async_event_handler
         self._controller_address = None
         self._nikobus_module_states = {}
@@ -40,9 +39,9 @@ class Nikobus:
         self.dict_button_data = {}
 
     @classmethod
-    async def create(cls, hass, config_entry, connection_string, async_event_handler, coordinator):
+    async def create(cls, hass, config_entry, connection_string, async_event_handler):
         _LOGGER.debug(f"Creating Nikobus instance with connection string: {connection_string}")
-        instance = cls(hass, config_entry, connection_string, async_event_handler, coordinator)
+        instance = cls(hass, config_entry, connection_string, async_event_handler)
         if await instance.connect():
             _LOGGER.info("Nikobus instance created and connected successfully")
             return instance
@@ -175,6 +174,7 @@ class Nikobus:
         """Turn on a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0xFF)
         await self._nikobus_command_handler.set_output_state(address, channel, 0xFF)
+        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         if self._has_feedback_module:
             group = calculate_group_number(channel)
             await self._nikobus_command_handler.get_output_state(address, group)
@@ -183,6 +183,7 @@ class Nikobus:
         """Turn off a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
         await self._nikobus_command_handler.set_output_state(address, channel, 0x00)
+        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         if self._has_feedback_module:
             group = calculate_group_number(channel)
             await self._nikobus_command_handler.get_output_state(address, group)
@@ -200,6 +201,7 @@ class Nikobus:
         """Turn on a light specified by its address and channel with the given brightness"""
         self.set_bytearray_state(address, channel, brightness)
         await self._nikobus_command_handler.set_output_state(address, channel, brightness)
+        # self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         # if self._has_feedback_module:
         #    group = calculate_group_number(channel)
         #    await self._nikobus_command_handler.get_output_state(address, group)
@@ -208,6 +210,7 @@ class Nikobus:
         """Turn off a light specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
         await self._nikobus_command_handler.set_output_state(address, channel, 0x00)
+        # self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         # if self._has_feedback_module:
         #    group = calculate_group_number(channel)
         #    await self._nikobus_command_handler.get_output_state(address, group)
