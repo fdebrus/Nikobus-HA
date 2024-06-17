@@ -76,6 +76,7 @@ class NikobusConnect:
         if not self._is_connected:
             _LOGGER.error("Attempting to send data on a closed or uninitialized connection")
             return
+        _LOGGER.debug(f"Sending {s} to Nikobus")
         self._nikobus_writer.write(s.encode() + b'\r')
         await self._nikobus_writer.drain()
 

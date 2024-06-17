@@ -11,13 +11,13 @@ import homeassistant.helpers.config_validation as cv
 import logging
 from typing import Any, Dict
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN, 
+    CONF_CONNECTION_STRING, 
+    CONF_REFRESH_INTERVAL, 
+    CONF_HAS_FEEDBACK_MODULE)
 
 _LOGGER = logging.getLogger(__name__)
-
-CONF_CONNECTION_STRING = "connection_string"
-CONF_REFRESH_INTERVAL = "refresh_interval"
-CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
 
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Nikobus integration."""
@@ -120,7 +120,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _create_entry(self, data: Dict[str, Any]):
         """Create entry for configuration."""
         _LOGGER.debug("Creating entry with data: %s", data)
-        title = f"Nikobus PC-Link - {data.get(CONF_CONNECTION_STRING, 'Unknown Connection')}"
+        title = f"Nikobus - {data.get(CONF_CONNECTION_STRING, 'Unknown Connection')}"
         return self.async_create_entry(title=title, data=data)
 
     @staticmethod

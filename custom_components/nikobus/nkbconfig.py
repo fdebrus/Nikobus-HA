@@ -1,9 +1,8 @@
-"""Nikobus Config"""
-
 import json
 from aiofiles import open as aio_open
-
 import logging
+
+from homeassistant.exceptions import HomeAssistantError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,14 +37,12 @@ class NikobusConfig:
             if data_type == "button":
                 _LOGGER.info(f'Button configuration file not found: {file_path}. A new file will be created upon discovering the first button.')
             else:
-                _LOGGER.error(f'{data_type.capitalize()} file not found: {file_path}')
-                raise
+                raise HomeAssistantError(f'{data_type.capitalize()} configuration file not found: {file_path}')
         except json.JSONDecodeError as e:
             _LOGGER.error(f'Failed to decode JSON in {data_type} file: {e}')
-            raise
+            raise HomeAssistantError(f'Failed to decode JSON in {data_type} file: {e}')
         except Exception as e:
-            _LOGGER.error(f'Failed to load {data_type} data: {e}')
-            raise
+            raise HomeAssistantError(f'Failed to load {data_type} data: {e}')
         return None
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
@@ -55,23 +52,22 @@ class NikobusConfig:
             nikobus_button_data = data.get("nikobus_button", {})
             data_list = []
             for address, details in nikobus_button_data.items():
-            
                 button_data = {
                     "description": details["description"],
                     "address": address,
                     "impacted_module": details["impacted_module"]
                 }
                 data_list.append(button_data)
-        
+
             final_data = {"nikobus_button": data_list}
-        
+
             async with aio_open(button_config_file_path, 'w') as file:
                 json_data = json.dumps(final_data, indent=4)
                 await file.write(json_data)
 
         except IOError as e:
-            _LOGGER.error(f"Failed to write {data_type} data to file {file_name}: {e}")
+            raise HomeAssistantError(f'Failed to write {data_type.capitalize()} data to file {file_name}: {e}')
         except TypeError as e:
-            _LOGGER.error(f"Failed to serialize {data_type} data to JSON: {e}")
+            raise HomeAssistantError(f'Failed to serialize {data_type} data to JSON: {e}')
         except Exception as e:
-            _LOGGER.error(f"Unexpected error writing {data_type} data to file {file_name}: {e}")
+            raise HomeAssistantError(f'Unexpected error writing {data_type} data to file {file_name}: {e}')

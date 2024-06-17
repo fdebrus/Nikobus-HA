@@ -1,6 +1,8 @@
 """Discovery for Nikobus"""
 
+###
 ### PLACE HOLDER / NOT USED FOR NOW ###
+###
 
 import logging
 
@@ -20,7 +22,7 @@ FEEDBACK_MODULE = '000042000000'
 class NikobusDiscovery:
 
     def __init__(self, nikobus_command_handler):
-        self.nikobus_command = nikobus_command_handler
+        self._nikobus_command = nikobus_command_handler
 
     async def get_controller_address(self) -> str:
         controller_address = await self.send_discovery_get_answer(command, address)

@@ -9,10 +9,11 @@ _LOGGER = logging.getLogger(__name__)
 
 __version__ = '0.1'
 
-COMMAND_EXECUTION_DELAY = 0.3  # Delay between command executions in seconds
-COMMAND_ACK_WAIT_TIMEOUT = 30  # Timeout for waiting for command ACK in seconds
-COMMAND_ANSWER_WAIT_TIMEOUT = 10  # Timeout for waiting for command answer in each loop
-MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an answer
+from .const import (
+    COMMAND_EXECUTION_DELAY,
+    COMMAND_ACK_WAIT_TIMEOUT,
+    COMMAND_ANSWER_WAIT_TIMEOUT,
+    MAX_ATTEMPTS)
 
 class NikobusCommandHandler:
 

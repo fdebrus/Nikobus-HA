@@ -1,7 +1,7 @@
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-# Nikobus Integration for Home Assistant (2024.5.29)
+# Nikobus Integration for Home Assistant (2024.6.17)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
@@ -13,8 +13,8 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   - Commands: Operate dimmers on/off and set brightness.
 - **Shutter Module**: `05-001-02`
   - Commands: Operate covers open/close and set position.
-- **Modules with Digital Entries**  `05-201` - `05-205` - `05-206`
-  - Digital Entries: All digital entries will be detected as button (when triggered the first time) and corresponding entities will be created in HA after restart.
+- **Modules with Digital Interfaces**  PC-Logic: `05-201` - Audio Distribution: `05-205` - Digital Interface: `05-206`
+  - All digital entries will be detected as button (when triggered the first time) and corresponding entities (button and sensor) will be created in HA after restart.
 - **Feedback Module**: `05-207`
   - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **It is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**
 - **Nikobus Buttons**:
@@ -23,7 +23,9 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 
 **Only one client on the Nikobus at a time, do not connect anything else in parallel of this integration.**
 
-Connectivity is supported through direct connections, such as **/dev/ttyUSB0**, or over the network using an IP address and port, for example, **192.168.2.50:9999**.
+Connectivity is supported through direct connections, such as **/dev/ttyUSB0**
+
+or over the network using an IP address and port, for example, **192.168.2.50:9999**.
 
 Network connectivity can be achieved by adding a bridge. This could come handy is your Nikobus installation is distant from your HA server.
 
@@ -36,9 +38,34 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
 
 ## Automation Example
 
+The integration will emit three different messages on the Home Assistant bus:
+
+- **nikobus_button_pressed** 
+- **nikobus_button_released**
+- **nikobus_long_button_pressed**
+- **nikobus_short_button_pressed**
+
+You can choose to use these events with or without specifying the button address. Without the button address, the automation will trigger for any button press. With the address, the automation will be specific to the button associated with that address.
+
+Address shall be the one referenced in your nikobus_button_config.json, **004E2C** in this example
+
+``` json
+    "nikobus_button": [
+        {
+            "description": "BT_GF_Living_Sofa_Wall_Light_Up",
+            "address": "004E2C",
+            "impacted_module": [
+                {
+                    "address": "0E6C",
+                    "group": "1"
+                }
+            ]
+        }
+```
+
 ```yaml
 alias: "React to Nikobus Button Push"
-description: "Perform actions when a Nikobus button is reported as pushed."
+description: "Perform actions when a Nikobus button is reported as pressed."
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
