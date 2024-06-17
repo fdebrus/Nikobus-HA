@@ -19,7 +19,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **It is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**.
     
 - **Nikobus Buttons**:
-  - Button press events can be used as triggers in Home Assistant automations. **_pressed_**, **_released_**, **_short pressed_**, **_long pressed_** are detected and reported to HA. See below.
+  - Button press events can be used as triggers in Home Assistant automations. **_pressed_**, **_released_**, **_short pressed_**, **_long pressed_** are detected and reported to HA. See **Automation** section below for details.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
 **Important Note:** The integration maintains synchronization with Nikobus using two methods:
