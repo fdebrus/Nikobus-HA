@@ -22,7 +22,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   - Button press events can be used as triggers in Home Assistant automations. **_pressed_**, **_released_**, **_short pressed_**, **_long pressed_** are detected and reported to HA. See **Automation** section below for details.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
-**Important Note:** The integration maintains synchronization with Nikobus using two methods:
+**Important Note:** The integration maintains in sync with Nikobus using two methods:
     
 **a**. Any physical button must be included in the button_config file. This ensures that when the button is pressed, it triggers a refresh of the impacted module(s) and immediately updates Home Assistant (HA).
     
