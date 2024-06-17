@@ -38,7 +38,7 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
 
 ## Automation Example
 
-The integration will emit three different messages on the Home Assistant bus:
+The integration will emit different messages on the Home Assistant bus:
 
 - **nikobus_button_pressed** 
 - **nikobus_button_released**
