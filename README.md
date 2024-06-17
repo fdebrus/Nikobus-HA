@@ -47,9 +47,25 @@ The integration will emit three different messages on the Home Assistant bus:
 
 You can choose to use these events with or without specifying the button address. Without the button address, the automation will trigger for any button press. With the address, the automation will be specific to the button associated with that address.
 
+Address shall be the one referenced in your nikobus_button_config.json, **004E2C** in this example
+
+``` json
+    "nikobus_button": [
+        {
+            "description": "BT_GF_Living_Sofa_Wall_Light_Up",
+            "address": "004E2C",
+            "impacted_module": [
+                {
+                    "address": "0E6C",
+                    "group": "1"
+                }
+            ]
+        }
+```
+
 ```yaml
 alias: "React to Nikobus Button Push"
-description: "Perform actions when a Nikobus button is reported as pushed."
+description: "Perform actions when a Nikobus button is reported as pressed."
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
