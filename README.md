@@ -16,14 +16,27 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 - **Modules with Digital Interfaces**  PC-Logic: `05-201` - Audio Distribution: `05-205` - Digital Interface: `05-206`
   - All digital entries will be detected as button (when triggered the first time) and corresponding entities (button and sensor) will be created in HA after restart.
 - **Feedback Module**: `05-207`
-  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **It is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**
+  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **It is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**.
+    
 - **Nikobus Buttons**:
   - Button press events can be used as triggers in Home Assistant automations. **_pressed_**, **_released_**, **_short pressed_**, **_long pressed_** are detected and reported to HA. See below.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
+**Important Note:** The integration maintains synchronization with Nikobus using two methods:
+    
+a. Any physical button must be included in the button_config file. This ensures that when the button is pressed, it triggers a refresh of the impacted module(s) and immediately updates Home Assistant (HA).
+    
+b. Refresh mechanism, which can be either integration-based with a custom refresh rate or Feedback Module-based with Nikobus's internal refresh rate.
+    
+  The later might introduce a delay, meaning the integration will not retrieve the module status until the next refresh cycle. As a result, HA and Nikobus might be out of sync until the subsequent refresh cycle. By accurately defining all physical buttons in method (a), HA will remain consistently synchronized; otherwise, delays might occur if relying solely on method (b).
+
+  Both methods are complementary, but for the best experience, ensure your button configuration file is fully completed.
+
+**Connectivity**
+
 **Only one client on the Nikobus at a time, do not connect anything else in parallel of this integration.**
 
-Connectivity is supported through direct connections, such as **/dev/ttyUSB0**
+It is supported through direct connections, such as **/dev/ttyUSB0**
 
 or over the network using an IP address and port, for example, **192.168.2.50:9999**.
 
