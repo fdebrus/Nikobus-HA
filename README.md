@@ -24,9 +24,9 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 
 **Important Note:** The integration maintains synchronization with Nikobus using two methods:
     
-a. Any physical button must be included in the button_config file. This ensures that when the button is pressed, it triggers a refresh of the impacted module(s) and immediately updates Home Assistant (HA).
+**a**. Any physical button must be included in the button_config file. This ensures that when the button is pressed, it triggers a refresh of the impacted module(s) and immediately updates Home Assistant (HA).
     
-b. Refresh mechanism, which can be either integration-based with a custom refresh rate or Feedback Module-based with Nikobus's internal refresh rate.
+**b**. Refresh mechanism, which can be either integration-based with a custom refresh rate or Feedback Module-based with Nikobus's internal refresh rate.
     
   The later might introduce a delay, meaning the integration will not retrieve the module status until the next refresh cycle. As a result, HA and Nikobus might be out of sync until the subsequent refresh cycle. By accurately defining all physical buttons in method (a), HA will remain consistently synchronized; otherwise, delays might occur if relying solely on method (b).
 
