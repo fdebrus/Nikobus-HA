@@ -38,6 +38,15 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
 
 ## Automation Example
 
+The integration will emit three different messages on the Home Assistant bus:
+
+- **nikobus_button_pressed** 
+- **nikobus_button_released**
+- **nikobus_long_button_pressed**
+- **nikobus_short_button_pressed**
+
+You can choose to use these events with or without specifying the button address. Without the button address, the automation will trigger for any button press. With the address, the automation will be specific to the button associated with that address.
+
 ```yaml
 alias: "React to Nikobus Button Push"
 description: "Perform actions when a Nikobus button is reported as pushed."
