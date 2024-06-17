@@ -7,6 +7,10 @@ CONF_CONNECTION_STRING = "connection_string"
 CONF_REFRESH_INTERVAL = "refresh_interval"
 CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
 
+# Buttons
+DIMMER_DELAY = 1 # When a dimmer button is pressed, pause for DIMMER_DELAY before to retrieve status from NIkobus
+LONG_PRESS_THRESHOLD_MS = 500 # Time in ms to detect a long press (> LONG_PRESS_THRESHOLD_MS)
+
 # Listener
 BUTTON_COMMAND_PREFIX = '#N' # Button pressed prefix
 IGNORE_ANSWER = '$0E' # ***Unkwown***

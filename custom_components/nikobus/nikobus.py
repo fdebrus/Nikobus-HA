@@ -4,7 +4,7 @@ import asyncio
 import logging
 import json
 
-from .const import DOMAIN, CONF_HAS_FEEDBACK_MODULE
+from .const import DOMAIN, CONF_HAS_FEEDBACK_MODULE, DIMMER_DELAY
 
 from .nkbconnect import NikobusConnect
 from .nkbconfig import NikobusConfig
@@ -12,13 +12,14 @@ from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import HomeAssistantError
 
 from .nkbprotocol import calculate_group_number
 
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.6.17"
+__version__ = "2024.5.29"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
@@ -33,7 +34,7 @@ class Nikobus:
         self._nikobus_connection = NikobusConnect(connection_string)
         self._nikobus_config = NikobusConfig(self._hass)
         self._nikobus_listener = NikobusEventListener(self._hass, self._config_entry, self._nikobus_connection, self.button_discovery, self.process_feedback_data)
-        self._nikobus_command_handler = NikobusCommandHandler(self._hass, self._nikobus_connection, self._nikobus_listener, self._nikobus_module_states)
+        self.nikobus_command_handler = NikobusCommandHandler(self._hass, self._nikobus_connection, self._nikobus_listener, self._nikobus_module_states)
         
         self.dict_module_data = {}
         self.dict_button_data = {}
@@ -61,15 +62,8 @@ class Nikobus:
                         self._nikobus_module_states[module_address] = bytearray(12)
 
                 return True
-            except FileNotFoundError as e:
-                _LOGGER.error(f"Configuration file not found: {e}")
-                return False
-            except json.JSONDecodeError as e:
-                _LOGGER.error(f"Failed to decode configuration JSON: {e}")
-                return False
-            except Exception as e:
-                _LOGGER.error(f"Configuration load error: {e}")
-                return False
+            except HomeAssistantError as e:
+                raise HomeAssistantError(f'An error occurred loading configuration files: {e}')
         return False
 
 #### EVENT AND COMMAND LOOPS
@@ -77,12 +71,12 @@ class Nikobus:
         await self._nikobus_listener.start()
 
     async def command_handler(self):
-        await self._nikobus_command_handler.start()
+        await self.nikobus_command_handler.start()
 
 #### Nikobus Discovery
     async def nikobus_discovery(self):
         # Ask the Nikobus for the controller address
-        await self._nikobus_command_handler.send_command('#A')
+        await self.nikobus_command_handler.send_command('#A')
         
 #### REFRESH DATA FROM NIKOBUS
     async def refresh_nikobus_data(self) -> bool:
@@ -108,7 +102,7 @@ class Nikobus:
             groups_to_query = [1] if channel_count <= 6 else [1, 2]
 
             for group in groups_to_query:
-                group_state = await self._nikobus_command_handler.get_output_state(address, group) or ""
+                group_state = await self.nikobus_command_handler.get_output_state(address, group) or ""
                 _LOGGER.debug(f'State for group {group}: {group_state} address : {address} ***')
                 state += group_state
 
@@ -173,20 +167,20 @@ class Nikobus:
     async def turn_on_switch(self, address: str, channel: int) -> None:
         """Turn on a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0xFF)
-        await self._nikobus_command_handler.set_output_state(address, channel, 0xFF)
-        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
-        if self._has_feedback_module:
-            group = calculate_group_number(channel)
-            await self._nikobus_command_handler.get_output_state(address, group)
+        await self.nikobus_command_handler.set_output_state(address, channel, 0xFF)
+        # self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        # if self._has_feedback_module:
+        #    group = calculate_group_number(channel)
+        #    await self.nikobus_command_handler.get_output_state(address, group)
 
     async def turn_off_switch(self, address: str, channel: int) -> None:
         """Turn off a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
-        await self._nikobus_command_handler.set_output_state(address, channel, 0x00)
-        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
-        if self._has_feedback_module:
-            group = calculate_group_number(channel)
-            await self._nikobus_command_handler.get_output_state(address, group)
+        await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
+        # self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        # if self._has_feedback_module:
+        #    group = calculate_group_number(channel)
+        #    await self.nikobus_command_handler.get_output_state(address, group)
 
 #### DIMMERS
     def get_light_state(self, address: str, channel: int) -> bool:
@@ -200,20 +194,20 @@ class Nikobus:
     async def turn_on_light(self, address: str, channel: int, brightness: int) -> None:
         """Turn on a light specified by its address and channel with the given brightness"""
         self.set_bytearray_state(address, channel, brightness)
-        await self._nikobus_command_handler.set_output_state(address, channel, brightness)
+        await self.nikobus_command_handler.set_output_state(address, channel, brightness)
         # self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         # if self._has_feedback_module:
         #    group = calculate_group_number(channel)
-        #    await self._nikobus_command_handler.get_output_state(address, group)
+        #    await self.nikobus_command_handler.get_output_state(address, group)
 
     async def turn_off_light(self, address: str, channel: int) -> None:
         """Turn off a light specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
-        await self._nikobus_command_handler.set_output_state(address, channel, 0x00)
+        await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
         # self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         # if self._has_feedback_module:
         #    group = calculate_group_number(channel)
-        #    await self._nikobus_command_handler.get_output_state(address, group)
+        #    await self.nikobus_command_handler.get_output_state(address, group)
 
 #### COVERS
     def get_cover_state(self, address: str, channel: int) -> int:
@@ -223,17 +217,17 @@ class Nikobus:
     async def stop_cover(self, address: str, channel: int) -> None:
         """Stop a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
-        await self._nikobus_command_handler.set_output_state(address, channel, 0x00)
+        await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
     async def open_cover(self, address: str, channel: int) -> None:
         """Open a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x01)
-        await self._nikobus_command_handler.set_output_state(address, channel, 0x01)
+        await self.nikobus_command_handler.set_output_state(address, channel, 0x01)
 
     async def close_cover(self, address: str, channel: int) -> None:
         """Close a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x02)
-        await self._nikobus_command_handler.set_output_state(address, channel, 0x02)
+        await self.nikobus_command_handler.set_output_state(address, channel, 0x02)
 
 #### BUTTONS
     async def button_discovery(self, address: str) -> None:
@@ -274,10 +268,10 @@ class Nikobus:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
 
                 if impacted_module_address in self.dict_module_data.get('dimmer_module', {}):
-                    _LOGGER.debug("Dimmer DETECTED")
-                    await asyncio.sleep(1)
+                    _LOGGER.debug("Dimmer DETECTED - pausing to get final status")
+                    await asyncio.sleep(DIMMER_DELAY)
 
-                value = await self._nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
+                value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
                 if value is not None:
                     self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
                     await self._async_event_handler("nikobus_button_pressed", address)

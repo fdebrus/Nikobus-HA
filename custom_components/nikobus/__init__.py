@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.components import switch, light, cover, binary_sensor, button
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN, CONF_HAS_FEEDBACK_MODULE
 from .coordinator import NikobusDataCoordinator, NikobusConnectError
@@ -26,21 +27,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     try:
         await coordinator.connect()
-    except FileNotFoundError as file_error:
-        _LOGGER.error(f"Configuration file not found: {file_error}")
-        return False
-    except json.JSONDecodeError as json_error:
-        _LOGGER.error(f"Failed to decode configuration JSON: {json_error}")
-        return False
-    except NikobusConnectError as connect_error:
-        _LOGGER.error(f"Failed to connect to Nikobus: {connect_error}")
-        return False
-    except exceptions.HomeAssistantError as ha_error:
-        _LOGGER.error(f"An error occurred in the Home Assistant core while setting up Nikobus: {ha_error}")
-        return False
-    except Exception as unexpected_error:
-        _LOGGER.error(f"An unexpected error occurred during Nikobus setup: {unexpected_error}")
-        return False
+    except HomeAssistantError as e:
+        raise HomeAssistantError(f'An error occurred loading configuration files: {e}')
 
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
