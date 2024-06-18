@@ -45,8 +45,8 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
 
 <div style="display: flex; justify-content: space-between;">
-    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8a1934e9-6dbe-41c7-92a7-4487690b692d" alt="TCP Server" style="width: 48%;">
-    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/8be886ae-6337-4e0f-a19c-748b82d3011b" alt="TCP Server" style="width: 48%;">
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8" alt="TCP Server" style="width: 48%;">    
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/498e5a0f-ab75-4d29-9988-884015fbf05a" alt="TCP Server" style="width: 48%;">
 </div>
 
 ## Automation Example
