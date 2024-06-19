@@ -32,6 +32,7 @@ class NikobusConfig:
                     data['dimmer_module'] = {module['address']: module for module in data['dimmer_module']}
                 if 'roller_module' in data:
                     data['roller_module'] = {module['address']: module for module in data['roller_module']}
+            # _LOGGER.debug(f'{data}')
             return data
         except FileNotFoundError:
             if data_type == "button":

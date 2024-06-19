@@ -111,11 +111,6 @@ class NikobusEventListener:
             _LOGGER.debug(f"Manual refresh command answer: {message}")
             await self.response_queue.put(message)
 
-            # if self._has_feedback_module:
-            #    feedback_sequence = message[-27:]
-            #    _LOGGER.debug(f"** Feedback led dedicated refresh: {feedback_sequence}")
-            #    await self.nikobus_connection.send(feedback_sequence)
-            
         else:
             _LOGGER.debug(f"Adding message to response queue: {message}")
             await self.response_queue.put(message)
