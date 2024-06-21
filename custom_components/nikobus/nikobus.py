@@ -27,7 +27,7 @@ class Nikobus:
     def __init__(self, hass, config_entry: ConfigEntry, connection_string, async_event_handler):
         self._hass = hass
         self._config_entry = config_entry
-        self._has_feedback_module = None
+        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._async_event_handler = async_event_handler
         self._controller_address = None
         self._nikobus_module_states = {}
@@ -38,8 +38,6 @@ class Nikobus:
         
         self.dict_module_data = {}
         self.dict_button_data = {}
-
-        # self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
 
     @classmethod
     async def create(cls, hass, config_entry, connection_string, async_event_handler):
@@ -169,16 +167,24 @@ class Nikobus:
     async def turn_on_switch(self, address: str, channel: int) -> None:
         """Turn on a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0xFF)
-        await self.nikobus_command_handler.set_output_state(address, channel, 0xFF)
-        led_on = self.dict_module_data["switch_module"][address]["channels"][channel - 1]["led_on"]
-        await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
+        led_on = None
+        if self._has_feedback_module:
+            led_on = self.dict_module_data["switch_module"][address]["channels"][channel - 1]["led_on"]
+        if led_on:
+            await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
+        else:
+            await self.nikobus_command_handler.set_output_state(address, channel, 0xFF)
 
     async def turn_off_switch(self, address: str, channel: int) -> None:
         """Turn off a switch specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
-        await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
-        led_off = self.dict_module_data["switch_module"][address]["channels"][channel - 1]["led_off"]
-        await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
+        led_off = None
+        if self._has_feedback_module:
+            led_off = self.dict_module_data["switch_module"][address]["channels"][channel - 1]["led_off"]
+        if led_off:
+            await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
+        else:
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
 #### DIMMERS
     def get_light_state(self, address: str, channel: int) -> bool:
@@ -193,15 +199,21 @@ class Nikobus:
         """Turn on a light specified by its address and channel with the given brightness"""
         self.set_bytearray_state(address, channel, brightness)
         await self.nikobus_command_handler.set_output_state(address, channel, brightness)
-        led_on = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]["led_on"]
-        await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
+        led_on = None
+        if self._has_feedback_module:
+            led_on = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]["led_on"]
+        if led_on:
+            await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
 
     async def turn_off_light(self, address: str, channel: int) -> None:
         """Turn off a light specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
-        led_off = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]["led_off"]
-        await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
+        led_off = None
+        if self._has_feedback_module:
+            led_off = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]["led_off"]
+        if led_off:
+            await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
 
 #### COVERS
     def get_cover_state(self, address: str, channel: int) -> int:
@@ -217,15 +229,17 @@ class Nikobus:
         """Open a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x01)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x01)
-        led_on = self.dict_module_data["roller_module"][address]["channels"][channel - 1]["led_on"]
-        await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
+        if self._has_feedback_module:
+            led_on = self.dict_module_data["roller_module"][address]["channels"][channel - 1]["led_on"]
+            await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
 
     async def close_cover(self, address: str, channel: int) -> None:
         """Close a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x02)
         await self.nikobus_command_handler.set_output_state(address, channel, 0x02)
-        led_off = self.dict_module_data["roller_module"][address]["channels"][channel - 1]["led_off"]
-        await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
+        if self._has_feedback_module:
+            led_off = self.dict_module_data["roller_module"][address]["channels"][channel - 1]["led_off"]
+            await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
 
 #### BUTTONS
     async def button_discovery(self, address: str) -> None:
