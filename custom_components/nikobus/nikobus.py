@@ -208,38 +208,56 @@ class Nikobus:
     async def turn_off_light(self, address: str, channel: int) -> None:
         """Turn off a light specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
-        await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
         led_off = None
         if self._has_feedback_module:
             led_off = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]["led_off"]
         if led_off:
             await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
+        else:
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
 #### COVERS
     def get_cover_state(self, address: str, channel: int) -> int:
         """Get the state of a cover based on its address and channel"""
         return self.get_bytearray_state(address, channel)
 
-    async def stop_cover(self, address: str, channel: int) -> None:
+    async def stop_cover(self, address: str, channel: int, direction: str) -> None:
         """Stop a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x00)
-        await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
+    
+        if self._has_feedback_module:
+            channel_data = self.dict_module_data["roller_module"][address]["channels"][channel - 1]
+            led_on = channel_data.get("led_on")
+            led_off = channel_data.get("led_off")
+            command = None
+            if led_on and direction == 'opening':
+                command = f'#N{led_on}\r#E1'
+            elif led_off and direction == 'closing':
+                command = f'#N{led_off}\r#E1'
+            if command:
+                await self.nikobus_command_handler.queue_command(command)
 
     async def open_cover(self, address: str, channel: int) -> None:
         """Open a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x01)
-        await self.nikobus_command_handler.set_output_state(address, channel, 0x01)
+        led_on = None
         if self._has_feedback_module:
             led_on = self.dict_module_data["roller_module"][address]["channels"][channel - 1]["led_on"]
+        if led_on:
             await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
+        else:
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x01)
 
     async def close_cover(self, address: str, channel: int) -> None:
         """Close a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x02)
-        await self.nikobus_command_handler.set_output_state(address, channel, 0x02)
+        led_off = None
         if self._has_feedback_module:
             led_off = self.dict_module_data["roller_module"][address]["channels"][channel - 1]["led_off"]
+        if led_off:
             await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
+        else:
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x02)
 
 #### BUTTONS
     async def button_discovery(self, address: str) -> None:

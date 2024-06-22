@@ -58,6 +58,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._model = model
         self._address = address
         self._channel = channel
+        self._direction = None  # Initialize _direction
 
         self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
@@ -140,6 +141,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._is_closing = False
         self._is_opening = True
         self._in_motion = False
+        self._direction = 'opening'
         await self._operate_cover(self._address, self._channel, "open")
         self._movement_task = asyncio.create_task(self._complete_movement(100))
 
@@ -150,16 +152,17 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._is_closing = True
         self._is_opening = False
         self._in_motion = False
+        self._direction = 'closing'
         await self._operate_cover(self._address, self._channel, "close")
         self._movement_task = asyncio.create_task(self._complete_movement(0))
 
-    async def async_stop_cover(self):
+    async def async_stop_cover(self, **kwargs):
         if self._in_motion:
             await self.async_cancel_current_movement()
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
-        await self._dataservice.api.stop_cover(self._address, self._channel)
+        await self._dataservice.api.stop_cover(self._address, self._channel, self._direction)
         self.async_write_ha_state()
 
     async def async_set_cover_position(self, **kwargs):
@@ -172,9 +175,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if direction == "open":
             self._is_opening = True
             self._is_closing = False
+            self._direction = 'opening'
         else:
             self._is_opening = False
             self._is_closing = True
+            self._direction = 'closing'
         await self._operate_cover(self._address, self._channel, direction)
         self._movement_task = asyncio.create_task(self._complete_movement(target_position))
 
