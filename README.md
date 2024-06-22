@@ -113,8 +113,7 @@ For example: "model": "05-000-02"
 
 Each channel can have a free text description to help you identify them. Ensure that these descriptions are unique both within the module and across different modules to avoid duplicates in the integration entities.
 
-If you are using Feedback Module with Button was feedbadk led, register for each entries a button address that would turn on or off the led respectivly.
-The button address reference is case sentive and should respect the following format : "8AA8FA". If you do not have Feedback Module or no led status to be linked with a particular module output, just leave it blank for both led_on and led_off value
+If you are using the Feedback Module with an LED button, register a button address for each entry to turn the LED on or off, respectively. The button address reference is case-sensitive and should follow this format: "8AA8FA". If you do not have a Feedback Module or no LED status to link with a particular module output, leave both the led_on and led_off values blank.
 
   ```json
 {
