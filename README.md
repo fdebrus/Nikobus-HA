@@ -58,6 +58,10 @@ The integration will emit different messages on the Home Assistant bus:
 - **nikobus_button_released**
 - **nikobus_long_button_pressed**
 - **nikobus_short_button_pressed**
+- **nikobus_button_pressed_0** Button press detected for less than 1 second
+- **nikobus_button_pressed_1** Button press detected for 1 second
+- **nikobus_button_pressed_2** Button press detected for 2 seconds
+- **nikobus_button_pressed_3** Button press detected for 3 seconds
 
 Any press duration above 500ms will be considered long press, you can adapt to your needs by updating the value in the const.py file from the integration custom directory and restart HA.
 ```
