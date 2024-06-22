@@ -54,12 +54,25 @@ class NikobusActuator:
                 time_diff = (current_time - self._last_press_time) * 1000
                 
                 if time_diff >= self._debounce_time_ms:
-                    _LOGGER.debug(f"Button release detected for address: {address}")
-                    
                     # Calculate press duration
-                    press_duration = (current_time - start_time) * 1000
+                    press_duration = (current_time - start_time)
+
+                    _LOGGER.debug(f"Button release detected for address: {address} - {press_duration}")
+
+                    if press_duration < 1:
+                        _LOGGER.debug(f"Button press detected for less than 1 second for address: {address}")
+                        self._hass.bus.async_fire('nikobus_button_pressed_0', {'address': address})
+                    elif press_duration < 2:
+                        _LOGGER.debug(f"Button press detected for 1 second for address: {address}")
+                        self._hass.bus.async_fire('nikobus_button_pressed_1', {'address': address})
+                    elif press_duration < 3:
+                        _LOGGER.debug(f"Button press detected for 2 seconds for address: {address}")
+                        self._hass.bus.async_fire('nikobus_button_pressed_2', {'address': address})
+                    elif press_duration >= 3:
+                        _LOGGER.debug(f"Button press detected for 3 seconds for address: {address}")
+                        self._hass.bus.async_fire('nikobus_button_pressed_3', {'address': address})
                     
-                    if press_duration >= self._long_press_threshold_ms:
+                    if press_duration >= self._long_press_threshold_ms / 1000:
                         _LOGGER.debug(f"Button long press detected for address: {address}")
                         self._hass.bus.async_fire('nikobus_long_button_pressed', {'address': address})
                     else:
