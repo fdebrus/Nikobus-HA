@@ -9,7 +9,7 @@ CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
 
 # Buttons
 DIMMER_DELAY = 1 # When a dimmer button is pressed, pause for DIMMER_DELAY before to retrieve status from NIkobus
-LONG_PRESS_THRESHOLD_MS = 500 # Time in ms to detect a long press (> LONG_PRESS_THRESHOLD_MS)
+LONG_PRESS_THRESHOLD_MS = 500 # Time in ms to detect a long press (>= LONG_PRESS_THRESHOLD_MS)
 
 # Listener
 BUTTON_COMMAND_PREFIX = '#N' # Button pressed prefix
@@ -18,7 +18,7 @@ FEEDBACK_REFRESH_COMMAND = ('$1012', '$1017') # Receiving a refresh command init
 FEEDBACK_MODULE_ANSWER = '$1C' # Receiving refresh command result answering the feeback module request
 MANUAL_REFRESH_COMMAND = ('$0512', '$0517') # Receiving refresh command result answering an integration refresh command
 COMMAND_PROCESSED = ('$0515', '$0516') # Confirms the command has been received and executed
-CONTROLLER_ADDRESS = '$18' # Prefix the Nikobus PC-Link address following an '#A' reauest
+CONTROLLER_ADDRESS = '$18' # Prefix the Nikobus PC-Link address following an '#A' request
 
 # Command
 COMMAND_EXECUTION_DELAY = 0.3  # Delay between command executions in seconds

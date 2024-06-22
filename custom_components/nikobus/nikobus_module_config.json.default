@@ -5,18 +5,18 @@
             "model": "05-000-02",
             "address": "C9A5",
             "channels": [
-                {"description": "S1 Output 1"},
-                {"description": "S1 Output 2"},
-                {"description": "S1 Output 3"},
-                {"description": "S1 Output 4"},
-                {"description": "S1 Output 5"},
-                {"description": "S1 Output 6"},
-                {"description": "S1 Output 7"},
-                {"description": "S1 Output 8"},
-                {"description": "S1 Output 9"},
-                {"description": "S1 Output 10"},
-                {"description": "S1 Output 11"},
-                {"description": "S1 Output 12"}
+                {"description": "S1 Output 1", "led_on":"", "led_off":""},
+                {"description": "S1 Output 2", "led_on":"", "led_off":""},
+                {"description": "S1 Output 3", "led_on":"", "led_off":""},
+                {"description": "S1 Output 4", "led_on":"", "led_off":""},
+                {"description": "S1 Output 5", "led_on":"", "led_off":""},
+                {"description": "S1 Output 6", "led_on":"", "led_off":""},
+                {"description": "S1 Output 7", "led_on":"", "led_off":""},
+                {"description": "S1 Output 8", "led_on":"", "led_off":""},
+                {"description": "S1 Output 9", "led_on":"", "led_off":""},
+                {"description": "S1 Output 10", "led_on":"", "led_off":""},
+                {"description": "S1 Output 11", "led_on":"", "led_off":""},
+                {"description": "S1 Output 12", "led_on":"", "led_off":""}
             ]
         },
         {
@@ -24,10 +24,10 @@
             "model": "05-002-02",
             "address": "5B05",
             "channels": [
-                {"description": "S2 Output 1"},
-                {"description": "S2 Output 2"},
-                {"description": "S2 Output 3"},
-                {"description": "S2 Output 4"}
+                {"description": "S2 Output 1", "led_on":"", "led_off":""},
+                {"description": "S2 Output 2", "led_on":"", "led_off":""},
+                {"description": "S2 Output 3", "led_on":"", "led_off":""},
+                {"description": "S2 Output 4", "led_on":"", "led_off":""}
             ]
         },
         {
@@ -35,18 +35,18 @@
             "model": "05-000-02",
             "address": "4707",
             "channels": [
-                {"description": "S3 Output 1"},
-                {"description": "S3 Output 2"},
-                {"description": "S3 Output 3"},
-                {"description": "S3 Output 4"},
-                {"description": "S3 Output 5"},
-                {"description": "S3 Output 6"},
-                {"description": "S3 Output 7"},
-                {"description": "S3 Output 8"},
-                {"description": "S3 Output 9"},
-                {"description": "S3 Output 10"},
-                {"description": "S3 Output 11"},
-                {"description": "S3 Output 12"}
+                {"description": "S3 Output 1", "led_on":"", "led_off":""},
+                {"description": "S3 Output 2", "led_on":"", "led_off":""},
+                {"description": "S3 Output 3", "led_on":"", "led_off":""},
+                {"description": "S3 Output 4", "led_on":"", "led_off":""},
+                {"description": "S3 Output 5", "led_on":"", "led_off":""},
+                {"description": "S3 Output 6", "led_on":"", "led_off":""},
+                {"description": "S3 Output 7", "led_on":"", "led_off":""},
+                {"description": "S3 Output 8", "led_on":"", "led_off":""},
+                {"description": "S3 Output 9", "led_on":"", "led_off":""},
+                {"description": "S3 Output 10", "led_on":"", "led_off":""},
+                {"description": "S3 Output 11", "led_on":"", "led_off":""},
+                {"description": "S3 Output 12", "led_on":"", "led_off":""}
             ]
         }
     ],
@@ -56,18 +56,18 @@
             "model": "05-007-02",
             "address": "0E6C",
             "channels": [
-                {"description": "D1 Output 1"},
-                {"description": "D1 Output 2"},
-                {"description": "D1 Output 3"},
-                {"description": "D1 Output 4"},
-                {"description": "D1 Output 5"},
-                {"description": "D1 Output 6"},
-                {"description": "D1 Output 7"},
-                {"description": "D1 Output 8"},
-                {"description": "D1 Output 9"},
-                {"description": "D1 Output 10"},
-                {"description": "D1 Output 11"},
-                {"description": "D1 Output 12"}
+                {"description": "D1 Output 1", "led_on":"", "led_off":""},
+                {"description": "D1 Output 2", "led_on":"", "led_off":""},
+                {"description": "D1 Output 3", "led_on":"", "led_off":""},
+                {"description": "D1 Output 4", "led_on":"", "led_off":""},
+                {"description": "D1 Output 5", "led_on":"", "led_off":""},
+                {"description": "D1 Output 6", "led_on":"", "led_off":""},
+                {"description": "D1 Output 7", "led_on":"", "led_off":""},
+                {"description": "D1 Output 8", "led_on":"", "led_off":""},
+                {"description": "D1 Output 9", "led_on":"", "led_off":""},
+                {"description": "D1 Output 10", "led_on":"", "led_off":""},
+                {"description": "D1 Output 11", "led_on":"", "led_off":""},
+                {"description": "D1 Output 12", "led_on":"", "led_off":""}
             ]
         }
     ],
@@ -77,12 +77,12 @@
             "model": "05-001-02",
             "address": "9105",
             "channels": [
-                {"description": "R1 Output 1", "operation_time": "40"},
-                {"description": "R1 Output 2", "operation_time": "40"},
-                {"description": "R1 Output 3", "operation_time": "40"},
-                {"description": "R1 Output 4", "operation_time": "40"},
-                {"description": "R1 Output 5", "operation_time": "40"},
-                {"description": "R1 Output 6", "operation_time": "40"}
+                {"description": "R1 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 2", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 3", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 4", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 5", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 6", "operation_time": "40", "led_on":"", "led_off":""}
             ]
         },
         {
@@ -90,12 +90,12 @@
             "model": "05-001-02",
             "address": "8394",
             "channels": [
-                {"description": "R2 Output 1", "operation_time": "40"},
-                {"description": "R2 Output 2", "operation_time": "40"},
-                {"description": "R2 Output 3", "operation_time": "40"},
-                {"description": "R2 Output 4", "operation_time": "40"},
-                {"description": "R2 Output 5", "operation_time": "40"},
-                {"description": "R2 Output 6", "operation_time": "40"}
+                {"description": "R2 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 2", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 3", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 4", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 5", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 6", "operation_time": "40", "led_on":"", "led_off":""}
             ]
         }
     ]

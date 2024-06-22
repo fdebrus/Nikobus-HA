@@ -1,7 +1,7 @@
 
 [![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
 
-# Nikobus Integration for Home Assistant (2024.6.17)
+# Nikobus Integration for Home Assistant (2024.6.22)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
@@ -20,6 +20,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
     
 - **Nikobus Buttons**:
   - Button press events can be used as triggers in Home Assistant automations. **_pressed_**, **_released_**, **_short pressed_**, **_long pressed_** are detected and reported to HA. See **Automation** section below for details.
+  - A button with a feedback LED requires an additional argument to be added to each module output.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
 **Important Note:** The integration maintains in sync with Nikobus using two methods:
@@ -113,6 +114,8 @@ For example: "model": "05-000-02"
 
 Each channel can have a free text description to help you identify them. Ensure that these descriptions are unique both within the module and across different modules to avoid duplicates in the integration entities.
 
+If you are using the Feedback Module with an LED button, register a button address for each entry to turn the LED on or off, respectively. The button address reference is case-sensitive and should follow this format: "8AA8FA". If you do not have a Feedback Module or no LED status to link with a particular module output, leave both the led_on and led_off values blank.
+
   ```json
 {
     "switch_module": [
@@ -121,18 +124,18 @@ Each channel can have a free text description to help you identify them. Ensure 
             "model": "05-000-02",
             "address": "C9A5",
             "channels": [
-                {"description": "S1 Output 1"},
-                {"description": "S1 Output 2"},
-                {"description": "S1 Output 3"},
-                {"description": "S1 Output 4"},
-                {"description": "S1 Output 5"},
-                {"description": "S1 Output 6"},
-                {"description": "S1 Output 7"},
-                {"description": "S1 Output 8"},
-                {"description": "S1 Output 9"},
-                {"description": "S1 Output 10"},
-                {"description": "S1 Output 11"},
-                {"description": "S1 Output 12"}
+                {"description": "S1 Output 1", "led_on":"259B02", "led_off":"659B02"},
+                {"description": "S1 Output 2", "led_on":"", "led_off":""},
+                {"description": "S1 Output 3", "led_on":"", "led_off":""},,
+                {"description": "S1 Output 4", "led_on":"", "led_off":""},
+                {"description": "S1 Output 5", "led_on":"", "led_off":""},
+                {"description": "S1 Output 6", "led_on":"", "led_off":""},
+                {"description": "S1 Output 7", "led_on":"", "led_off":""},
+                {"description": "S1 Output 8", "led_on":"", "led_off":""},
+                {"description": "S1 Output 9", "led_on":"", "led_off":""},
+                {"description": "S1 Output 10", "led_on":"", "led_off":""},
+                {"description": "S1 Output 11", "led_on":"", "led_off":""},
+                {"description": "S1 Output 12", "led_on":"", "led_off":""}
             ]
         }
     ],
@@ -147,12 +150,12 @@ Entries that define roller output include an additional argument, operation_time
             "model": "05-001-02",
             "address": "9105",
             "channels": [
-                {"description": "R1 Output 1", "operation_time": "40"},
-                {"description": "R1 Output 2", "operation_time": "40"},
-                {"description": "R1 Output 3", "operation_time": "40"},
-                {"description": "R1 Output 4", "operation_time": "40"},
-                {"description": "R1 Output 5", "operation_time": "40"},
-                {"description": "R1 Output 6", "operation_time": "40"}
+                {"description": "R1 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 2", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 3", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 4", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 5", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 6", "operation_time": "40", "led_on":"", "led_off":""}
             ]
         }
     ]
