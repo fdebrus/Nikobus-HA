@@ -1,6 +1,3 @@
-
-[![HACS Badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
-
 # Nikobus Integration for Home Assistant (2024.6.22)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
@@ -101,10 +98,14 @@ action:
 
 ## Setup Process
 
-1. Install the custom integration using HACS.
+1. Install the custom integration using HACS. Use the custom link below, or copy the repository to custom_repository/nikobus
+
+[![Add to HACS](https://img.shields.io/badge/HACS-Add%20Custom%20Repository-blue.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fdebrus&repository=Nikobus-HA&category=integration)
+
 2. Navigate to `custom_repository/nikobus`.
 3. Copy `nikobus_module_conf.json.default` to your Home Assistant configuration directory, remove the .default extension.
 4. Update the file to reflect your specific installation settings.
+5. Add Nikobus under Settings/Devices & services - Add Integration
 
 ### Module Configuration
 
