@@ -109,6 +109,8 @@ action:
 
 ### Module Configuration
 
+Make sure to record your modules addresses as they are displayed in the nikobus software.
+
 You can begin by locating the example file in the integration directory after installation via HACS. This file will be available in your HA installation at /config/custom_components/nikobus/nikobus_module_config.json.default. Copy this file to the /config directory and rename it to nikobus_module_config.json.
 
 The description field is free text and can include anything that helps you identify the module.
