@@ -6,6 +6,7 @@ BRAND = "Niko"
 CONF_CONNECTION_STRING = "connection_string"
 CONF_REFRESH_INTERVAL = "refresh_interval"
 CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
+CONF_HAS_PC_LINK = "has_pc_link"
 
 # Buttons
 DIMMER_DELAY = 1 # When a dimmer button is pressed, pause for DIMMER_DELAY before to retrieve status from NIkobus
