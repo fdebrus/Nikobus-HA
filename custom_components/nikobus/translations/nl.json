@@ -5,15 +5,15 @@
                 "title": "Nikobus PC-Link",
                 "description": "Voer uw verbindingsgegevens in.",
                 "data": {
-                    "connection_string": "IP-adres:Poort of serieel apparaat",
-                    "has_feedback_module": "Nikobus Feedback Module geïnstalleerd?"
+                    "connection_string": "IP-adres:Poort of Serieel apparaat",
+                    "has_feedback_module": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?"
                 }
             },
             "options": {
                 "title": "Nikobus PC-Link",
-                "description": "Stel uw vernieuwingsinterval in",
+                "description": "Stel uw verversingsinterval in",
                 "data": {
-                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)"
+                    "refresh_interval": "Verversingsinterval in seconden (60-3600)"
                 }
             }
         },
@@ -33,8 +33,8 @@
                 "title": "Nikobus PC-Link",
                 "description": "Configuratie bijwerken",
                 "data": {
-                    "has_feedback_module": "Nikobus Feedback Module geïnstalleerd?",
-                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)"
+                    "has_feedback_module": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
+                    "refresh_interval": "Verversingsinterval in seconden (60-3600)"
                 }
             }
         }

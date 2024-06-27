@@ -6,7 +6,7 @@
                 "description": "Please enter your connectivity details.",
                 "data": {
                     "connection_string": "IP address:Port or Serial device",
-                    "has_feedback_module": "Nikobus Feedback Module installed?"
+                    "has_feedback_module": "Has Feedback Module installed and connected over PC-Link ?"
                 }
             },
             "options": {
@@ -33,7 +33,7 @@
                 "title": "Nikobus PC-Link",
                 "description": "Update configuration",
                 "data": {
-                    "has_feedback_module": "Nikobus Feedback Module installed?",
+                    "has_feedback_module": "Has Feedback Module installed and connected over PC-Link ?",
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
                 }
             }

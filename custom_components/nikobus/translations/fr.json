@@ -5,8 +5,8 @@
                 "title": "Nikobus PC-Link",
                 "description": "Veuillez entrer vos détails de connectivité.",
                 "data": {
-                    "connection_string": "Adresse IP:Port ou périphérique série",
-                    "has_feedback_module": "Module de retour Nikobus installé ?"
+                    "connection_string": "Adresse IP:Port ou Périphérique Série",
+                    "has_feedback_module": "Module de retour installé et connecté via PC-Link ?"
                 }
             },
             "options": {
@@ -24,7 +24,7 @@
             },
             "invalid_connection": "Chaîne de connexion invalide.",
             "invalid_input": "Entrée invalide, veuillez vérifier vos données.",
-            "device_not_found_or_no_access": "Périphérique série introuvable ou accès refusé."
+            "device_not_found_or_no_access": "Périphérique série non trouvé ou accès refusé."
         }
     },
     "options": {
@@ -33,7 +33,7 @@
                 "title": "Nikobus PC-Link",
                 "description": "Mettre à jour la configuration",
                 "data": {
-                    "has_feedback_module": "Module de retour Nikobus installé ?",
+                    "has_feedback_module": "Module de retour installé et connecté via PC-Link ?",
                     "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)"
                 }
             }
