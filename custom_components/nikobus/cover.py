@@ -1,28 +1,20 @@
-"""Nikobus Cover entity"""
-
 import logging
-
 import asyncio
 from datetime import datetime
-
 from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
     CoverDeviceClass,
     ATTR_POSITION,
 )
-
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
 from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
-    
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
-
     entities = [
         NikobusCoverEntity(
             hass,
@@ -34,11 +26,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             channel["description"],
             channel.get("operation_time", "00"),
         )
-        for address, cover_module_data in dataservice.api.dict_module_data['roller_module'].items() 
+        for address, cover_module_data in dataservice.api.dict_module_data['roller_module'].items()
         for i, channel in enumerate(cover_module_data["channels"], start=1)
         if not channel["description"].startswith("not_in_use")
     ]
-
     async_add_entities(entities)
 
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
@@ -86,7 +77,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     @property
     def is_open(self):
-        """Indicates whether the cover is fully closed."""
+        """Indicates whether the cover is fully open."""
         return self._position == 100
 
     @property
@@ -128,19 +119,18 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._in_motion = current_state != 0x00
             self._is_opening = current_state == 0x01
             self._is_closing = current_state == 0x02
-        
+
             if current_state == 0x01 and self._position != 100:
                 self.hass.async_create_task(self._complete_movement(100))
             elif current_state == 0x02 and self._position != 0:
                 self.hass.async_create_task(self._complete_movement(0))
 
     async def async_open_cover(self, **kwargs):
-        if self._in_motion: 
+        if self._in_motion:
             await self.async_cancel_current_movement()
         """Triggers the operation to fully open the cover."""
         self._is_closing = False
         self._is_opening = True
-        self._in_motion = False
         self._direction = 'opening'
         await self._operate_cover(self._address, self._channel, "open")
         self._movement_task = asyncio.create_task(self._complete_movement(100))
@@ -151,7 +141,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Triggers the operation to fully close the cover."""
         self._is_closing = True
         self._is_opening = False
-        self._in_motion = False
         self._direction = 'closing'
         await self._operate_cover(self._address, self._channel, "close")
         self._movement_task = asyncio.create_task(self._complete_movement(0))
@@ -199,7 +188,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
         self._in_motion = True
 
-        while self._in_motion: 
+        while self._in_motion:
             try:
                 elapsed_time = (datetime.now() - start_time).total_seconds()
                 if (direction == 1 and self._position >= expected_position) or (direction == -1 and self._position <= expected_position):
@@ -216,8 +205,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 self.async_write_ha_state()
 
             except asyncio.CancelledError:
-                _LOGGER.error("Movement operation error.")
-                break 
+                _LOGGER.debug("Movement operation cancelled during real-time update.")
+                break
 
         await self._reset_movement_state()
 
@@ -235,7 +224,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             try:
                 await self._movement_task
             except asyncio.CancelledError:
-                _LOGGER.error("Movement task error.")
+                _LOGGER.error("Movement task error during cancellation.")
             self._movement_task = None
             self._in_motion = False
 

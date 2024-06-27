@@ -47,8 +47,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Connect to the Nikobus system"""
         try:
             self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler)
-            await self.api.command_handler()
+            # await self.api.command_handler()
 
+            self.hass.async_create_task(self.api.command_handler())
             self.hass.async_create_task(self.api.listen_for_events())
 
         except NikobusConnectionError as e:

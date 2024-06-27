@@ -96,20 +96,21 @@ class NikobusEventListener:
 
         elif message.startswith(FEEDBACK_REFRESH_COMMAND):
             if self._has_feedback_module:
-                _LOGGER.debug(f"** Feedback module refresh command: {message}")
+                _LOGGER.debug(f"Feedback module refresh command: {message}")
                 module_group_identifier = message[3:5]
                 self._module_group = 2 if module_group_identifier == '17' else 1 if module_group_identifier == '12' else None
             return
 
         elif message.startswith(FEEDBACK_MODULE_ANSWER):
             if self._has_feedback_module:
-                _LOGGER.debug(f"** Feedback module refresh command answer: {message}")
+                _LOGGER.debug(f"Feedback module refresh command answer: {message}")
                 await self._feedback_callback(self._module_group, message)
             return
 
         elif any(refresh in message for refresh in MANUAL_REFRESH_COMMAND):
             _LOGGER.debug(f"Manual refresh command answer: {message}")
-            await self.response_queue.put(message)
+            if BUTTON_COMMAND_PREFIX not in message:
+                await self.response_queue.put(message)
 
         else:
             _LOGGER.debug(f"Adding message to response queue: {message}")
