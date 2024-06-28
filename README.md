@@ -1,4 +1,4 @@
-# Nikobus Integration for Home Assistant (2024.6.22)
+# Nikobus Integration for Home Assistant (2024.6.28)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
@@ -284,9 +284,9 @@ For discussions/general requests, please refer to [this](https://community.home-
 ## Gallery
 
 During the integration setup, you will be asked to provide your connection string, which can be either an IP
-or a USB port. If your setup includes a Nikobus Feedback Module, check the box. In this case, the integration will refresh based on the Feedback Module's refresh cycle and feedback data instead of the custom refresh rate.
+or a USB port. If your setup includes a Nikobus Feedback Module and you are connected to Nikobus over the PC-Link interface, check the box. In this case, the integration will refresh based on the Feedback Module's refresh cycle and feedback data instead of the custom refresh rate.
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/60625a74-1965-4af3-883a-f06713eb6fcb)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/85148fbf-b108-4f97-9496-eaf794273547)
 
 If you do not have a Nikobus Feedback Module, leave the box unchecked. You will then be presented with another screen to set up your custom integration refresh rate. Avoid setting the refresh interval too low to prevent excessive traffic on the bus.
 
@@ -296,7 +296,6 @@ You can always revisit these options after setup by selecting the "CONFIGURE" op
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/e985517a-ccb5-49f9-9938-e6a4594764f4)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/c42ddd69-08ce-4c1e-966f-f2a2607d190a)
-
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/a891864f-922a-4bab-8b9f-5e7b8ff978ee)
 
 <a href="https://buymeacoffee.com/fdebrus" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/black_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a><br>
