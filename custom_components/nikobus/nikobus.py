@@ -4,7 +4,7 @@ import asyncio
 import logging
 import json
 
-from .const import DOMAIN, CONF_HAS_FEEDBACK_MODULE, DIMMER_DELAY
+from .const import DOMAIN, DIMMER_DELAY
 
 from .nkbconnect import NikobusConnect
 from .nkbconfig import NikobusConfig
@@ -27,7 +27,6 @@ class Nikobus:
     def __init__(self, hass, config_entry: ConfigEntry, connection_string, async_event_handler):
         self._hass = hass
         self._config_entry = config_entry
-        self._has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._async_event_handler = async_event_handler
         self._controller_address = None
         self._nikobus_module_states = {}
