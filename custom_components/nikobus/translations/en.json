@@ -2,7 +2,7 @@
     "config": {
         "step": {
             "user": {
-                "title": "Nikobus Connectivity",
+                "title": "Nikobus",
                 "description": "Please enter your connectivity details.",
                 "data": {
                     "connection_string": "IP address:Port or Serial device",
@@ -10,7 +10,7 @@
                 }
             },
             "options": {
-                "title": "Nikobus Connectivity",
+                "title": "Nikobus",
                 "description": "Set your refresh interval",
                 "data": {
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
@@ -30,7 +30,7 @@
     "options": {
         "step": {
             "config": {
-                "title": "Nikobus Connectivity",
+                "title": "Nikobus",
                 "description": "Update configuration",
                 "data": {
                     "has_feedback_module": "Feedback Module installed and connected over PC-Link ?",
