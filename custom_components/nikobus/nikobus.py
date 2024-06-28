@@ -19,7 +19,7 @@ from .nkbprotocol import calculate_group_number
 _LOGGER = logging.getLogger(__name__)
 
 __title__ = "Nikobus"
-__version__ = "2024.6.22"
+__version__ = "2024.6.28"
 __author__ = "Frederic Debrus"
 __license__ = "MIT"
 
