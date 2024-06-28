@@ -2,7 +2,7 @@
     "config": {
         "step": {
             "user": {
-                "title": "Nikobus PC-Link",
+                "title": "Nikobus",
                 "description": "Veuillez entrer vos détails de connectivité.",
                 "data": {
                     "connection_string": "Adresse IP:Port ou Périphérique Série",
@@ -10,7 +10,7 @@
                 }
             },
             "options": {
-                "title": "Nikobus PC-Link",
+                "title": "Nikobus",
                 "description": "Définissez votre intervalle de rafraîchissement",
                 "data": {
                     "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)"
@@ -30,7 +30,7 @@
     "options": {
         "step": {
             "config": {
-                "title": "Nikobus PC-Link",
+                "title": "Nikobus",
                 "description": "Mettre à jour la configuration",
                 "data": {
                     "has_feedback_module": "Module de retour installé et connecté via PC-Link ?",

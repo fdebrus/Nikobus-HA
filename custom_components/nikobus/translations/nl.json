@@ -2,7 +2,7 @@
     "config": {
         "step": {
             "user": {
-                "title": "Nikobus PC-Link",
+                "title": "Nikobus",
                 "description": "Voer uw verbindingsgegevens in.",
                 "data": {
                     "connection_string": "IP-adres:Poort of Serieel apparaat",
@@ -10,7 +10,7 @@
                 }
             },
             "options": {
-                "title": "Nikobus PC-Link",
+                "title": "Nikobus",
                 "description": "Stel uw verversingsinterval in",
                 "data": {
                     "refresh_interval": "Verversingsinterval in seconden (60-3600)"
@@ -30,7 +30,7 @@
     "options": {
         "step": {
             "config": {
-                "title": "Nikobus PC-Link",
+                "title": "Nikobus",
                 "description": "Configuratie bijwerken",
                 "data": {
                     "has_feedback_module": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
