@@ -7,7 +7,7 @@
   "domain": "nikobus",
   "name": "Nikobus",
   "requirements": ["aiofiles>=23.2.0"],
-  "version": "2024.6.22",
+  "version": "2024.6.28",
   "iot_class": "local_polling",
   "loggers": "custom_components.nikobus"
 }
