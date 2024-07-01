@@ -13,7 +13,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 - **Modules with Digital Interfaces**  PC-Logic: `05-201` - Audio Distribution: `05-205` - Digital Interface: `05-206`
   - All digital entries will be detected as button (when triggered the first time) and corresponding entities (button and sensor) will be created in HA after restart.
 - **Feedback Module**: `05-207`
-  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **! If PC-Link is present and used for connectivity ! It is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**.
+  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **! If PC-Link is present and used for connectivity ! Then it is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**.
     
 - **Nikobus Buttons**:
   - Button press events can be used as triggers in Home Assistant automations. **_pressed_**, **_released_**, **_short pressed_**, **_long pressed_**, **_pressed_0** Button press detected for less than 1 second, **_pressed_1** Button press detected for 1 second, **_pressed_2** Button press detected for 2 seconds, **_pressed_3** Button press detected for 3 seconds are detected and reported to HA. See **Automation** section below for details.
