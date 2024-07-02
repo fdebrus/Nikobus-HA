@@ -11,8 +11,9 @@ from .const import DOMAIN, BRAND
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
-
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
+
+    switch_modules = dataservice.api.dict_module_data.get('switch_module', {})
 
     entities = [
         NikobusSwitchEntity(
@@ -24,12 +25,13 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             i,
             channel["description"],
         )
-        for address, switch_module_data in dataservice.api.dict_module_data['switch_module'].items()
-        for i, channel in enumerate(switch_module_data["channels"], start=1) 
+        for address, switch_module_data in switch_modules.items()
+        for i, channel in enumerate(switch_module_data.get("channels", []), start=1)
         if not channel["description"].startswith("not_in_use")
     ]
 
     async_add_entities(entities)
+
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 

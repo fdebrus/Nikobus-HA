@@ -15,6 +15,9 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
+
+    roller_modules = dataservice.api.dict_module_data.get('roller_module', {})
+
     entities = [
         NikobusCoverEntity(
             hass,
@@ -26,11 +29,13 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             channel["description"],
             channel.get("operation_time", "00"),
         )
-        for address, cover_module_data in dataservice.api.dict_module_data['roller_module'].items()
-        for i, channel in enumerate(cover_module_data["channels"], start=1)
+        for address, cover_module_data in roller_modules.items()
+        for i, channel in enumerate(cover_module_data.get("channels", []), start=1)
         if not channel["description"].startswith("not_in_use")
     ]
+
     async_add_entities(entities)
+
 
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     """Represents a Nikobus cover entity within Home Assistant, providing control over a physical cover in the Nikobus system."""

@@ -7,8 +7,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, BRAND
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
-
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
+
+    dimmer_modules = dataservice.api.dict_module_data.get('dimmer_module', {})
 
     entities = [
         NikobusLightEntity(
@@ -20,8 +21,8 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             i,
             channel["description"],
         )
-        for address, dimmer_module_data in dataservice.api.dict_module_data['dimmer_module'].items() 
-        for i, channel in enumerate(dimmer_module_data["channels"], start=1)
+        for address, dimmer_module_data in dimmer_modules.items() 
+        for i, channel in enumerate(dimmer_module_data.get("channels", []), start=1)
         if not channel["description"].startswith("not_in_use")
     ]
 

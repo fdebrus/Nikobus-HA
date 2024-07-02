@@ -8,16 +8,15 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, BRAND
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
-
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     entities = []
 
-    if dataservice.api.dict_button_data is not None:
-        for button in dataservice.api.dict_button_data["nikobus_button"].values():
+    if dataservice.api.dict_button_data:
+        for button in dataservice.api.dict_button_data.get("nikobus_button", {}).values():
             impacted_modules_info = [
                 {"address": impacted_module["address"], "group": impacted_module["group"]}
-                for impacted_module in button["impacted_module"]
+                for impacted_module in button.get("impacted_module", [])
             ]
 
             entity = NikobusButtonEntity(
@@ -30,7 +29,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
             entities.append(entity)
 
-        async_add_entities(entities)
+    async_add_entities(entities)
+
 
 class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     def __init__(self, hass: HomeAssistant, dataservice, description, address, impacted_modules_info) -> None:
