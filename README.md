@@ -141,14 +141,21 @@ If you are using the Feedback Module with an LED button, register a button addre
                 {"description": "S1 Output 5", "led_on":"", "led_off":""},
                 {"description": "S1 Output 6", "led_on":"", "led_off":""},
                 {"description": "S1 Output 7", "led_on":"", "led_off":""},
-                {"description": "S1 Output 8", "led_on":"", "led_off":""},
-                {"description": "S1 Output 9", "led_on":"", "led_off":""},
-                {"description": "S1 Output 10", "led_on":"", "led_off":""},
-                {"description": "S1 Output 11", "led_on":"", "led_off":""},
-                {"description": "S1 Output 12", "led_on":"", "led_off":""}
-            ]
-        }
-    ],
+                {"description": "S1 Output 8", "led_on":"", "led_off":""},...
+```
+
+```json
+    "dimmer_module": [
+        {
+            "description": "Dimmer Module D1",
+            "model": "05-007-02",
+            "address": "0E6C",
+            "channels": [
+                {"description": "D1 Output 1", "led_on":"", "led_off":""},
+                {"description": "D1 Output 2", "led_on":"", "led_off":""},
+                {"description": "D1 Output 3", "led_on":"", "led_off":""},
+                {"description": "D1 Output 4", "led_on":"", "led_off":""},
+                {"description": "D1 Output 5", "led_on":"", "led_off":""},...
 ```
 
 Entries that define roller output include an additional argument, operation_time, which specifies the total time (in seconds) that a shutter takes to fully open or close. Update this value to reflect your shutter's actual operation time. This parameter is crucial as it allows the integration to simulate setting the shutter position, a feature not natively supported by Nikobus, by operating the shutter for a calculated period.
