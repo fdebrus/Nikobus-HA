@@ -323,10 +323,10 @@ If you do not have a Nikobus Feedback Module, leave the box unchecked. You will 
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4f3a894b-5a39-4dd3-bdd9-f9b628e547b3)
 
-You can always revisit these options after setup by selecting the "CONFIGURE" option from the integration menu. If you need to change your connectivity method (IP vs USB), delete and recreate the integration with the new parameters.
+You can always revisit these options after setup by selecting the "CONFIGURE" option from the integration menu.
 
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/e985517a-ccb5-49f9-9938-e6a4594764f4)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/3787e30d-a76b-44fe-ac71-bbbd79f3b569)
+![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/062ac6ea-27c6-433b-ab48-be0c562c5cff)
 
 <a href="https://buymeacoffee.com/fdebrus" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/black_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a><br>
