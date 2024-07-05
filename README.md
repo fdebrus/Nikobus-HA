@@ -58,7 +58,10 @@ or over the network using an IP address and port, for example, **192.168.2.50:99
 
 Network connectivity can be achieved by adding a bridge. This could come handy is your Nikobus installation is distant from your HA server.
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
+<div style="display: flex; justify-content: space-between;">
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1" alt="TCP Server" style="width: 48%;">  
+    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/99683b8c-fe8a-4162-944d-9c2a61c5dc5e" alt="TCP Server" style="width: 48%;">
+</div>
 
 <div style="display: flex; justify-content: space-between;">
     <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8" alt="TCP Server" style="width: 48%;">    
