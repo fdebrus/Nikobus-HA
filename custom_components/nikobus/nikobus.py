@@ -222,16 +222,15 @@ class Nikobus:
         channel_data = self.dict_module_data["roller_module"][address]["channels"][channel - 1]
         led_on = channel_data.get("led_on")
         led_off = channel_data.get("led_off")
-        command = 0x00
+        command = None
         if led_on and direction == 'opening':
             command = f'#N{led_on}\r#E1'
         elif led_off and direction == 'closing':
             command = f'#N{led_off}\r#E1'
-
-        if isinstance(command, str):
+        if command:
             await self.nikobus_command_handler.queue_command(command)
         else:
-            await self.nikobus_command_handler.queue_command(f'{command}')
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
     async def open_cover(self, address: str, channel: int) -> None:
         """Open a cover specified by its address and channel"""
