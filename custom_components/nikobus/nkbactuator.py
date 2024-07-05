@@ -55,7 +55,7 @@ class NikobusActuator:
     async def _fire_event_after_duration(self, address: str, duration: int):
         await asyncio.sleep(duration)
         _LOGGER.debug(f"Timer event detected for {duration} seconds for address: {address}")
-        self._hass.bus.async_fire(f'nikobus_timer_{duration}_seconds', {'address': address})
+        self._hass.bus.async_fire(f'nikobus_timer_{duration}', {'address': address})
 
     async def _wait_for_release(self, address: str):
         try:
