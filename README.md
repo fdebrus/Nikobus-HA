@@ -23,14 +23,14 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
       -  **nikobus_button_released**
       -  **nikobus_short_button_pressed**
       -  **nikobus_long_button_pressed**
-      -  **nikobus_button_pressed_0** (button press detected for less than 1 second)
-      -  **nikobus_button_pressed_1** (button press detected for 1 second)
-      -  **nikobus_button_pressed_2** (button press detected for 2 seconds)
-      -  **nikobus_button_pressed_3** (button press detected for 3 seconds)
+      -  **nikobus_button_pressed_0** (button press detected after release for less than 1 second)
+      -  **nikobus_button_pressed_1** (button press detected after release for 1 second)
+      -  **nikobus_button_pressed_2** (button press detected after release for 2 seconds)
+      -  **nikobus_button_pressed_3** (button press detected after release for 3 seconds)
     The  following events are fired as soon as the respective timer is reached
-      -  **nikobus_button_timer_1_seconds**
-      -  **nikobus_button_timer_2_seconds**
-      -  **nikobus_button_timer_3_seconds**
+      -  **nikobus_button_timer_1** (Button press detected for 1 second)
+      -  **nikobus_button_timer_2** (Button press detected for 2 seconds)
+      -  **nikobus_button_timer_3** (Button press detected for 3 seconds)
   - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
@@ -69,13 +69,13 @@ The integration will emit different messages on the Home Assistant bus:
 - **nikobus_button_released**
 - **nikobus_long_button_pressed**
 - **nikobus_short_button_pressed**
-- **nikobus_button_pressed_0** Button press detected for less than 1 second
-- **nikobus_button_pressed_1** Button press detected for 1 second
-- **nikobus_button_pressed_2** Button press detected for 2 seconds
-- **nikobus_button_pressed_3** Button press detected for 3 seconds
--  **nikobus_button_timer_1_seconds**
--  **nikobus_button_timer_2_seconds**
--  **nikobus_button_timer_3_seconds**
+- **nikobus_button_pressed_0** Button press detected after release for less than 1 second
+- **nikobus_button_pressed_1** Button press detected after release for 1 second
+- **nikobus_button_pressed_2** Button press detected after release for 2 seconds
+- **nikobus_button_pressed_3** Button press detected after release for 3 seconds
+-  **nikobus_button_timer_1** Button press detected for 1 second
+-  **nikobus_button_timer_2** Button press detected for 2 seconds
+-  **nikobus_button_timer_3** Button press detected for 3 seconds
 
 Any press duration above 500ms will be considered long press, you can adapt to your needs by updating the value in the const.py file from the integration custom directory and restart HA.
 ```
