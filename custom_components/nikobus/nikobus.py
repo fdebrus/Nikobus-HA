@@ -222,7 +222,7 @@ class Nikobus:
         channel_data = self.dict_module_data["roller_module"][address]["channels"][channel - 1]
         led_on = channel_data.get("led_on")
         led_off = channel_data.get("led_off")
-        command = None
+        command = 0x00
         if led_on and direction == 'opening':
             command = f'#N{led_on}\r#E1'
         elif led_off and direction == 'closing':
