@@ -33,6 +33,7 @@
                 "title": "Nikobus",
                 "description": "Configuratie bijwerken",
                 "data": {
+                    "connection_string": "IP-adres:Poort of Serieel apparaat",
                     "has_feedback_module": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
                     "refresh_interval": "Verversingsinterval in seconden (60-3600)"
                 }

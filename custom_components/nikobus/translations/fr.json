@@ -33,6 +33,7 @@
                 "title": "Nikobus",
                 "description": "Mettre à jour la configuration",
                 "data": {
+                    "connection_string": "Adresse IP:Port ou Périphérique Série",
                     "has_feedback_module": "Module de retour installé et connecté via PC-Link ?",
                     "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)"
                 }

@@ -1,5 +1,3 @@
-"""Nikobus Config Flow"""
-
 import voluptuous as vol
 import ipaddress
 import re
@@ -15,7 +13,8 @@ from .const import (
     DOMAIN, 
     CONF_CONNECTION_STRING, 
     CONF_REFRESH_INTERVAL, 
-    CONF_HAS_FEEDBACK_MODULE)
+    CONF_HAS_FEEDBACK_MODULE
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,12 +102,6 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional(CONF_REFRESH_INTERVAL, default=default_refresh_interval): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
         })
 
-        if self.has_feedback_module:
-            return await self._create_entry({
-                CONF_CONNECTION_STRING: self.connection_string,
-                CONF_HAS_FEEDBACK_MODULE: self.has_feedback_module
-            })
-
         return self.async_show_form(
             step_id="options",
             data_schema=user_input_schema,
@@ -144,37 +137,66 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors = {}
         data = self.config_entry.data
         options = self.config_entry.options
+        connection_string = options.get(CONF_CONNECTION_STRING, data.get(CONF_HAS_FEEDBACK_MODULE))
         has_feedback_module = options.get(CONF_HAS_FEEDBACK_MODULE, data.get(CONF_HAS_FEEDBACK_MODULE, False))
         refresh_interval = options.get(CONF_REFRESH_INTERVAL, data.get(CONF_REFRESH_INTERVAL, 120))
 
-        options_schema = {
-            vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool,
-        }
-
-        if user_input is None or not user_input.get(CONF_HAS_FEEDBACK_MODULE):
-            options_schema[vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval)] = vol.All(
-                cv.positive_int, 
-                vol.Range(min=60, max=3600)
-            )
+        options_schema = vol.Schema({
+            vol.Required(CONF_CONNECTION_STRING, default=connection_string): str,
+            vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+            vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool
+        })
 
         if user_input is not None:
+            connection_string = user_input.get(CONF_CONNECTION_STRING, "")
             has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
             refresh_interval = user_input.get(CONF_REFRESH_INTERVAL, 120)
 
-            data = {
-                CONF_HAS_FEEDBACK_MODULE: has_feedback_module,
-                CONF_REFRESH_INTERVAL: refresh_interval
-            }
-
-            if has_feedback_module:
-                data.pop(CONF_REFRESH_INTERVAL, None)
-
-            return self.async_create_entry(title="Options Configured", data=data)
+            try:
+                if not self._validate_connection_string(connection_string):
+                    if re.match(r'^/dev/tty(USB|S)\d+$', connection_string):
+                        errors[CONF_CONNECTION_STRING] = 'device_not_found_or_no_access'
+                    else:
+                        errors[CONF_CONNECTION_STRING] = 'invalid_connection'
+                else:
+                    data = {
+                        CONF_CONNECTION_STRING: connection_string,
+                        CONF_HAS_FEEDBACK_MODULE: has_feedback_module,
+                        CONF_REFRESH_INTERVAL: refresh_interval
+                    }
+                    return self.async_create_entry(title="Options Configured", data=data)
+            except Exception as e:
+                _LOGGER.error("Error validating connection string: %s", e)
+                errors["base"] = "unknown_error"
 
         return self.async_show_form(
             step_id="config",
-            data_schema=vol.Schema(options_schema),
+            data_schema=options_schema,
             errors=errors,
             description_placeholders=None,
             last_step=True,
         )
+
+    def _validate_connection_string(self, connection_string) -> bool:
+        try:
+            # Split connection string into IP and port
+            ip, port = connection_string.split(':')
+            ipaddress.ip_address(ip)  # Validate IP address
+            port = int(port)  # Convert port to integer
+
+            # Check if the port is in the valid range
+            if port < 1 or port > 65535:
+                return False
+
+            # Try to establish a connection to the IP and port
+            with socket.create_connection((ip, port), timeout=5):
+                pass
+            return True
+        except (ValueError, socket.error) as e:
+            _LOGGER.error("IP/Port validation error: %s", e)
+            if re.match(r'^/dev/tty(USB|S)\d+$', connection_string):
+                if os.path.exists(connection_string) and os.access(connection_string, os.R_OK | os.W_OK):
+                    return True
+                else:
+                    return False
+        return False

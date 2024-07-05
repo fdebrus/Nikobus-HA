@@ -22,7 +22,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.api = None
         self._config_entry = config_entry
-        self.connection_string = self._config_entry.data.get(CONF_CONNECTION_STRING)
+        self.connection_string = self._config_entry.options.get(CONF_CONNECTION_STRING, self._config_entry.data.get(CONF_CONNECTION_STRING))
         self.refresh_interval = self._config_entry.options.get(CONF_REFRESH_INTERVAL, self._config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
         self.has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
 
@@ -47,7 +47,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Connect to the Nikobus system"""
         try:
             self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler)
-            # await self.api.command_handler()
 
             self.hass.async_create_task(self.api.command_handler())
             self.hass.async_create_task(self.api.listen_for_events())
@@ -84,20 +83,29 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle updates to the configuration entry."""
         new_refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, 120)
         new_has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, False)
+        new_connection_string = entry.options.get(CONF_CONNECTION_STRING, self.connection_string)
 
-        if new_refresh_interval != self.refresh_interval or new_has_feedback_module != self.has_feedback_module:
+        connection_changed = new_connection_string != self.connection_string
+        refresh_interval_changed = new_refresh_interval != self.refresh_interval
+        feedback_module_changed = new_has_feedback_module != self.has_feedback_module
+
+        if connection_changed or refresh_interval_changed or feedback_module_changed:
+            self.connection_string = new_connection_string
             self.refresh_interval = new_refresh_interval
             self.has_feedback_module = new_has_feedback_module
             self.update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
             self.update_method = self.async_update_data if not self.has_feedback_module else self.initial_update_data
-            
+
+            # Reconnect if the connection string has changed
+            if connection_changed:
+                await self.connect()
+                title = f"Nikobus - {new_connection_string}"
+                self.hass.config_entries.async_update_entry(entry, title=title)
+
             # Updating the DataUpdateCoordinator to apply the new settings
             await self._async_update_interval()
 
-            if self.has_feedback_module:
-                _LOGGER.info(f'Feedback module status set to {self.has_feedback_module}')
-            else:
-                _LOGGER.info(f'Nikobus refresh interval updated to {self.refresh_interval} seconds.')
+            _LOGGER.info(f'Configuration updated: connection_string={self.connection_string}, refresh_interval={self.refresh_interval}, has_feedback_module={self.has_feedback_module}')
 
     async def _async_update_interval(self):
         """Update the coordinator's update interval and method."""
