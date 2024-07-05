@@ -143,8 +143,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         options_schema = vol.Schema({
             vol.Required(CONF_CONNECTION_STRING, default=connection_string): str,
-            vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool,
-            vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval): vol.All(cv.positive_int, vol.Range(min=60, max=3600))
+            vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+            vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool
         })
 
         if user_input is not None:
