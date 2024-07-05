@@ -17,6 +17,7 @@ class NikobusActuator:
         self._last_press_time = None
         self._press_task = None
         self._press_task_active = False
+        self._timer_tasks = []
 
     async def handle_button_press(self, address: str) -> None:
         """Handle button press events."""
@@ -31,6 +32,7 @@ class NikobusActuator:
             self._last_address = address
             self._last_press_time = current_time
             self._start_press_task(address)
+            self._start_timer_tasks(address)
         else:
             self._last_press_time = current_time
 
@@ -44,6 +46,16 @@ class NikobusActuator:
             self._press_task.cancel()
 
         self._press_task = asyncio.create_task(self._wait_for_release(address))
+
+    def _start_timer_tasks(self, address: str):
+        for duration in [1, 2, 3]:
+            task = asyncio.create_task(self._fire_event_after_duration(address, duration))
+            self._timer_tasks.append(task)
+
+    async def _fire_event_after_duration(self, address: str, duration: int):
+        await asyncio.sleep(duration)
+        _LOGGER.debug(f"Timer event detected for {duration} seconds for address: {address}")
+        self._hass.bus.async_fire(f'nikobus_timer_{duration}_seconds', {'address': address})
 
     async def _wait_for_release(self, address: str):
         try:
@@ -84,6 +96,12 @@ class NikobusActuator:
                     self._last_address = None
                     self._press_task_active = False
                     self._press_task = None
+
+                    # Cancel all timer tasks
+                    for task in self._timer_tasks:
+                        task.cancel()
+                    self._timer_tasks.clear()
+
                     break
                 
         except asyncio.CancelledError:
