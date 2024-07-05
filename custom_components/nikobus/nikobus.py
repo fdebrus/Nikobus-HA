@@ -227,8 +227,11 @@ class Nikobus:
             command = f'#N{led_on}\r#E1'
         elif led_off and direction == 'closing':
             command = f'#N{led_off}\r#E1'
-        if command:
+
+        if isinstance(command, str):
             await self.nikobus_command_handler.queue_command(command)
+        else:
+            await self.nikobus_command_handler.queue_command(f'{command}')
 
     async def open_cover(self, address: str, channel: int) -> None:
         """Open a cover specified by its address and channel"""
