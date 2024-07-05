@@ -23,8 +23,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.add_update_listener(async_update_options)
 
-    has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
-
     try:
         await coordinator.connect()
     except HomeAssistantError as e:
@@ -35,6 +33,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as forward_setup_error:
         _LOGGER.error(f"An error occurred while forwarding entry setups: {forward_setup_error}")
         return False
+
+    has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
 
     if not has_feedback_module:
         try:
