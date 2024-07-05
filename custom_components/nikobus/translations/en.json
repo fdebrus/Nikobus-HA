@@ -33,6 +33,7 @@
                 "title": "Nikobus",
                 "description": "Update configuration",
                 "data": {
+                    "connection_string": "IP address:Port or Serial device",
                     "has_feedback_module": "Feedback Module installed and connected over PC-Link ?",
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
                 }
