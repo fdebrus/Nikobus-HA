@@ -12,9 +12,11 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   - Commands: Operate covers open/close and set position.
 - **Modules with Digital Interfaces**  PC-Logic: `05-201` - Audio Distribution: `05-205` - Digital Interface: `05-206`
   - All digital entries will be detected as button (when triggered the first time) and corresponding entities (button and sensor) will be created in HA after restart.
+- **PC-Link Module**: `05-200`
+  - Could be used to connect Nikobus to HomeAssistant, with a customizable refresh interval set within the integration configuration.
 - **Feedback Module**: `05-207`
-  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **! If PC-Link is present and used for connectivity ! Then it is highly recommended to use the Feedback module instead of a custom refresh interval when available, to prevent excessive bus traffic.**.
-    
+  - Could be used to connect Nikobus to HomeAssistant, with a customizable refresh interval set within the integration configuration.
+  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **! ONLY IF PC-Link is present and used for connectivity !**. if not, use a user defined refresh interval in the integration configuration.
 - **Nikobus Buttons**: Physical switches, IR, Feedback, Remote
   - Button press events can be used as triggers in Home Assistant automations.
     
