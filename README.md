@@ -62,7 +62,6 @@ Network connectivity can be achieved by adding a bridge. This could come handy i
 
 <div style="display: flex; justify-content: space-between;">
     <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1" alt="TCP Server" style="width: 48%;">  
-    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/99683b8c-fe8a-4162-944d-9c2a61c5dc5e" alt="TCP Server" style="width: 48%;">
 </div>
 
 <div style="display: flex; justify-content: space-between;">
