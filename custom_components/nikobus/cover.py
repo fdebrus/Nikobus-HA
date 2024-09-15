@@ -1,6 +1,5 @@
 import logging
 import asyncio
-from datetime import datetime
 from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
@@ -137,7 +136,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._is_closing = False
         self._is_opening = True
         self._direction = 'opening'
-        await self._operate_cover(self._address, self._channel, "open")
+        await self._operate_cover(self._address, self._channel)
         self._movement_task = asyncio.create_task(self._complete_movement(100))
 
     async def async_close_cover(self, **kwargs):
@@ -147,7 +146,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._is_closing = True
         self._is_opening = False
         self._direction = 'closing'
-        await self._operate_cover(self._address, self._channel, "close")
+        await self._operate_cover(self._address, self._channel)
         self._movement_task = asyncio.create_task(self._complete_movement(0))
 
     async def async_stop_cover(self, **kwargs):
@@ -174,7 +173,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_opening = False
             self._is_closing = True
             self._direction = 'closing'
-        await self._operate_cover(self._address, self._channel, direction)
+        await self._operate_cover(self._address, self._channel)
         self._movement_task = asyncio.create_task(self._complete_movement(target_position))
 
     async def _complete_movement(self, expected_position):
@@ -183,10 +182,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         proportional_time_needed = (position_diff / 100.0) * self._operation_time
         if proportional_time_needed > 0:
             await self._update_position_in_real_time(expected_position, proportional_time_needed)
+        await asyncio.sleep(5)
+        await self.async_stop_cover()
 
     async def _update_position_in_real_time(self, expected_position, total_time):
         """Updates the cover's position in real time until the movement is completed."""
-        start_time = datetime.now()
+        start_time = start_time = self.hass.loop.time()
         initial_position = self._position
         direction = 1 if expected_position > initial_position else -1
         position_change = abs(expected_position - initial_position)
@@ -195,7 +196,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
         while self._in_motion:
             try:
-                elapsed_time = (datetime.now() - start_time).total_seconds()
+                elapsed_time = self.hass.loop.time() - start_time
                 if (direction == 1 and self._position >= expected_position) or (direction == -1 and self._position <= expected_position):
                     self._position = expected_position
                     self._in_motion = False
@@ -233,8 +234,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._movement_task = None
             self._in_motion = False
 
-    async def _operate_cover(self, address, channel, direction):
-        if direction == 'open':
+    async def _operate_cover(self, address, channel):
+        """Operate the cover."""
+        if self._direction == 'opening':
             await self._dataservice.api.open_cover(address, channel)
-        else:
+        elif self._direction == 'closing':
             await self._dataservice.api.close_cover(address, channel)
