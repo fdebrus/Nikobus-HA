@@ -120,17 +120,33 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         _LOGGER.debug("Handling coordinator update.")
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
 
-        _LOGGER.debug("****Current cover state: %s", current_state)
+        _LOGGER.debug("**** %s Current cover state: 0x%X", self._attr_name, current_state)
 
-        if self._movement_task is None or self._movement_task.done():
-            self._in_motion = current_state != 0x00
-            self._is_opening = current_state == 0x01
-            self._is_closing = current_state == 0x02
+        # Cancel the current movement task if it's still running
+        if self._movement_task is not None and not self._movement_task.done():
+            _LOGGER.debug("Cancelling ongoing movement task")
+            self._movement_task.cancel()
+            try:
+                self.hass.loop.run_until_complete(self._movement_task)
+            except asyncio.CancelledError:
+                _LOGGER.debug("Movement task was successfully cancelled.")
 
-            if current_state == 0x01 and self._position != 100:
-                self.hass.async_create_task(self._complete_movement(100))
-            elif current_state == 0x02 and self._position != 0:
-                self.hass.async_create_task(self._complete_movement(0))
+        self._in_motion = current_state != 0x00
+        self._is_opening = current_state == 0x01
+        self._is_closing = current_state == 0x02
+
+        _LOGGER.debug("**** %s Current cover state: %s %s %s", self._attr_name, self._in_motion, self._is_opening, self._is_closing) 
+
+        if current_state == 0x01 and self._position != 100:
+            self.hass.async_create_task(self._complete_movement(100))
+        elif current_state == 0x02 and self._position != 0:
+            self.hass.async_create_task(self._complete_movement(0))
+        else:
+            self._is_opening = False
+            self._is_closing = False
+            self._in_motion = False
+
+        self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
