@@ -127,7 +127,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             _LOGGER.debug("Cancelling ongoing movement task")
             self._movement_task.cancel()
             try:
-                self.hass.loop.run_until_complete(self._movement_task)
+                await self._movement_task
             except asyncio.CancelledError:
                 _LOGGER.debug("Movement task was successfully cancelled.")
 
