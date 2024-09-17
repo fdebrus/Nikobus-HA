@@ -113,7 +113,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Return True if the cover is closing."""
         _LOGGER.debug("Is cover closing? %s", self._is_closing)
         return self._is_closing
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -126,17 +125,26 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if self._movement_task is not None and not self._movement_task.done():
             _LOGGER.debug("Cancelling ongoing movement task")
             self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Movement task was successfully cancelled.")
 
+            def task_cleanup(task):
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    _LOGGER.debug("Movement task was successfully cancelled.")
+                except Exception as e:
+                    _LOGGER.error("Error during movement task cleanup: %s", e)
+
+            # Schedule the task cleanup asynchronously
+            self._movement_task.add_done_callback(task_cleanup)
+
+        # Update motion state based on current state
         self._in_motion = current_state != 0x00
         self._is_opening = current_state == 0x01
         self._is_closing = current_state == 0x02
 
-        _LOGGER.debug("**** %s Current cover state: %s %s %s", self._attr_name, self._in_motion, self._is_opening, self._is_closing) 
+        _LOGGER.debug("**** %s Current cover state: %s %s %s", self._attr_name, self._in_motion, self._is_opening, self._is_closing)
 
+        # Create tasks for the movement
         if current_state == 0x01 and self._position != 100:
             self.hass.async_create_task(self._complete_movement(100))
         elif current_state == 0x02 and self._position != 0:
@@ -146,6 +154,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_closing = False
             self._in_motion = False
 
+        # Write the updated state to Home Assistant
         self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs):
