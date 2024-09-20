@@ -113,16 +113,21 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Return True if the cover is closing."""
         _LOGGER.debug("Is cover closing? %s", self._is_closing)
         return self._is_closing
+        
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         _LOGGER.debug("Handling coordinator update.")
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
 
+        source = self._dataservice.get_update_source()
+
+        _LOGGER.debug("**** SOURCE: %s", source)
+        
         _LOGGER.debug("**** %s Current cover state: 0x%X", self._attr_name, current_state)
 
         # Cancel the current movement task if it's still running
-        if self._movement_task is not None and not self._movement_task.done():
+        if self._movement_task is not None and not self._movement_task.done() and not source == "api_call":
             _LOGGER.debug("Cancelling ongoing movement task")
             self._movement_task.cancel()
 

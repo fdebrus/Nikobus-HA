@@ -22,6 +22,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.api = None
         self._config_entry = config_entry
+        self._update_source = None
         self.connection_string = self._config_entry.options.get(CONF_CONNECTION_STRING, self._config_entry.data.get(CONF_CONNECTION_STRING))
         self.refresh_interval = self._config_entry.options.get(CONF_REFRESH_INTERVAL, self._config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
         self.has_feedback_module = self._config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, self._config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
@@ -55,10 +56,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Failed to connect to Nikobus: %s", e)
             raise NikobusConnectError("Failed to connect to Nikobus.", original_exception=e)
 
+    def set_update_source(self, source: str):
+        self._update_source = source
+
+    def get_update_source(self) -> str:
+        return self._update_source or "unknown"
+
     async def async_update_data(self):
         """Fetch the latest data from Nikobus"""
         try:
             _LOGGER.debug("Refreshing Nikobus data")
+            self.set_update_source("api_call")
             return await self.api.refresh_nikobus_data()
         except NikobusDataError as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
@@ -68,12 +76,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle events from Nikobus."""
         if "ha_button_pressed" in event:
             await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
+            self.set_update_source("button_press")
+        else:
+            self.set_update_source("api_call")
         self.async_update_listeners()
 
     async def initial_update_data(self):
         """Fetch the latest data from Nikobus initially"""
         try:
             _LOGGER.debug("Performing initial data refresh for Nikobus")
+            self.set_update_source("api_call")
             return await self.api.refresh_nikobus_data()
         except NikobusDataError as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
