@@ -76,9 +76,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle events from Nikobus."""
         if "ha_button_pressed" in event:
             await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
-            self.set_update_source("button_press")
-        else:
-            self.set_update_source("api_call")
+        self.set_update_source("button_press")
         self.async_update_listeners()
 
     async def initial_update_data(self):
