@@ -168,12 +168,17 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._is_opening = current_state == 0x01
             self._is_closing = current_state == 0x02
 
-            if current_state == 0x03:
-                _LOGGER.warning("Cover %s is in an unknown or error state (0x03)", self._attr_name)
+            if current_state not in (0x00, 0x01, 0x02):
+                _LOGGER.warning(
+                    "Cover %s is in an unknown or error state (0x%X)",
+                    self._attr_name,
+                    current_state
+                )
                 self._is_opening = False
                 self._is_closing = False
                 self._in_motion = False
                 self._state = 'error'
+                self._direction = None
             else:
                 self._state = None
 
