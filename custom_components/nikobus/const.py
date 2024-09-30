@@ -13,7 +13,7 @@ DIMMER_DELAY = 1 # When a dimmer button is pressed, pause for DIMMER_DELAY befor
 LONG_PRESS_THRESHOLD_MS = 500 # Time in ms to detect a long press (>= LONG_PRESS_THRESHOLD_MS)
 
 # Covers
-COVER_DELAY_BEFORE_STOP = 5 # Delay (in seconds) before sending the stop command when the cover is fully open or closed.
+COVER_DELAY_BEFORE_STOP = 1 # Delay (in seconds) before sending the stop command when the cover is fully open or closed.
 
 # Listener
 BUTTON_COMMAND_PREFIX = '#N' # Button pressed prefix
