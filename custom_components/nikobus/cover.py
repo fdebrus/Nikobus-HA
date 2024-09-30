@@ -80,7 +80,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Return the state attributes."""
         attributes = super().extra_state_attributes or {}
         if self._state == 'error':
-            attributes['error_state'] = '0x03 - Conflict detected or unknown state'
+            attributes['error_state'] = 'Conflict detected or unknown state'
         return attributes
 
     @property
@@ -139,13 +139,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         _LOGGER.debug("Handling coordinator update.")      
         
         source = self._dataservice.get_update_source()
-        
-        _LOGGER.debug("**** SOURCE: %s", source)
+        current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
 
-        if not source == "api_call":
-            current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
-        
-            _LOGGER.debug("**** %s Current cover state: 0x%X", self._attr_name, current_state)
+        _LOGGER.debug("**** Source %s Cover %s State: 0x%X", source, self._attr_name, current_state)
+
+        if source == "button_press":
 
             # Cancel the current movement task if it's still running
             if self._movement_task is not None and not self._movement_task.done():
@@ -182,7 +180,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             else:
                 self._state = None
 
-            _LOGGER.debug("**** %s Current cover state: in motion %s is opening %s is closing %s state %s", self._attr_name, self._in_motion, self._is_opening, self._is_closing, self._state)
+            _LOGGER.debug("%s : in motion %s is opening %s is closing %s state %s", self._attr_name, self._in_motion, self._is_opening, self._is_closing, self._state)
 
             # Create tasks for the movement
             if current_state == 0x01 and self._position != 100:
