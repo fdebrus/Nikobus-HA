@@ -59,6 +59,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._address = address
         self._channel = channel
         self._direction = None
+        self._previous_state = None  # Initialize previous state
 
         self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
@@ -131,40 +132,76 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Return True if the cover is closing."""
         _LOGGER.debug("Is cover closing? %s", self._is_closing)
         return self._is_closing
-        
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        
-        _LOGGER.debug("Handling coordinator update.")      
-        
+
+        _LOGGER.debug("Handling coordinator update for %s.", self._attr_name)      
+
         source = self._dataservice.get_update_source()
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
 
-        _LOGGER.debug("**** Source %s Cover %s State: 0x%X", source, self._attr_name, current_state)
+        _LOGGER.debug("**** Source %s Cover %s State: 0x%X Position: %s", source, self._attr_name, current_state, self._position)
 
-        if source == "button_press":
+        # Check if current state has changed
+        if current_state == self._previous_state:
+            _LOGGER.debug("No state change for %s. Skipping update.", self._attr_name)
+            return
+
+        # Store the previous state
+        self._previous_state = current_state
+
+        # Determine the intended position based on the current state
+        if current_state == 0x01:
+            intended_position = 100  # Opening
+        elif current_state == 0x02:
+            intended_position = 0    # Closing
+        else:
+            intended_position = self._position  # No movement
+
+        # Check if the cover is already at the intended position
+        if self._position == intended_position:
+            _LOGGER.debug("Cover %s is already at the intended position %d. Sending stop command.", self._attr_name, self._position)
+            # Send stop command to sync the state
+            self.hass.async_create_task(self.async_stop_cover())
+            return
+
+        # Proceed with movement if the cover is not at the intended position
+        new_in_motion = current_state != 0x00
+        new_is_opening = current_state == 0x01
+        new_is_closing = current_state == 0x02
+
+        if new_in_motion != self._in_motion or new_is_opening != self._is_opening or new_is_closing != self._is_closing:
 
             # Cancel the current movement task if it's still running
             if self._movement_task is not None and not self._movement_task.done():
-                _LOGGER.debug("Cancelling ongoing movement task")
+                _LOGGER.debug("Cancelling ongoing movement task for %s.", self._attr_name)
                 self._movement_task.cancel()
 
                 def task_cleanup(task):
                     try:
                         task.result()
                     except asyncio.CancelledError:
-                        _LOGGER.debug("Movement task was successfully cancelled.")
+                        _LOGGER.debug("Movement task was successfully cancelled for %s.", self._attr_name)
                     except Exception as e:
-                        _LOGGER.error("Error during movement task cleanup: %s", e)
+                        _LOGGER.error("Error during movement task cleanup for %s: %s", self._attr_name, e)
 
                 # Schedule the task cleanup asynchronously
                 self._movement_task.add_done_callback(task_cleanup)
 
-            # Update motion state based on current state
-            self._in_motion = current_state != 0x00
-            self._is_opening = current_state == 0x01
-            self._is_closing = current_state == 0x02
+            # Update motion state
+            self._in_motion = new_in_motion
+            self._is_opening = new_is_opening
+            self._is_closing = new_is_closing
+
+            # Set the direction based on the current state
+            if current_state == 0x01:
+                self._direction = 'opening'
+            elif current_state == 0x02:
+                self._direction = 'closing'
+            else:
+                self._direction = None
 
             if current_state not in (0x00, 0x01, 0x02):
                 _LOGGER.warning(
@@ -176,16 +213,15 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 self._is_closing = False
                 self._in_motion = False
                 self._state = 'error'
-                self._direction = None
             else:
                 self._state = None
 
-            _LOGGER.debug("%s : in motion %s is opening %s is closing %s state %s", self._attr_name, self._in_motion, self._is_opening, self._is_closing, self._state)
+            _LOGGER.debug("%s : in motion %s is opening %s is closing %s direction %s state %s", self._attr_name, self._in_motion, self._is_opening, self._is_closing, self._direction, self._state)
 
-            # Create tasks for the movement
-            if current_state == 0x01 and self._position != 100:
+            # Create the movement task if the cover is moving
+            if current_state == 0x01:
                 self.hass.async_create_task(self._complete_movement(100))
-            elif current_state == 0x02 and self._position != 0:
+            elif current_state == 0x02:
                 self.hass.async_create_task(self._complete_movement(0))
             else:
                 self._is_opening = False
@@ -194,6 +230,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
             # Write the updated state to Home Assistant
             self.async_write_ha_state()
+        else:
+            _LOGGER.debug("Motion state unchanged for %s. Skipping update.", self._attr_name)
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
@@ -232,8 +270,18 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         _LOGGER.debug("Completing movement to position: %d", expected_position)
         position_diff = abs(self._position - expected_position)
         total_time = (position_diff / 100.0) * self._operation_time
+
         if total_time > 0:
             await self._update_position_in_real_time(expected_position, total_time)
+        else:
+            # Cover is already at the expected position, but we need to stop it
+            if self._in_motion:
+                await asyncio.sleep(COVER_DELAY_BEFORE_STOP)
+                await self.async_stop_cover()
+                self._is_opening = False
+                self._is_closing = False
+                self._in_motion = False
+                self.async_write_ha_state()
 
     async def _update_position_in_real_time(self, expected_position, total_time):
         """Update the cover's position in real time."""
@@ -282,6 +330,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 await self._movement_task
             except asyncio.CancelledError:
                 _LOGGER.debug("Movement task was cancelled.")
+        self._is_opening = False
+        self._is_closing = False
+        self._in_motion = False
         self.async_write_ha_state()
 
     async def _operate_cover(self):
