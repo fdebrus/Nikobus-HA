@@ -237,7 +237,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 _LOGGER.debug("Movement task was successfully cancelled for %s.", self._attr_name)
             except Exception as e:
                 _LOGGER.error("Error during movement task cleanup for %s: %s", self._attr_name, e)
-            self._movement_task = None
+            finally:
+                self._movement_task = None
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
