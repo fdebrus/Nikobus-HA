@@ -1,16 +1,15 @@
 """Nikobus Switch entity"""
 
 import logging
-
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
 from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
+    """Set up Nikobus switch entities from a config entry."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     switch_modules = dataservice.api.dict_module_data.get('switch_module', {})
@@ -34,8 +33,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
+    """Represents a Nikobus switch entity within Home Assistant."""
 
     def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
+        """Initialize the switch entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._state = None
@@ -49,6 +50,7 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     @property
     def device_info(self):
+        """Return device information about this switch."""
         return {
             "identifiers": {(DOMAIN, self._address)},
             "name": self._description,
@@ -58,19 +60,31 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     @property
     def is_on(self):
-        return self._state
+        """Return True if the switch is on."""
+        return self._state or False
 
     @callback
     def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
         self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
         self.async_write_ha_state()
 
     async def async_turn_on(self):
+        """Turn the switch on."""
         self._state = True
-        await self._dataservice.api.turn_on_switch(self._address, self._channel)
+        try:
+            await self._dataservice.api.turn_on_switch(self._address, self._channel)
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn on switch at address {self._address}, channel {self._channel}: {e}")
+            self._state = False  # Reset state if there was an error
         self.async_write_ha_state()
 
     async def async_turn_off(self):
+        """Turn the switch off."""
         self._state = False
-        await self._dataservice.api.turn_off_switch(self._address, self._channel)
+        try:
+            await self._dataservice.api.turn_off_switch(self._address, self._channel)
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn off switch at address {self._address}, channel {self._channel}: {e}")
+            self._state = True  # Reset state if there was an error
         self.async_write_ha_state()
