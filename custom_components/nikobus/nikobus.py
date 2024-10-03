@@ -18,11 +18,6 @@ from .nkbprotocol import calculate_group_number
 
 _LOGGER = logging.getLogger(__name__)
 
-__title__ = "Nikobus"
-__version__ = "2024.7.5"
-__author__ = "Frederic Debrus"
-__license__ = "MIT"
-
 class Nikobus:
     def __init__(self, hass, config_entry: ConfigEntry, connection_string, async_event_handler):
         self._hass = hass
