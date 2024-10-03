@@ -66,7 +66,7 @@ class NikobusConnect:
             ipaddress.ip_address(self._connection_string.split(':')[0])
             return "IP"
         except ValueError:
-            if re.match(r'^/dev/tty(USB|S)\d+$', self._connection_string):
+            if re.match(r'^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$', self._connection_string):
                 return "Serial"
         return "Unknown"
 
