@@ -7,7 +7,6 @@ import ipaddress
 import re
 
 _LOGGER = logging.getLogger(__name__)
-
 __version__ = '0.1'
 
 BAUD_RATE = 9600
@@ -17,13 +16,17 @@ EXPECTED_HANDSHAKE_RESPONSE = "$0511"
 HANDSHAKE_TIMEOUT = 60
 
 class NikobusConnect:
-    
+    """Manages connection to a Nikobus system via IP or Serial."""
+
     def __init__(self, connection_string: str):
+        """Initialize the connection handler with the given connection string."""
         self._connection_string = connection_string
         self._connection_type = self._validate_connection_string()
-        self._nikobus_reader, self._nikobus_writer = None, None
+        self._nikobus_reader = None
+        self._nikobus_writer = None
 
-    async def connect(self):
+    async def connect(self) -> bool:
+        """Connect to the Nikobus system using the connection string."""
         try:
             if self._connection_type == "IP":
                 await self._connect_ip()
@@ -36,12 +39,14 @@ class NikobusConnect:
             if await self._perform_handshake():
                 _LOGGER.info("Nikobus handshake successful")
                 return True
+
             return False
         except (OSError, asyncio.TimeoutError) as err:
             _LOGGER.error(f"Connection error with {self._connection_string}: {err}")
             return False
 
     async def _connect_ip(self):
+        """Establish an IP connection to the Nikobus system."""
         try:
             host, port_str = self._connection_string.split(":")
             port = int(port_str)
@@ -53,8 +58,10 @@ class NikobusConnect:
             self._nikobus_writer = None
 
     async def _connect_serial(self):
+        """Establish a serial connection to the Nikobus system."""
         try:
-            self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(url=self._connection_string, baudrate=BAUD_RATE)
+            self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(
+                url=self._connection_string, baudrate=BAUD_RATE)
             _LOGGER.info(f"Connected to serial port {self._connection_string}")
         except (OSError, serial_asyncio.SerialException) as err:
             _LOGGER.error(f"Failed to connect to serial port {self._connection_string} - {err}")
@@ -62,6 +69,7 @@ class NikobusConnect:
             self._nikobus_writer = None
 
     def _validate_connection_string(self) -> str:
+        """Validate the connection string to determine the type (IP or Serial)."""
         try:
             ipaddress.ip_address(self._connection_string.split(':')[0])
             return "IP"
@@ -71,31 +79,33 @@ class NikobusConnect:
         return "Unknown"
 
     async def _perform_handshake(self) -> bool:
+        """Perform a handshake with the Nikobus system to verify the connection."""
         for command in COMMANDS_HANDSHAKE:
-            try:
-                await self.send(command)
-
-                # if command == COMMAND_WITH_ACK:
-                #        response = await asyncio.wait_for(self._nikobus_reader.readuntil(b'\r'), timeout=HANDSHAKE_TIMEOUT)
-                #        if EXPECTED_HANDSHAKE_RESPONSE.encode() not in response:
-                #            _LOGGER.error(f"Unexpected handshake response: {response}")
-                #            return False
-
-            except asyncio.TimeoutError as err:
-                _LOGGER.error(f'Handshake timeout error: cannot communicate with Nikobus on {self._connection_string}')
-                return False
-            except OSError as err:
-                _LOGGER.error(f'Handshake OS error: cannot communicate with Nikobus on {self._connection_string} - {err}')
-                return False
-            except Exception as e:
-                _LOGGER.exception(f'Unhandled exception during handshake: {e}')
+            if not await self._send_with_retry(command):
                 return False
         return True
 
+    async def _send_with_retry(self, command: str) -> bool:
+        """Send a command and handle potential errors with retries."""
+        try:
+            await self.send(command)
+            return True
+        except (asyncio.TimeoutError, OSError) as err:
+            _LOGGER.error(f'Error during handshake: {err}')
+            return False
+        except Exception as e:
+            _LOGGER.exception(f'Unhandled exception during handshake: {e}')
+            return False
+
     async def read(self):
+        """Read data from the Nikobus system."""
+        if not self._nikobus_reader:
+            _LOGGER.error("Reader is not available for reading data.")
+            return None
         return await self._nikobus_reader.readuntil(b'\r')
 
     async def send(self, s: str):
+        """Send a command to the Nikobus system."""
         if not self._nikobus_writer:
             _LOGGER.error("Writer is not available for sending commands.")
             return
@@ -103,6 +113,8 @@ class NikobusConnect:
         await self._nikobus_writer.drain()
 
     async def close(self):
+        """Close the connection to the Nikobus system."""
         if self._nikobus_writer:
             self._nikobus_writer.close()
             await self._nikobus_writer.wait_closed()
+            _LOGGER.info("Nikobus connection closed")
