@@ -11,6 +11,9 @@ CONF_HAS_PC_LINK = "has_pc_link"
 # Buttons
 DIMMER_DELAY = 1 # When a dimmer button is pressed, pause for DIMMER_DELAY before to retrieve status from NIkobus
 LONG_PRESS_THRESHOLD_MS = 500 # Time in ms to detect a long press (>= LONG_PRESS_THRESHOLD_MS)
+SHORT_PRESS = 1  # Duration in seconds that classifies a button press as a short press
+MEDIUM_PRESS = 2  # Duration in seconds that classifies a button press as a medium press
+LONG_PRESS = 3  # Duration in seconds that classifies a button press as a long press
 
 # Covers
 COVER_DELAY_BEFORE_STOP = 1 # Delay (in seconds) before sending the stop command when the cover is fully open or closed.
