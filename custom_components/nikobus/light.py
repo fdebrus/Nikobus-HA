@@ -1,10 +1,14 @@
 """Nikobus Dimmer / Light entity"""
 
+import logging
 from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
 from .const import DOMAIN, BRAND
+
+_LOGGER = logging.getLogger(__name__)
+
+DEFAULT_BRIGHTNESS = 255
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
@@ -29,8 +33,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     async_add_entities(entities)
 
 class NikobusLightEntity(CoordinatorEntity, LightEntity):
+    """Represents a Nikobus light entity within Home Assistant."""
 
     def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
+        """Initialize the light entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self._dataservice = dataservice
         self._state = None
@@ -45,6 +51,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def device_info(self):
+        """Return device information about this light."""
         return {
             "identifiers": {(DOMAIN, self._address)},
             "name": self._description,
@@ -54,33 +61,49 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def brightness(self):
+        """Return the brightness of the light."""
         return self._brightness
 
     @property
     def color_mode(self):
+        """Return the color mode of the light."""
         return "brightness"
 
     @property
     def supported_color_modes(self):
+        """Return the supported color modes."""
         return {"brightness"}
 
     @property
     def is_on(self):
-        return self._state
+        """Return True if the light is on."""
+        return self._state or False
 
     @callback
     def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
         self._state = bool(self._dataservice.api.get_light_state(self._address, self._channel))
         self._brightness = self._dataservice.api.get_light_brightness(self._address, self._channel)
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs):
-        self._brightness = kwargs.get("brightness", 255)
+        """Turn on the light."""
+        self._brightness = kwargs.get("brightness", DEFAULT_BRIGHTNESS)
         self._state = True
-        await self._dataservice.api.turn_on_light(self._address, self._channel, self._brightness)
+        try:
+            await self._dataservice.api.turn_on_light(self._address, self._channel, self._brightness)
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn on light at address {self._address}, channel {self._channel}: {e}")
+            self._state = False
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
+        """Turn off the light."""
         self._state = False
-        await self._dataservice.api.turn_off_light(self._address, self._channel)
+        self._brightness = 0
+        try:
+            await self._dataservice.api.turn_off_light(self._address, self._channel)
+        except Exception as e:
+            _LOGGER.error(f"Failed to turn off light at address {self._address}, channel {self._channel}: {e}")
+            self._state = True
         self.async_write_ha_state()
