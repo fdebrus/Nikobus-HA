@@ -17,7 +17,7 @@ STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
-    _LOGGER.debug("Setting up entry: %s", entry.entry_id)
+
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     roller_modules = dataservice.api.dict_module_data.get('roller_module', {})
@@ -38,8 +38,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
         if not channel["description"].startswith("not_in_use")
     ]
 
-    _LOGGER.debug("Entities created: %s", entities)
-
     async_add_entities(entities)
 
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
@@ -47,7 +45,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, operation_time) -> None:
         """Initialize the cover entity with data from the Nikobus system configuration."""
-        _LOGGER.debug("Initializing cover entity: %s", description)
         super().__init__(dataservice)
         self._state = None
         self.hass = hass
@@ -72,7 +69,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     @property
     def device_info(self):
         """Provide device information for Home Assistant."""
-        _LOGGER.debug("Device info requested for: %s", self._description)
         return {
             "identifiers": {(DOMAIN, self._address)},
             "name": self._description,
@@ -96,7 +92,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     @property
     def current_cover_position(self):
         """Return the current position of the cover."""
-        _LOGGER.debug("Current cover position: %d", self._position)
         return self._position
 
     @property
@@ -104,7 +99,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Return True if the cover is fully open."""
         if self._state == 'error':
             return None
-        _LOGGER.debug("Is cover open? %s", self._position == 100)
         return self._position == 100
 
     @property
@@ -112,7 +106,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Return True if the cover is fully closed."""
         if self._state == 'error':
             return None
-        _LOGGER.debug("Is cover closed? %s", self._position == 0)
         return self._position == 0
 
     @property
@@ -128,25 +121,17 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     @property
     def is_opening(self):
         """Return True if the cover is opening."""
-        _LOGGER.debug("Is cover opening? %s", self._is_opening)
         return self._is_opening
 
     @property
     def is_closing(self):
         """Return True if the cover is closing."""
-        _LOGGER.debug("Is cover closing? %s", self._is_closing)
         return self._is_closing
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-
-        _LOGGER.debug("Handling coordinator update for %s.", self._attr_name)
-
-        source = self._dataservice.get_update_source()
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
-
-        _LOGGER.debug("**** Source %s Cover %s State: 0x%X Position: %s", source, self._attr_name, current_state, self._position)
 
         # Check if current state has changed
         if current_state == self._previous_state:
@@ -242,7 +227,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
-        _LOGGER.debug("Opening cover.")
         self._direction = 'opening'
         # Cancel any existing movement task
         if self._movement_task is not None and not self._movement_task.done():
@@ -257,7 +241,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def async_close_cover(self, **kwargs):
         """Close the cover."""
-        _LOGGER.debug("Closing cover.")
         self._direction = 'closing'
         # Cancel any existing movement task
         if self._movement_task is not None and not self._movement_task.done():
@@ -289,7 +272,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def _complete_movement(self, expected_position):
         """Complete the movement to the expected position."""
-        _LOGGER.debug("Completing movement to position: %d", expected_position)
         position_diff = abs(self._position - expected_position)
         total_time = (position_diff / 100.0) * self._operation_time
 
@@ -307,7 +289,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def _update_position_in_real_time(self, expected_position, total_time):
         """Update the cover's position in real time."""
-        _LOGGER.debug("Updating position in real time to: %d over %f seconds", expected_position, total_time)
         start_time = self.hass.loop.time()
         initial_position = self._position
         position_change = abs(expected_position - initial_position)
@@ -350,7 +331,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
-        _LOGGER.debug("Stopping cover.")
         await self._dataservice.api.stop_cover(self._address, self._channel, self._direction)
         if self._movement_task is not None and not self._movement_task.done():
             self._movement_task.cancel()
@@ -365,7 +345,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
     async def _operate_cover(self):
         """Send the command to operate the cover."""
-        _LOGGER.debug("Operating cover with direction: %s", self._direction)
         self._in_motion = True
         if self._direction == 'opening':
             self._is_opening = True
