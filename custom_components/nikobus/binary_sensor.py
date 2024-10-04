@@ -100,5 +100,5 @@ class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
 
     async def async_update(self):
         """Update method for the binary sensor."""
-        # If no regular polling is needed, this can be left empty
+        # No regular polling is needed, this can be left empty
         pass

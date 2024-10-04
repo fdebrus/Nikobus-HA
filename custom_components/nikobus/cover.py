@@ -149,13 +149,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         else:
             intended_position = self._position  # No movement
 
-        # Check if the cover is already at the intended position
-        if self._position == intended_position:
-            _LOGGER.debug("Cover %s is already at the intended position %d. Sending stop command.", self._attr_name, self._position)
-            # Send stop command to sync the state
-            self.hass.async_create_task(self.async_stop_cover())
-            return
-
         # Proceed with movement if the cover is not at the intended position
         new_in_motion = current_state != STATE_STOPPED
         new_is_opening = current_state == STATE_OPENING

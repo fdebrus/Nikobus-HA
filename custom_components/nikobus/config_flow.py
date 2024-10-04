@@ -110,7 +110,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.error(f"IP/Port validation error: {e}")
             
             # Validate Serial connection
-            if re.match(r'^/dev/tty(USB|S)\d+$', connection_string):
+            if re.match(r'^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$', connection_string):
                 if os.path.exists(connection_string) and os.access(connection_string, os.R_OK | os.W_OK):
                     return True
                 else:
