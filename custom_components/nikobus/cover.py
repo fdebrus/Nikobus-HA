@@ -17,8 +17,6 @@ STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
 
-UNKNOWN_POSITION = None
-
 class PositionEstimator:
     """Estimates the current position of the cover based on elapsed time and direction."""
 
@@ -26,7 +24,7 @@ class PositionEstimator:
         self.duration_in_seconds = duration_in_seconds
         self.start_time = None
         self.direction = None
-        self.initial_position = UNKNOWN_POSITION  # Start with unknown position
+        self.initial_position = None
 
         _LOGGER.debug("PositionEstimator initialized with duration: %s seconds", duration_in_seconds)
 
@@ -34,14 +32,13 @@ class PositionEstimator:
         """Start the movement in the given direction."""
         self.direction = direction
         self.start_time = time.monotonic()
-        self.initial_position = initial_position
-        _LOGGER.debug("Movement started in direction: %s, initial position: %s", direction, initial_position)
+        self.initial_position = initial_position if initial_position is not None else (0 if direction == "opening" else 100)
+        _LOGGER.debug("Movement started in direction: %s, initial position: %s", direction, self.initial_position)
 
     def get_position(self):
         """Calculate and return the current position estimate."""
-        if self.start_time is None or self.direction is None:
-            # If there's no start time or direction, keep the current initial position if it's known
-            return self.initial_position
+        if self.start_time is None or self.direction is None or self.initial_position is None:
+            return None
 
         # Calculate elapsed time since the movement started
         elapsed_time = time.monotonic() - self.start_time
@@ -65,6 +62,13 @@ class PositionEstimator:
         """Stop the movement and finalize the position."""
         if self.start_time is not None:
             self.initial_position = self.get_position()
+
+            # Ensure the position is correctly set to either 0 or 100 if it reaches the limits
+            if self.initial_position >= 100:
+                self.initial_position = 100
+            elif self.initial_position <= 0:
+                self.initial_position = 0
+
         self.direction = None
         self.start_time = None
         _LOGGER.debug("Movement stopped. Current estimated position: %s", self.initial_position)
@@ -110,7 +114,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._previous_state = None
 
         self._position_estimator = PositionEstimator(duration_in_seconds=float(operation_time))
-        self._position = UNKNOWN_POSITION  # Start with unknown position
+        self._position = None  # Start with unknown position
 
         self._is_opening = False
         self._is_closing = False
@@ -137,7 +141,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def extra_state_attributes(self):
         """Return the state attributes."""
         attributes = super().extra_state_attributes or {}
-        if self._position is UNKNOWN_POSITION:
+        if self._position is None:
             attributes['position'] = 'unknown'
         else:
             attributes['position'] = self._position
@@ -146,26 +150,27 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     @property
     def assumed_state(self):
         """Return True if the cover is in an assumed state."""
-        return self._position is UNKNOWN_POSITION
+        return self._position is None
 
     @property
     def current_cover_position(self):
         """Return the current position of the cover."""
-        if self._position is UNKNOWN_POSITION:
-            return None  # Representing an unknown state in the UI
+        if self._position is None:
+            _LOGGER.debug("Cover %s position is currently unknown.", self._attr_name)
+            return 50  # Default to a midpoint (50) if the position is unknown for better estimation in UI.
         return self._position
 
     @property
     def is_open(self):
         """Return True if the cover is fully open."""
-        if self._position is UNKNOWN_POSITION:
+        if self._position is None:
             return None
         return self._position == 100
 
     @property
     def is_closed(self):
         """Return True if the cover is fully closed."""
-        if self._position is UNKNOWN_POSITION:
+        if self._position is None:
             return None
         return self._position == 0
 
@@ -189,7 +194,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             CoverEntityFeature.SET_POSITION
         )
 
-    @callback
+
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
@@ -204,7 +209,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if current_state == STATE_STOPPED:
             _LOGGER.debug("Cover %s has stopped.", self._attr_name)
             self._position_estimator.stop()
-            self._position = self._position_estimator.get_position()
+            self._position = self._position_estimator.initial_position
             self._is_opening = False
             self._is_closing = False
             self._in_motion = False
@@ -212,15 +217,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self.async_write_ha_state()
             return
 
-        # Only assign a starting position when movement begins
         if current_state == STATE_OPENING:
             _LOGGER.debug("Cover %s is opening.", self._attr_name)
-            self._position_estimator.start('opening', self._position if self._position is not UNKNOWN_POSITION else 50)
+            self._position_estimator.start('opening', self._position)
             self._is_opening = True
             self._is_closing = False
         elif current_state == STATE_CLOSING:
             _LOGGER.debug("Cover %s is closing.", self._attr_name)
-            self._position_estimator.start('closing', self._position if self._position is not UNKNOWN_POSITION else 50)
+            self._position_estimator.start('closing', self._position)
             self._is_opening = False
             self._is_closing = True
 
@@ -228,7 +232,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._direction = 'opening' if current_state == STATE_OPENING else 'closing'
         self.async_write_ha_state()
 
-        # Ensure that the real-time update is started if movement starts
         if not self._movement_task or self._movement_task.done():
             self._movement_task = self.hass.async_create_task(self._update_position_in_real_time())
 
@@ -236,80 +239,36 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Periodically update the position of the cover during movement."""
         _LOGGER.debug("Starting real-time position updates for %s", self._attr_name)
         try:
-            await asyncio.sleep(0.1)  # Give the cover time to start moving
             while self._in_motion:
                 self._position = self._position_estimator.get_position()
                 _LOGGER.debug("Real-time position update for %s: %s", self._attr_name, self._position)
 
-                # Stop updating if the cover has reached the target position (0 or 100)
                 if ((self._direction == 'opening' and self._position >= 100) or
                     (self._direction == 'closing' and self._position <= 0)):
                     _LOGGER.debug("Target position reached for %s. Sending stop command.", self._attr_name)
-                    await self.async_stop_cover()  # Stop the cover when the target is reached
+                    await self.async_stop_cover()
 
                 self.async_write_ha_state()
-                await asyncio.sleep(0.5)  # Update position every 0.5 seconds for real-time effect
+                await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             _LOGGER.debug("Real-time position update for %s was cancelled", self._attr_name)
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
         _LOGGER.debug("Opening cover %s", self._attr_name)
-
-        if self._in_motion:
-            await self.async_stop_cover()
-
-        if self._movement_task is not None and not self._movement_task.done():
-            self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
-
-        self._direction = 'opening'
-        self._is_opening = True
-        self._is_closing = False
-        self._in_motion = True
-        self._position_estimator.start('opening', self._position if self._position is not UNKNOWN_POSITION else 50)
-        await self._operate_cover()
-
-        # Start real-time position updates
-        if not self._movement_task or self._movement_task.done():
-            self._movement_task = self.hass.async_create_task(self._update_position_in_real_time())
+        await self._start_movement('opening')
 
     async def async_close_cover(self, **kwargs):
         """Close the cover."""
         _LOGGER.debug("Closing cover %s", self._attr_name)
-
-        if self._in_motion:
-            await self.async_stop_cover()
-
-        if self._movement_task is not None and not self._movement_task.done():
-            self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
-
-        self._direction = 'closing'
-        self._is_opening = False
-        self._is_closing = True
-        self._in_motion = True
-        self._position_estimator.start('closing', self._position if self._position is not UNKNOWN_POSITION else 50)
-        await self._operate_cover()
-
-        # Start real-time position updates
-        if not self._movement_task or self._movement_task.done():
-            self._movement_task = self.hass.async_create_task(self._update_position_in_real_time())
+        await self._start_movement('closing')
 
     async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
         _LOGGER.debug("Stopping cover %s", self._attr_name)
 
-        # Send the stop command to the device
         await self._dataservice.api.stop_cover(self._address, self._channel, self._direction)
 
-        # Cancel any active movement task
         if self._movement_task is not None and not self._movement_task.done():
             self._movement_task.cancel()
             try:
@@ -317,17 +276,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             except asyncio.CancelledError:
                 _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
 
-        # Update the position based on the current elapsed time
         self._position_estimator.stop()
-        self._position = self._position_estimator.get_position()  # Keep the calculated position instead of setting it to None
+        self._position = self._position_estimator.initial_position
 
-        # Reset movement-related states
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
         self._direction = None
 
-        # Write the updated state to Home Assistant
         self.async_write_ha_state()
 
     async def async_set_cover_position(self, **kwargs):
@@ -340,40 +296,25 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
         _LOGGER.debug("Setting cover position for %s to: %d", self._attr_name, target_position)
 
-        # Cancel any existing movement
         if self._in_motion:
             await self.async_stop_cover()
 
-        # Determine the direction based on target position and start movement
+        # Determine the direction based on the target position
         if self._position is None:
-            # If the current position is unknown, assume the movement direction based on target position
-            if target_position > 50:
-                self._direction = 'opening'
-                self._is_opening = True
-                self._is_closing = False
-            else:
-                self._direction = 'closing'
-                self._is_opening = False
-                self._is_closing = True
-            # Keep position as unknown until real-time updates kick in
-            _LOGGER.debug("Current position for %s is unknown. Initiating movement towards target %d.", self._attr_name, target_position)
+            # If position is unknown, choose direction based on the target
+            self._direction = 'opening' if target_position > 50 else 'closing'
         else:
-            # If current position is known, determine direction normally
-            if target_position > self._position:
-                self._direction = 'opening'
-                self._is_opening = True
-                self._is_closing = False
-            else:
-                self._direction = 'closing'
-                self._is_opening = False
-                self._is_closing = True
+            self._direction = 'opening' if target_position > self._position else 'closing'
 
+        self._is_opening = self._direction == 'opening'
+        self._is_closing = self._direction == 'closing'
         self._in_motion = True
-        self._position_estimator.start(self._direction, self._position if self._position is not None else 50)
 
-        # Start real-time position updates and movement task
+        # Start the movement
+        self._position_estimator.start(self._direction, self._position)
         await self._operate_cover()
 
+        # Start real-time position updates
         if not self._movement_task or self._movement_task.done():
             self._movement_task = self.hass.async_create_task(self._update_position_to_target(target_position))
 
@@ -399,20 +340,38 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                     return
 
                 self.async_write_ha_state()
-                await asyncio.sleep(0.5)  # Update position every 0.5 seconds for real-time effect
+                await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             _LOGGER.debug("Position update to target for %s was cancelled", self._attr_name)
+
+    async def _start_movement(self, direction):
+        """Start movement in the specified direction."""
+        if self._in_motion:
+            await self.async_stop_cover()
+
+        if self._movement_task is not None and not self._movement_task.done():
+            self._movement_task.cancel()
+            try:
+                await self._movement_task
+            except asyncio.CancelledError:
+                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
+
+        self._direction = direction
+        self._is_opening = direction == 'opening'
+        self._is_closing = direction == 'closing'
+        self._in_motion = True
+        self._position_estimator.start(direction, self._position)
+        await self._operate_cover()
+
+        if not self._movement_task or self._movement_task.done():
+            self._movement_task = self.hass.async_create_task(self._update_position_in_real_time())
 
     async def _operate_cover(self):
         """Send the command to operate the cover."""
         self._in_motion = True
         if self._direction == 'opening':
-            self._is_opening = True
-            self._is_closing = False
             await self._dataservice.api.open_cover(self._address, self._channel)
         elif self._direction == 'closing':
-            self._is_opening = False
-            self._is_closing = True
             await self._dataservice.api.close_cover(self._address, self._channel)
 
         _LOGGER.debug("Operating cover %s in direction: %s", self._attr_name, self._direction)
