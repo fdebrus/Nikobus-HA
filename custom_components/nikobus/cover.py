@@ -24,20 +24,19 @@ class PositionEstimator:
         self.duration_in_seconds = duration_in_seconds
         self.start_time = None
         self.direction = None
-        self.initial_position = None
-
+        self.position = None
         _LOGGER.debug("PositionEstimator initialized with duration: %s seconds", duration_in_seconds)
 
-    def start(self, direction, initial_position):
+    def start(self, direction, position):
         """Start the movement in the given direction."""
         self.direction = direction
         self.start_time = time.monotonic()
-        self.initial_position = initial_position if initial_position is not None else (0 if direction == "opening" else 100)
-        _LOGGER.debug("Movement started in direction: %s, initial position: %s", direction, self.initial_position)
+        self.position = position if position is not None else (0 if direction == "opening" else 100)
+        _LOGGER.debug("Movement started in direction: %s, initial position: %s", direction, self.position)
 
     def get_position(self):
         """Calculate and return the current position estimate."""
-        if self.start_time is None or self.direction is None or self.initial_position is None:
+        if self.start_time is None or self.direction is None or self.position is None:
             return None
 
         # Calculate elapsed time since the movement started
@@ -46,11 +45,11 @@ class PositionEstimator:
 
         # Adjust the position based on the current direction
         if self.direction == "opening":
-            new_position = min(100, self.initial_position + progress)
+            new_position = min(100, self.position + progress)
         elif self.direction == "closing":
-            new_position = max(0, self.initial_position - progress)
+            new_position = max(0, self.position - progress)
         else:
-            new_position = self.initial_position
+            new_position = self.position
 
         # Clamp the position between 0 and 100
         new_position = max(0, min(100, int(new_position)))
@@ -61,17 +60,11 @@ class PositionEstimator:
     def stop(self):
         """Stop the movement and finalize the position."""
         if self.start_time is not None:
-            self.initial_position = self.get_position()
-
-            # Ensure the position is correctly set to either 0 or 100 if it reaches the limits
-            if self.initial_position >= 100:
-                self.initial_position = 100
-            elif self.initial_position <= 0:
-                self.initial_position = 0
+            self.position = self.get_position()
 
         self.direction = None
         self.start_time = None
-        _LOGGER.debug("Movement stopped. Current estimated position: %s", self.initial_position)
+        _LOGGER.debug("Movement stopped. Current estimated position: %s", self.position)
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
@@ -209,7 +202,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if current_state == STATE_STOPPED:
             _LOGGER.debug("Cover %s has stopped.", self._attr_name)
             self._position_estimator.stop()
-            self._position = self._position_estimator.initial_position
+            self._position = self._position_estimator.position
             self._is_opening = False
             self._is_closing = False
             self._in_motion = False
@@ -277,7 +270,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
 
         self._position_estimator.stop()
-        self._position = self._position_estimator.initial_position
+        self._position = self._position_estimator.position
 
         self._is_opening = False
         self._is_closing = False
@@ -299,22 +292,23 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if self._in_motion:
             await self.async_stop_cover()
 
-        # Determine the direction based on the target position
+        # If the position is unknown, assume a default midpoint (50%)
         if self._position is None:
-            # If position is unknown, choose direction based on the target
-            self._direction = 'opening' if target_position > 50 else 'closing'
-        else:
-            self._direction = 'opening' if target_position > self._position else 'closing'
+            _LOGGER.debug("Position is unknown for %s. Assuming midpoint (50)", self._attr_name)
+            self._position = 50  # Assume a midpoint if unknown
+
+        # Determine direction based on the target vs. current position
+        self._direction = 'opening' if target_position > self._position else 'closing'
 
         self._is_opening = self._direction == 'opening'
         self._is_closing = self._direction == 'closing'
         self._in_motion = True
 
-        # Start the movement
+        # Start the position estimation and movement
         self._position_estimator.start(self._direction, self._position)
         await self._operate_cover()
 
-        # Start real-time position updates
+        # Start real-time position updates towards the target
         if not self._movement_task or self._movement_task.done():
             self._movement_task = self.hass.async_create_task(self._update_position_to_target(target_position))
 
@@ -324,15 +318,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         try:
             while self._in_motion:
                 # Update the estimated position
-                if self._position is None:
-                    self._position = 50  # Start estimating from midpoint if position is unknown
-
                 self._position = self._position_estimator.get_position()
                 _LOGGER.debug("Real-time position update for %s: %s", self._attr_name, self._position)
 
                 # Check if the cover has reached or passed the target position
                 if ((self._direction == 'opening' and self._position >= target_position) or
-                        (self._direction == 'closing' and self._position <= target_position)):
+                    (self._direction == 'closing' and self._position <= target_position)):
                     _LOGGER.debug("Target position %d reached for %s. Stopping movement.", target_position, self._attr_name)
                     await self.async_stop_cover()
                     self._position = target_position  # Ensure position is set exactly to target
