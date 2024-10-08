@@ -20,6 +20,34 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+def _validate_connection_string(connection_string: str) -> bool:
+    """Validate the connection string, supporting both IP and serial connections."""
+    try:
+        # Validate IP connection
+        ip, port = connection_string.split(':')
+        ipaddress.ip_address(ip)
+        port = int(port)
+
+        if port < 1 or port > 65535:
+            return False
+
+        # Test IP connection
+        with socket.create_connection((ip, port), timeout=5):
+            pass
+        return True
+    except (ValueError, socket.error) as e:
+        _LOGGER.error(f"IP/Port validation error: {e}")
+        
+        # Validate Serial connection
+        if re.match(r'^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$', connection_string):
+            if os.path.exists(connection_string) and os.access(connection_string, os.R_OK | os.W_OK):
+                return True
+            else:
+                _LOGGER.error(f"Serial device not found or no access: {connection_string}")
+                return False
+
+    return False
+
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for the Nikobus integration."""
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
@@ -33,8 +61,8 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             connection_string = user_input.get(CONF_CONNECTION_STRING, "")
             has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
 
-            if not self._validate_connection_string(connection_string):
-                if re.match(r'^/dev/tty(USB|S)\d+$', connection_string):
+            if not _validate_connection_string(connection_string):
+                if re.match(r'^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$', connection_string):
                     errors[CONF_CONNECTION_STRING] = 'device_not_found_or_no_access'
                 else:
                     errors[CONF_CONNECTION_STRING] = 'invalid_connection'
@@ -91,34 +119,6 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         title = f"Nikobus - {data.get(CONF_CONNECTION_STRING, 'Unknown Connection')}"
         return self.async_create_entry(title=title, data=data)
 
-    def _validate_connection_string(self, connection_string: str) -> bool:
-        """Validate the connection string, supporting both IP and serial connections."""
-        try:
-            # Validate IP connection
-            ip, port = connection_string.split(':')
-            ipaddress.ip_address(ip)
-            port = int(port)
-
-            if port < 1 or port > 65535:
-                return False
-
-            # Test IP connection
-            with socket.create_connection((ip, port), timeout=5):
-                pass
-            return True
-        except (ValueError, socket.error) as e:
-            _LOGGER.error(f"IP/Port validation error: {e}")
-            
-            # Validate Serial connection
-            if re.match(r'^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$', connection_string):
-                if os.path.exists(connection_string) and os.access(connection_string, os.R_OK | os.W_OK):
-                    return True
-                else:
-                    _LOGGER.error(f"Serial device not found or no access: {connection_string}")
-                    return False
-
-        return False
-
     @staticmethod
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
@@ -158,8 +158,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
             refresh_interval = user_input.get(CONF_REFRESH_INTERVAL, 120)
 
-            if not self._validate_connection_string(connection_string):
-                if re.match(r'^/dev/tty(USB|S)\d+$', connection_string):
+            if not _validate_connection_string(connection_string):
+                if re.match(r'^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$', connection_string):
                     errors[CONF_CONNECTION_STRING] = 'device_not_found_or_no_access'
                 else:
                     errors[CONF_CONNECTION_STRING] = 'invalid_connection'
