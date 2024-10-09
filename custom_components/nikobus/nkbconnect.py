@@ -5,6 +5,7 @@ import asyncio
 import serial_asyncio
 import ipaddress
 import re
+from serial import SerialException 
 
 _LOGGER = logging.getLogger(__name__)
 __version__ = '0.1'
