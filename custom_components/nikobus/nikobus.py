@@ -182,27 +182,39 @@ class Nikobus:
     def get_light_state(self, address: str, channel: int) -> bool:
         """Get the state of a light based on its address and channel"""
         return self.get_bytearray_state(address, channel) != 0x00
-    
+
     def get_light_brightness(self, address: str, channel: int) -> int:
         """Get the brightness of a light based on its address and channel"""
         return self.get_bytearray_state(address, channel)
 
     async def turn_on_light(self, address: str, channel: int, brightness: int) -> None:
         """Turn on a light specified by its address and channel with the given brightness"""
+        current_brightness = self.get_light_brightness(address, channel)
+    
+        # Only turn on the feedback LED if the light is currently off (i.e., brightness == 0)
+        if current_brightness == 0:
+            channel_info = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]
+            led_on = channel_info.get("led_on")
+            if led_on:
+                await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
+    
+        # Set the new brightness and light state
         self.set_bytearray_state(address, channel, brightness)
-        channel_info = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]
-        led_on = channel_info.get("led_on")
-        if led_on:
-            await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
         await self.nikobus_command_handler.set_output_state(address, channel, brightness)
 
     async def turn_off_light(self, address: str, channel: int) -> None:
         """Turn off a light specified by its address and channel"""
+        current_brightness = self.get_light_brightness(address, channel)
+    
+        # Only turn off the feedback LED if the light is currently on (i.e., brightness != 0)
+        if current_brightness != 0:
+            channel_info = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]
+            led_off = channel_info.get("led_off")
+            if led_off:
+                await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
+    
+        # Set the light state to off (brightness = 0)
         self.set_bytearray_state(address, channel, 0x00)
-        channel_info = self.dict_module_data["dimmer_module"][address]["channels"][channel - 1]
-        led_off = channel_info.get("led_off")
-        if led_off:
-            await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
         await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
 #### COVERS
