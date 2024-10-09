@@ -292,14 +292,27 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if self._in_motion:
             await self.async_stop_cover()
 
-        # If the position is unknown, assume a default midpoint (50%)
+        # If the position is unknown, fully open the cover to determine its position
         if self._position is None:
-            _LOGGER.debug("Position is unknown for %s. Assuming midpoint (50)", self._attr_name)
-            self._position = 50  # Assume a midpoint if unknown
+            _LOGGER.debug("Position is unknown for %s. Fully opening the cover to determine position.", self._attr_name)
+
+            # Open the cover fully to set the position to 100%
+            self._direction = 'opening'
+            self._is_opening = True
+            self._is_closing = False
+            self._in_motion = True
+
+            self._position_estimator.start(self._direction, 0)  # Start from 0 and fully open
+            await self._operate_cover()
+
+            # Wait until the cover is fully open (position reaches 100)
+            await self._update_position_to_target(100)
+
+        # Now that position is known, move to the desired target position
+        _LOGGER.debug("Position is now known for %s. Moving to target position: %d", self._attr_name, target_position)
 
         # Determine direction based on the target vs. current position
         self._direction = 'opening' if target_position > self._position else 'closing'
-
         self._is_opening = self._direction == 'opening'
         self._is_closing = self._direction == 'closing'
         self._in_motion = True
