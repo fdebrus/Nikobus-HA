@@ -82,6 +82,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             i,
             channel["description"],
             channel.get("operation_time", "00"),
+            channel.get("initial_position", None),
         )
         for address, cover_module_data in roller_modules.items()
         for i, channel in enumerate(cover_module_data.get("channels", []), start=1)
@@ -90,11 +91,10 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
     async_add_entities(entities)
 
-
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     """Represents a Nikobus cover entity within Home Assistant."""
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, operation_time) -> None:
+    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, operation_time, initial_position -> None:
         """Initialize the cover entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self.hass = hass
@@ -103,11 +103,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._model = model
         self._address = address
         self._channel = channel
+        self._position = initial_position
         self._direction = None
         self._previous_state = None
 
         self._position_estimator = PositionEstimator(duration_in_seconds=float(operation_time))
-        self._position = None  # Start with unknown position
 
         self._is_opening = False
         self._is_closing = False
