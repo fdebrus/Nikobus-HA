@@ -94,7 +94,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     """Represents a Nikobus cover entity within Home Assistant."""
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, operation_time, initial_position -> None:
+    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description, operation_time, initial_position) -> None:
         """Initialize the cover entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self.hass = hass
