@@ -91,6 +91,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 
     async_add_entities(entities)
 
+
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     """Represents a Nikobus cover entity within Home Assistant."""
 
@@ -103,11 +104,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self._model = model
         self._address = address
         self._channel = channel
-        self._position = initial_position
         self._direction = None
         self._previous_state = None
 
         self._position_estimator = PositionEstimator(duration_in_seconds=float(operation_time))
+        self._position = float(initial_position) if initial_position not in (None, '') else None
 
         self._is_opening = False
         self._is_closing = False
@@ -191,18 +192,25 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         current_state = self._dataservice.api.get_cover_state(self._address, self._channel)
-        _LOGGER.debug("Coordinator update received for %s. Current state: %s", self._attr_name, current_state)
+        _LOGGER.debug("Coordinator update received for %s. Current state: %s Position: %s", self._attr_name, current_state, self._position)
 
         if current_state == self._previous_state:
             _LOGGER.debug("No state change detected for %s. Skipping update.", self._attr_name)
             return
+
+        # Check if the state was previously moving (either opening or closing)
+        was_moving = self._previous_state in [STATE_OPENING, STATE_CLOSING]
 
         self._previous_state = current_state
 
         if current_state == STATE_STOPPED:
             _LOGGER.debug("Cover %s has stopped.", self._attr_name)
             self._position_estimator.stop()
-            self._position = self._position_estimator.position
+
+            # Only update the position if the previous state was moving
+            if was_moving:
+                self._position = self._position_estimator.position
+                
             self._is_opening = False
             self._is_closing = False
             self._in_motion = False
@@ -292,27 +300,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if self._in_motion:
             await self.async_stop_cover()
 
-        # If the position is unknown, fully open the cover to determine its position
+        # If the position is unknown, assume a default midpoint (50%)
         if self._position is None:
-            _LOGGER.debug("Position is unknown for %s. Fully opening the cover to determine position.", self._attr_name)
-
-            # Open the cover fully to set the position to 100%
-            self._direction = 'opening'
-            self._is_opening = True
-            self._is_closing = False
-            self._in_motion = True
-
-            self._position_estimator.start(self._direction, 0)  # Start from 0 and fully open
-            await self._operate_cover()
-
-            # Wait until the cover is fully open (position reaches 100)
-            await self._update_position_to_target(100)
-
-        # Now that position is known, move to the desired target position
-        _LOGGER.debug("Position is now known for %s. Moving to target position: %d", self._attr_name, target_position)
+            _LOGGER.debug("Position is unknown for %s. Assuming midpoint (50)", self._attr_name)
+            self._position = 50  # Assume a midpoint if unknown
 
         # Determine direction based on the target vs. current position
         self._direction = 'opening' if target_position > self._position else 'closing'
+
         self._is_opening = self._direction == 'opening'
         self._is_closing = self._direction == 'closing'
         self._in_motion = True
