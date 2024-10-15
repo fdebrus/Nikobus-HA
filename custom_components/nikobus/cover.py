@@ -398,8 +398,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Send the command to operate the cover."""
         _LOGGER.debug("Operating cover %s in direction: %s", self._attr_name, self._direction)
 
-        
-
         if self._direction == 'opening':
             await self._dataservice.api.open_cover(self._address, self._channel)
         elif self._direction == 'closing':
