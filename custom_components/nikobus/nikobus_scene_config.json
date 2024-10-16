@@ -1,0 +1,12 @@
+{
+    "scene": [
+        {
+            "id": "scene_1",
+            "description": "Turn on living lights",
+            "channels": [
+                {"module_id": "0E6C", "channel":"1", "state":"50"},
+                {"module_id": "0E6C", "channel":"2", "state":"50"}
+            ]
+        }
+    ]
+}

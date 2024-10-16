@@ -32,6 +32,7 @@ class Nikobus:
         
         self.dict_module_data = {}
         self.dict_button_data = {}
+        self.dict_scene_data = {}
 
     @classmethod
     async def create(cls, hass, config_entry, connection_string, async_event_handler):
@@ -49,6 +50,7 @@ class Nikobus:
             try:
                 self.dict_module_data = await self._nikobus_config.load_json_data("nikobus_module_config.json", "module")
                 self.dict_button_data = await self._nikobus_config.load_json_data("nikobus_button_config.json", "button")
+                self.dict_scene_data = await self._nikobus_config.load_json_data("nikobus_scene_config.json", "scene")
 
                 for module_type, modules in self.dict_module_data.items():
                     for address, module_info in modules.items():
@@ -152,6 +154,27 @@ class Nikobus:
             _LOGGER.debug(f'New value set for array {self._nikobus_module_states[address]}.')
         else:
             _LOGGER.error(f'Address {address} not found in Nikobus module')
+
+#### SCENES
+    async def set_output_states_for_module(self, address: str, channel_states: bytearray) -> None:
+        """Set the output states for a module with multiple channel updates at once."""
+        _LOGGER.debug(f'Setting output states for module {address}: {channel_states.hex()}')
+
+        # You will need to determine the correct group (1 or 2) based on the number of channels
+        if len(channel_states) <= 6:
+            group = 1
+        else:
+            group = 2
+
+        # Prepare the values to send (e.g., first 6 bytes for group 1, last 6 for group 2)
+        values = channel_states[:6] if group == 1 else channel_states[6:12]
+    
+        # Create the Nikobus command with the appropriate command code
+        command_code = 0x15 if group == 1 else 0x16
+        command = make_pc_link_command(command_code, address, values)
+
+        # Queue the command to be sent to Nikobus
+        await self.nikobus_command_handler.queue_command(command)
 
 #### SWITCHES
     def get_switch_state(self, address: str, channel: int) -> bool:

@@ -66,7 +66,6 @@ class PositionEstimator:
         self.start_time = None
         _LOGGER.debug("Movement stopped. Current estimated position: %s", self.position)
 
-
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
@@ -81,7 +80,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             address,
             i,
             channel["description"],
-            channel.get("operation_time", "00"),
+            channel.get("operation_time", "30"),
             channel.get("initial_position", None),
         )
         for address, cover_module_data in roller_modules.items()
@@ -90,7 +89,6 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     ]
 
     async_add_entities(entities)
-
 
 class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
     """Represents a Nikobus cover entity within Home Assistant."""
@@ -208,6 +206,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             _LOGGER.debug("Cover %s has stopped.", self._attr_name)
             self._position_estimator.stop()
 
+            # Cancel the movement task if it's running
+            if self._movement_task is not None and not self._movement_task.done():
+                self._movement_task.cancel()
+
             # Only update the position if the previous state was moving
             if was_moving:
                 self._position = self._position_estimator.position
@@ -225,6 +227,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             self._direction = 'opening'
             self._is_opening = True
             self._is_closing = False
+
         elif current_state == STATE_CLOSING:
             _LOGGER.debug("Cover %s is closing.", self._attr_name)
             self._position_estimator.start('closing', self._position)
@@ -237,7 +240,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         self.async_write_ha_state()
 
         if not self._movement_task or self._movement_task.done():
-            # Schedule the task to update position in real-time using a Future
+            # Schedule the task to update position in real-time
             self._movement_task = asyncio.create_task(self._update_position_in_real_time())
 
     async def _update_position_in_real_time(self):
@@ -274,13 +277,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
 
         await self._dataservice.api.stop_cover(self._address, self._channel, self._direction)
 
-        # Cancel and await the movement future if it is still running
+        # Cancel and await the movement task if it is still running
         if self._movement_task is not None and not self._movement_task.done():
             self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
 
         self._position_estimator.stop()
         self._position = self._position_estimator.position
@@ -372,7 +371,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         if self._in_motion:
             await self.async_stop_cover()
 
-        # Cancel and await previous movement future if it is still running
+        # Cancel and await previous movement task if it is still running
         if self._movement_task is not None and not self._movement_task.done():
             self._movement_task.cancel()
             try:
@@ -390,7 +389,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         # Operate the cover based on the direction
         await self._operate_cover()
 
-        # Schedule real-time position updates using a Future
+        # Schedule real-time position updates
         if not self._movement_task or self._movement_task.done():
             self._movement_task = asyncio.create_task(self._update_position_in_real_time())
 

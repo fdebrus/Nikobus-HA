@@ -2,7 +2,7 @@
 
 import logging
 from homeassistant.core import HomeAssistant
-from homeassistant.components import switch, light, cover, binary_sensor, button
+from homeassistant.components import switch, light, cover, binary_sensor, button, scene
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
@@ -10,7 +10,7 @@ from .const import DOMAIN, CONF_HAS_FEEDBACK_MODULE
 from .coordinator import NikobusDataCoordinator, NikobusConnectError
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN, binary_sensor.DOMAIN, button.DOMAIN]
+PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN, binary_sensor.DOMAIN, button.DOMAIN, scene.DOMAIN]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration from a config entry."""
@@ -55,3 +55,4 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
     await coordinator.async_config_entry_updated(entry)
     _LOGGER.debug("Nikobus integration options updated")
+    
