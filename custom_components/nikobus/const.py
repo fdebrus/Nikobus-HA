@@ -28,7 +28,7 @@ COMMAND_PROCESSED = ('$0515', '$0516') # Confirms the command has been received 
 CONTROLLER_ADDRESS = '$18' # Prefix the Nikobus PC-Link address following an '#A' request
 
 # Command
-COMMAND_EXECUTION_DELAY = 1  # Delay between command executions in seconds
+COMMAND_EXECUTION_DELAY = 0.7  # Delay between command executions in seconds
 COMMAND_ACK_WAIT_TIMEOUT = 15  # Timeout for waiting for command ACK in seconds
 COMMAND_ANSWER_WAIT_TIMEOUT = 5  # Timeout for waiting for command answer in each loop
 MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an answer

@@ -143,38 +143,40 @@ class Nikobus:
         else:
             _LOGGER.error(f'Address {address} not found in Nikobus module')
 
-    def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
+    def set_bytearray_group_state(self, address: str, group: int, byte_value: bytearray) -> None:
         """Update the state of a specific group"""
-        byte_value = bytearray.fromhex(value)
         if address in self._nikobus_module_states:
             if int(group) == 1:
                 self._nikobus_module_states[address][:6] = byte_value
             elif int(group) == 2:
                 self._nikobus_module_states[address][6:12] = byte_value
-            _LOGGER.debug(f'New value set for array {self._nikobus_module_states[address]}.')
+            _LOGGER.debug(f'New byte value set for module {address}, group {group}: {self._nikobus_module_states[address].hex()}')
         else:
             _LOGGER.error(f'Address {address} not found in Nikobus module')
+
+    def get_module_type(self, module_id: str) -> str:
+        """Determine the module type based on the module ID."""
+        # Check in switch modules
+        if 'switch_module' in self.dict_module_data:
+            if module_id in self.dict_module_data['switch_module']:
+                return "switch"
+        # Check in dimmer modules
+        if 'dimmer_module' in self.dict_module_data:
+            if module_id in self.dict_module_data['dimmer_module']:
+                return "dimmer"
+        # Check in cover/roller modules
+        if 'roller_module' in self.dict_module_data:
+            if module_id in self.dict_module_data['roller_module']:
+                return "cover"
+        # If not found, return unknown
+        _LOGGER.error(f"Module ID {module_id} not found in known module types")
+        return "unknown"
 
 #### SCENES
     async def set_output_states_for_module(self, address: str, channel_states: bytearray) -> None:
         """Set the output states for a module with multiple channel updates at once."""
         _LOGGER.debug(f'Setting output states for module {address}: {channel_states.hex()}')
-
-        # You will need to determine the correct group (1 or 2) based on the number of channels
-        if len(channel_states) <= 6:
-            group = 1
-        else:
-            group = 2
-
-        # Prepare the values to send (e.g., first 6 bytes for group 1, last 6 for group 2)
-        values = channel_states[:6] if group == 1 else channel_states[6:12]
-    
-        # Create the Nikobus command with the appropriate command code
-        command_code = 0x15 if group == 1 else 0x16
-        command = make_pc_link_command(command_code, address, values)
-
-        # Queue the command to be sent to Nikobus
-        await self.nikobus_command_handler.queue_command(command)
+        await self.nikobus_command_handler.set_output_states(address, channel_states)
 
 #### SWITCHES
     def get_switch_state(self, address: str, channel: int) -> bool:
