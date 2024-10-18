@@ -65,6 +65,8 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   - Channels may belong to group 1 (channels 1-6) or group 2 (channels 7-12), and the integration updates the appropriate group based on the channels defined in the scene.
   - Once defined, a scene can be triggered directly from Home Assistant or used in automations.
 
+Acceptable states for outputs
+
   - Outputs for switch module accept "on" or "off" as values
   - Outputs for dimmer module accept anything between "0" and "255" as values
   - Outputs for shutter module accept anything between "0" closed and "100" opened as values
