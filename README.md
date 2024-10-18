@@ -69,7 +69,7 @@ Acceptable states for outputs
 
   - Outputs for switch module accept "on" or "off" as values
   - Outputs for dimmer module accept anything between "0" and "255" as values
-  - Outputs for shutter module accept anything between "0" closed and "100" opened as values
+  - Outputs for shutter module accept "2" close and "1" open as values
 
 **Important Note:** 
 
