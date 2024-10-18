@@ -124,7 +124,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 _LOGGER.debug(f"Fetched current state for module {module_id}: {module_changes[module_id].hex()}")
 
             # Update the specific channel with the new value
-            module_changes[module_id][channel - 1] = value
+            module_changes[module_id][channel - 1] = int(value)
 
         # Send the combined command for each module after updating only the specified channels
         for module_id, channel_states in module_changes.items():
@@ -145,14 +145,16 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
             # Update group 1 (channels 1-6) if there was a change
             if group1_updated:
-                _LOGGER.debug(f"Updating group 1 for module {module_id} with values: {module_changes[module_id][:6].hex()}")
-                self._dataservice.api.set_bytearray_group_state(module_id, group=1, value=module_changes[module_id][:6].hex())
+                hex_value = module_changes[module_id][:6].hex()
+                _LOGGER.debug(f"Updating group 1 for module {module_id} with values: {hex_value}")
+                self._dataservice.api.set_bytearray_group_state(module_id, group=1, value=hex_value)
 
             # Update group 2 (channels 7-12) if there was a change
             if group2_updated:
-                _LOGGER.debug(f"Updating group 2 for module {module_id} with values: {module_changes[module_id][6:12].hex()}")
-                self._dataservice.api.set_bytearray_group_state(module_id, group=2, value=module_changes[module_id][6:12].hex())
+                hex_value = module_changes[module_id][6:12].hex()
+                _LOGGER.debug(f"Updating group 2 for module {module_id} with values: {hex_value}")
+                self._dataservice.api.set_bytearray_group_state(module_id, group=2, value=hex_value)
 
             # Finally, send the updated state to the module
-            _LOGGER.debug(f"Sending updated state to module {module_id}: {module_changes[module_id].hex()}")
+            _LOGGER.debug(f"Sending updated state to module {module_id}: {module_changes[module_id]}")
             await self._dataservice.api.set_output_states_for_module(module_id, module_changes[module_id])

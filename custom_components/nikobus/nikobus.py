@@ -143,14 +143,15 @@ class Nikobus:
         else:
             _LOGGER.error(f'Address {address} not found in Nikobus module')
 
-    def set_bytearray_group_state(self, address: str, group: int, byte_value: bytearray) -> None:
+    def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
         """Update the state of a specific group"""
+        byte_value = bytearray.fromhex(value)
         if address in self._nikobus_module_states:
             if int(group) == 1:
                 self._nikobus_module_states[address][:6] = byte_value
             elif int(group) == 2:
                 self._nikobus_module_states[address][6:12] = byte_value
-            _LOGGER.debug(f'New byte value set for module {address}, group {group}: {self._nikobus_module_states[address].hex()}')
+            _LOGGER.debug(f'New value set for array {self._nikobus_module_states[address]}.')
         else:
             _LOGGER.error(f'Address {address} not found in Nikobus module')
 
