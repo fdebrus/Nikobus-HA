@@ -92,11 +92,9 @@ other example with shutters
 }
 ```
 
-  In this configuration, the scene sets dimmer values on module 0E6C for two channels: channel 1 at 50 and channel 2 at 100.
-
   - Scene activation will only modify the channels that are included in the scene configuration, leaving others unaffected.
   - Channels may belong to group 1 (channels 1-6) or group 2 (channels 7-12), and the integration updates the appropriate group based on the channels defined in the scene.
-  - Once defined, a scene can be triggered directly from Home Assistant or used in automations.
+  - Once defined, a scene can be triggered directly from Home Assistant used in automations or linked to a Nikobus button, etc...
 
 Acceptable states for outputs
 
