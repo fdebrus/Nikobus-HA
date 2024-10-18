@@ -42,7 +42,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 
 - **HomeAssistant Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
 
-  Scenes can be defined with specific modules and channels to be controlled, including the state or value for each module. States for dimmers and shutters can be expressed as 0-255 / shutters 0-100, while switches can be set to "on" or "off".
+  Scenes can be defined with specific modules and channels to be controlled, including the state or value for each module. States for dimmers and shutters can be expressed as 0-255 / shutters 1 (open) or 2 (close), while switches can be set to "on" or "off".
 
   Example Scene Configuration:
 ``` json
@@ -59,6 +59,39 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
     ]
   }
 ```
+
+other example with shutters
+``` json
+{
+    "scene": [
+        {
+            "id": "scene_close_all_shutters",
+            "description": "Close all shutters",
+            "channels": [
+                {"module_id": "9105", "channel":"1", "state":"2"},
+                {"module_id": "9105", "channel":"2", "state":"2"},
+                {"module_id": "9105", "channel":"3", "state":"2"},
+                {"module_id": "9105", "channel":"4", "state":"2"},
+                {"module_id": "9105", "channel":"5", "state":"2"},
+                {"module_id": "9105", "channel":"6", "state":"2"}
+            ]
+        },
+        {
+            "id": "scene_open_all_shutters",
+            "description": "Open all shutters",
+            "channels": [
+                {"module_id": "9105", "channel":"1", "state":"1"},
+                {"module_id": "9105", "channel":"2", "state":"1"},
+                {"module_id": "9105", "channel":"3", "state":"1"},
+                {"module_id": "9105", "channel":"4", "state":"1"},
+                {"module_id": "9105", "channel":"5", "state":"1"},
+                {"module_id": "9105", "channel":"6", "state":"1"}
+            ]
+        }
+    ]
+}
+```
+
   In this configuration, the scene sets dimmer values on module 0E6C for two channels: channel 1 at 50 and channel 2 at 100.
 
   - Scene activation will only modify the channels that are included in the scene configuration, leaving others unaffected.
