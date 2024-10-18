@@ -40,7 +40,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
     - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
-- **Nikobus Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
+- **HomeAssistant Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
 
   Scenes can be defined with specific modules and channels to be controlled, including the state or value for each module. States for dimmers and shutters can be expressed as 0-255 / shutters 0-100, while switches can be set to "on" or "off".
 
