@@ -1,11 +1,11 @@
 {
     "scene": [
         {
-            "id": "scene_1",
+            "id": "scene_turn_on_living_lights",
             "description": "Turn on living lights",
             "channels": [
-                {"module_id": "0E6C", "channel":"1", "state":"50"},
-                {"module_id": "0E6C", "channel":"2", "state":"50"}
+                {"module_id": "0E6C", "channel":"1", "state":"255"},
+                {"module_id": "0E6C", "channel":"2", "state":"255"}
             ]
         }
     ]
