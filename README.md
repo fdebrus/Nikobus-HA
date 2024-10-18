@@ -67,7 +67,9 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
 
 
 
-**Important Note:** The integration maintains in sync with Nikobus using two methods:
+**Important Note:** 
+
+The integration maintains in sync with Nikobus using two methods:
     
 **a**. Any physical button must be included in the button_config file. This ensures that when the button is pressed, it triggers a refresh of the impacted module(s) and immediately updates Home Assistant (HA).
     
