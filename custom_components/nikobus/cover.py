@@ -197,6 +197,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
             _LOGGER.debug("No state change detected for %s. Skipping update.", self._attr_name)
             return
 
+        # Handle duplicate commands from physical buttons
+        if (current_state == STATE_OPENING and self._is_opening) or (current_state == STATE_CLOSING and self._is_closing):
+            _LOGGER.debug("Received duplicate command for %s. Already moving in direction: %s. Ignoring.", self._attr_name, current_state)
+            return
+
         # Check if the state was previously moving (either opening or closing)
         was_moving = self._previous_state in [STATE_OPENING, STATE_CLOSING]
 
