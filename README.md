@@ -1,4 +1,4 @@
-# Nikobus Integration for Home Assistant (2024.10.18)
+# Nikobus Integration for Home Assistant (2024.10.22)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
@@ -49,11 +49,11 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   {
     "scene": [
       {
-        "id": "scene_turn_on_living_lights",
-        "description": "Turn on living lights",
+        "id": "scene_turn_on_living_dimmer_lights",
+        "description": "Turn on living dimmer lights",
         "channels": [
-          {"module_id": "0E6C", "channel": "1", "state": "50"},
-          {"module_id": "0E6C", "channel": "2", "state": "100"}
+          {"module_id": "0E6C", "channel": "1", "state": "150"},
+          {"module_id": "0E6C", "channel": "2", "state": "200"}
         ]
       }
     ]
@@ -68,24 +68,24 @@ other example with shutters
             "id": "scene_close_all_shutters",
             "description": "Close all shutters",
             "channels": [
-                {"module_id": "9105", "channel":"1", "state":"2"},
-                {"module_id": "9105", "channel":"2", "state":"2"},
-                {"module_id": "9105", "channel":"3", "state":"2"},
-                {"module_id": "9105", "channel":"4", "state":"2"},
-                {"module_id": "9105", "channel":"5", "state":"2"},
-                {"module_id": "9105", "channel":"6", "state":"2"}
+                {"module_id": "9105", "channel":"1", "state":"close"},
+                {"module_id": "9105", "channel":"2", "state":"close"},
+                {"module_id": "9105", "channel":"3", "state":"close"},
+                {"module_id": "9105", "channel":"4", "state":"close"},
+                {"module_id": "9105", "channel":"5", "state":"close"},
+                {"module_id": "9105", "channel":"6", "state":"close"}
             ]
         },
         {
             "id": "scene_open_all_shutters",
             "description": "Open all shutters",
             "channels": [
-                {"module_id": "9105", "channel":"1", "state":"1"},
-                {"module_id": "9105", "channel":"2", "state":"1"},
-                {"module_id": "9105", "channel":"3", "state":"1"},
-                {"module_id": "9105", "channel":"4", "state":"1"},
-                {"module_id": "9105", "channel":"5", "state":"1"},
-                {"module_id": "9105", "channel":"6", "state":"1"}
+                {"module_id": "9105", "channel":"1", "state":"open"},
+                {"module_id": "9105", "channel":"2", "state":"open"},
+                {"module_id": "9105", "channel":"3", "state":"open"},
+                {"module_id": "9105", "channel":"4", "state":"open"},
+                {"module_id": "9105", "channel":"5", "state":"open"},
+                {"module_id": "9105", "channel":"6", "state":"open"}
             ]
         }
     ]
@@ -99,8 +99,8 @@ other example with shutters
 Acceptable states for outputs
 
   - Outputs for switch module accept "on" or "off" as values
-  - Outputs for dimmer module accept anything between "0" and "255" as values
-  - Outputs for shutter module accept "2" close and "1" open as values
+  - Outputs for dimmer module accept anything between "0" OFF and "255" 100% ON as values
+  - Outputs for shutter module accept "close" and "open" as values
 
 **Important Note:** 
 
