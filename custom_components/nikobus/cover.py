@@ -282,12 +282,16 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
                 # Stop the movement if the duration is reached
                 if duration and elapsed >= duration:
                     _LOGGER.debug(f"Operation time reached for {self._attr_name}. Stopping movement.")
+                    # Trigger stop, respecting whether the movement is button-initiated or not
+                    if self._is_button_initiated:
+                        # Reset flag to allow stop command to be sent
+                        self._is_button_initiated = False
                     await self.async_stop_cover()
                     break
 
                 # Stop movement if target position is reached
                 if (self._direction == 'opening' and self._position >= 100) or \
-                (self._direction == 'closing' and self._position <= 0):
+                    (self._direction == 'closing' and self._position <= 0):
                     _LOGGER.debug("Target position reached for %s. Stopping movement.", self._attr_name)
                     await self.async_stop_cover()
                     break
@@ -317,21 +321,24 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity):
         """Stop the cover."""
         _LOGGER.debug("Stopping cover %s", self._attr_name)
 
-        # Only send the stop command to Nikobus if the movement was initiated by Home Assistant
+        # Send stop command to Nikobus if movement was initiated by Home Assistant or if duration was specified for a button press
         if not self._is_button_initiated:
             await self._dataservice.api.stop_cover(self._address, self._channel, self._direction)
 
+        # Finalize the position estimate and stop all movement-related tasks
         self._position_estimator.stop()
         self._position = self._position_estimator.position
 
         if self._movement_task is not None and not self._movement_task.done():
             self._movement_task.cancel()
 
+        # Reset motion and direction states
         self._is_opening = False
         self._is_closing = False
         self._in_motion = False
         self._direction = None
 
+        # Update the Home Assistant state
         self.async_write_ha_state()
 
     async def async_set_cover_position(self, **kwargs):
