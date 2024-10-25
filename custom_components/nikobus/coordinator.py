@@ -35,14 +35,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Nikobus",
-            update_method=self._get_update_method(),
+            update_method=self.async_update_data,
             update_interval=update_interval,
         )
         self._unsub_update_listener = None
-
-    def _get_update_method(self):
-        """Return the appropriate update method based on the presence of the feedback module."""
-        return self.initial_update_data if self.has_feedback_module else self.async_update_data
 
     async def async_config_entry_first_refresh(self):
         """Handle the first data refresh and set up the update listener."""
@@ -55,6 +51,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler)
             self.hass.async_create_task(self.api.command_handler())
             self.hass.async_create_task(self.api.listen_for_events())
+            await self.async_refresh()
         except NikobusConnectionError as e:
             _LOGGER.error("Failed to connect to Nikobus: %s", e)
             raise NikobusConnectError("Failed to connect to Nikobus.", original_exception=e)
@@ -70,20 +67,26 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def async_event_handler(self, event, data):
         """Handle events received from the Nikobus system."""
-        if event == "ha_button_pressed":
-            await self.api.nikobus_command_handler.queue_command(f'#N{data}\r#E1')
-        elif event == "nikobus_button_pressed":
-            self.hass.bus.async_fire('nikobus_button_pressed', {'address': data})
-        self.async_update_listeners()
+        address = data.get('address')
+        operation_time = data.get('operation_time')
+        impacted_module_address = data.get('impacted_module_address')
 
-    async def initial_update_data(self):
-        """Perform the initial data update from the Nikobus system."""
-        try:
-            _LOGGER.debug("Performing initial data refresh for Nikobus")
-            return await self.api.refresh_nikobus_data()
-        except NikobusDataError as e:
-            _LOGGER.error("Error fetching Nikobus data: %s", e)
-            raise UpdateFailed(f"Error fetching Nikobus data: {e}")
+        if event == "ha_button_pressed":
+            _LOGGER.debug(f"HA Button {address} pressed with operation_time: {operation_time}")
+            await self.api.nikobus_command_handler.queue_command(f'#N{address}\r#E1')
+
+        elif event == "nikobus_button_pressed":
+            _LOGGER.debug(f"Nikobus button pressed at address {address}, operation_time: {operation_time}, impacted_module_address: {impacted_module_address}")
+            self.hass.bus.async_fire('nikobus_button_pressed', {
+                'address': address,
+                'operation_time': operation_time,
+                'impacted_module_address': impacted_module_address
+            })
+        elif event == 'nikobus_refreshed':
+            _LOGGER.debug(f"Nikobus has been refreshed for module {impacted_module_address}")
+
+        _LOGGER.debug("--- UPDATING LISTENERS ---")
+        self.async_update_listeners()
 
     async def async_config_entry_updated(self, entry: ConfigEntry) -> None:
         """Handle updates to the configuration entry."""
@@ -108,7 +111,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.hass.config_entries.async_update_entry(entry, title=title)
 
             _LOGGER.info(f'Configuration updated: connection_string={self.connection_string}, '
-                         f'refresh_interval={self.refresh_interval}, has_feedback_module={self.has_feedback_module}')
+                        f'refresh_interval={self.refresh_interval}, has_feedback_module={self.has_feedback_module}')
 
     async def _async_update_coordinator_settings(self):
         """Update the coordinator's update method and interval."""

@@ -75,7 +75,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
     
             module_state_map = {
                 "switch": {"on": 255, "off": 0},
-                "cover": {"open": 2, "close": 1}
+                "cover": {"open": 1, "close": 2}
             }
     
             if module_type == "switch" or module_type == "cover":
@@ -124,20 +124,19 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
             # Check if any channel in group 1 (channels 1-6) was updated
             group1_updated = any(module_changes[module_id][i] != current_state[i] for i in range(6))
-
-            # Check if any channel in group 2 (channels 7-12) was updated
-            group2_updated = any(module_changes[module_id][i] != current_state[i] for i in range(6, 12))
-
             # Update groups if necessary
             if group1_updated:
                 hex_value = module_changes[module_id][:6].hex()
                 _LOGGER.debug(f"Updating group 1 for module {module_id} with values: {hex_value}")
                 self._dataservice.api.set_bytearray_group_state(module_id, group=1, value=hex_value)
 
-            if group2_updated:
-                hex_value = module_changes[module_id][6:12].hex()
-                _LOGGER.debug(f"Updating group 2 for module {module_id} with values: {hex_value}")
-                self._dataservice.api.set_bytearray_group_state(module_id, group=2, value=hex_value)
+            if module_type != "cover":
+                # Check if any channel in group 2 (channels 7-12) was updated
+                group2_updated = any(module_changes[module_id][i] != current_state[i] for i in range(6, 12))
+                if group2_updated:
+                    hex_value = module_changes[module_id][6:12].hex()
+                    _LOGGER.debug(f"Updating group 2 for module {module_id} with values: {hex_value}")
+                    self._dataservice.api.set_bytearray_group_state(module_id, group=2, value=hex_value)
 
             # Log the final updated state of the module and send the changes
             _LOGGER.debug(f"Sending updated state to module {module_id}: {module_changes[module_id].hex()}")

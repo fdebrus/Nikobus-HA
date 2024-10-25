@@ -126,7 +126,9 @@ class Nikobus:
             else:
                 raise ValueError(f"Invalid module group: {module_group}")
 
-            await self._async_event_handler("nikobus_refreshed", module_address)
+            await self._async_event_handler("nikobus_refreshed", {
+                    'impacted_module_address': module_address
+                })
 
         except Exception as e:
             _LOGGER.error(f"Error processing feedback data: {e}", exc_info=True)
@@ -313,6 +315,8 @@ class Nikobus:
         button_description = button.get('description')
         _LOGGER.debug(f"Processing button press for {button_description}")
 
+        operation_time = float(button.get('operation_time', 0))
+
         for impacted_module_info in button.get('impacted_module', []):
             impacted_module_address = impacted_module_info.get('address')
             impacted_group = impacted_module_info.get('group')
@@ -330,7 +334,11 @@ class Nikobus:
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
                 if value is not None:
                     self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
-                    await self._async_event_handler("nikobus_button_pressed", address)
+                    await self._async_event_handler("nikobus_button_pressed", {
+                        'address': address,
+                        'operation_time': operation_time,
+                        'impacted_module_address': impacted_module_address
+                    })
 
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group} value {value} error {e}")
