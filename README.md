@@ -1,4 +1,4 @@
-# Nikobus Integration for Home Assistant (2024.10.15)
+# Nikobus Integration for Home Assistant (2024.10.25)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
@@ -36,11 +36,75 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
       -  **nikobus_button_timer_1** (Button press detected for 1 second)
       -  **nikobus_button_timer_2** (Button press detected for 2 seconds)
       -  **nikobus_button_timer_3** (Button press detected for 3 seconds)
-        
-  - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
+   
+    - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
-**Important Note:** The integration maintains in sync with Nikobus using two methods:
+- **HomeAssistant Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
+
+  Scenes can be defined with specific modules and channels to be controlled, including the state or value for each module. States for dimmers and shutters can be expressed as 0-255 / shutters 1 (open) or 2 (close), while switches can be set to "on" or "off".
+
+  Example Scene Configuration:
+``` json
+  {
+    "scene": [
+      {
+        "id": "scene_turn_on_living_dimmer_lights",
+        "description": "Turn on living dimmer lights",
+        "channels": [
+          {"module_id": "0E6C", "channel": "1", "state": "150"},
+          {"module_id": "0E6C", "channel": "2", "state": "200"}
+        ]
+      }
+    ]
+  }
+```
+
+other example with shutters
+``` json
+{
+    "scene": [
+        {
+            "id": "scene_close_all_shutters",
+            "description": "Close all shutters",
+            "channels": [
+                {"module_id": "9105", "channel":"1", "state":"close"},
+                {"module_id": "9105", "channel":"2", "state":"close"},
+                {"module_id": "9105", "channel":"3", "state":"close"},
+                {"module_id": "9105", "channel":"4", "state":"close"},
+                {"module_id": "9105", "channel":"5", "state":"close"},
+                {"module_id": "9105", "channel":"6", "state":"close"}
+            ]
+        },
+        {
+            "id": "scene_open_all_shutters",
+            "description": "Open all shutters",
+            "channels": [
+                {"module_id": "9105", "channel":"1", "state":"open"},
+                {"module_id": "9105", "channel":"2", "state":"open"},
+                {"module_id": "9105", "channel":"3", "state":"open"},
+                {"module_id": "9105", "channel":"4", "state":"open"},
+                {"module_id": "9105", "channel":"5", "state":"open"},
+                {"module_id": "9105", "channel":"6", "state":"open"}
+            ]
+        }
+    ]
+}
+```
+
+  - Scene activation will only modify the channels that are included in the scene configuration, leaving others unaffected.
+  - Channels may belong to group 1 (channels 1-6) or group 2 (channels 7-12), and the integration updates the appropriate group based on the channels defined in the scene.
+  - Once defined, a scene can be triggered directly from Home Assistant used in automations or linked to a Nikobus button, etc...
+
+Acceptable states for outputs
+
+  - Outputs for switch module accept "on" or "off" as values
+  - Outputs for dimmer module accept anything between "0" OFF and "255" 100% ON as values
+  - Outputs for shutter module accept "close" and "open" as values
+
+**Important Note:** 
+
+The integration maintains in sync with Nikobus using two methods:
     
 **a**. Any physical button must be included in the button_config file. This ensures that when the button is pressed, it triggers a refresh of the impacted module(s) and immediately updates Home Assistant (HA).
     

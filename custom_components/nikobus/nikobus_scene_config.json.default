@@ -1,0 +1,12 @@
+{
+    "scene": [
+        {
+            "id": "scene_turn_on_living_dimmer_lights",
+            "description": "Turn on living dimmer lights",
+            "channels": [
+                {"module_id": "0E6C", "channel":"1", "state":"255"},
+                {"module_id": "0E6C", "channel":"2", "state":"255"}
+            ]
+        }
+    ]
+}

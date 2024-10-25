@@ -58,6 +58,17 @@ class NikobusCommandHandler:
         command = make_pc_link_command(command_code, address, values)
         await self.queue_command(command)
 
+    async def set_output_states(self, address: str, channel_states: bytearray) -> None:
+        """Prepare and queue the output states for a module, split by group if necessary."""
+        _LOGGER.debug(f"Preparing to set output states for module {address}: {channel_states.hex()}")
+        # Process each group separately
+        for group in [1, 2]:
+            command_code = 0x15 if group == 1 else 0x16
+            values = self._prepare_values_for_command(address, group)
+            _LOGGER.debug(f"Queuing command for Group {group} of module {address}: {values.hex()}")
+            command = make_pc_link_command(command_code, address, values)
+            await self.queue_command(command)
+
     async def queue_command(self, command: str) -> None:
         """Queue a command for processing."""
         _LOGGER.debug(f'Queueing command: {command}')

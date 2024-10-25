@@ -32,6 +32,7 @@ class Nikobus:
         
         self.dict_module_data = {}
         self.dict_button_data = {}
+        self.dict_scene_data = {}
 
     @classmethod
     async def create(cls, hass, config_entry, connection_string, async_event_handler):
@@ -49,6 +50,7 @@ class Nikobus:
             try:
                 self.dict_module_data = await self._nikobus_config.load_json_data("nikobus_module_config.json", "module")
                 self.dict_button_data = await self._nikobus_config.load_json_data("nikobus_button_config.json", "button")
+                self.dict_scene_data = await self._nikobus_config.load_json_data("nikobus_scene_config.json", "scene")
 
                 for module_type, modules in self.dict_module_data.items():
                     for address, module_info in modules.items():
@@ -124,7 +126,9 @@ class Nikobus:
             else:
                 raise ValueError(f"Invalid module group: {module_group}")
 
-            await self._async_event_handler("nikobus_refreshed", module_address)
+            await self._async_event_handler("nikobus_refreshed", {
+                    'impacted_module_address': module_address
+                })
 
         except Exception as e:
             _LOGGER.error(f"Error processing feedback data: {e}", exc_info=True)
@@ -152,6 +156,30 @@ class Nikobus:
             _LOGGER.debug(f'New value set for array {self._nikobus_module_states[address]}.')
         else:
             _LOGGER.error(f'Address {address} not found in Nikobus module')
+
+    def get_module_type(self, module_id: str) -> str:
+        """Determine the module type based on the module ID."""
+        # Check in switch modules
+        if 'switch_module' in self.dict_module_data:
+            if module_id in self.dict_module_data['switch_module']:
+                return "switch"
+        # Check in dimmer modules
+        if 'dimmer_module' in self.dict_module_data:
+            if module_id in self.dict_module_data['dimmer_module']:
+                return "dimmer"
+        # Check in cover/roller modules
+        if 'roller_module' in self.dict_module_data:
+            if module_id in self.dict_module_data['roller_module']:
+                return "cover"
+        # If not found, return unknown
+        _LOGGER.error(f"Module ID {module_id} not found in known module types")
+        return "unknown"
+
+#### SCENES
+    async def set_output_states_for_module(self, address: str, channel_states: bytearray) -> None:
+        """Set the output states for a module with multiple channel updates at once."""
+        _LOGGER.debug(f'Setting output states for module {address}: {channel_states.hex()}')
+        await self.nikobus_command_handler.set_output_states(address, channel_states)
 
 #### SWITCHES
     def get_switch_state(self, address: str, channel: int) -> bool:
@@ -287,6 +315,8 @@ class Nikobus:
         button_description = button.get('description')
         _LOGGER.debug(f"Processing button press for {button_description}")
 
+        operation_time = float(button.get('operation_time', 0))
+
         for impacted_module_info in button.get('impacted_module', []):
             impacted_module_address = impacted_module_info.get('address')
             impacted_group = impacted_module_info.get('group')
@@ -304,7 +334,11 @@ class Nikobus:
                 value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
                 if value is not None:
                     self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
-                    await self._async_event_handler("nikobus_button_pressed", address)
+                    await self._async_event_handler("nikobus_button_pressed", {
+                        'address': address,
+                        'operation_time': operation_time,
+                        'impacted_module_address': impacted_module_address
+                    })
 
             except Exception as e:
                 _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group} value {value} error {e}")

@@ -24,6 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
                 dataservice,
                 button.get("description"),
                 button.get("address"),
+                button.get("operation_time"),
                 impacted_modules_info,
             )
 
@@ -31,14 +32,14 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
     async_add_entities(entities)
 
-
 class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
-    def __init__(self, hass: HomeAssistant, dataservice, description, address, impacted_modules_info) -> None:
+    def __init__(self, hass: HomeAssistant, dataservice, description, address, operation_time, impacted_modules_info) -> None:
         super().__init__(dataservice)
         self._hass = hass
         self._dataservice = dataservice
         self._description = description
         self._address = address
+        self._operation_time = int(operation_time) if operation_time else None
         self.impacted_modules_info = impacted_modules_info
 
         self._attr_name = f"Nikobus Push Button {address}"
@@ -61,4 +62,11 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         return {"impacted_modules": impacted_modules_str}
 
     async def async_press(self) -> None:
-        await self._dataservice.async_event_handler("ha_button_pressed", self._address)
+        """Handle button press."""
+        event_data = {
+            "address": self._address,
+            "operation_time": self._operation_time
+        }
+
+        # Pass both the address and operation_time to the async_event_handler
+        await self._dataservice.async_event_handler("ha_button_pressed", event_data)
