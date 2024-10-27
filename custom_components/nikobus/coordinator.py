@@ -115,7 +115,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def _async_update_coordinator_settings(self):
         """Update the coordinator's update method and interval."""
-        self.update_method = self._get_update_method()
         self.update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
         await self.async_refresh()
 
