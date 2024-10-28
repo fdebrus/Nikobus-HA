@@ -6,7 +6,7 @@ from homeassistant.components import switch, light, cover, binary_sensor, button
 from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
-from .const import DOMAIN, CONF_HAS_FEEDBACK_MODULE
+from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator, NikobusConnectError
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,17 +34,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as forward_setup_error:
         _LOGGER.error(f"An error occurred while forwarding entry setups: {forward_setup_error}")
         return False
-
-    # Check if feedback module is enabled
-    has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
-
-    if not has_feedback_module:
-        # Perform the initial data update if feedback module is not present
-        try:
-            await coordinator.initial_update_data()
-        except UpdateFailed as update_failed_error:
-            _LOGGER.error(f"Initial data refresh failed: {update_failed_error}")
-            return False
 
     _LOGGER.debug("Nikobus integration setup completed successfully")
     return True
