@@ -170,7 +170,28 @@ Address shall be the one referenced in your nikobus_button_config.json, **004E2C
                 }
             ]
         }
+  ...
 ```
+
+If the button interacts with a shutter, you can set the "operation_time." The shutter will then move toward the target position for the specified "operation_time" and stop.
+"operation_time" is expressed in seconds.
+
+``` json
+    "nikobus_button": [
+        {
+            "description": "BT_GF_Office_Shutter_Close",
+            "address": "C86C4E",
+            "operation_time": "5",
+            "impacted_module": [
+                {
+                    "address": "8394",
+                    "group": "1"
+                }
+            ]
+        }
+  ...
+```
+
 
 ```yaml
 alias: "React to Nikobus Button Push"
