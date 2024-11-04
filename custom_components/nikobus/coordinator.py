@@ -85,7 +85,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         elif event == 'nikobus_refreshed':
             _LOGGER.debug(f"Nikobus has been refreshed for module {impacted_module_address}")
 
-        _LOGGER.debug("--- UPDATING LISTENERS ---")
         self.async_update_listeners()
 
     async def async_config_entry_updated(self, entry: ConfigEntry) -> None:

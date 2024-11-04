@@ -26,7 +26,7 @@ class NikobusActuator:
         _LOGGER.debug(f"Handling button press for address: {address}")
 
         # Fire event for button press
-        self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
+        # self._hass.bus.async_fire('nikobus_button_pressed', {'address': address})
 
         current_time = time.monotonic()
 
@@ -48,12 +48,12 @@ class NikobusActuator:
         if self._press_task is not None:
             self._press_task.cancel()
 
-        self._press_task = asyncio.create_task(self._wait_for_release(address))
+        self._press_task = self._hass.async_create_task(self._wait_for_release(address))
 
     def _start_timer_tasks(self, address: str):
         """Start timer tasks that fire events after specific durations."""
         for duration in [SHORT_PRESS, MEDIUM_PRESS, LONG_PRESS]:
-            task = asyncio.create_task(self._fire_event_after_duration(address, duration))
+            task = self._hass.async_create_task(self._fire_event_after_duration(address, duration))
             self._timer_tasks.append(task)
 
     async def _fire_event_after_duration(self, address: str, duration: int):
