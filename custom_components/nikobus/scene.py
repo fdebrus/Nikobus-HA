@@ -141,3 +141,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             # Log the final updated state of the module and send the changes
             _LOGGER.debug(f"Sending updated state to module {module_id}: {module_changes[module_id].hex()}")
             await self._dataservice.api.set_output_states_for_module(module_id, module_changes[module_id])
+
+            await self._dataservice.api._async_event_handler("nikobus_refreshed", {
+                    'impacted_module_address': module_id
+                })
