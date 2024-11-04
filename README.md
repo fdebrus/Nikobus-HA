@@ -1,4 +1,4 @@
-# Nikobus Integration for Home Assistant (2024.10.25)
+# Nikobus Integration for Home Assistant (2024.11.4)
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
@@ -256,12 +256,12 @@ Entries that define roller output include an additional argument, operation_time
             "model": "05-001-02",
             "address": "9105",
             "channels": [
-                {"description": "R1 Output 1", "operation_time": "40", "initial_position": "", "led_on":"", "led_off":""},
-                {"description": "R1 Output 2", "operation_time": "40", "initial_position": "", "led_on":"", "led_off":""},
-                {"description": "R1 Output 3", "operation_time": "40", "initial_position": "", "led_on":"", "led_off":""},
-                {"description": "R1 Output 4", "operation_time": "40", "initial_position": "", "led_on":"", "led_off":""},
-                {"description": "R1 Output 5", "operation_time": "40", "initial_position": "", "led_on":"", "led_off":""},
-                {"description": "R1 Output 6", "operation_time": "40", "initial_position": "", "led_on":"", "led_off":""}
+                {"description": "R1 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 2", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 3", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 4", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 5", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 6", "operation_time": "40", "led_on":"", "led_off":""}
             ]
         }
     ]
