@@ -267,7 +267,7 @@ class Nikobus:
         else:
             await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
-    async def open_cover(self, address: str, channel: int) -> None:
+    async def open_cover(self, address: str, channel: int, command_callback=None) -> None:
         """Open a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x01)
         channel_data = self.dict_module_data["roller_module"][address]["channels"][channel - 1]
@@ -275,9 +275,9 @@ class Nikobus:
         if led_on:
             await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
         else:
-            await self.nikobus_command_handler.set_output_state(address, channel, 0x01)
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x01, command_callback=command_callback)
 
-    async def close_cover(self, address: str, channel: int) -> None:
+    async def close_cover(self, address: str, channel: int, command_callback=None) -> None:
         """Close a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x02)
         channel_data = self.dict_module_data["roller_module"][address]["channels"][channel - 1]
@@ -285,7 +285,7 @@ class Nikobus:
         if led_off:
             await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
         else:
-            await self.nikobus_command_handler.set_output_state(address, channel, 0x02)
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x02, command_callback=command_callback)
 
 #### BUTTONS
     async def button_discovery(self, address: str) -> None:
@@ -323,6 +323,7 @@ class Nikobus:
 
             if not (impacted_module_address and impacted_group):
                 _LOGGER.debug("Skipping module due to missing address or group")
+                self.hass.bus.async_fire('nikobus_button_pressed', {'address': address})
                 continue
             try:
                 _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
