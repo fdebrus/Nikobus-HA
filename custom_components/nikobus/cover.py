@@ -496,19 +496,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         """Send the command to operate the cover."""
         _LOGGER.debug("Operating cover %s in direction: %s", self._attr_name, self._direction)
 
-        command_callback = lambda: self._start_position_estimation(direction)
-
         if self._direction == 'opening':
-            await self._dataservice.api.open_cover(self._address, self._channel, command_callback=command_callback)
+            await self._dataservice.api.open_cover(self._address, self._channel)
         elif self._direction == 'closing':
-            await self._dataservice.api.close_cover(self._address, self._channel, command_callback=command_callback)
+            await self._dataservice.api.close_cover(self._address, self._channel)
 
         self._in_motion = True
-        self.async_write_ha_state()
-
-    def _start_position_estimation(self, direction):
-        """Start position estimation for cover."""
-        self._position_estimator.start(direction, self._position)
-        self._in_motion = True
-        self._direction = direction
         self.async_write_ha_state()

@@ -10,6 +10,7 @@ from .nkbconnect import NikobusConnect
 from .nkbconfig import NikobusConfig
 from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
+from .nkbactuator import NikobusActuator
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
@@ -27,12 +28,14 @@ class Nikobus:
         self._nikobus_module_states = {}
         self._nikobus_connection = NikobusConnect(connection_string)
         self._nikobus_config = NikobusConfig(self._hass)
-        self._nikobus_listener = NikobusEventListener(self._hass, self._config_entry, self._nikobus_connection, self.button_discovery, self.process_feedback_data)
-        self.nikobus_command_handler = NikobusCommandHandler(self._hass, self._nikobus_connection, self._nikobus_listener, self._nikobus_module_states)
         
         self.dict_module_data = {}
         self.dict_button_data = {}
         self.dict_scene_data = {}
+        self._nikobus_actuator = None
+        self._nikobus_listener = None
+        
+        self.nikobus_command_handler = None
 
     @classmethod
     async def create(cls, hass, config_entry, connection_string, async_event_handler):
@@ -56,6 +59,15 @@ class Nikobus:
                     for address, module_info in modules.items():
                         module_address = module_info['address']
                         self._nikobus_module_states[module_address] = bytearray(12)
+
+                self._nikobus_actuator = NikobusActuator(self._hass, self.dict_button_data, self.dict_module_data)
+                self._hass.data[DOMAIN]["nikobus_actuator"] = self._nikobus_actuator
+
+                self._nikobus_listener = NikobusEventListener(self._hass, self._config_entry, self._nikobus_actuator, self._nikobus_connection, self.process_feedback_data)
+                self._hass.data[DOMAIN]["nikobus_listener"] = self._nikobus_listener
+                
+                self.nikobus_command_handler = NikobusCommandHandler(self._hass, self._nikobus_connection, self._nikobus_listener, self._nikobus_module_states)
+                self._hass.data[DOMAIN]["nikobus_command_handler"] = self.nikobus_command_handler
 
                 return True
             except HomeAssistantError as e:
@@ -267,7 +279,7 @@ class Nikobus:
         else:
             await self.nikobus_command_handler.set_output_state(address, channel, 0x00)
 
-    async def open_cover(self, address: str, channel: int, command_callback=None) -> None:
+    async def open_cover(self, address: str, channel: int) -> None:
         """Open a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x01)
         channel_data = self.dict_module_data["roller_module"][address]["channels"][channel - 1]
@@ -275,9 +287,9 @@ class Nikobus:
         if led_on:
             await self.nikobus_command_handler.queue_command(f'#N{led_on}\r#E1')
         else:
-            await self.nikobus_command_handler.set_output_state(address, channel, 0x01, command_callback=command_callback)
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x01)
 
-    async def close_cover(self, address: str, channel: int, command_callback=None) -> None:
+    async def close_cover(self, address: str, channel: int) -> None:
         """Close a cover specified by its address and channel"""
         self.set_bytearray_state(address, channel, 0x02)
         channel_data = self.dict_module_data["roller_module"][address]["channels"][channel - 1]
@@ -285,64 +297,7 @@ class Nikobus:
         if led_off:
             await self.nikobus_command_handler.queue_command(f'#N{led_off}\r#E1')
         else:
-            await self.nikobus_command_handler.set_output_state(address, channel, 0x02, command_callback=command_callback)
-
-#### BUTTONS
-    async def button_discovery(self, address: str) -> None:
-        _LOGGER.debug(f"Discovering button at address: {address}.")
-
-        if self.dict_button_data is None:
-            self.dict_button_data = {}
-
-        if address in self.dict_button_data.get("nikobus_button", {}):
-            _LOGGER.debug(f"Button at address {address} found in configuration. Processing...")
-            await self.process_button_modules(self.dict_button_data["nikobus_button"][address], address)
-        else:
-            _LOGGER.info(f"No existing configuration found for button at address {address}. Adding new configuration")
-            new_button = {
-                "description": f"DISCOVERED - Nikobus Button #N{address}",
-                "address": address,
-                "impacted_module": [{"address": "", "group": ""}]
-            }
-            if "nikobus_button" not in self.dict_button_data:
-                self.dict_button_data["nikobus_button"] = {}
-            self.dict_button_data["nikobus_button"][address] = new_button
-            await self._nikobus_config.write_json_data("nikobus_button_config.json", "button", self.dict_button_data)
-            _LOGGER.debug(f"New button configuration added for address {address}.")
-
-    async def process_button_modules(self, button: dict, address: str) -> None:
-        """Process actions for each module impacted by the button press."""
-        button_description = button.get('description')
-        _LOGGER.debug(f"Processing button press for {button_description}")
-
-        operation_time = float(button.get('operation_time', 0))
-
-        for impacted_module_info in button.get('impacted_module', []):
-            impacted_module_address = impacted_module_info.get('address')
-            impacted_group = impacted_module_info.get('group')
-
-            if not (impacted_module_address and impacted_group):
-                _LOGGER.debug("Skipping module due to missing address or group")
-                self.hass.bus.async_fire('nikobus_button_pressed', {'address': address})
-                continue
-            try:
-                _LOGGER.debug(f'*** Refreshing status for module {impacted_module_address} for group {impacted_group}')
-
-                if impacted_module_address in self.dict_module_data.get('dimmer_module', {}):
-                    _LOGGER.debug("Dimmer DETECTED - pausing to get final status")
-                    await asyncio.sleep(DIMMER_DELAY)
-
-                value = await self.nikobus_command_handler.get_output_state(impacted_module_address, impacted_group)
-                if value is not None:
-                    self.set_bytearray_group_state(impacted_module_address, impacted_group, value)
-                    await self._async_event_handler("nikobus_button_pressed", {
-                        'address': address,
-                        'operation_time': operation_time,
-                        'impacted_module_address': impacted_module_address
-                    })
-
-            except Exception as e:
-                _LOGGER.error(f"Error processing button press for module {impacted_module_address} group {impacted_group} value {value} error {e}")
+            await self.nikobus_command_handler.set_output_state(address, channel, 0x02)
 
 class NikobusConnectionError(Exception):
     pass

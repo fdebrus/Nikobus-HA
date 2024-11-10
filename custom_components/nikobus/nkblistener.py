@@ -23,19 +23,18 @@ from .nkbactuator import NikobusActuator
 class NikobusEventListener:
     """Listener to handle events from the Nikobus system."""
 
-    def __init__(self, hass, config_entry: ConfigEntry, nikobus_connection, button_discovery_callback, feedback_callback):
+    def __init__(self, hass, config_entry: ConfigEntry, nikobus_actuator, nikobus_connection, feedback_callback):
         """Initialize the Nikobus event listener."""
         self._hass = hass
         self._config_entry = config_entry
         self._listener_task = None
         self._running = False
-        self._button_discovery_callback = button_discovery_callback
         self._feedback_callback = feedback_callback
         self._has_feedback_module = config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._module_group = 1
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
-        self._actuator = NikobusActuator(hass, button_discovery_callback)
+        self._actuator = nikobus_actuator
 
     async def start(self):
         """Start the event listener."""

@@ -9,6 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 
 from .nikobus import Nikobus, NikobusConnectionError, NikobusDataError
 from .const import (
+    DOMAIN,
     CONF_CONNECTION_STRING,
     CONF_REFRESH_INTERVAL,
     CONF_HAS_FEEDBACK_MODULE
@@ -49,6 +50,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Connect to the Nikobus system."""
         try:
             self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler)
+            self.hass.data[DOMAIN]["nikobus_instance"] = self.api
             self.hass.async_create_task(self.api.command_handler())
             self.hass.async_create_task(self.api.listen_for_events())
             await self.async_refresh()
