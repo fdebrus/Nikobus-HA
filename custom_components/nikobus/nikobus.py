@@ -60,7 +60,7 @@ class Nikobus:
                         module_address = module_info['address']
                         self._nikobus_module_states[module_address] = bytearray(12)
 
-                self._nikobus_actuator = NikobusActuator(self._hass, self.dict_button_data, self.dict_module_data)
+                self._nikobus_actuator = NikobusActuator(self._hass, self.dict_button_data, self.dict_module_data, self._async_event_handler)
                 self._hass.data[DOMAIN]["nikobus_actuator"] = self._nikobus_actuator
 
                 self._nikobus_listener = NikobusEventListener(self._hass, self._config_entry, self._nikobus_actuator, self._nikobus_connection, self.process_feedback_data)

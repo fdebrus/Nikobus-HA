@@ -15,9 +15,10 @@ _LOGGER = logging.getLogger(__name__)
 class NikobusActuator:
     """Handles button press events for the Nikobus system."""
 
-    def __init__(self, hass, dict_button_data, dict_module_data):
+    def __init__(self, hass, dict_button_data, dict_module_data, async_event_handler):
         """Initialize the Nikobus actuator."""
         self._hass = hass
+        self._async_event_handler = async_event_handler
         self.dict_button_data = dict_button_data
         self.dict_module_data = dict_module_data
         self._debounce_time_ms = 150
@@ -198,9 +199,11 @@ class NikobusActuator:
 
                 value = await command_handler.get_output_state(impacted_module_address, impacted_group)
 
+                _LOGGER.debug(f"VALUE RECEIVED: {value}")
+
                 if value is not None:
                     nikobus_instance.set_bytearray_group_state(impacted_module_address, impacted_group, value)
-                    self._hass.bus.async_fire("nikobus_button_pressed", {
+                    await self._async_event_handler("nikobus_button_pressed", {
                         'address': address,
                         'operation_time': operation_time,
                         'impacted_module_address': impacted_module_address
