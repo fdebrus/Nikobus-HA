@@ -171,7 +171,7 @@ class NikobusActuator:
             impacted_module_address = impacted_module_info.get('address')
             impacted_group = impacted_module_info.get('group')
 
-            if not (impacted_module_address and impacted_group):
+            if not impacted_module_info or not (impacted_module_address or impacted_group):
                 _LOGGER.debug("Skipping module due to missing address or group")
                 # Retrieve operation_time for this button from button data
                 operation_time = float(self.dict_button_data.get("nikobus_button", {}).get(address, {}).get('operation_time', 0))
