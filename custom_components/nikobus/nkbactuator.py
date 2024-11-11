@@ -163,7 +163,7 @@ class NikobusActuator:
         nikobus_instance = self._hass.data[DOMAIN].get("nikobus_instance")
         command_handler = self._hass.data[DOMAIN].get("nikobus_command_handler")
         # Fire event immediately if there are no impacted modules
-        if not impacted_modules:
+        if not impacted_module_info or not (impacted_module_address or impacted_group):
             self._hass.bus.async_fire(
                 "nikobus_button_pressed",
                 {"address": address, "operation_time": operation_time},
