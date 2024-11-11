@@ -1,4 +1,4 @@
-"""Nikobus Connect"""
+"""nkbconnect - Connect to Nikobus over USB or TCP/IP Socket"""
 
 import logging
 import asyncio
@@ -7,14 +7,18 @@ import ipaddress
 import re
 from serial import SerialException 
 
-_LOGGER = logging.getLogger(__name__)
-__version__ = '0.1'
+from .const import (
+    BAUD_RATE,
+    COMMANDS_HANDSHAKE,
+    EXPECTED_HANDSHAKE_RESPONSE,
+    HANDSHAKE_TIMEOUT
+)
 
-BAUD_RATE = 9600
-COMMANDS_HANDSHAKE = ["++++", "ATH0", "ATZ", "$10110000B8CF9D", "#L0", "#E0", "#L0", "#E1"]
 COMMAND_WITH_ACK = COMMANDS_HANDSHAKE[3]
-EXPECTED_HANDSHAKE_RESPONSE = "$0511"
-HANDSHAKE_TIMEOUT = 60
+
+_LOGGER = logging.getLogger(__name__)
+
+__version__ = '1.0'
 
 class NikobusConnect:
     """Manages connection to a Nikobus system via IP or Serial."""
@@ -36,11 +40,9 @@ class NikobusConnect:
             else:
                 _LOGGER.error(f"Invalid connection string: {self._connection_string}")
                 return False
-
             if await self._perform_handshake():
                 _LOGGER.info("Nikobus handshake successful")
                 return True
-
             return False
         except (OSError, asyncio.TimeoutError) as err:
             _LOGGER.error(f"Connection error with {self._connection_string}: {err}")

@@ -80,16 +80,9 @@ class Nikobus:
 
     async def command_handler(self):
         await self.nikobus_command_handler.start()
-
-#### Nikobus Discovery
-    async def nikobus_discovery(self):
-        # Ask the Nikobus for the controller address
-        await self.nikobus_command_handler.send_command('#A')
         
 #### REFRESH DATA FROM NIKOBUS
     async def refresh_nikobus_data(self) -> bool:
-        
-        # await self.nikobus_discovery() 
 
         if 'switch_module' in self.dict_module_data:
             await self._refresh_module_type(self.dict_module_data['switch_module'])

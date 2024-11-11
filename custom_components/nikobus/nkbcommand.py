@@ -1,4 +1,4 @@
-"""Command Processing for Nikobus"""
+"""nkbcommand - Send Commands from HA to Nikobus"""
 
 import asyncio
 import logging
@@ -11,7 +11,8 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-__version__ = '0.1'
+
+__version__ = '1.0'
 
 class NikobusCommandHandler:
     """Handles command processing for Nikobus."""
@@ -35,12 +36,12 @@ class NikobusCommandHandler:
         """Stop the command processing loop."""
         self._running = False
         if self._command_task:
-            self._command_task.cancel()  # Request cancellation of the task
+            self._command_task.cancel()
             try:
-                await self._command_task  # Wait for the task to be cancelled
+                await self._command_task
             except asyncio.CancelledError:
                 _LOGGER.info("Command processing task was cancelled")
-            self._command_task = None  # Reset the task reference
+            self._command_task = None
 
     async def get_output_state(self, address: str, group: int) -> str:
         """Get the output state of a module."""
@@ -91,7 +92,7 @@ class NikobusCommandHandler:
             _LOGGER.debug('Command sent successfully')
         except Exception as e:
             _LOGGER.error(f'Error sending command: {e}')
-
+                
     async def send_command_get_answer(self, command: str, address: str) -> str | None:
         """Send a command and wait for an answer from the Nikobus system."""
         _LOGGER.debug(f'Sending command {command} to address {address}, waiting for answer')
@@ -126,39 +127,30 @@ class NikobusCommandHandler:
         ack_received = False
         answer_received = False
         state = None
-
         for attempt in range(MAX_ATTEMPTS):
             await self.nikobus_connection.send(command)
-
             _LOGGER.debug(f'Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer}')
             end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
-
             while asyncio.get_event_loop().time() < end_time:
                 try:
                     message = await asyncio.wait_for(self.nikobus_listener.response_queue.get(), timeout=COMMAND_ANSWER_WAIT_TIMEOUT)
                     _LOGGER.debug(f'Message received: {message}')
-
                     if _wait_command_ack in message:
                         _LOGGER.debug('ACK received')
                         ack_received = True
-
                     if _wait_command_answer in message:
                         _LOGGER.debug('Answer received')
                         state = self._parse_state_from_message(message, _wait_command_answer)
                         _LOGGER.debug(f'State from message received: {state}')
                         answer_received = True
-
                     if ack_received and answer_received:
                         return state
-
                 except asyncio.TimeoutError:
                     _LOGGER.debug(f'Timeout waiting for ACK/Answer on attempt {attempt + 1}')
-
         if not ack_received:
             _LOGGER.error(f'ACK not received on {command} after {attempt + 1} attempts waiting for {_wait_command_ack}')
         if not answer_received:
             _LOGGER.error(f'Answer not received on {command} after {attempt + 1} attempts waiting for {_wait_command_answer}')
-
         return None
 
     def _parse_state_from_message(self, message: str, answer_signal: str) -> str:

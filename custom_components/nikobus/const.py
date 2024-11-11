@@ -8,6 +8,12 @@ CONF_REFRESH_INTERVAL = "refresh_interval"
 CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
 CONF_HAS_PC_LINK = "has_pc_link"
 
+# Connect
+BAUD_RATE = 9600
+COMMANDS_HANDSHAKE = ["++++", "ATH0", "ATZ", "$10110000B8CF9D", "#L0", "#E0", "#L0", "#E1"]
+EXPECTED_HANDSHAKE_RESPONSE = "$0511"
+HANDSHAKE_TIMEOUT = 60
+
 # Buttons
 DIMMER_DELAY = 1 # When a dimmer button is pressed, pause for DIMMER_DELAY before to retrieve status from NIkobus
 LONG_PRESS_THRESHOLD_MS = 500 # Time in ms to detect a long press (>= LONG_PRESS_THRESHOLD_MS)

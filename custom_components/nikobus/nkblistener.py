@@ -1,11 +1,8 @@
-"""Listener for Nikobus"""
+"""nkblistener - Listener for Nikobus"""
 
 import logging
 import asyncio
-
 from homeassistant.config_entries import ConfigEntry
-
-_LOGGER = logging.getLogger(__name__)
 
 from .const import (
     CONF_HAS_FEEDBACK_MODULE, 
@@ -18,7 +15,9 @@ from .const import (
     CONTROLLER_ADDRESS
 )
 
-from .nkbactuator import NikobusActuator
+_LOGGER = logging.getLogger(__name__)
+
+__version__ = '1.0'
 
 class NikobusEventListener:
     """Listener to handle events from the Nikobus system."""
@@ -32,9 +31,10 @@ class NikobusEventListener:
         self._feedback_callback = feedback_callback
         self._has_feedback_module = config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._module_group = 1
+        self._actuator = nikobus_actuator
+
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
-        self._actuator = nikobus_actuator
 
     async def start(self):
         """Start the event listener."""

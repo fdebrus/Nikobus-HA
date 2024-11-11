@@ -1,4 +1,4 @@
-"""Load / Write configuration files for Nikobus"""
+"""nkbconfig - Load / Write configuration files for Nikobus"""
 
 import json
 from aiofiles import open as aio_open
@@ -6,7 +6,8 @@ import logging
 from homeassistant.exceptions import HomeAssistantError
 
 _LOGGER = logging.getLogger(__name__)
-__version__ = '0.1'
+
+__version__ = '1.0'
 
 class NikobusConfig:
     """Handles the loading and saving of Nikobus configuration data."""
@@ -22,9 +23,7 @@ class NikobusConfig:
         try:
             async with aio_open(file_path, mode='r') as file:
                 data = json.loads(await file.read())
-
             return self._transform_loaded_data(data, data_type)
-
         except FileNotFoundError:
             self._handle_file_not_found(file_path, data_type)
         except json.JSONDecodeError as e:
@@ -73,7 +72,6 @@ class NikobusConfig:
             async with aio_open(file_path, 'w') as file:
                 json_data = json.dumps(transformed_data, indent=4)
                 await file.write(json_data)
-
         except IOError as e:
             _LOGGER.error(f'Failed to write {data_type.capitalize()} data to file {file_name}: {e}')
             raise HomeAssistantError(f'Failed to write {data_type.capitalize()} data to file {file_name}: {e}') from e
