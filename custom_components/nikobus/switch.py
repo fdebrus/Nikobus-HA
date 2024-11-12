@@ -8,11 +8,12 @@ from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus switch entities from a config entry."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    switch_modules = dataservice.api.dict_module_data.get('switch_module', {})
+    switch_modules = dataservice.api.dict_module_data.get("switch_module", {})
 
     entities = [
         NikobusSwitchEntity(
@@ -35,7 +36,16 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     """Represents a Nikobus switch entity within Home Assistant."""
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        dataservice,
+        description,
+        model,
+        address,
+        channel,
+        channel_description,
+    ) -> None:
         """Initialize the switch entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self._dataservice = dataservice
@@ -66,7 +76,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._state = bool(self._dataservice.api.get_switch_state(self._address, self._channel))
+        self._state = bool(
+            self._dataservice.api.get_switch_state(self._address, self._channel)
+        )
         self.async_write_ha_state()
 
     async def async_turn_on(self):
@@ -75,7 +87,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         try:
             await self._dataservice.api.turn_on_switch(self._address, self._channel)
         except Exception as e:
-            _LOGGER.error(f"Failed to turn on switch at address {self._address}, channel {self._channel}: {e}")
+            _LOGGER.error(
+                f"Failed to turn on switch at address {self._address}, channel {self._channel}: {e}"
+            )
             self._state = False  # Reset state if there was an error
         self.async_write_ha_state()
 
@@ -85,6 +99,8 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         try:
             await self._dataservice.api.turn_off_switch(self._address, self._channel)
         except Exception as e:
-            _LOGGER.error(f"Failed to turn off switch at address {self._address}, channel {self._channel}: {e}")
+            _LOGGER.error(
+                f"Failed to turn off switch at address {self._address}, channel {self._channel}: {e}"
+            )
             self._state = True  # Reset state if there was an error
         self.async_write_ha_state()

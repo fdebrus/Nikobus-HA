@@ -10,10 +10,11 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BRIGHTNESS = 255
 
+
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
-    dimmer_modules = dataservice.api.dict_module_data.get('dimmer_module', {})
+    dimmer_modules = dataservice.api.dict_module_data.get("dimmer_module", {})
 
     entities = [
         NikobusLightEntity(
@@ -25,17 +26,27 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             i,
             channel["description"],
         )
-        for address, dimmer_module_data in dimmer_modules.items() 
+        for address, dimmer_module_data in dimmer_modules.items()
         for i, channel in enumerate(dimmer_module_data.get("channels", []), start=1)
         if not channel["description"].startswith("not_in_use")
     ]
 
     async_add_entities(entities)
 
+
 class NikobusLightEntity(CoordinatorEntity, LightEntity):
     """Represents a Nikobus light entity within Home Assistant."""
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, model, address, channel, channel_description) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        dataservice,
+        description,
+        model,
+        address,
+        channel,
+        channel_description,
+    ) -> None:
         """Initialize the light entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self._dataservice = dataservice
@@ -82,8 +93,12 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._state = bool(self._dataservice.api.get_light_state(self._address, self._channel))
-        self._brightness = self._dataservice.api.get_light_brightness(self._address, self._channel)
+        self._state = bool(
+            self._dataservice.api.get_light_state(self._address, self._channel)
+        )
+        self._brightness = self._dataservice.api.get_light_brightness(
+            self._address, self._channel
+        )
         self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs):
@@ -91,9 +106,13 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self._brightness = kwargs.get("brightness", DEFAULT_BRIGHTNESS)
         self._state = True
         try:
-            await self._dataservice.api.turn_on_light(self._address, self._channel, self._brightness)
+            await self._dataservice.api.turn_on_light(
+                self._address, self._channel, self._brightness
+            )
         except Exception as e:
-            _LOGGER.error(f"Failed to turn on light at address {self._address}, channel {self._channel}: {e}")
+            _LOGGER.error(
+                f"Failed to turn on light at address {self._address}, channel {self._channel}: {e}"
+            )
             self._state = False
         self.async_write_ha_state()
 
@@ -104,6 +123,8 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         try:
             await self._dataservice.api.turn_off_light(self._address, self._channel)
         except Exception as e:
-            _LOGGER.error(f"Failed to turn off light at address {self._address}, channel {self._channel}: {e}")
+            _LOGGER.error(
+                f"Failed to turn off light at address {self._address}, channel {self._channel}: {e}"
+            )
             self._state = True
         self.async_write_ha_state()

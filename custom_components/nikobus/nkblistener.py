@@ -5,31 +5,42 @@ import asyncio
 from homeassistant.config_entries import ConfigEntry
 
 from .const import (
-    CONF_HAS_FEEDBACK_MODULE, 
-    BUTTON_COMMAND_PREFIX, 
-    IGNORE_ANSWER, 
+    CONF_HAS_FEEDBACK_MODULE,
+    BUTTON_COMMAND_PREFIX,
+    IGNORE_ANSWER,
     FEEDBACK_REFRESH_COMMAND,
-    MANUAL_REFRESH_COMMAND, 
-    FEEDBACK_MODULE_ANSWER, 
-    COMMAND_PROCESSED, 
-    CONTROLLER_ADDRESS
+    MANUAL_REFRESH_COMMAND,
+    FEEDBACK_MODULE_ANSWER,
+    COMMAND_PROCESSED,
+    CONTROLLER_ADDRESS,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-__version__ = '1.0'
+__version__ = "1.0"
+
 
 class NikobusEventListener:
     """Listener to handle events from the Nikobus system."""
 
-    def __init__(self, hass, config_entry: ConfigEntry, nikobus_actuator, nikobus_connection, feedback_callback):
+    def __init__(
+        self,
+        hass,
+        config_entry: ConfigEntry,
+        nikobus_actuator,
+        nikobus_connection,
+        feedback_callback,
+    ):
         """Initialize the Nikobus event listener."""
         self._hass = hass
         self._config_entry = config_entry
         self._listener_task = None
         self._running = False
         self._feedback_callback = feedback_callback
-        self._has_feedback_module = config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        self._has_feedback_module = config_entry.options.get(
+            CONF_HAS_FEEDBACK_MODULE,
+            config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
+        )
         self._module_group = 1
         self._actuator = nikobus_actuator
 
@@ -57,11 +68,13 @@ class NikobusEventListener:
         _LOGGER.info("Nikobus Event Listener starting")
         while self._running:
             try:
-                data = await asyncio.wait_for(self.nikobus_connection.read(), timeout=10)
+                data = await asyncio.wait_for(
+                    self.nikobus_connection.read(), timeout=10
+                )
                 if not data:
                     _LOGGER.warning("Nikobus connection closed unexpectedly")
                     break
-                message = data.decode('utf-8').strip()
+                message = data.decode("utf-8").strip()
                 _LOGGER.debug(f"Received message: {message}")
                 self._hass.async_create_task(self.dispatch_message(message))
             except asyncio.TimeoutError:
@@ -114,9 +127,11 @@ class NikobusEventListener:
     def _handle_feedback_refresh(self, message: str):
         """Handle feedback refresh commands."""
         module_group_identifier = message[3:5]
-        if module_group_identifier == '17':
+        if module_group_identifier == "17":
             self._module_group = 2
-        elif module_group_identifier == '12':
+        elif module_group_identifier == "12":
             self._module_group = 1
         else:
-            _LOGGER.warning(f"Unknown module group identifier: {module_group_identifier}")
+            _LOGGER.warning(
+                f"Unknown module group identifier: {module_group_identifier}"
+            )

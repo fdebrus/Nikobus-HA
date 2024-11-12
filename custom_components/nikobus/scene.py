@@ -7,6 +7,7 @@ from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)  # Initialize logger
 
+
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
     _LOGGER.debug("Setting up Nikobus scenes.")
 
@@ -16,9 +17,15 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
     if dataservice.api.dict_scene_data:
         for scene in dataservice.api.dict_scene_data.get("scene", []):
-            _LOGGER.debug(f"Processing scene: {scene.get('description')} (ID: {scene.get('id')})")
+            _LOGGER.debug(
+                f"Processing scene: {scene.get('description')} (ID: {scene.get('id')})"
+            )
             impacted_modules_info = [
-                {"module_id": channel.get("module_id"), "channel": channel.get("channel"), "state": channel.get("state")}
+                {
+                    "module_id": channel.get("module_id"),
+                    "channel": channel.get("channel"),
+                    "state": channel.get("state"),
+                }
                 for channel in scene.get("channels", [])
             ]
             _LOGGER.debug(f"Scene channels: {impacted_modules_info}")
@@ -36,8 +43,16 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
         _LOGGER.debug(f"Adding {len(entities)} Nikobus scene entities.")
         async_add_entities(entities)
 
+
 class NikobusSceneEntity(CoordinatorEntity, Scene):
-    def __init__(self, hass: HomeAssistant, dataservice, description, scene_id, impacted_modules_info) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        dataservice,
+        description,
+        scene_id,
+        impacted_modules_info,
+    ) -> None:
         super().__init__(dataservice)
         self._hass = hass
         self._dataservice = dataservice
@@ -72,12 +87,12 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
         def get_value(module_type, state):
             state = state.lower()
-    
+
             module_state_map = {
                 "switch": {"on": 255, "off": 0},
-                "cover": {"open": 1, "close": 2}
+                "cover": {"open": 1, "close": 2},
             }
-    
+
             if module_type == "switch" or module_type == "cover":
                 if state in module_state_map[module_type]:
                     return module_state_map[module_type][state]
@@ -100,7 +115,9 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             channel = int(module.get("channel"))
             state = module.get("state")
 
-            _LOGGER.debug(f"Processing module: {module_id}, channel: {channel}, state: {state}")
+            _LOGGER.debug(
+                f"Processing module: {module_id}, channel: {channel}, state: {state}"
+            )
 
             # Get the module type and determine the value
             module_type = self._dataservice.api.get_module_type(module_id)
@@ -112,36 +129,61 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
             # Initialize module changes if not yet fetched
             if module_id not in module_changes:
-                module_changes[module_id] = bytearray(self._dataservice.api._nikobus_module_states.get(module_id, bytearray(12)))
-                _LOGGER.debug(f"Fetched current state for module {module_id}: {module_changes[module_id].hex()}")
+                module_changes[module_id] = bytearray(
+                    self._dataservice.api._nikobus_module_states.get(
+                        module_id, bytearray(12)
+                    )
+                )
+                _LOGGER.debug(
+                    f"Fetched current state for module {module_id}: {module_changes[module_id].hex()}"
+                )
 
             # Update the specific channel with the new value
             module_changes[module_id][channel - 1] = int(value)
 
         # Send the combined command for each module after updating only the specified channels
         for module_id, channel_states in module_changes.items():
-            current_state = self._dataservice.api._nikobus_module_states.get(module_id, bytearray(12))
+            current_state = self._dataservice.api._nikobus_module_states.get(
+                module_id, bytearray(12)
+            )
 
             # Check if any channel in group 1 (channels 1-6) was updated
-            group1_updated = any(module_changes[module_id][i] != current_state[i] for i in range(6))
+            group1_updated = any(
+                module_changes[module_id][i] != current_state[i] for i in range(6)
+            )
             # Update groups if necessary
             if group1_updated:
                 hex_value = module_changes[module_id][:6].hex()
-                _LOGGER.debug(f"Updating group 1 for module {module_id} with values: {hex_value}")
-                self._dataservice.api.set_bytearray_group_state(module_id, group=1, value=hex_value)
+                _LOGGER.debug(
+                    f"Updating group 1 for module {module_id} with values: {hex_value}"
+                )
+                self._dataservice.api.set_bytearray_group_state(
+                    module_id, group=1, value=hex_value
+                )
 
             if module_type != "cover":
                 # Check if any channel in group 2 (channels 7-12) was updated
-                group2_updated = any(module_changes[module_id][i] != current_state[i] for i in range(6, 12))
+                group2_updated = any(
+                    module_changes[module_id][i] != current_state[i]
+                    for i in range(6, 12)
+                )
                 if group2_updated:
                     hex_value = module_changes[module_id][6:12].hex()
-                    _LOGGER.debug(f"Updating group 2 for module {module_id} with values: {hex_value}")
-                    self._dataservice.api.set_bytearray_group_state(module_id, group=2, value=hex_value)
+                    _LOGGER.debug(
+                        f"Updating group 2 for module {module_id} with values: {hex_value}"
+                    )
+                    self._dataservice.api.set_bytearray_group_state(
+                        module_id, group=2, value=hex_value
+                    )
 
             # Log the final updated state of the module and send the changes
-            _LOGGER.debug(f"Sending updated state to module {module_id}: {module_changes[module_id].hex()}")
-            await self._dataservice.api.set_output_states_for_module(module_id, module_changes[module_id])
+            _LOGGER.debug(
+                f"Sending updated state to module {module_id}: {module_changes[module_id].hex()}"
+            )
+            await self._dataservice.api.set_output_states_for_module(
+                module_id, module_changes[module_id]
+            )
 
-            await self._dataservice.api._async_event_handler("nikobus_refreshed", {
-                    'impacted_module_address': module_id
-                })
+            await self._dataservice.api._async_event_handler(
+                "nikobus_refreshed", {"impacted_module_address": module_id}
+            )

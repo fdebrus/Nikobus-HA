@@ -1,4 +1,4 @@
-""" coordinator - Nikobus Data Coordinator """
+"""coordinator - Nikobus Data Coordinator"""
 
 import logging
 from datetime import timedelta
@@ -12,10 +12,11 @@ from .const import (
     DOMAIN,
     CONF_CONNECTION_STRING,
     CONF_REFRESH_INTERVAL,
-    CONF_HAS_FEEDBACK_MODULE
+    CONF_HAS_FEEDBACK_MODULE,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class NikobusDataCoordinator(DataUpdateCoordinator):
     """Coordinator for managing asynchronous updates and connections to the Nikobus system."""
@@ -25,13 +26,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.api = None
         self._config_entry = config_entry
-        self.connection_string = config_entry.options.get(CONF_CONNECTION_STRING, config_entry.data.get(CONF_CONNECTION_STRING))
-        self.refresh_interval = config_entry.options.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
-        self.has_feedback_module = config_entry.options.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        self.connection_string = config_entry.options.get(
+            CONF_CONNECTION_STRING, config_entry.data.get(CONF_CONNECTION_STRING)
+        )
+        self.refresh_interval = config_entry.options.get(
+            CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120)
+        )
+        self.has_feedback_module = config_entry.options.get(
+            CONF_HAS_FEEDBACK_MODULE,
+            config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
+        )
 
         # Set update_interval to None if feedback module is present, disabling periodic updates
-        update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
-        
+        update_interval = (
+            None
+            if self.has_feedback_module
+            else timedelta(seconds=self.refresh_interval)
+        )
+
         super().__init__(
             hass,
             _LOGGER,
@@ -44,19 +56,28 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     async def async_config_entry_first_refresh(self):
         """Handle the first data refresh and set up the update listener."""
         await self.async_refresh()
-        self._unsub_update_listener = self._config_entry.add_update_listener(self.async_config_entry_updated)
+        self._unsub_update_listener = self._config_entry.add_update_listener(
+            self.async_config_entry_updated
+        )
 
     async def connect(self):
         """Connect to the Nikobus system."""
         try:
-            self.api = await Nikobus.create(self.hass, self._config_entry, self.connection_string, self.async_event_handler)
+            self.api = await Nikobus.create(
+                self.hass,
+                self._config_entry,
+                self.connection_string,
+                self.async_event_handler,
+            )
             self.hass.data[DOMAIN]["nikobus_instance"] = self.api
             self.hass.async_create_task(self.api.command_handler())
             self.hass.async_create_task(self.api.listen_for_events())
             await self.async_refresh()
         except NikobusConnectionError as e:
             _LOGGER.error("Failed to connect to Nikobus: %s", e)
-            raise NikobusConnectError("Failed to connect to Nikobus.", original_exception=e)
+            raise NikobusConnectError(
+                "Failed to connect to Nikobus.", original_exception=e
+            )
 
     async def async_update_data(self):
         """Fetch the latest data from the Nikobus system."""
@@ -73,37 +94,48 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             await self._handle_ha_button_pressed(data)
         elif event == "nikobus_button_pressed":
             await self._handle_nikobus_button_pressed(data)
-        elif event == 'nikobus_refreshed':
+        elif event == "nikobus_refreshed":
             await self._handle_nikobus_refreshed(data)
         self.async_update_listeners()
 
     async def _handle_ha_button_pressed(self, data):
         """Handle HA button press events."""
-        address = data.get('address')
-        operation_time = data.get('operation_time')
-        _LOGGER.debug(f"HA Button {address} pressed with operation_time: {operation_time}")
-        await self.api.nikobus_command_handler.queue_command(f'#N{address}\r#E1')
+        address = data.get("address")
+        operation_time = data.get("operation_time")
+        _LOGGER.debug(
+            f"HA Button {address} pressed with operation_time: {operation_time}"
+        )
+        await self.api.nikobus_command_handler.queue_command(f"#N{address}\r#E1")
 
     async def _handle_nikobus_button_pressed(self, data):
         """Handle Nikobus button press events."""
-        address = data.get('address')
-        operation_time = data.get('operation_time')
-        impacted_module_address = data.get('impacted_module_address')
-        _LOGGER.debug(f"Nikobus button pressed at address {address}, operation_time: {operation_time}, impacted_module_address: {impacted_module_address}")
-        self.hass.bus.async_fire('nikobus_button_pressed', {
-            'address': address,
-            'operation_time': operation_time,
-            'impacted_module_address': impacted_module_address
-        })
+        address = data.get("address")
+        operation_time = data.get("operation_time")
+        impacted_module_address = data.get("impacted_module_address")
+        _LOGGER.debug(
+            f"Nikobus button pressed at address {address}, operation_time: {operation_time}, impacted_module_address: {impacted_module_address}"
+        )
+        self.hass.bus.async_fire(
+            "nikobus_button_pressed",
+            {
+                "address": address,
+                "operation_time": operation_time,
+                "impacted_module_address": impacted_module_address,
+            },
+        )
 
     async def _handle_nikobus_refreshed(self, data):
         """Handle Nikobus refreshed events."""
-        impacted_module_address = data.get('impacted_module_address')
-        _LOGGER.debug(f"Nikobus has been refreshed for module {impacted_module_address}")
+        impacted_module_address = data.get("impacted_module_address")
+        _LOGGER.debug(
+            f"Nikobus has been refreshed for module {impacted_module_address}"
+        )
 
     async def async_config_entry_updated(self, entry: ConfigEntry) -> None:
         """Handle updates to the configuration entry."""
-        connection_string = entry.options.get(CONF_CONNECTION_STRING, self.connection_string)
+        connection_string = entry.options.get(
+            CONF_CONNECTION_STRING, self.connection_string
+        )
         refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, 120)
         has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, False)
 
@@ -123,17 +155,26 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 title = f"Nikobus - {connection_string}"
                 self.hass.config_entries.async_update_entry(entry, title=title)
 
-            _LOGGER.info(f'Configuration updated: connection_string={self.connection_string}, '
-                        f'refresh_interval={self.refresh_interval}, has_feedback_module={self.has_feedback_module}')
+            _LOGGER.info(
+                f"Configuration updated: connection_string={self.connection_string}, "
+                f"refresh_interval={self.refresh_interval}, has_feedback_module={self.has_feedback_module}"
+            )
 
     async def _async_update_coordinator_settings(self):
         """Update the coordinator's update method and interval."""
-        self.update_interval = None if self.has_feedback_module else timedelta(seconds=self.refresh_interval)
+        self.update_interval = (
+            None
+            if self.has_feedback_module
+            else timedelta(seconds=self.refresh_interval)
+        )
         await self.async_refresh()
+
 
 class NikobusConnectError(Exception):
     """Custom exception for handling Nikobus connection errors."""
-    
-    def __init__(self, message="Failed to connect to Nikobus system", original_exception=None):
+
+    def __init__(
+        self, message="Failed to connect to Nikobus system", original_exception=None
+    ):
         super().__init__(message)
         self.original_exception = original_exception

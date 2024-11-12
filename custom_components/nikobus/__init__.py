@@ -9,7 +9,15 @@ from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN, binary_sensor.DOMAIN, button.DOMAIN, scene.DOMAIN]
+PLATFORMS = [
+    switch.DOMAIN,
+    light.DOMAIN,
+    cover.DOMAIN,
+    binary_sensor.DOMAIN,
+    button.DOMAIN,
+    scene.DOMAIN,
+]
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration from a config entry."""
@@ -25,17 +33,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.connect()
     except HomeAssistantError as e:
         _LOGGER.error(f"An error occurred during connection setup: {e}")
-        raise HomeAssistantError(f'An error occurred loading configuration files: {e}') from e
+        raise HomeAssistantError(
+            f"An error occurred loading configuration files: {e}"
+        ) from e
 
     # Forward the setup to the appropriate platforms
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception as forward_setup_error:
-        _LOGGER.error(f"An error occurred while forwarding entry setups: {forward_setup_error}")
+        _LOGGER.error(
+            f"An error occurred while forwarding entry setups: {forward_setup_error}"
+        )
         return False
 
     _LOGGER.debug("Nikobus integration setup completed successfully")
     return True
+
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Handle options update for the Nikobus integration."""
@@ -43,4 +56,3 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinator = hass.data[DOMAIN][entry.entry_id]
     await coordinator.async_config_entry_updated(entry)
     _LOGGER.debug("Nikobus integration options updated")
-    

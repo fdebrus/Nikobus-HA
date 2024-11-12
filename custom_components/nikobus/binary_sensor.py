@@ -8,6 +8,7 @@ from .const import DOMAIN, BRAND
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
     """Set up Nikobus binary sensor entities from a config entry."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
@@ -17,7 +18,10 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     if dataservice.api.dict_button_data:
         for button in dataservice.api.dict_button_data["nikobus_button"].values():
             impacted_modules_info = [
-                {"address": impacted_module["address"], "group": impacted_module["group"]}
+                {
+                    "address": impacted_module["address"],
+                    "group": impacted_module["group"],
+                }
                 for impacted_module in button["impacted_module"]
             ]
 
@@ -36,19 +40,29 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
         async_add_entities(entities)
 
+
 def register_global_listener(hass: HomeAssistant, sensors: list):
     """Register a single global event listener for all Nikobus sensors."""
+
     async def handle_event(event):
         for sensor in sensors:
-            if event.data['address'] == sensor._address:
+            if event.data["address"] == sensor._address:
                 await sensor.handle_button_press_event(event)
 
-    hass.bus.async_listen('nikobus_button_pressed', handle_event)
+    hass.bus.async_listen("nikobus_button_pressed", handle_event)
+
 
 class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
     """Represents a Nikobus button binary sensor entity within Home Assistant."""
 
-    def __init__(self, hass: HomeAssistant, dataservice, description, address, impacted_modules_info) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        dataservice,
+        description,
+        address,
+        impacted_modules_info,
+    ) -> None:
         """Initialize the binary sensor entity with data from the Nikobus system configuration."""
         super().__init__(dataservice)
         self._hass = hass
@@ -65,7 +79,7 @@ class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
     @callback
     async def handle_button_press_event(self, event):
         """Handle the nikobus_button_pressed event."""
-        if event.data['address'] == self._address:
+        if event.data["address"] == self._address:
             self._state = True
             self.async_write_ha_state()
 
@@ -94,7 +108,8 @@ class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
     def extra_state_attributes(self) -> dict[str, str] | None:
         """Return extra state attributes of the binary sensor."""
         impacted_modules_str = ", ".join(
-            f"{module['address']}_{module['group']}" for module in self.impacted_modules_info
+            f"{module['address']}_{module['group']}"
+            for module in self.impacted_modules_info
         )
         return {"impacted_modules": impacted_modules_str}
 

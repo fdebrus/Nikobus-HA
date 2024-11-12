@@ -6,15 +6,21 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
 
+
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     entities = []
 
     if dataservice.api.dict_button_data:
-        for button in dataservice.api.dict_button_data.get("nikobus_button", {}).values():
+        for button in dataservice.api.dict_button_data.get(
+            "nikobus_button", {}
+        ).values():
             impacted_modules_info = [
-                {"address": impacted_module["address"], "group": impacted_module["group"]}
+                {
+                    "address": impacted_module["address"],
+                    "group": impacted_module["group"],
+                }
                 for impacted_module in button.get("impacted_module", [])
             ]
 
@@ -31,8 +37,17 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
     async_add_entities(entities)
 
+
 class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
-    def __init__(self, hass: HomeAssistant, dataservice, description, address, operation_time, impacted_modules_info) -> None:
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        dataservice,
+        description,
+        address,
+        operation_time,
+        impacted_modules_info,
+    ) -> None:
         super().__init__(dataservice)
         self._hass = hass
         self._dataservice = dataservice
@@ -56,16 +71,14 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, str] | None:
         impacted_modules_str = ", ".join(
-            f"{module['address']}_{module['group']}" for module in self.impacted_modules_info
+            f"{module['address']}_{module['group']}"
+            for module in self.impacted_modules_info
         )
         return {"impacted_modules": impacted_modules_str}
 
     async def async_press(self) -> None:
         """Handle button press."""
-        event_data = {
-            "address": self._address,
-            "operation_time": self._operation_time
-        }
+        event_data = {"address": self._address, "operation_time": self._operation_time}
 
         # Pass both the address and operation_time to the async_event_handler
         await self._dataservice.async_event_handler("ha_button_pressed", event_data)
