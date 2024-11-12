@@ -1,7 +1,7 @@
 """Nikobus Dimmer / Light entity"""
 
 import logging
-from homeassistant.components.light import LightEntity, SUPPORT_BRIGHTNESS
+from homeassistant.components.light import LightEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, BRAND

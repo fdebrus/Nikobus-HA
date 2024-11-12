@@ -1,10 +1,7 @@
 """API for Nikobus"""
-
-import asyncio
 import logging
-import json
 
-from .const import DOMAIN, DIMMER_DELAY
+from .const import DOMAIN
 
 from .nkbconnect import NikobusConnect
 from .nkbconfig import NikobusConfig
@@ -14,8 +11,6 @@ from .nkbactuator import NikobusActuator
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
-
-from .nkbprotocol import calculate_group_number
 
 _LOGGER = logging.getLogger(__name__)
 

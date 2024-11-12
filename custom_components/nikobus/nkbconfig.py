@@ -47,7 +47,7 @@ class NikobusConfig:
         if 'nikobus_button' in data:
             data['nikobus_button'] = {button['address']: button for button in data['nikobus_button']}
         else:
-            _LOGGER.warning(f"'nikobus_button' key not found in button data")
+            _LOGGER.warning("'nikobus_button' key not found in button data")
         return data
 
     def _transform_module_data(self, data: dict) -> dict:

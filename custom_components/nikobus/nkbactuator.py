@@ -128,7 +128,6 @@ class NikobusActuator:
         """Reset the state after a button press is handled."""
         _LOGGER.debug("Resetting button press state.")
         self._last_address = None
-        self._press_task = None
 
         # Cancel all timer tasks
         for task in self._timer_tasks:

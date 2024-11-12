@@ -3,11 +3,10 @@
 import logging
 from homeassistant.core import HomeAssistant
 from homeassistant.components import switch, light, cover, binary_sensor, button, scene
-from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
 from .const import DOMAIN
-from .coordinator import NikobusDataCoordinator, NikobusConnectError
+from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [switch.DOMAIN, light.DOMAIN, cover.DOMAIN, binary_sensor.DOMAIN, button.DOMAIN, scene.DOMAIN]

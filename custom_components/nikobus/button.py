@@ -1,8 +1,7 @@
 """Nikobus Button entity"""
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND

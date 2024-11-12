@@ -5,13 +5,10 @@ import asyncio
 import serial_asyncio
 import ipaddress
 import re
-from serial import SerialException 
 
 from .const import (
     BAUD_RATE,
-    COMMANDS_HANDSHAKE,
-    EXPECTED_HANDSHAKE_RESPONSE,
-    HANDSHAKE_TIMEOUT
+    COMMANDS_HANDSHAKE
 )
 
 COMMAND_WITH_ACK = COMMANDS_HANDSHAKE[3]
