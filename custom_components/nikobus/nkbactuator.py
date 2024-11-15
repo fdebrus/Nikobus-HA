@@ -30,6 +30,8 @@ class NikobusActuator:
         self._long_press_threshold_ms = LONG_PRESS_THRESHOLD_MS
         self._last_address = None
         self._last_press_time = None
+        self._press_task = None
+        self._press_task_active = False
         self._timer_tasks = []
 
         # Added variables
@@ -38,43 +40,43 @@ class NikobusActuator:
 
     async def handle_button_press(self, address: str) -> None:
         """Handle button press events."""
-        async with self._lock:  # Ensure exclusive access per button press event
-            _LOGGER.debug(f"Handling button press for address: {address}")
+        _LOGGER.debug(f"Handling button press for address: {address}")
 
-            current_time = time.monotonic()
+        current_time = time.monotonic()
 
-            # Log debounce and state information
-            _LOGGER.debug(
-                f"Debounce: last_address={self._last_address}, current_address={address}"
-            )
+        # Log debounce and state information
+        _LOGGER.debug(
+            f"Debounce: last_address={self._last_address}, current_address={address}"
+        )
 
-            if (
-                self._last_address != address
-                or (current_time - self._last_press_time) * 1000
-                > self._debounce_time_ms
-            ):
-                self._last_address = address
-                self._last_press_time = current_time
-                await self._start_press_task(address)
+        if self._last_address != address:
+            self._last_address = address
+            self._last_press_time = current_time
+            self._start_press_task(address)
+            self._start_timer_tasks(address)
+        else:
+            self._last_press_time = current_time
 
-    async def _start_press_task(self, address: str):
+    def _start_press_task(self, address: str):
         """Start the task that waits for button release."""
-        if address in self._press_tasks and not self._press_tasks[address].done():
-            _LOGGER.debug(f"Task for {address} already running; skipping.")
-            return
+        if self._press_task_active:
+            _LOGGER.debug("Press task is already active; skipping task start.")
+            return 
+
+        self._press_task_active = True
+
+        if self._press_task is not None:
+            _LOGGER.debug("Canceling previous press task.")
+            self._press_task.cancel()
 
         _LOGGER.debug("Starting new press task.")
-        self._press_tasks[address] = self._hass.async_create_task(
-            self._wait_for_release(address)
-        )
+        self._press_task = self._hass.async_create_task(self._wait_for_release(address))
 
     def _start_timer_tasks(self, address: str):
         """Start timer tasks that fire events after specific durations."""
         _LOGGER.debug(f"Starting timer tasks for address: {address}")
         for duration in [SHORT_PRESS, MEDIUM_PRESS, LONG_PRESS]:
-            task = self._hass.async_create_task(
-                self._fire_event_after_duration(address, duration)
-            )
+            task = self._hass.async_create_task(self._fire_event_after_duration(address, duration))
             self._timer_tasks.append(task)
 
     async def _fire_event_after_duration(self, address: str, duration: int):
@@ -95,7 +97,7 @@ class NikobusActuator:
                 time_diff = (current_time - self._last_press_time) * 1000
 
                 if time_diff >= self._debounce_time_ms:
-                    press_duration = current_time - start_time
+                    press_duration = (current_time - start_time)
                     _LOGGER.debug(
                         f"Button release detected for address: {address} - duration: {press_duration:.2f} seconds"
                     )
@@ -157,6 +159,8 @@ class NikobusActuator:
         """Reset the state after a button press is handled."""
         _LOGGER.debug("Resetting button press state.")
         self._last_address = None
+        self._press_task_active = False
+        self._press_task = None
 
         # Cancel all timer tasks
         for task in self._timer_tasks:

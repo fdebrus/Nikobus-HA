@@ -25,10 +25,11 @@ class NikobusCommandHandler:
         self._hass = hass
         self._command_task = None
         self._running = False
+        self._command_queue = asyncio.Queue()
+        self._command_completion_handlers = {}
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
         self.nikobus_module_states = nikobus_module_states
-        self._command_queue = asyncio.Queue()
 
     async def start(self):
         """Start the command processing loop."""
@@ -53,7 +54,9 @@ class NikobusCommandHandler:
         command = make_pc_link_command(command_code, address)
         return await self.send_command_get_answer(command, address)
 
-    async def set_output_state(self, address: str, channel: int, value: int) -> None:
+    async def set_output_state(
+        self, address: str, channel: int, value: int, completion_handler=None
+    ) -> None:
         """Set the output state of a module."""
         _LOGGER.debug(
             f"Setting output state - Address: {address}, Channel: {channel}, Value: {value}"
@@ -62,9 +65,11 @@ class NikobusCommandHandler:
         command_code = 0x15 if int(group) == 1 else 0x16
         values = self._prepare_values_for_command(address, group)
         command = make_pc_link_command(command_code, address, values)
-        await self.queue_command(command)
+        await self.queue_command(command, completion_handler=completion_handler)
 
-    async def set_output_states(self, address: str, channel_states: bytearray) -> None:
+    async def set_output_states(
+        self, address: str, channel_states: bytearray, completion_handler=None
+    ) -> None:
         """Prepare and queue the output states for a module, split by group if necessary."""
         _LOGGER.debug(
             f"Preparing to set output states for module {address}: {channel_states.hex()}"
@@ -77,12 +82,15 @@ class NikobusCommandHandler:
                 f"Queuing command for Group {group} of module {address}: {values.hex()}"
             )
             command = make_pc_link_command(command_code, address, values)
-            await self.queue_command(command)
+            await self.queue_command(command, completion_handler=completion_handler)
 
-    async def queue_command(self, command: str) -> None:
+    async def queue_command(self, command: str, completion_handler=None) -> None:
         """Queue a command for processing."""
         _LOGGER.debug(f"Queueing command: {command}")
         await self._command_queue.put(command)
+        _LOGGER.debug(f"Command Queued: {command}")
+        if completion_handler:
+            self._command_completion_handlers[command] = completion_handler
 
     async def process_commands(self) -> None:
         """Process commands from the queue."""
@@ -90,7 +98,22 @@ class NikobusCommandHandler:
         while self._running:
             command = await self._command_queue.get()
             _LOGGER.debug(f"Processing command: {command}")
-            await self._execute_command(command)
+            await self.send_command(command)
+            if command in self._command_completion_handlers:
+                handler = self._command_completion_handlers[command]
+                if callable(handler):  # Ensure it's callable
+                    if asyncio.iscoroutinefunction(handler):  # Ensure it's awaitable
+                        try:
+                            _LOGGER.debug(f"Executing completion handler for command: {command}")
+                            await handler()
+                        except Exception as e:
+                            _LOGGER.error(f"Error executing completion handler for command {command}: {e}")
+                        finally:
+                            del self._command_completion_handlers[command]
+                    else:
+                        _LOGGER.debug(f"Handler for command {command} is not awaitable")
+                else:
+                    _LOGGER.debug(f"No valid handler defined for command {command}")
             await asyncio.sleep(COMMAND_EXECUTION_DELAY)
 
     async def send_command(self, command: str):
@@ -113,14 +136,6 @@ class NikobusCommandHandler:
         return await self._wait_for_ack_and_answer(
             command, _wait_command_ack, _wait_command_answer
         )
-
-    async def _execute_command(self, command: str):
-        """Execute a command and handle potential errors."""
-        try:
-            await self.send_command(command)
-            _LOGGER.debug(f"Command executed: {command}")
-        except Exception as e:
-            _LOGGER.error(f'Failed to execute command "{command}": {e}')
 
     def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
         """Prepare values for a command based on the module state."""

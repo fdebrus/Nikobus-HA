@@ -298,28 +298,28 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     _LOGGER.debug(
                         "Cover %s is opening due to button press.", self._attr_name
                     )
-                    self._position_estimator.start("opening", self._position)
                     self._in_motion = True
                     self._direction = "opening"
+                    self._position_estimator.start(self._direction, self._position)
 
                     # Start real-time position updates if not already running
                     if not self._movement_task or self._movement_task.done():
                         self._movement_task = self.hass.async_create_task(
-                            self._update_position_in_real_time()
+                            self._update_position()
                         )
 
                 elif current_state == STATE_CLOSING:
                     _LOGGER.debug(
                         "Cover %s is closing due to button press.", self._attr_name
                     )
-                    self._position_estimator.start("closing", self._position)
-                    self._in_motion = True
                     self._direction = "closing"
+                    self._in_motion = True
+                    self._position_estimator.start(self._direction, self._position)
 
                     # Start real-time position updates if not already running
                     if not self._movement_task or self._movement_task.done():
                         self._movement_task = self.hass.async_create_task(
-                            self._update_position_in_real_time()
+                            self._update_position()
                         )
 
                 elif current_state == STATE_STOPPED:
@@ -394,102 +394,21 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         if current_state == STATE_OPENING:
             _LOGGER.debug("Cover %s is opening.", self._attr_name)
-            self._position_estimator.start("opening", self._position)
-            self._in_motion = True
             self._direction = "opening"
+            self._in_motion = True
+            self._position_estimator.start(self._direction, self._position)
             self.async_write_ha_state()
 
         elif current_state == STATE_CLOSING:
             _LOGGER.debug("Cover %s is closing.", self._attr_name)
-            self._position_estimator.start("closing", self._position)
-            self._in_motion = True
             self._direction = "closing"
+            self._in_motion = True
+            self._position_estimator.start(self._direction, self._position)
             self.async_write_ha_state()
 
         if not self._movement_task or self._movement_task.done():
             # Schedule the task to update position in real-time
-            self._movement_task = self.hass.async_create_task(
-                self._update_position_in_real_time()
-            )
-
-    async def _update_position_in_real_time(self):
-        """Periodically update the position of the cover during movement."""
-        _LOGGER.debug(f"Starting real-time position updates for {self._attr_name}")
-
-        start_time = time.monotonic()
-        buffer_time_active = False  # Tracks if the extra buffer time is in effect
-        buffer_start_time = None  # Records the start time of the buffer period
-
-        try:
-            while self._in_motion:
-                elapsed = time.monotonic() - start_time
-                self._position = self._position_estimator.get_position()
-                _LOGGER.debug(
-                    "Real-time position update for %s: %s",
-                    self._attr_name,
-                    self._position,
-                )
-
-                # Stop the movement if the button duration is reached
-                if (
-                    self._button_operation_time
-                    and elapsed >= self._button_operation_time
-                ):
-                    _LOGGER.debug(
-                        f"Button operation time reached for {self._attr_name}. Stopping movement."
-                    )
-                    await self.async_stop_cover()
-                    break
-
-                # Check if target position is reached
-                if (self._direction == "opening" and self._position >= 100) or (
-                    self._direction == "closing" and self._position <= 0
-                ):
-                    _LOGGER.debug(
-                        f"Target position reached for {self._attr_name}. Updating state."
-                    )
-
-                    # Update position to the exact target
-                    self._position = 100 if self._direction == "opening" else 0
-
-                    # Update Home Assistant state with the current position
-                    self.async_write_ha_state()
-
-                    if not buffer_time_active:
-                        buffer_time_active = True
-                        buffer_start_time = time.monotonic()
-                        _LOGGER.debug(
-                            "Initiating extra buffer time for %s.", self._attr_name
-                        )
-                    elif time.monotonic() - buffer_start_time >= FULL_OPERATION_BUFFER:
-                        _LOGGER.debug(
-                            "Extra buffer time completed for %s. Stopping movement.",
-                            self._attr_name,
-                        )
-                        await self.async_stop_cover()
-                        break  # Exit the loop after stopping the cover
-                else:
-                    # If still in motion, update the HA state
-                    self.async_write_ha_state()
-
-                # If the cover has been stopped elsewhere, exit the loop
-                if not self._in_motion:
-                    _LOGGER.debug(
-                        f"Cover {self._attr_name} is no longer in motion. Exiting position update loop."
-                    )
-                    break
-
-                await asyncio.sleep(0.5)
-
-        except asyncio.CancelledError:
-            _LOGGER.debug(
-                f"Real-time position update for {self._attr_name} was cancelled"
-            )
-
-        finally:
-            # Reset buffer tracking variables when the movement ends
-            buffer_time_active = False
-            buffer_start_time = None
+            self._movement_task = self.hass.async_create_task(self._update_position())
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
@@ -501,23 +420,35 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         _LOGGER.debug("Closing cover %s", self._attr_name)
         await self._start_movement("closing")
 
+    async def _start_movement(self, direction):
+        """Start movement in the specified direction."""
+        if self._in_motion:
+            # Stop the current movement
+            await self.async_stop_cover()
+
+        # Set the new direction and motion state
+        self._direction = direction
+        self._in_motion = True
+        self.async_write_ha_state()
+
+        self._button_operation_time = None
+
+        await self._operate_cover()
+
     async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
         _LOGGER.debug("Stopping cover %s", self._attr_name)
 
+        async def completion_handler():
+            await self._finalize_position_estimate()
+
+        # Queue the stop command with a completion handler to finalize the position estimate
         await self._dataservice.api.stop_cover(
-            self._address, self._channel, self._direction
+            self._address,
+            self._channel,
+            self._direction,
+            completion_handler=completion_handler,
         )
-
-        # Finalize the position estimate and stop all movement-related tasks
-        self._position_estimator.stop()
-        self._position = self._position_estimator.position
-
-        # Reset motion and direction states
-        self._in_motion = False
-        self._direction = None
-
-        self._button_operation_time = None
 
         # Cancel the movement task if it's running
         if self._movement_task is not None and not self._movement_task.done():
@@ -527,6 +458,21 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             except asyncio.CancelledError:
                 _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
 
+        self.async_write_ha_state()
+
+    async def _finalize_position_estimate(self):
+        """Finalize the position estimate and stop all movement-related tasks."""
+        _LOGGER.debug("Finalize Position")
+        # Stop the position estimator and set the final position
+        self._position_estimator.stop()
+        self._position = self._position_estimator.position
+
+        # Reset motion and direction states
+        self._in_motion = False
+        self._direction = None
+        self._button_operation_time = None
+
+        # Update the Home Assistant state
         self.async_write_ha_state()
 
     async def async_set_cover_position(self, **kwargs):
@@ -561,7 +507,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
 
         # Determine direction based on the target vs. current position
-        delta = target_position - self._position
+        delta = round(target_position - self._position)
         if delta == 0:
             _LOGGER.debug(
                 "Cover %s is already at the target position.", self._attr_name
@@ -581,90 +527,124 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             self._direction,
         )
 
-        # Start the position estimation and movement
-        self._position_estimator.start(self._direction, self._position)
+        await self._operate_cover(target_position=target_position)
 
-        # Start the actual cover movement by sending the command to the device
-        await self._operate_cover()
+    async def _update_position(self, target_position=None):
+        """Periodically update the position of the cover during movement, optionally until a target position is reached."""
+        _LOGGER.debug(f"Starting position updates for {self._attr_name}")
 
-        # Schedule a task to update the position in real time while moving
-        self._movement_task = self.hass.async_create_task(
-            self._update_position_to_target(target_position)
-        )
+        start_time = time.monotonic()
+        buffer_time_active = False  # Tracks if extra buffer time is in effect
+        buffer_start_time = None  # Records the start time of the buffer period
 
-    async def _update_position_to_target(self, target_position):
-        """Periodically update the position of the cover until it reaches the target position."""
-        _LOGGER.debug(
-            "Starting position update to target %d for %s",
-            target_position,
-            self._attr_name,
-        )
         try:
             while self._in_motion:
                 # Update the estimated position
+                elapsed = time.monotonic() - start_time
                 self._position = self._position_estimator.get_position()
                 _LOGGER.debug(
-                    "Real-time position update for %s: %s",
-                    self._attr_name,
-                    self._position,
+                    f"Real-time position update for {self._attr_name}: {self._position}"
                 )
 
-                # Check if the cover has reached or passed the target position
+                # Check if button operation time has been reached
                 if (
-                    self._direction == "opening" and self._position >= target_position
-                ) or (
-                    self._direction == "closing" and self._position <= target_position
+                    self._button_operation_time
+                    and elapsed >= self._button_operation_time
                 ):
                     _LOGGER.debug(
-                        "Target position %d reached for %s. Stopping movement.",
-                        target_position,
-                        self._attr_name,
+                        f"Button operation time reached for {self._attr_name}. Stopping movement."
                     )
                     await self.async_stop_cover()
-                    self._position = (
-                        target_position  # Ensure position is set exactly to target
+                    break
+
+                # Stop when reaching the target position if specified
+                if target_position is not None:
+                    if (
+                        self._direction == "opening"
+                        and self._position >= target_position
+                    ) or (
+                        self._direction == "closing"
+                        and self._position <= target_position
+                    ):
+                        _LOGGER.debug(
+                            f"Target position {target_position} reached for {self._attr_name}. Stopping movement."
+                        )
+                        await self.async_stop_cover()
+                        self._position = target_position  # Set exact position to target
+                        self.async_write_ha_state()
+                        return
+
+                # Apply buffer time if cover reaches fully open or closed position
+                if (self._direction == "opening" and self._position >= 100) or (
+                    self._direction == "closing" and self._position <= 0
+                ):
+                    _LOGGER.debug(
+                        f"Full position reached for {self._attr_name}. Adding buffer time."
                     )
+                    self._position = 100 if self._direction == "opening" else 0
                     self.async_write_ha_state()
-                    return
+                    if not buffer_time_active:
+                        buffer_time_active = True
+                        buffer_start_time = time.monotonic()
+                    elif time.monotonic() - buffer_start_time >= FULL_OPERATION_BUFFER:
+                        await self.async_stop_cover()
+                        break
+
+                # Exit if cover has been stopped externally
+                if not self._in_motion:
+                    _LOGGER.debug(
+                        f"Cover {self._attr_name} stopped externally. Exiting position update."
+                    )
+                    break
 
                 self.async_write_ha_state()
                 await asyncio.sleep(0.5)
+
         except asyncio.CancelledError:
-            _LOGGER.debug(
-                "Position update to target for %s was cancelled", self._attr_name
-            )
+            _LOGGER.debug(f"Position update for {self._attr_name} was cancelled")
 
-    async def _start_movement(self, direction):
-        """Start movement in the specified direction."""
-        if self._in_motion:
-            # Stop the current movement
-            await self.async_stop_cover()
+        finally:
+            # Reset buffer tracking variables
+            buffer_time_active = False
+            buffer_start_time = None
 
-        # Set the new direction and motion state
-        self._direction = direction
-        self._in_motion = True
-        self.async_write_ha_state()
+    async def _start_position_estimation(self, target_position=None):
+        """Start position estimation and schedule the update task."""
+        # Start the position estimator with the current direction and position
+        self._position_estimator.start(self._direction, self._position)
 
-        self._button_operation_time = None
-        self._position_estimator.start(direction, self._position)
+        # Cancel and await previous movement task if it's still running
+        if self._movement_task is not None and not self._movement_task.done():
+            self._movement_task.cancel()
+            try:
+                await self._movement_task
+            except asyncio.CancelledError:
+                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
 
-        await self._operate_cover()
+        # Schedule the _update_position task, optionally with a target position
+        self._movement_task = self.hass.async_create_task(
+            self._update_position(target_position)
+        )
 
-        if not self._movement_task or self._movement_task.done():
-            self._movement_task = self.hass.async_create_task(
-                self._update_position_in_real_time()
-            )
-
-    async def _operate_cover(self):
+    async def _operate_cover(self, target_position=None):
         """Send the command to operate the cover."""
         _LOGGER.debug(
             "Operating cover %s in direction: %s", self._attr_name, self._direction
         )
 
+        # Define completion handler to trigger position estimation
+        async def completion_handler():
+            await self._start_position_estimation(target_position=target_position)
+
+        # Queue appropriate command based on direction with completion handler
         if self._direction == "opening":
-            await self._dataservice.api.open_cover(self._address, self._channel)
+            await self._dataservice.api.open_cover(
+                self._address, self._channel, completion_handler=completion_handler
+            )
         elif self._direction == "closing":
-            await self._dataservice.api.close_cover(self._address, self._channel)
+            await self._dataservice.api.close_cover(
+                self._address, self._channel, completion_handler=completion_handler
+            )
 
         self._in_motion = True
         self.async_write_ha_state()

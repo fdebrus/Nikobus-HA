@@ -70,8 +70,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.async_event_handler,
             )
             self.hass.data[DOMAIN]["nikobus_instance"] = self.api
-            self.hass.async_create_task(self.api.command_handler())
-            self.hass.async_create_task(self.api.listen_for_events())
+            await self.api.command_handler()
+            await self.api.listen_for_events()
             await self.async_refresh()
         except NikobusConnectionError as e:
             _LOGGER.error("Failed to connect to Nikobus: %s", e)
