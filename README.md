@@ -25,9 +25,10 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
         
     The following are available after release
       -  **nikobus_button_released**
+    
       -  **nikobus_short_button_pressed**
       -  **nikobus_long_button_pressed**
-      -  **nikobus_button_pressed_0** (button press detected after release for less than 1 second)
+        
       -  **nikobus_button_pressed_1** (button press detected after release for 1 second)
       -  **nikobus_button_pressed_2** (button press detected after release for 2 seconds)
       -  **nikobus_button_pressed_3** (button press detected after release for 3 seconds)
