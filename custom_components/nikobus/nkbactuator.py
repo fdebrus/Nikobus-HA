@@ -5,7 +5,6 @@ import time
 import logging
 from .const import (
     DOMAIN,
-    LONG_PRESS_THRESHOLD_MS,
     DIMMER_DELAY,
     SHORT_PRESS,
     MEDIUM_PRESS,
@@ -27,16 +26,11 @@ class NikobusActuator:
         self.dict_button_data = dict_button_data
         self.dict_module_data = dict_module_data
         self._debounce_time_ms = 150
-        self._long_press_threshold_ms = LONG_PRESS_THRESHOLD_MS
         self._last_address = None
         self._last_press_time = None
         self._press_task = None
         self._press_task_active = False
         self._timer_tasks = []
-
-        # Added variables
-        self._lock = asyncio.Lock()
-        self._press_tasks = {}  # Track tasks by address
 
     async def handle_button_press(self, address: str) -> None:
         """Handle button press events."""
@@ -106,13 +100,6 @@ class NikobusActuator:
                         self._handle_short_press(address, press_duration)
                     elif press_duration < MEDIUM_PRESS:
                         self._handle_medium_press(address, press_duration)
-                    elif press_duration < LONG_PRESS:
-                        _LOGGER.debug(
-                            f"Button press detected for 3 seconds for address: {address}"
-                        )
-                        self._hass.bus.async_fire(
-                            "nikobus_button_pressed_3", {"address": address}
-                        )
                     elif press_duration >= LONG_PRESS:
                         _LOGGER.debug(
                             f"Button press detected for 3 seconds for address: {address}"
@@ -120,16 +107,8 @@ class NikobusActuator:
                         self._hass.bus.async_fire(
                             "nikobus_button_pressed_3", {"address": address}
                         )
-                        _LOGGER.debug(
-                            f"Button long press detected for address: {address}"
-                        )
-                        self._hass.bus.async_fire(
-                            "nikobus_long_button_pressed", {"address": address}
-                        )
 
                     await self.button_discovery(address)
-
-                    # Reset state and cancel timer tasks
                     self._reset_state()
                     break
 
@@ -202,6 +181,9 @@ class NikobusActuator:
 
         operation_time = float(button.get("operation_time", 0))
 
+        nikobus_instance = self._hass.data[DOMAIN].get("nikobus_instance")
+        command_handler = self._hass.data[DOMAIN].get("nikobus_command_handler")
+
         for impacted_module_info in button.get("impacted_module", []):
             impacted_module_address = impacted_module_info.get("address")
             impacted_group = impacted_module_info.get("group")
@@ -234,9 +216,6 @@ class NikobusActuator:
                 ):
                     _LOGGER.debug("Dimmer DETECTED - pausing to get final status")
                     await asyncio.sleep(DIMMER_DELAY)
-
-                nikobus_instance = self._hass.data[DOMAIN].get("nikobus_instance")
-                command_handler = self._hass.data[DOMAIN].get("nikobus_command_handler")
 
                 value = await command_handler.get_output_state(
                     impacted_module_address, impacted_group
