@@ -68,7 +68,7 @@ class NikobusConfig:
             _LOGGER.info(
                 f"Button configuration file not found: {file_path}. A new file will be created upon discovering the first button."
             )
-        elif data_type != "scene"
+        elif data_type != "scene":
             raise HomeAssistantError(
                 f"{data_type.capitalize()} mandatory configuration file not found: {file_path}"
             )
