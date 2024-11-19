@@ -115,6 +115,9 @@ class NikobusActuator:
         except asyncio.CancelledError:
             _LOGGER.debug("Press task cancelled")
 
+        finally:
+            self._reset_state()
+
     def _handle_short_press(self, address: str, duration: float):
         """Handle a short button press."""
         _LOGGER.debug(
