@@ -89,8 +89,6 @@ class NikobusCommandHandler:
         _LOGGER.debug(f"Queueing command: {unique_command_key}")
         await self._command_queue.put(unique_command_key)
         _LOGGER.debug(f"Command Queued: {unique_command_key}")
-        if completion_handler:
-            self._command_completion_handlers[unique_command_key] = completion_handler
 
     async def process_commands(self) -> None:
         """Process commands from the queue."""
