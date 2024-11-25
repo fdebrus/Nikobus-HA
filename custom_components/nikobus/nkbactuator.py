@@ -109,7 +109,6 @@ class NikobusActuator:
                         )
 
                     await self.button_discovery(address)
-                    self._reset_state()
                     break
 
         except asyncio.CancelledError:
@@ -172,7 +171,7 @@ class NikobusActuator:
             if "nikobus_button" not in self.dict_button_data:
                 self.dict_button_data["nikobus_button"] = {}
             self.dict_button_data["nikobus_button"][address] = new_button
-            await self._hass.data[DOMAIN]._nikobus_config.write_json_data(
+            await self._hass.data[DOMAIN]["nikobus_instance"]._nikobus_config.write_json_data(
                 "nikobus_button_config.json", "button", self.dict_button_data
             )
             _LOGGER.debug(f"New button configuration added for address {address}.")

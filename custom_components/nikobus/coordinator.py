@@ -102,11 +102,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle HA button press events."""
         address = data.get("address")
         operation_time = data.get("operation_time")
+        unique_command_key = f"#N{address}_ha_button_{operation_time}"
         _LOGGER.debug(
             f"HA Button {address} pressed with operation_time: {operation_time}"
         )
-        await self.api.nikobus_command_handler.queue_command(f"#N{address}\r#E1")
-
+        await self.api.nikobus_command_handler.queue_command(
+            unique_command_key, address, None, completion_handler=completion_handler
+        )
+        
     async def _handle_nikobus_button_pressed(self, data):
         """Handle Nikobus button press events."""
         address = data.get("address")

@@ -46,6 +46,7 @@ class NikobusEventListener:
 
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
+        self.cmd_response_queue = asyncio.Queue()
 
     async def start(self):
         """Start the event listener."""
@@ -99,6 +100,7 @@ class NikobusEventListener:
 
         if message.startswith(COMMAND_PROCESSED):
             _LOGGER.debug(f"Command acknowledged: {message}")
+            await self.cmd_response_queue.put(message)
             return
 
         if message.startswith(CONTROLLER_ADDRESS):

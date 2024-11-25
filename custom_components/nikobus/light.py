@@ -104,27 +104,40 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     async def async_turn_on(self, **kwargs):
         """Turn on the light."""
         self._brightness = kwargs.get("brightness", DEFAULT_BRIGHTNESS)
-        self._state = True
         try:
             await self._dataservice.api.turn_on_light(
-                self._address, self._channel, self._brightness
+                self._address,
+                self._channel,
+                self._brightness,
+                completion_handler=self._on_light_turned_on,
             )
         except Exception as e:
             _LOGGER.error(
                 f"Failed to turn on light at address {self._address}, channel {self._channel}: {e}"
             )
-            self._state = False
-        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         """Turn off the light."""
-        self._state = False
-        self._brightness = 0
         try:
-            await self._dataservice.api.turn_off_light(self._address, self._channel)
+            await self._dataservice.api.turn_off_light(
+                self._address,
+                self._channel,
+                completion_handler=self._on_light_turned_off,
+            )
         except Exception as e:
             _LOGGER.error(
                 f"Failed to turn off light at address {self._address}, channel {self._channel}: {e}"
             )
-            self._state = True
+
+    async def _on_light_turned_on(self):
+        """Handler called when the light is successfully turned on."""
+        self._state = True
+        _LOGGER.info(f"Successfully turned on light at {self._address}, channel {self._channel}")
+        self.async_write_ha_state()
+
+    async def _on_light_turned_off(self):
+        """Handler called when the light is successfully turned off."""
+        self._state = False
+        self._brightness = 0
+        _LOGGER.info(f"Successfully turned off light at {self._address}, channel {self._channel}")
         self.async_write_ha_state()

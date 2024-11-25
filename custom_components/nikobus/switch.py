@@ -83,24 +83,34 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self):
         """Turn the switch on."""
-        self._state = True
         try:
-            await self._dataservice.api.turn_on_switch(self._address, self._channel)
+            await self._dataservice.api.turn_on_switch(
+                self._address, self._channel, completion_handler=self._on_switch_turned_on
+            )
         except Exception as e:
             _LOGGER.error(
                 f"Failed to turn on switch at address {self._address}, channel {self._channel}: {e}"
             )
-            self._state = False  # Reset state if there was an error
-        self.async_write_ha_state()
 
     async def async_turn_off(self):
         """Turn the switch off."""
-        self._state = False
         try:
-            await self._dataservice.api.turn_off_switch(self._address, self._channel)
+            await self._dataservice.api.turn_off_switch(
+                self._address, self._channel, completion_handler=self._on_switch_turned_off
+            )
         except Exception as e:
             _LOGGER.error(
                 f"Failed to turn off switch at address {self._address}, channel {self._channel}: {e}"
             )
-            self._state = True  # Reset state if there was an error
+
+    async def _on_switch_turned_on(self):
+        """Handler called when the switch is successfully turned on."""
+        self._state = True
+        _LOGGER.info(f"Successfully turned on switch at {self._address}, channel {self._channel}")
+        self.async_write_ha_state()
+
+    async def _on_switch_turned_off(self):
+        """Handler called when the switch is successfully turned off."""
+        self._state = False
+        _LOGGER.info(f"Successfully turned off switch at {self._address}, channel {self._channel}")
         self.async_write_ha_state()

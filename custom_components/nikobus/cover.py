@@ -17,6 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
+STATE_UNKNOWN = 0x03
 FULL_OPERATION_BUFFER = 3
 
 
@@ -123,6 +124,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._address = address
         self._channel = channel
         self._direction = None
+        self._state = 0
         self._previous_state = None
 
         self._operation_time = float(operation_time) if operation_time else None
@@ -164,6 +166,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         """Return the state attributes."""
         attributes = super().extra_state_attributes or {}
         attributes["position"] = self._position
+        attributes["state"] = self._state
         return attributes
 
     @property
@@ -184,12 +187,17 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     @property
     def is_opening(self):
         """Return True if the cover is currently opening."""
-        return self._in_motion and self._direction == "opening"
+        return self._state == STATE_OPENING
 
     @property
     def is_closing(self):
         """Return True if the cover is currently closing."""
-        return self._in_motion and self._direction == "closing"
+        return self._state == STATE_CLOSING
+
+    @property
+    def available(self):
+        """Indicate whether the cover is available."""
+        return self._state != STATE_UNKNOWN
 
     @property
     def supported_features(self):
@@ -228,10 +236,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             )
 
         # Initialize previous state from current API state
-        current_state = self._dataservice.api.get_cover_state(
+        self._state = self._dataservice.api.get_cover_state(
             self._address, self._channel
         )
-        self._previous_state = current_state
+        self._previous_state = self._state
         _LOGGER.debug(
             "Initialized previous state for %s to %s",
             self._attr_name,
@@ -267,24 +275,24 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         # Only proceed if the event address matches this cover's module address
         if impacted_module_address == self._address:
             # Get the current state for this cover's channel
-            current_state = self._dataservice.api.get_cover_state(
+            self._state = self._dataservice.api.get_cover_state(
                 self._address, self._channel
             )
             _LOGGER.debug(
                 "Current state for cover %s (channel %d): %s",
                 self._attr_name,
                 self._channel,
-                current_state,
+                self._state,
             )
 
             # Compare with the previous state
-            if current_state != self._previous_state:
+            if self._state != self._previous_state:
                 _LOGGER.debug(
                     "State change detected for cover %s (channel %d)",
                     self._attr_name,
                     self._channel,
                 )
-                self._previous_state = current_state
+                self._previous_state = self._state
 
                 # Set operation time if provided
                 if button_operation_time:
@@ -294,7 +302,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._button_operation_time = float(button_operation_time)
 
                 # Handle the new state
-                if current_state == STATE_OPENING:
+                if self._state == STATE_OPENING:
                     _LOGGER.debug(
                         "Cover %s is opening due to button press.", self._attr_name
                     )
@@ -308,7 +316,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                             self._update_position()
                         )
 
-                elif current_state == STATE_CLOSING:
+                elif self._state == STATE_CLOSING:
                     _LOGGER.debug(
                         "Cover %s is closing due to button press.", self._attr_name
                     )
@@ -322,7 +330,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                             self._update_position()
                         )
 
-                elif current_state == STATE_STOPPED:
+                elif self._state == STATE_STOPPED:
                     _LOGGER.debug(
                         "Cover %s has stopped due to button press.", self._attr_name
                     )
@@ -355,25 +363,26 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        current_state = self._dataservice.api.get_cover_state(
+        self._state = self._dataservice.api.get_cover_state(
             self._address, self._channel
         )
+        
         _LOGGER.debug(
             "Coordinator update received for %s. Current state: %s Position: %s",
             self._attr_name,
-            current_state,
+            self._state,
             self._position,
         )
 
-        if current_state == self._previous_state:
+        if self._state == self._previous_state:
             _LOGGER.debug(
                 "No state change detected for %s. Skipping update.", self._attr_name
             )
             return
 
-        self._previous_state = current_state
+        self._previous_state = self._state
 
-        if current_state == STATE_STOPPED:
+        if self._state == STATE_STOPPED:
             _LOGGER.debug("Cover %s is stopped.", self._attr_name)
             self._position_estimator.stop()
 
@@ -392,19 +401,17 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             self.async_write_ha_state()
             return
 
-        if current_state == STATE_OPENING:
+        if self._state == STATE_OPENING:
             _LOGGER.debug("Cover %s is opening.", self._attr_name)
             self._direction = "opening"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
-            self.async_write_ha_state()
 
-        elif current_state == STATE_CLOSING:
+        elif self._state == STATE_CLOSING:
             _LOGGER.debug("Cover %s is closing.", self._attr_name)
             self._direction = "closing"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
-            self.async_write_ha_state()
 
         if not self._movement_task or self._movement_task.done():
             # Schedule the task to update position in real-time
@@ -429,8 +436,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         # Set the new direction and motion state
         self._direction = direction
         self._in_motion = True
-        self.async_write_ha_state()
-
         self._button_operation_time = None
 
         await self._operate_cover()
@@ -443,12 +448,20 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             await self._finalize_position_estimate()
 
         # Queue the stop command with a completion handler to finalize the position estimate
+        _LOGGER.debug("Stopping Cover")
         await self._dataservice.api.stop_cover(
             self._address,
             self._channel,
             self._direction,
             completion_handler=completion_handler,
         )
+
+    async def _finalize_position_estimate(self):
+        """Finalize the position estimate and stop all movement-related tasks."""
+        _LOGGER.debug("Finalize Position")
+        # Stop the position estimator and set the final position
+        self._position_estimator.stop()
+        self._position = self._position_estimator.position
 
         # Cancel the movement task if it's running
         if self._movement_task is not None and not self._movement_task.done():
@@ -457,15 +470,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 await self._movement_task
             except asyncio.CancelledError:
                 _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
-
-        self.async_write_ha_state()
-
-    async def _finalize_position_estimate(self):
-        """Finalize the position estimate and stop all movement-related tasks."""
-        _LOGGER.debug("Finalize Position")
-        # Stop the position estimator and set the final position
-        self._position_estimator.stop()
-        self._position = self._position_estimator.position
 
         # Reset motion and direction states
         self._in_motion = False
@@ -498,14 +502,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             "Setting cover position for %s to: %d", self._attr_name, target_position
         )
 
-        # Cancel and await previous movement task if it's still running
-        if self._movement_task is not None and not self._movement_task.done():
-            self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
-
         # Determine direction based on the target vs. current position
         delta = round(target_position - self._position)
         if delta == 0:
@@ -534,8 +530,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         _LOGGER.debug(f"Starting position updates for {self._attr_name}")
 
         start_time = time.monotonic()
-        buffer_time_active = False  # Tracks if extra buffer time is in effect
-        buffer_start_time = None  # Records the start time of the buffer period
 
         try:
             while self._in_motion:
@@ -546,67 +540,59 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     f"Real-time position update for {self._attr_name}: {self._position}"
                 )
 
-                # Check if button operation time has been reached
-                if (
-                    self._button_operation_time
-                    and elapsed >= self._button_operation_time
-                ):
+                # Stop if button operation time has elapsed
+                if self._button_operation_time and elapsed >= self._button_operation_time:
                     _LOGGER.debug(
                         f"Button operation time reached for {self._attr_name}. Stopping movement."
                     )
                     await self.async_stop_cover()
-                    break
+                    return
 
-                # Stop when reaching the target position if specified
+                # Stop if the target position is reached
                 if target_position is not None:
                     if (
-                        self._direction == "opening"
-                        and self._position >= target_position
-                    ) or (
-                        self._direction == "closing"
-                        and self._position <= target_position
+                        (self._direction == "opening" and self._position >= target_position)
+                        or (self._direction == "closing" and self._position <= target_position)
                     ):
                         _LOGGER.debug(
                             f"Target position {target_position} reached for {self._attr_name}. Stopping movement."
                         )
+                        self._position = target_position  # Ensure position matches target
                         await self.async_stop_cover()
-                        self._position = target_position  # Set exact position to target
-                        self.async_write_ha_state()
                         return
 
-                # Apply buffer time if cover reaches fully open or closed position
-                if (self._direction == "opening" and self._position >= 100) or (
-                    self._direction == "closing" and self._position <= 0
+                # Handle full open or closed state with buffer time
+                if (
+                    (self._direction == "opening" and self._position >= 100)
+                    or (self._direction == "closing" and self._position <= 0)
                 ):
                     _LOGGER.debug(
-                        f"Full position reached for {self._attr_name}. Adding buffer time."
+                        f"Full position reached for {self._attr_name}. Waiting buffer time before sending stop command."
                     )
                     self._position = 100 if self._direction == "opening" else 0
-                    self.async_write_ha_state()
-                    if not buffer_time_active:
-                        buffer_time_active = True
-                        buffer_start_time = time.monotonic()
-                    elif time.monotonic() - buffer_start_time >= FULL_OPERATION_BUFFER:
-                        await self.async_stop_cover()
-                        break
 
-                # Exit if cover has been stopped externally
+                    # Wait for buffer time
+                    await asyncio.sleep(FULL_OPERATION_BUFFER)
+
+                    _LOGGER.debug(
+                        f"Buffer time completed for {self._attr_name}. Sending stop command."
+                    )
+                    await self.async_stop_cover()
+                    return
+
+                # Exit if the cover is stopped externally
                 if not self._in_motion:
                     _LOGGER.debug(
                         f"Cover {self._attr_name} stopped externally. Exiting position update."
                     )
-                    break
+                    return
 
+                # Write state and wait before the next iteration
                 self.async_write_ha_state()
                 await asyncio.sleep(0.5)
 
         except asyncio.CancelledError:
             _LOGGER.debug(f"Position update for {self._attr_name} was cancelled")
-
-        finally:
-            # Reset buffer tracking variables
-            buffer_time_active = False
-            buffer_start_time = None
 
     async def _start_position_estimation(self, target_position=None):
         """Start position estimation and schedule the update task."""
@@ -645,6 +631,3 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             await self._dataservice.api.close_cover(
                 self._address, self._channel, completion_handler=completion_handler
             )
-
-        self._in_motion = True
-        self.async_write_ha_state()
