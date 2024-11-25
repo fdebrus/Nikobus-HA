@@ -250,6 +250,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self.hass.bus.async_listen(
             "nikobus_button_pressed", self._handle_nikobus_button_event
         )
+        self.async_write_ha_state()
 
     async def _wait_for_movement_task(self):
         if self._movement_task is not None:
@@ -378,6 +379,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             _LOGGER.debug(
                 "No state change detected for %s. Skipping update.", self._attr_name
             )
+            self.async_write_ha_state()
             return
 
         self._previous_state = self._state
@@ -570,14 +572,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                         f"Full position reached for {self._attr_name}. Waiting buffer time before sending stop command."
                     )
                     self._position = 100 if self._direction == "opening" else 0
-
-                    # Wait for buffer time
-                    await asyncio.sleep(FULL_OPERATION_BUFFER)
-
-                    _LOGGER.debug(
-                        f"Buffer time completed for {self._attr_name}. Sending stop command."
-                    )
-                    await self.async_stop_cover()
+                    self.hass.call_later(FULL_OPERATION_BUFFER, self.schedule_stop_callback)
                     return
 
                 # Exit if the cover is stopped externally
@@ -593,6 +588,13 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         except asyncio.CancelledError:
             _LOGGER.debug(f"Position update for {self._attr_name} was cancelled")
+
+    def schedule_stop_callback(self):
+        """Schedules the stop command."""
+        _LOGGER.debug(
+            f"Buffer time completed for {self._attr_name}. Sending stop command."
+        )
+        self.hass.async_create_task(self.async_stop_cover())
 
     async def _start_position_estimation(self, target_position=None):
         """Start position estimation and schedule the update task."""
@@ -631,3 +633,4 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             await self._dataservice.api.close_cover(
                 self._address, self._channel, completion_handler=completion_handler
             )
+        self.async_write_ha_state()
