@@ -132,12 +132,12 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     async def _on_light_turned_on(self):
         """Handler called when the light is successfully turned on."""
         self._state = True
-        _LOGGER.info(f"Successfully turned on light at {self._address}, channel {self._channel}")
+        _LOGGER.debug(f"Successfully turned on light at {self._address}, channel {self._channel}")
         self.async_write_ha_state()
 
     async def _on_light_turned_off(self):
         """Handler called when the light is successfully turned off."""
         self._state = False
         self._brightness = 0
-        _LOGGER.info(f"Successfully turned off light at {self._address}, channel {self._channel}")
+        _LOGGER.debug(f"Successfully turned off light at {self._address}, channel {self._channel}")
         self.async_write_ha_state()

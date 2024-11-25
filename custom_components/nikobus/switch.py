@@ -106,11 +106,11 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     async def _on_switch_turned_on(self):
         """Handler called when the switch is successfully turned on."""
         self._state = True
-        _LOGGER.info(f"Successfully turned on switch at {self._address}, channel {self._channel}")
+        _LOGGER.debug(f"Successfully turned on switch at {self._address}, channel {self._channel}")
         self.async_write_ha_state()
 
     async def _on_switch_turned_off(self):
         """Handler called when the switch is successfully turned off."""
         self._state = False
-        _LOGGER.info(f"Successfully turned off switch at {self._address}, channel {self._channel}")
+        _LOGGER.debug(f"Successfully turned off switch at {self._address}, channel {self._channel}")
         self.async_write_ha_state()
