@@ -88,6 +88,8 @@ class NikobusCommandHandler:
         """Queue a command for processing."""
         unique_command_key = f"{command}_{address}_{channel}"
         _LOGGER.debug(f"Queueing command: {unique_command_key}")
+        if completion_handler:
+            self._command_completion_handlers[unique_command_key] = completion_handler
         await self._command_queue.put(unique_command_key)
         _LOGGER.debug(f"Command Queued: {unique_command_key}")
         
@@ -98,30 +100,29 @@ class NikobusCommandHandler:
             try:
                 # Get the next command from the queue
                 unique_command_key = await self._command_queue.get()
+                _LOGGER.debug(f"Unique command key: {unique_command_key}")
                 command, address, channel = unique_command_key.rsplit("_", 2)
                 _LOGGER.debug(f"Processing command: {command}, Address: {address}, Channel: {channel}")
+            
+                # Check if a completion handler exists
+                withAck = unique_command_key in self._command_completion_handlers
 
                 # Attempt to send the command
-                try:
-                    if await self.send_command(command, address):
+                try:    
+                    if await self.send_command(command, address, withAck=withAck):
                         # Execute the completion handler if defined
-                        if unique_command_key in self._command_completion_handlers:
-                            handler = self._command_completion_handlers[unique_command_key]
-                            if callable(handler):
-                                try:
-                                    _LOGGER.debug(f"Executing completion handler for command: {unique_command_key}")
-                                    if asyncio.iscoroutinefunction(handler):
-                                        # address=address, channel=int(channel)
-                                        await handler()
-                                    else:
-                                        handler()
-                                except Exception as e:
-                                    _LOGGER.error(
-                                        f"Error executing completion handler for command {unique_command_key}: {e}"
-                                    )
-                                finally:
-                                    # Ensure the handler is always removed
-                                    del self._command_completion_handlers[unique_command_key]
+                        handler = self._command_completion_handlers.pop(unique_command_key, None)
+                        if handler:
+                            try:
+                                _LOGGER.debug(f"Executing completion handler for command: {unique_command_key}")
+                                if asyncio.iscoroutinefunction(handler):
+                                    await handler()
+                                else:
+                                    handler()
+                            except Exception as e:
+                                _LOGGER.error(
+                                    f"Error executing completion handler for command {unique_command_key}: {e}"
+                                )
                     else:
                         _LOGGER.error(f"Nikobus command {command} on address {address} for channel {channel} failed to execute.")
                 except Exception as e:
@@ -129,12 +130,10 @@ class NikobusCommandHandler:
 
                 # Delay between command processing
                 await asyncio.sleep(COMMAND_EXECUTION_DELAY)
-
             except Exception as e:
-                # Catch unexpected errors to prevent loop termination
                 _LOGGER.error(f"Unexpected error in process_commands loop: {e}")
 
-    async def send_command(self, command: str, address: str) -> bool:
+    async def send_command(self, command: str, address: str, withAck: bool) -> bool:
         """Send a command to the Nikobus system."""
         ack_received = False
         answer_received = False
@@ -142,40 +141,44 @@ class NikobusCommandHandler:
         _wait_command_ack, _wait_command_answer = self._prepare_ack_and_answer_signals(
             command, address
         )
-        for attempt in range(MAX_ATTEMPTS):
+        if not withAck:
             await self.nikobus_connection.send(command)
-            _LOGGER.debug(
-                f"Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer[-4:]}"
-            )
-            end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
-            while asyncio.get_event_loop().time() < end_time:
-                try:
-                    message = await asyncio.wait_for(
-                        self.nikobus_listener.cmd_response_queue.get(),
-                        timeout=COMMAND_ANSWER_WAIT_TIMEOUT,
-                    )
-                    _LOGGER.debug(f"Message received: {message}")
-                    if _wait_command_ack in message:
-                        _LOGGER.debug("ACK received")
-                        ack_received = True
-                    if _wait_command_answer[-4:] in message:
-                        _LOGGER.debug("Answer received")
-                        answer_received = True
-                    if ack_received and answer_received:
-                        return True
-                except asyncio.TimeoutError:
-                    _LOGGER.warning("Timeout while waiting for message")
-                except Exception as e:
-                    _LOGGER.error(f"Error sending command {command} - {address} - {e}")
-        if not ack_received:
-            _LOGGER.error(
-                f"ACK not received on {command} after {attempt + 1} attempts waiting for {_wait_command_ack}"
-            )
-        if not answer_received:
-            _LOGGER.error(
-                f"Answer not received on {command} after {attempt + 1} attempts waiting for {_wait_command_answer}"
-            )
-        return False
+            return True
+        else:
+            for attempt in range(MAX_ATTEMPTS):
+                await self.nikobus_connection.send(command)
+                _LOGGER.debug(
+                    f"Attempt {attempt + 1} of {MAX_ATTEMPTS} waiting for {_wait_command_ack} / {_wait_command_answer[-4:]}"
+                )
+                end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
+                while asyncio.get_event_loop().time() < end_time:
+                    try:
+                        message = await asyncio.wait_for(
+                            self.nikobus_listener.cmd_response_queue.get(),
+                            timeout=COMMAND_ANSWER_WAIT_TIMEOUT,
+                        )
+                        _LOGGER.debug(f"Message received: {message}")
+                        if _wait_command_ack in message:
+                            _LOGGER.debug("ACK received")
+                            ack_received = True
+                        if _wait_command_answer[-4:] in message:
+                            _LOGGER.debug("Answer received")
+                            answer_received = True
+                        if ack_received and answer_received:
+                            return True
+                    except asyncio.TimeoutError:
+                        _LOGGER.warning("Timeout while waiting for message")
+                    except Exception as e:
+                        _LOGGER.error(f"Error sending command {command} - {address} - {e}")
+            if not ack_received:
+                _LOGGER.error(
+                    f"ACK not received on {command} after {attempt + 1} attempts waiting for {_wait_command_ack}"
+                )
+            if not answer_received:
+                _LOGGER.error(
+                    f"Answer not received on {command} after {attempt + 1} attempts waiting for {_wait_command_answer}"
+                )
+            return False
 
     async def send_command_get_answer(self, command: str, address: str) -> str | None:
         """Send a command and wait for an answer from the Nikobus system."""
