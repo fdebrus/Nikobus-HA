@@ -88,7 +88,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     @property
     def is_on(self):
         """Return True if the light is on."""
-        return self._state or False
+        return self._state is True
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -131,12 +131,14 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     async def _on_light_turned_on(self):
         """Handler called when the light is successfully turned on."""
+        self._dataservice.api.set_bytearray_state(self._address, self._channel, self._brightness)
         self._state = True
         _LOGGER.debug(f"Successfully turned on light at {self._address}, channel {self._channel}")
         self.async_write_ha_state()
 
     async def _on_light_turned_off(self):
         """Handler called when the light is successfully turned off."""
+        self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
         self._state = False
         self._brightness = 0
         _LOGGER.debug(f"Successfully turned off light at {self._address}, channel {self._channel}")

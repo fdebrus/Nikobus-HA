@@ -220,14 +220,14 @@ class Nikobus:
 
     #### SCENES
     async def set_output_states_for_module(
-        self, address: str, channel_states: bytearray, completion_handler=None
+        self, address: str, group: int, channel_states: bytearray, completion_handler=None
     ) -> None:
         """Set the output states for a module with multiple channel updates at once."""
         _LOGGER.debug(
-            f"Setting output states for module {address}: {channel_states.hex()}"
+            f"Setting output states for module {address}: group: {group} states: {channel_states.hex()}"
         )
         await self.nikobus_command_handler.set_output_states(
-            address, channel_states, completion_handler=completion_handler
+            address, group, channel_states, completion_handler=completion_handler
         )
 
     #### SWITCHES
@@ -239,7 +239,6 @@ class Nikobus:
         self, address: str, channel: int, completion_handler=None
     ) -> None:
         """Turn on a switch specified by its address and channel."""
-        self.set_bytearray_state(address, channel, 0xFF)
         channel_info = self.dict_module_data["switch_module"][address]["channels"][
             channel - 1
         ]
@@ -258,7 +257,6 @@ class Nikobus:
         self, address: str, channel: int, completion_handler=None
     ) -> None:
         """Turn off a switch specified by its address and channel."""
-        self.set_bytearray_state(address, channel, 0x00)
         channel_info = self.dict_module_data["switch_module"][address]["channels"][
             channel - 1
         ]
@@ -299,8 +297,6 @@ class Nikobus:
                     f"#N{led_on}\r#E1", address, channel, completion_handler=completion_handler
                 )
 
-        # Set the new brightness and light state
-        self.set_bytearray_state(address, channel, brightness)
         await self.nikobus_command_handler.set_output_state(
             address, channel, brightness, completion_handler=completion_handler
         )
@@ -322,8 +318,6 @@ class Nikobus:
                     f"#N{led_off}\r#E1", address, channel, completion_handler=completion_handler
                 )
 
-        # Set the light state to off (brightness = 0)
-        self.set_bytearray_state(address, channel, 0x00)
         await self.nikobus_command_handler.set_output_state(
             address, channel, 0x00, completion_handler=completion_handler
         )

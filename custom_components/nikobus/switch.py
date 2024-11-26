@@ -71,7 +71,7 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self):
         """Return True if the switch is on."""
-        return self._state or False
+        return self._state is True
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -105,12 +105,14 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
 
     async def _on_switch_turned_on(self):
         """Handler called when the switch is successfully turned on."""
+        self._dataservice.api.set_bytearray_state(self._address, self._channel, 0xFF)
         self._state = True
         _LOGGER.debug(f"Successfully turned on switch at {self._address}, channel {self._channel}")
         self.async_write_ha_state()
 
     async def _on_switch_turned_off(self):
         """Handler called when the switch is successfully turned off."""
+        self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
         self._state = False
         _LOGGER.debug(f"Successfully turned off switch at {self._address}, channel {self._channel}")
         self.async_write_ha_state()

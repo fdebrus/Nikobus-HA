@@ -457,6 +457,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             self._direction,
             completion_handler=completion_handler,
         )
+        self.async_write_ha_state()
 
     async def _finalize_position_estimate(self):
         """Finalize the position estimate and stop all movement-related tasks."""
@@ -561,6 +562,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                         )
                         self._position = target_position  # Ensure position matches target
                         await self.async_stop_cover()
+                        self.async_write_ha_state()
                         return
 
                 # Handle full open or closed state with buffer time
@@ -573,6 +575,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     )
                     self._position = 100 if self._direction == "opening" else 0
                     self.hass.call_later(FULL_OPERATION_BUFFER, self.schedule_stop_callback)
+                    self.async_write_ha_state()
                     return
 
                 # Exit if the cover is stopped externally
@@ -580,6 +583,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     _LOGGER.debug(
                         f"Cover {self._attr_name} stopped externally. Exiting position update."
                     )
+                    self.async_write_ha_state()
                     return
 
                 # Write state and wait before the next iteration

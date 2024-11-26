@@ -58,31 +58,41 @@ class NikobusCommandHandler:
         self, address: str, channel: int, value: int, completion_handler=None
     ) -> None:
         """Set the output state of a module."""
+        # Log the input parameters
         _LOGGER.debug(
             f"Setting output state - Address: {address}, Channel: {channel}, Value: {value}"
         )
+        # Determine the group number for the given channel
         group = calculate_group_number(channel)
         command_code = 0x15 if int(group) == 1 else 0x16
+        # Get the current state values for the relevant group
         values = self._prepare_values_for_command(address, group)
+        _LOGGER.debug(f"Current values before update: {values}")
+        # Calculate the zero-based index for the target channel
+        channel_index = ((channel - 1) % 6)
+        # Update the value for the target channel
+        values[channel_index] = value
+        _LOGGER.debug(f"Updated values: {values}")
+        # Create and send the command with the updated values
         command = make_pc_link_command(command_code, address, values)
         await self.queue_command(command, address, channel, completion_handler=completion_handler)
+        # Log success message
+        _LOGGER.debug("Command queued successfully.")
 
     async def set_output_states(
-        self, address: str, channel_states: bytearray, completion_handler=None
+        self, address: str, group: int, channel_states: bytearray, completion_handler=None
     ) -> None:
         """Prepare and queue the output states for a module, split by group if necessary."""
         _LOGGER.debug(
             f"Preparing to set output states for module {address}: {channel_states.hex()}"
         )
-        for group in [1, 2]:
-            command_code = 0x15 if group == 1 else 0x16
-            values = self._prepare_values_for_command(address, group)
-            _LOGGER.debug(
-                f"Queuing command for Group {group} of module {address}: {values.hex()}"
+        command_code = 0x15 if group == 1 else 0x16
+        _LOGGER.debug(
+                f"Queuing command for Group {group} of module {address}: {channel_states.hex()}"
             )
-            command = make_pc_link_command(command_code, address, values)
-            # As channel is not available, use group instead
-            await self.queue_command(command, address, group, completion_handler=completion_handler)
+        command = make_pc_link_command(command_code, address, channel_states + bytearray([0xFF]))
+        # As channel is not available, use group instead
+        await self.queue_command(command, address, group, completion_handler=completion_handler)
 
     async def queue_command(self, command: str, address: str, channel: int, completion_handler=None) -> None:
         """Queue a command for processing."""
