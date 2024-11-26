@@ -55,7 +55,7 @@ class NikobusActuator:
         """Start the task that waits for button release."""
         if self._press_task_active:
             _LOGGER.debug("Press task is already active; skipping task start.")
-            return 
+            return
 
         self._press_task_active = True
 
@@ -70,7 +70,9 @@ class NikobusActuator:
         """Start timer tasks that fire events after specific durations."""
         _LOGGER.debug(f"Starting timer tasks for address: {address}")
         for duration in [SHORT_PRESS, MEDIUM_PRESS, LONG_PRESS]:
-            task = self._hass.async_create_task(self._fire_event_after_duration(address, duration))
+            task = self._hass.async_create_task(
+                self._fire_event_after_duration(address, duration)
+            )
             self._timer_tasks.append(task)
 
     async def _fire_event_after_duration(self, address: str, duration: int):
@@ -91,7 +93,7 @@ class NikobusActuator:
                 time_diff = (current_time - self._last_press_time) * 1000
 
                 if time_diff >= self._debounce_time_ms:
-                    press_duration = (current_time - start_time)
+                    press_duration = current_time - start_time
                     _LOGGER.debug(
                         f"Button release detected for address: {address} - duration: {press_duration:.2f} seconds"
                     )
@@ -171,7 +173,9 @@ class NikobusActuator:
             if "nikobus_button" not in self.dict_button_data:
                 self.dict_button_data["nikobus_button"] = {}
             self.dict_button_data["nikobus_button"][address] = new_button
-            await self._hass.data[DOMAIN]["nikobus_instance"]._nikobus_config.write_json_data(
+            await self._hass.data[DOMAIN][
+                "nikobus_instance"
+            ]._nikobus_config.write_json_data(
                 "nikobus_button_config.json", "button", self.dict_button_data
             )
             _LOGGER.debug(f"New button configuration added for address {address}.")

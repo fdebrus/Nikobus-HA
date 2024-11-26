@@ -220,7 +220,11 @@ class Nikobus:
 
     #### SCENES
     async def set_output_states_for_module(
-        self, address: str, group: int, channel_states: bytearray, completion_handler=None
+        self,
+        address: str,
+        group: int,
+        channel_states: bytearray,
+        completion_handler=None,
     ) -> None:
         """Set the output states for a module with multiple channel updates at once."""
         _LOGGER.debug(
@@ -246,7 +250,10 @@ class Nikobus:
 
         if led_on:
             await self.nikobus_command_handler.queue_command(
-                f"#N{led_on}\r#E1", address, channel, completion_handler=completion_handler
+                f"#N{led_on}\r#E1",
+                address,
+                channel,
+                completion_handler=completion_handler,
             )
         else:
             await self.nikobus_command_handler.set_output_state(
@@ -264,7 +271,10 @@ class Nikobus:
 
         if led_off:
             await self.nikobus_command_handler.queue_command(
-                f"#N{led_off}\r#E1", address, channel, completion_handler=completion_handler
+                f"#N{led_off}\r#E1",
+                address,
+                channel,
+                completion_handler=completion_handler,
             )
         else:
             await self.nikobus_command_handler.set_output_state(
@@ -294,7 +304,10 @@ class Nikobus:
             led_on = channel_info.get("led_on")
             if led_on:
                 await self.nikobus_command_handler.queue_command(
-                    f"#N{led_on}\r#E1", address, channel, completion_handler=completion_handler
+                    f"#N{led_on}\r#E1",
+                    address,
+                    channel,
+                    completion_handler=completion_handler,
                 )
 
         await self.nikobus_command_handler.set_output_state(
@@ -315,7 +328,10 @@ class Nikobus:
             led_off = channel_info.get("led_off")
             if led_off:
                 await self.nikobus_command_handler.queue_command(
-                    f"#N{led_off}\r#E1", address, channel, completion_handler=completion_handler
+                    f"#N{led_off}\r#E1",
+                    address,
+                    channel,
+                    completion_handler=completion_handler,
                 )
 
         await self.nikobus_command_handler.set_output_state(
@@ -367,7 +383,10 @@ class Nikobus:
 
         if led_on:
             await self.nikobus_command_handler.queue_command(
-                f"#N{led_on}\r#E1", address, channel, completion_handler=completion_handler
+                f"#N{led_on}\r#E1",
+                address,
+                channel,
+                completion_handler=completion_handler,
             )
         else:
             await self.nikobus_command_handler.set_output_state(
@@ -387,7 +406,10 @@ class Nikobus:
 
         if led_off:
             await self.nikobus_command_handler.queue_command(
-                f"#N{led_off}\r#E1", address, channel, completion_handler=completion_handler
+                f"#N{led_off}\r#E1",
+                address,
+                channel,
+                completion_handler=completion_handler,
             )
         else:
             await self.nikobus_command_handler.set_output_state(

@@ -110,7 +110,9 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         # Simplified completion handler
         async def completion_handler(module_id, group):
             hex_value = module_changes[module_id][(group - 1) * 6 : group * 6].hex()
-            self._dataservice.api.set_bytearray_group_state(module_id, group=group, value=hex_value)
+            self._dataservice.api.set_bytearray_group_state(
+                module_id, group=group, value=hex_value
+            )
             _LOGGER.debug(f"Group {group} update successful for module {module_id}.")
 
         # Group changes by module

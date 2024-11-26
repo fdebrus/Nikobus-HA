@@ -109,7 +109,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         await self.api.nikobus_command_handler.queue_command(
             command, address, channel=None, completion_handler=None
         )
-        
+
     async def _handle_nikobus_button_pressed(self, data):
         """Handle Nikobus button press events."""
         address = data.get("address")

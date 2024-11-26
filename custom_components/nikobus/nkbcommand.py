@@ -15,6 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 
 __version__ = "1.0"
 
+
 class NikobusCommandHandler:
     """Handles command processing for Nikobus."""
 
@@ -69,18 +70,24 @@ class NikobusCommandHandler:
         values = self._prepare_values_for_command(address, group)
         _LOGGER.debug(f"Current values before update: {values}")
         # Calculate the zero-based index for the target channel
-        channel_index = ((channel - 1) % 6)
+        channel_index = (channel - 1) % 6
         # Update the value for the target channel
         values[channel_index] = value
         _LOGGER.debug(f"Updated values: {values}")
         # Create and send the command with the updated values
         command = make_pc_link_command(command_code, address, values)
-        await self.queue_command(command, address, channel, completion_handler=completion_handler)
+        await self.queue_command(
+            command, address, channel, completion_handler=completion_handler
+        )
         # Log success message
         _LOGGER.debug("Command queued successfully.")
 
     async def set_output_states(
-        self, address: str, group: int, channel_states: bytearray, completion_handler=None
+        self,
+        address: str,
+        group: int,
+        channel_states: bytearray,
+        completion_handler=None,
     ) -> None:
         """Prepare and queue the output states for a module, split by group if necessary."""
         _LOGGER.debug(
@@ -88,13 +95,19 @@ class NikobusCommandHandler:
         )
         command_code = 0x15 if group == 1 else 0x16
         _LOGGER.debug(
-                f"Queuing command for Group {group} of module {address}: {channel_states.hex()}"
-            )
-        command = make_pc_link_command(command_code, address, channel_states + bytearray([0xFF]))
+            f"Queuing command for Group {group} of module {address}: {channel_states.hex()}"
+        )
+        command = make_pc_link_command(
+            command_code, address, channel_states + bytearray([0xFF])
+        )
         # As channel is not available, use group instead
-        await self.queue_command(command, address, group, completion_handler=completion_handler)
+        await self.queue_command(
+            command, address, group, completion_handler=completion_handler
+        )
 
-    async def queue_command(self, command: str, address: str, channel: int, completion_handler=None) -> None:
+    async def queue_command(
+        self, command: str, address: str, channel: int, completion_handler=None
+    ) -> None:
         """Queue a command for processing."""
         unique_command_key = f"{command}_{address}_{channel}"
         _LOGGER.debug(f"Queueing command: {unique_command_key}")
@@ -102,7 +115,7 @@ class NikobusCommandHandler:
             self._command_completion_handlers[unique_command_key] = completion_handler
         await self._command_queue.put(unique_command_key)
         _LOGGER.debug(f"Command Queued: {unique_command_key}")
-        
+
     async def process_commands(self) -> None:
         """Process commands from the queue."""
         _LOGGER.info("Nikobus Command Processing starting")
@@ -112,17 +125,23 @@ class NikobusCommandHandler:
                 unique_command_key = await self._command_queue.get()
                 _LOGGER.debug(f"Unique command key: {unique_command_key}")
                 command, address, channel = unique_command_key.rsplit("_", 2)
-                _LOGGER.debug(f"Processing command: {command}, Address: {address}, Channel: {channel}")
+                _LOGGER.debug(
+                    f"Processing command: {command}, Address: {address}, Channel: {channel}"
+                )
                 # Check if a completion handler exists
                 withAck = unique_command_key in self._command_completion_handlers
                 # Attempt to send the command
-                try:    
+                try:
                     if await self.send_command(command, address, withAck=withAck):
                         # Execute the completion handler if defined
-                        handler = self._command_completion_handlers.pop(unique_command_key, None)
+                        handler = self._command_completion_handlers.pop(
+                            unique_command_key, None
+                        )
                         if handler:
                             try:
-                                _LOGGER.debug(f"Executing completion handler for command: {unique_command_key}")
+                                _LOGGER.debug(
+                                    f"Executing completion handler for command: {unique_command_key}"
+                                )
                                 if asyncio.iscoroutinefunction(handler):
                                     await handler()
                                 else:
@@ -132,7 +151,9 @@ class NikobusCommandHandler:
                                     f"Error executing completion handler for command {unique_command_key}: {e}"
                                 )
                     else:
-                        _LOGGER.error(f"Nikobus command {command} on address {address} for channel {channel} failed to execute.")
+                        _LOGGER.error(
+                            f"Nikobus command {command} on address {address} for channel {channel} failed to execute."
+                        )
                 except Exception as e:
                     _LOGGER.error(f"Error during command execution: {e}")
                 # Delay between command processing
@@ -176,7 +197,9 @@ class NikobusCommandHandler:
                     except asyncio.TimeoutError:
                         _LOGGER.warning("Timeout while waiting for message")
                     except Exception as e:
-                        _LOGGER.error(f"Error sending command {command} - {address} - {e}")
+                        _LOGGER.error(
+                            f"Error sending command {command} - {address} - {e}"
+                        )
             if not ack_received:
                 _LOGGER.error(
                     f"ACK not received on {command} after {attempt + 1} attempts waiting for {_wait_command_ack}"

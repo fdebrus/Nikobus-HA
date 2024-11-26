@@ -1,4 +1,4 @@
-""" Nikobus Cover entity"""
+"""Nikobus Cover entity"""
 
 import logging
 import asyncio
@@ -19,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
-STATE_UNKNOWN = 0x03 ## Unknown at this stage, we get this status from time to time
+STATE_UNKNOWN = 0x03  ## Unknown at this stage, we get this status from time to time
 FULL_OPERATION_BUFFER = 3
 
 
@@ -189,12 +189,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     @property
     def is_opening(self):
         """Return True if the cover is currently opening."""
-        return self._state == STATE_OPENING
+        return self._in_motion and self._direction == "opening"
 
     @property
     def is_closing(self):
         """Return True if the cover is currently closing."""
-        return self._state == STATE_CLOSING
+        return self._in_motion and self._direction == "closing"
 
     @property
     def available(self):
@@ -369,7 +369,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._state = self._dataservice.api.get_cover_state(
             self._address, self._channel
         )
-        
+
         _LOGGER.debug(
             "Coordinator update received for %s. Current state: %s Position: %s",
             self._attr_name,
@@ -546,7 +546,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 )
 
                 # Stop if button operation time has elapsed
-                if self._button_operation_time and elapsed >= self._button_operation_time:
+                if (
+                    self._button_operation_time
+                    and elapsed >= self._button_operation_time
+                ):
                     _LOGGER.debug(
                         f"Button operation time reached for {self._attr_name}. Stopping movement."
                     )
@@ -556,27 +559,32 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 # Stop if the target position is reached
                 if target_position is not None:
                     if (
-                        (self._direction == "opening" and self._position >= target_position)
-                        or (self._direction == "closing" and self._position <= target_position)
+                        self._direction == "opening"
+                        and self._position >= target_position
+                    ) or (
+                        self._direction == "closing"
+                        and self._position <= target_position
                     ):
                         _LOGGER.debug(
                             f"Target position {target_position} reached for {self._attr_name}. Stopping movement."
                         )
-                        self._position = target_position  # Ensure position matches target
+                        self._position = (
+                            target_position  # Ensure position matches target
+                        )
                         await self.async_stop_cover()
                         self.async_write_ha_state()
                         return
 
                 # Handle full open or closed state with buffer time
-                if (
-                    (self._direction == "opening" and self._position >= 100)
-                    or (self._direction == "closing" and self._position <= 0)
+                if (self._direction == "opening" and self._position >= 100) or (
+                    self._direction == "closing" and self._position <= 0
                 ):
                     _LOGGER.debug(
                         f"Full position reached for {self._attr_name}. Waiting buffer time before sending stop command."
                     )
                     self._position = 100 if self._direction == "opening" else 0
-                    self.hass.call_later(FULL_OPERATION_BUFFER, self.schedule_stop_callback)
+                    await asyncio.sleep(FULL_OPERATION_BUFFER)
+                    await self.async_stop_cover()
                     self.async_write_ha_state()
                     return
 
@@ -594,13 +602,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         except asyncio.CancelledError:
             _LOGGER.debug(f"Position update for {self._attr_name} was cancelled")
-
-    def schedule_stop_callback(self):
-        """Schedules the stop command."""
-        _LOGGER.debug(
-            f"Buffer time completed for {self._attr_name}. Sending stop command."
-        )
-        self.hass.async_create_task(self.async_stop_cover())
 
     async def _start_position_estimation(self, target_position=None):
         """Start position estimation and schedule the update task."""
