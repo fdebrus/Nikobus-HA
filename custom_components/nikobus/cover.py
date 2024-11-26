@@ -187,12 +187,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     @property
     def is_opening(self):
         """Return True if the cover is currently opening."""
-        return self._in_motion and self._direction == "opening"
+        return self._state == STATE_OPENING
 
     @property
     def is_closing(self):
         """Return True if the cover is currently closing."""
-        return self._in_motion and self._direction == "closing"
+        return self._state == STATE_CLOSING
 
     @property
     def available(self):
@@ -347,6 +347,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._in_motion = True
         self._button_operation_time = None
 
+        if direction == "opening":
+            self._state = STATE_OPENING
+        elif direction == "closing":
+            self._state = STATE_CLOSING
+        else:
+            _LOGGER.error("Invalid direction %s for cover %s", direction, self._attr_name)
+            return
+
         await self._operate_cover()
 
     async def async_stop_cover(self, **kwargs):
@@ -376,6 +384,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._in_motion = False
         self._direction = None
         self._button_operation_time = None
+
+        # **Set the state to STATE_STOPPED**
+        self._state = STATE_STOPPED
 
         # Update the Home Assistant state
         self.async_write_ha_state()
@@ -410,6 +421,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         )
         self._in_motion = True  # Set in_motion to True
         self._button_operation_time = None  # Reset any button operation time
+
+        if self._direction == "opening":
+            self._state = STATE_OPENING
+        else:
+            self._state = STATE_CLOSING
 
         _LOGGER.debug(
             "Setting cover %s to position %d in direction %s",
@@ -451,6 +467,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                         self._position = target_position
                         self._in_motion = False
                         self._direction = None
+                        self._state = STATE_STOPPED
                         self.async_write_ha_state()
                         await self.async_stop_cover()
                         return
@@ -462,6 +479,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._position = 100 if self._direction == "opening" else 0
                     self._in_motion = False
                     self._direction = None
+                    self._state = STATE_STOPPED
                     self.async_write_ha_state()
                     await asyncio.sleep(FULL_OPERATION_BUFFER)
                     await self.async_stop_cover()
