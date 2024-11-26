@@ -1,3 +1,5 @@
+""" Nikobus Cover entity"""
+
 import logging
 import asyncio
 import time
@@ -17,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
-STATE_UNKNOWN = 0x03
+STATE_UNKNOWN = 0x03 ## Unknown at this stage, we get this status from time to time
 FULL_OPERATION_BUFFER = 3
 
 

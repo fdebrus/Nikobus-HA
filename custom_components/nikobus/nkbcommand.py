@@ -113,10 +113,8 @@ class NikobusCommandHandler:
                 _LOGGER.debug(f"Unique command key: {unique_command_key}")
                 command, address, channel = unique_command_key.rsplit("_", 2)
                 _LOGGER.debug(f"Processing command: {command}, Address: {address}, Channel: {channel}")
-            
                 # Check if a completion handler exists
                 withAck = unique_command_key in self._command_completion_handlers
-
                 # Attempt to send the command
                 try:    
                     if await self.send_command(command, address, withAck=withAck):
@@ -137,7 +135,6 @@ class NikobusCommandHandler:
                         _LOGGER.error(f"Nikobus command {command} on address {address} for channel {channel} failed to execute.")
                 except Exception as e:
                     _LOGGER.error(f"Error during command execution: {e}")
-
                 # Delay between command processing
                 await asyncio.sleep(COMMAND_EXECUTION_DELAY)
             except Exception as e:
