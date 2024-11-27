@@ -75,7 +75,8 @@ class NikobusEventListener:
                 if not data:
                     _LOGGER.warning("Nikobus connection closed unexpectedly")
                     break
-                message = data.decode("utf-8").strip()
+                message = data.decode("windows-1252").strip()
+                _LOGGER.debug(f"Raw data received: {data}")
                 _LOGGER.debug(f"Received message: {message}")
                 self._hass.async_create_task(self.dispatch_message(message))
             except asyncio.TimeoutError:

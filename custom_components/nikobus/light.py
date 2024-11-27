@@ -1,5 +1,3 @@
-"""Nikobus Dimmer / Light entity"""
-
 import logging
 from homeassistant.components.light import LightEntity
 from homeassistant.core import HomeAssistant, callback
@@ -103,8 +101,11 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn on the light."""
+        # Get the desired brightness
         self._brightness = kwargs.get("brightness", DEFAULT_BRIGHTNESS)
+
         try:
+            # Send the turn on command without updating the state optimistically
             await self._dataservice.api.turn_on_light(
                 self._address,
                 self._channel,
@@ -113,12 +114,13 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
             )
         except Exception as e:
             _LOGGER.error(
-                f"Failed to turn on light at address {self._address}, channel {self._channel}: {e}"
+                f"Failed to send turn on command for light at address {self._address}, channel {self._channel}: {e}"
             )
 
     async def async_turn_off(self, **kwargs):
         """Turn off the light."""
         try:
+            # Send the turn off command without updating the state optimistically
             await self._dataservice.api.turn_off_light(
                 self._address,
                 self._channel,
@@ -126,26 +128,38 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
             )
         except Exception as e:
             _LOGGER.error(
-                f"Failed to turn off light at address {self._address}, channel {self._channel}: {e}"
+                f"Failed to send turn off command for light at address {self._address}, channel {self._channel}: {e}"
             )
 
-    async def _on_light_turned_on(self):
-        """Handler called when the light is successfully turned on."""
-        self._dataservice.api.set_bytearray_state(
-            self._address, self._channel, self._brightness
-        )
-        self._state = True
-        _LOGGER.debug(
-            f"Successfully turned on light at {self._address}, channel {self._channel}"
-        )
-        self.async_write_ha_state()
+    async def _on_light_turned_on(self, success):
+        """Handler called when the light has been processed."""
+        if success:
+            # Update the state and brightness
+            await self._dataservice.api.set_bytearray_state(self._address, self._channel, self._brightness)
+            self._state = True
+            _LOGGER.debug(
+                f"Successfully turned on light at {self._address}, channel {self._channel}, brightness {self._brightness}"
+            )
+            # Update the UI
+            self.async_write_ha_state()
+        else:
+            _LOGGER.error(
+                f"Turn on command failed for light at {self._address}, channel {self._channel}, brightness {self._brightness}"
+            )
 
-    async def _on_light_turned_off(self):
-        """Handler called when the light is successfully turned off."""
-        self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
-        self._state = False
-        self._brightness = 0
-        _LOGGER.debug(
-            f"Successfully turned off light at {self._address}, channel {self._channel}"
-        )
-        self.async_write_ha_state()
+    async def _on_light_turned_off(self, success):
+        """Handler called when the light has been processed."""
+        if success:
+            # Update the state and brightness
+            await self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
+            self._state = False
+            self._brightness = 0
+            _LOGGER.debug(
+                f"Successfully turned off light at {self._address}, channel {self._channel}, brightness {self._brightness}"
+            )
+            # Update the UI
+            self.async_write_ha_state()
+        else:
+            _LOGGER.error(
+                f"Turn off command failed for light at {self._address}, channel {self._channel}, brightness {self._brightness}"
+            )

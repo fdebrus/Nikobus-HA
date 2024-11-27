@@ -179,7 +179,7 @@ class Nikobus:
         """Get the state of a specific channel"""
         return self._nikobus_module_states.get(address, bytearray())[channel - 1]
 
-    def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
+    async def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
         """Set the state of a specific channel"""
         if address in self._nikobus_module_states:
             self._nikobus_module_states[address][channel - 1] = value
@@ -347,7 +347,7 @@ class Nikobus:
         self, address: str, channel: int, direction: str, completion_handler=None
     ) -> None:
         """Stop a cover specified by its address and channel."""
-        self.set_bytearray_state(address, channel, 0x00)
+        await self.set_bytearray_state(address, channel, 0x00)
 
         channel_data = self.dict_module_data["roller_module"][address]["channels"][
             channel - 1
@@ -374,7 +374,7 @@ class Nikobus:
         self, address: str, channel: int, completion_handler=None
     ) -> None:
         """Open a cover specified by its address and channel."""
-        self.set_bytearray_state(address, channel, 0x01)
+        await self.set_bytearray_state(address, channel, 0x01)
 
         channel_data = self.dict_module_data["roller_module"][address]["channels"][
             channel - 1
@@ -397,7 +397,7 @@ class Nikobus:
         self, address: str, channel: int, completion_handler=None
     ) -> None:
         """Close a cover specified by its address and channel."""
-        self.set_bytearray_state(address, channel, 0x02)
+        await self.set_bytearray_state(address, channel, 0x02)
 
         channel_data = self.dict_module_data["roller_module"][address]["channels"][
             channel - 1

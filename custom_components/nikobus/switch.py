@@ -1,5 +1,3 @@
-"""Nikobus Switch entity"""
-
 import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
@@ -84,6 +82,7 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     async def async_turn_on(self):
         """Turn the switch on."""
         try:
+            # Send the turn on command without optimistic state update
             await self._dataservice.api.turn_on_switch(
                 self._address,
                 self._channel,
@@ -91,12 +90,13 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
             )
         except Exception as e:
             _LOGGER.error(
-                f"Failed to turn on switch at address {self._address}, channel {self._channel}: {e}"
+                f"Failed to send turn on command for switch at address {self._address}, channel {self._channel}: {e}"
             )
 
     async def async_turn_off(self):
         """Turn the switch off."""
         try:
+            # Send the turn off command without optimistic state update
             await self._dataservice.api.turn_off_switch(
                 self._address,
                 self._channel,
@@ -104,23 +104,37 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
             )
         except Exception as e:
             _LOGGER.error(
-                f"Failed to turn off switch at address {self._address}, channel {self._channel}: {e}"
+                f"Failed to send turn off command for switch at address {self._address}, channel {self._channel}: {e}"
             )
 
-    async def _on_switch_turned_on(self):
-        """Handler called when the switch is successfully turned on."""
-        self._dataservice.api.set_bytearray_state(self._address, self._channel, 0xFF)
-        self._state = True
-        _LOGGER.debug(
-            f"Successfully turned on switch at {self._address}, channel {self._channel}"
-        )
-        self.async_write_ha_state()
+    async def _on_switch_turned_on(self, success):
+        """Handler called when the switch command has been processed."""
+        if success:
+            # Update the state only if the command succeeded
+            await self._dataservice.api.set_bytearray_state(self._address, self._channel, 0xFF)
+            self._state = True
+            _LOGGER.debug(
+                f"Successfully turned on switch at {self._address}, channel {self._channel}"
+            )
+            # Update the UI
+            self.async_write_ha_state()
+        else:
+            _LOGGER.error(
+                f"Turn on command failed for switch at {self._address}, channel {self._channel}"
+            )
 
-    async def _on_switch_turned_off(self):
-        """Handler called when the switch is successfully turned off."""
-        self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
-        self._state = False
-        _LOGGER.debug(
-            f"Successfully turned off switch at {self._address}, channel {self._channel}"
-        )
-        self.async_write_ha_state()
+    async def _on_switch_turned_off(self, success):
+        """Handler called when the switch command has been processed."""
+        if success:
+            # Update the state only if the command succeeded
+            await self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
+            self._state = False
+            _LOGGER.debug(
+                f"Successfully turned off switch at {self._address}, channel {self._channel}"
+            )
+            # Update the UI
+            self.async_write_ha_state()
+        else:
+            _LOGGER.error(
+                f"Turn off command failed for switch at {self._address}, channel {self._channel}"
+            )

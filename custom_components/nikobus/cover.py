@@ -24,11 +24,11 @@ FULL_OPERATION_BUFFER = 3
 class PositionEstimator:
     """Estimates the current position of the cover based on elapsed time and direction."""
 
-    def __init__(self, duration_in_seconds):
+    def __init__(self, duration_in_seconds, start_position):
         self._duration_in_seconds = duration_in_seconds
         self._start_time = None
         self._direction = None
-        self.position = None
+        self.position = start_position
         _LOGGER.debug(
             "PositionEstimator initialized with duration: %s seconds",
             duration_in_seconds,
@@ -36,11 +36,16 @@ class PositionEstimator:
 
     def start(self, direction, position=None):
         """Start the movement in the given direction."""
+        if self._start_time is not None:
+            _LOGGER.warning("PositionEstimator.start() called but already started.")
+            return
+
         self._direction = 1 if direction == "opening" else -1
         self._start_time = time.monotonic()
-        self.position = (
-            position if position is not None else (0 if self._direction == 1 else 100)
-        )
+        if position is not None:
+            self.position = position
+        else:
+            self.position = 0 if self._direction == 1 else 100
         _LOGGER.debug(
             "Movement started in direction: %s, initial position: %s",
             direction,
@@ -66,7 +71,13 @@ class PositionEstimator:
     def stop(self):
         """Stop the movement and finalize the position."""
         if self._start_time is not None:
-            self.position = self.get_position()
+            estimated_position = self.get_position()
+            if estimated_position is not None:
+                self.position = estimated_position
+            else:
+                _LOGGER.debug("PositionEstimator.get_position() returned None during stop.")
+        else:
+            _LOGGER.debug("PositionEstimator.stop() called but _start_time is None.")
         self._direction = None
         self._start_time = None
         _LOGGER.debug("Movement stopped. Current estimated position: %s", self.position)
@@ -78,6 +89,7 @@ class PositionEstimator:
 
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
+    """Set up Nikobus cover entities from a config entry."""
     dataservice = hass.data[DOMAIN].get(entry.entry_id)
 
     roller_modules = dataservice.api.dict_module_data.get("roller_module", {})
@@ -124,14 +136,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._address = address
         self._channel = channel
         self._direction = None
-        self._state = 0
+        self._state = STATE_STOPPED
+        self._position = 100  # Default position is fully open
         self._previous_state = None
 
-        self._operation_time = float(operation_time) if operation_time else None
+        self._operation_time = float(operation_time) if operation_time else 30.0
         self._position_estimator = PositionEstimator(
-            duration_in_seconds=float(operation_time)
+            duration_in_seconds=self._operation_time, start_position=self._position
         )
-        self._position = 100
 
         self._button_operation_time = None
 
@@ -224,27 +236,29 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 )
             else:
                 _LOGGER.debug(
-                    "Last position is None for %s. Using default position %s",
+                    "Last position is None for %s. Using default position 100",
                     self._attr_name,
-                    self._position,
                 )
+                self._position = 100  # Ensure default is set
         else:
             _LOGGER.debug(
-                "No last state available for %s. Using default position %s",
+                "No last state available for %s. Using default position 100",
                 self._attr_name,
-                self._position,
             )
+            self._position = 100  # Ensure default is set
 
-        # Initialize previous state from current API state
+        # Initialize state from current API state
         self._state = self._dataservice.api.get_cover_state(
             self._address, self._channel
         )
-        self._previous_state = self._state
         _LOGGER.debug(
-            "Initialized previous state for %s to %s",
+            "Initialized state for %s to %s",
             self._attr_name,
-            self._previous_state,
+            self._state,
         )
+
+        # Initialize previous state
+        self._previous_state = self._state
 
         # Subscribe to nikobus_button_pressed event
         self.hass.bus.async_listen(
@@ -267,37 +281,36 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         # Only proceed if the event address matches this cover's module address
         if impacted_module_address == self._address:
             # Get the current state for this cover's channel
-            self._state = self._dataservice.api.get_cover_state(
+            new_state = self._dataservice.api.get_cover_state(
                 self._address, self._channel
             )
-
-            # Compare with the previous state
-            if self._state != self._previous_state:
-                self._previous_state = self._state
-
-                # Set operation time if provided
-                button_operation_time = event.data.get("operation_time")
-                if button_operation_time:
-                    self._button_operation_time = float(button_operation_time)
-
-                self._process_state_change()
+            self._process_state_change(new_state)
             self.async_write_ha_state()
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._state = self._dataservice.api.get_cover_state(
+        new_state = self._dataservice.api.get_cover_state(
             self._address, self._channel
         )
-
-        if self._state != self._previous_state:
-            self._previous_state = self._state
-            self._process_state_change()
+        self._process_state_change(new_state)
         self.async_write_ha_state()
 
-    def _process_state_change(self):
+    def _process_state_change(self, new_state):
         """Process the state change for the cover."""
-        if self._state == STATE_OPENING:
+        if new_state == self._previous_state:
+            _LOGGER.debug(
+                f"No state change detected for {self._attr_name}; skipping processing."
+            )
+            return
+
+        _LOGGER.debug(
+            f"State changed from {self._previous_state} to {new_state} for {self._attr_name}"
+        )
+        self._previous_state = new_state
+        self._state = new_state
+
+        if new_state == STATE_OPENING:
             self._direction = "opening"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
@@ -306,7 +319,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._update_position()
                 )
 
-        elif self._state == STATE_CLOSING:
+        elif new_state == STATE_CLOSING:
             self._direction = "closing"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
@@ -315,62 +328,124 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._update_position()
                 )
 
-        elif self._state == STATE_STOPPED:
-            self._position_estimator.stop()
-            self._position = (
-                self._position_estimator.position
-                if self._position_estimator.position is not None
-                else self._position
-            )
+        elif new_state == STATE_STOPPED:
+            if self._position_estimator._start_time is not None:
+                self._position_estimator.stop()
+                if self._position_estimator.position is not None:
+                    self._position = self._position_estimator.position
+                else:
+                    _LOGGER.warning(
+                        f"Position estimator returned None for position in _process_state_change for {self._attr_name}"
+                    )
+            else:
+                _LOGGER.debug(
+                    f"Position estimator was not started for {self._attr_name}; skipping stop."
+                )
             self._in_motion = False
             self._direction = None
             if self._movement_task is not None and not self._movement_task.done():
                 self._movement_task.cancel()
                 self.hass.async_create_task(self._wait_for_movement_task())
 
+        else:
+            _LOGGER.warning(
+                f"Unknown state '{new_state}' for {self._attr_name}"
+            )
+
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
-        await self._start_movement("opening")
+        try:
+            await self._start_movement("opening")
+        except Exception as e:
+            _LOGGER.error(f"Failed to open cover {self._attr_name}: {e}")
 
     async def async_close_cover(self, **kwargs):
         """Close the cover."""
-        await self._start_movement("closing")
+        try:
+            await self._start_movement("closing")
+        except Exception as e:
+            _LOGGER.error(f"Failed to close cover {self._attr_name}: {e}")
 
-    async def _start_movement(self, direction):
+    async def _start_movement(self, direction, target_position=None):
         """Start movement in the specified direction."""
         if self._in_motion:
             # Stop the current movement
             await self.async_stop_cover()
 
-        # Set the new direction and motion state
-        self._direction = direction
-        self._in_motion = True
-        self._button_operation_time = None
+        # Define completion handler
+        async def completion_handler(success):
+            if success:
+                self._direction = direction
+                self._in_motion = True
+                self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
+                self._position_estimator.start(self._direction, self._position)
+                self.async_write_ha_state()
+                await self._start_position_estimation(target_position=target_position)
+            else:
+                _LOGGER.error(
+                    f"Command to {direction} cover {self._attr_name} failed."
+                )
 
+        # Send the command to operate the cover
+        await self._operate_cover(direction, completion_handler)
+
+    async def _operate_cover(self, direction, completion_handler):
+        """Send the command to operate the cover."""
+        _LOGGER.debug(
+            "Operating cover %s in direction: %s", self._attr_name, direction
+        )
+
+        # Queue the command with the completion handler
         if direction == "opening":
-            self._state = STATE_OPENING
+            await self._dataservice.api.open_cover(
+                self._address, self._channel, completion_handler=completion_handler
+            )
         elif direction == "closing":
-            self._state = STATE_CLOSING
+            await self._dataservice.api.close_cover(
+                self._address, self._channel, completion_handler=completion_handler
+            )
         else:
-            _LOGGER.error("Invalid direction %s for cover %s", direction, self._attr_name)
+            _LOGGER.error(
+                f"Invalid direction {direction} for cover {self._attr_name}"
+            )
             return
-
-        await self._operate_cover()
 
     async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
-        await self._dataservice.api.stop_cover(
-            self._address,
-            self._channel,
-            self._direction,
-            completion_handler=self._finalize_position_estimate,
-        )
+        try:
+            # Define completion handler
+            async def completion_handler(success):
+                if success:
+                    await self._finalize_position_estimate()
+                else:
+                    _LOGGER.error(
+                        f"Command to stop cover {self._attr_name} failed."
+                    )
+
+            await self._dataservice.api.stop_cover(
+                self._address,
+                self._channel,
+                self._direction,
+                completion_handler=completion_handler,
+            )
+        except Exception as e:
+            _LOGGER.error(f"Failed to stop cover {self._attr_name}: {e}")
 
     async def _finalize_position_estimate(self):
         """Finalize the position estimate and stop all movement-related tasks."""
         _LOGGER.debug("Finalizing position for %s", self._attr_name)
-        self._position_estimator.stop()
-        self._position = self._position_estimator.position
+        if self._position_estimator._start_time is not None:
+            self._position_estimator.stop()
+            if self._position_estimator.position is not None:
+                self._position = self._position_estimator.position
+            else:
+                _LOGGER.warning(
+                    f"Position estimator returned None for position in _finalize_position_estimate for {self._attr_name}"
+                )
+        else:
+            _LOGGER.debug(
+                f"Position estimator was not started for {self._attr_name}; skipping stop."
+            )
 
         # Cancel the movement task if it's running
         if self._movement_task is not None and not self._movement_task.done():
@@ -385,7 +460,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._direction = None
         self._button_operation_time = None
 
-        # **Set the state to STATE_STOPPED**
+        # Set the state to STATE_STOPPED
         self._state = STATE_STOPPED
 
         # Update the Home Assistant state
@@ -416,38 +491,63 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             return
 
         # Determine direction based on the target vs. current position
-        self._direction = (
+        direction = (
             "opening" if target_position > self._position else "closing"
         )
-        self._in_motion = True  # Set in_motion to True
-        self._button_operation_time = None  # Reset any button operation time
 
-        if self._direction == "opening":
-            self._state = STATE_OPENING
-        else:
-            self._state = STATE_CLOSING
+        try:
+            await self._start_movement(direction, target_position=target_position)
+        except Exception as e:
+            _LOGGER.error(
+                f"Failed to set position for cover {self._attr_name}: {e}"
+            )
 
-        _LOGGER.debug(
-            "Setting cover %s to position %d in direction %s",
-            self._attr_name,
-            target_position,
-            self._direction,
+    async def _start_position_estimation(self, target_position=None):
+        """Start position estimation and schedule the update task."""
+        # Cancel and await previous movement task if it's still running
+        if self._movement_task is not None and not self._movement_task.done():
+            self._movement_task.cancel()
+            try:
+                await self._movement_task
+            except asyncio.CancelledError:
+                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
+
+        # Schedule the _update_position task
+        self._movement_task = self.hass.async_create_task(
+            self._update_position(target_position)
         )
 
-        await self._operate_cover(target_position=target_position)
-        self.async_write_ha_state()
-        
     async def _update_position(self, target_position=None):
         """Periodically update the position of the cover during movement."""
         start_time = time.monotonic()
 
         try:
             while self._in_motion:
+                if self._position is None:
+                    _LOGGER.error(
+                        "self._position is None in _update_position for %s",
+                        self._attr_name,
+                    )
+                    # Default to a safe position
+                    self._position = 0 if self._direction == "closing" else 100
+                    _LOGGER.warning(
+                        "Defaulting self._position to %s for %s",
+                        self._position,
+                        self._attr_name,
+                    )
+
                 # Update the estimated position
-                elapsed = time.monotonic() - start_time
-                self._position = self._position_estimator.get_position()
+                estimated_position = self._position_estimator.get_position()
+                if estimated_position is not None:
+                    self._position = estimated_position
+                else:
+                    _LOGGER.warning(
+                        "Position estimator returned None in _update_position for %s",
+                        self._attr_name,
+                    )
 
                 # Stop if button operation time has elapsed
+                elapsed = time.monotonic() - start_time
                 if (
                     self._button_operation_time
                     and elapsed >= self._button_operation_time
@@ -491,48 +591,3 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         except asyncio.CancelledError:
             _LOGGER.debug(f"Position update for {self._attr_name} was cancelled")
-
-    async def _operate_cover(self, target_position=None):
-        """Send the command to operate the cover."""
-        _LOGGER.debug(
-            "Operating cover %s in direction: %s", self._attr_name, self._direction
-        )
-
-        # Define completion handler to trigger position estimation
-        async def completion_handler():
-            await self._start_position_estimation(target_position=target_position)
-
-        # Queue appropriate command based on direction with completion handler
-        if self._direction == "opening":
-            await self._dataservice.api.open_cover(
-                self._address, self._channel, completion_handler=completion_handler
-            )
-        elif self._direction == "closing":
-            await self._dataservice.api.close_cover(
-                self._address, self._channel, completion_handler=completion_handler
-            )
-        else:
-            _LOGGER.error("Invalid direction %s for cover %s", self._direction, self._attr_name)
-            return
-
-        # Ensure that in_motion is True when operation starts
-        self._in_motion = True
-        self.async_write_ha_state()
-
-    async def _start_position_estimation(self, target_position=None):
-        """Start position estimation and schedule the update task."""
-        # Start the position estimator with the current direction and position
-        self._position_estimator.start(self._direction, self._position)
-
-        # Cancel and await previous movement task if it's still running
-        if self._movement_task is not None and not self._movement_task.done():
-            self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
-
-        # Schedule the _update_position task
-        self._movement_task = self.hass.async_create_task(
-            self._update_position(target_position)
-        )
