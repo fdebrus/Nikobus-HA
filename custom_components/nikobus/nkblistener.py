@@ -46,7 +46,6 @@ class NikobusEventListener:
 
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
-        self.cmd_response_queue = asyncio.Queue()
 
     async def start(self):
         """Start the event listener."""
@@ -75,8 +74,7 @@ class NikobusEventListener:
                 if not data:
                     _LOGGER.warning("Nikobus connection closed unexpectedly")
                     break
-                message = data.decode("windows-1252").strip()
-                _LOGGER.debug(f"Raw data received: {data}")
+                message = data.decode("utf-8").strip()
                 _LOGGER.debug(f"Received message: {message}")
                 self._hass.async_create_task(self.dispatch_message(message))
             except asyncio.TimeoutError:
@@ -101,7 +99,6 @@ class NikobusEventListener:
 
         if message.startswith(COMMAND_PROCESSED):
             _LOGGER.debug(f"Command acknowledged: {message}")
-            await self.cmd_response_queue.put(message)
             return
 
         if message.startswith(CONTROLLER_ADDRESS):

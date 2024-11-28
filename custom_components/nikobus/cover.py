@@ -36,11 +36,20 @@ class PositionEstimator:
 
     def start(self, direction, position=None):
         """Start the movement in the given direction."""
+        new_direction = 1 if direction == "opening" else -1
         if self._start_time is not None:
-            _LOGGER.warning("PositionEstimator.start() called but already started.")
-            return
+            if self._direction == new_direction:
+                _LOGGER.debug(
+                    "PositionEstimator.start() called but already started in the same direction. Ignoring."
+                )
+                return
+            else:
+                _LOGGER.debug(
+                    "PositionEstimator.start() called with new direction. Restarting estimator."
+                )
+                self.stop()
 
-        self._direction = 1 if direction == "opening" else -1
+        self._direction = new_direction
         self._start_time = time.monotonic()
         if position is not None:
             self.position = position
@@ -75,7 +84,9 @@ class PositionEstimator:
             if estimated_position is not None:
                 self.position = estimated_position
             else:
-                _LOGGER.debug("PositionEstimator.get_position() returned None during stop.")
+                _LOGGER.debug(
+                    "PositionEstimator.get_position() returned None during stop."
+                )
         else:
             _LOGGER.debug("PositionEstimator.stop() called but _start_time is None.")
         self._direction = None
@@ -90,14 +101,14 @@ class PositionEstimator:
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus cover entities from a config entry."""
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    coordinator = hass.data[DOMAIN]["coordinator"]
 
-    roller_modules = dataservice.api.dict_module_data.get("roller_module", {})
+    roller_modules = coordinator.dict_module_data.get("roller_module", {})
 
     entities = [
         NikobusCoverEntity(
             hass,
-            dataservice,
+            coordinator,
             cover_module_data.get("description"),
             cover_module_data.get("model"),
             address,
@@ -119,7 +130,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     def __init__(
         self,
         hass: HomeAssistant,
-        dataservice,
+        coordinator,
         description,
         model,
         address,
@@ -128,9 +139,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         operation_time,
     ) -> None:
         """Initialize the cover entity with data from the Nikobus system configuration."""
-        super().__init__(dataservice)
+        super().__init__(coordinator)
         self.hass = hass
-        self._dataservice = dataservice
+        self._coordinator = coordinator
         self._description = description
         self._model = model
         self._address = address
@@ -248,9 +259,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             self._position = 100  # Ensure default is set
 
         # Initialize state from current API state
-        self._state = self._dataservice.api.get_cover_state(
-            self._address, self._channel
-        )
+        self._state = self._coordinator.get_cover_state(self._address, self._channel)
         _LOGGER.debug(
             "Initialized state for %s to %s",
             self._attr_name,
@@ -281,7 +290,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         # Only proceed if the event address matches this cover's module address
         if impacted_module_address == self._address:
             # Get the current state for this cover's channel
-            new_state = self._dataservice.api.get_cover_state(
+            new_state = self._coordinator.get_cover_state(
                 self._address, self._channel
             )
             self._process_state_change(new_state)
@@ -290,9 +299,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        new_state = self._dataservice.api.get_cover_state(
-            self._address, self._channel
-        )
+        new_state = self._coordinator.get_cover_state(self._address, self._channel)
         self._process_state_change(new_state)
         self.async_write_ha_state()
 
@@ -348,9 +355,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 self.hass.async_create_task(self._wait_for_movement_task())
 
         else:
-            _LOGGER.warning(
-                f"Unknown state '{new_state}' for {self._attr_name}"
-            )
+            _LOGGER.warning(f"Unknown state '{new_state}' for {self._attr_name}")
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
@@ -382,32 +387,26 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 self.async_write_ha_state()
                 await self._start_position_estimation(target_position=target_position)
             else:
-                _LOGGER.error(
-                    f"Command to {direction} cover {self._attr_name} failed."
-                )
+                _LOGGER.error(f"Command to {direction} cover {self._attr_name} failed.")
 
         # Send the command to operate the cover
         await self._operate_cover(direction, completion_handler)
 
     async def _operate_cover(self, direction, completion_handler):
         """Send the command to operate the cover."""
-        _LOGGER.debug(
-            "Operating cover %s in direction: %s", self._attr_name, direction
-        )
+        _LOGGER.debug("Operating cover %s in direction: %s", self._attr_name, direction)
 
         # Queue the command with the completion handler
         if direction == "opening":
-            await self._dataservice.api.open_cover(
+            await self._coordinator.api.open_cover(
                 self._address, self._channel, completion_handler=completion_handler
             )
         elif direction == "closing":
-            await self._dataservice.api.close_cover(
+            await self._coordinator.api.close_cover(
                 self._address, self._channel, completion_handler=completion_handler
             )
         else:
-            _LOGGER.error(
-                f"Invalid direction {direction} for cover {self._attr_name}"
-            )
+            _LOGGER.error(f"Invalid direction {direction} for cover {self._attr_name}")
             return
 
     async def async_stop_cover(self, **kwargs):
@@ -418,11 +417,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 if success:
                     await self._finalize_position_estimate()
                 else:
-                    _LOGGER.error(
-                        f"Command to stop cover {self._attr_name} failed."
-                    )
+                    _LOGGER.error(f"Command to stop cover {self._attr_name} failed.")
 
-            await self._dataservice.api.stop_cover(
+            await self._coordinator.api.stop_cover(
                 self._address,
                 self._channel,
                 self._direction,
@@ -491,16 +488,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             return
 
         # Determine direction based on the target vs. current position
-        direction = (
-            "opening" if target_position > self._position else "closing"
-        )
+        direction = "opening" if target_position > self._position else "closing"
 
         try:
             await self._start_movement(direction, target_position=target_position)
         except Exception as e:
-            _LOGGER.error(
-                f"Failed to set position for cover {self._attr_name}: {e}"
-            )
+            _LOGGER.error(f"Failed to set position for cover {self._attr_name}: {e}")
 
     async def _start_position_estimation(self, target_position=None):
         """Start position estimation and schedule the update task."""

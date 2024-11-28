@@ -23,8 +23,8 @@ class NikobusActuator:
         """Initialize the Nikobus actuator."""
         self._hass = hass
         self._async_event_handler = async_event_handler
-        self.dict_button_data = dict_button_data
-        self.dict_module_data = dict_module_data
+        self._dict_button_data = dict_button_data
+        self._dict_module_data = dict_module_data
         self._debounce_time_ms = 150
         self._last_address = None
         self._last_press_time = None
@@ -111,6 +111,7 @@ class NikobusActuator:
                         )
 
                     await self.button_discovery(address)
+                    self._reset_state()
                     break
 
         except asyncio.CancelledError:
@@ -154,12 +155,12 @@ class NikobusActuator:
         """Discover a button and process it if configured."""
         _LOGGER.debug(f"Discovering button at address: {address}.")
 
-        if address in self.dict_button_data.get("nikobus_button", {}):
+        if address in self._dict_button_data.get("nikobus_button", {}):
             _LOGGER.debug(
                 f"Button at address {address} found in configuration. Processing..."
             )
             await self.process_button_modules(
-                self.dict_button_data["nikobus_button"][address], address
+                self._dict_button_data["nikobus_button"][address], address
             )
         else:
             _LOGGER.info(
@@ -170,13 +171,11 @@ class NikobusActuator:
                 "address": address,
                 "impacted_module": [{"address": "", "group": ""}],
             }
-            if "nikobus_button" not in self.dict_button_data:
-                self.dict_button_data["nikobus_button"] = {}
-            self.dict_button_data["nikobus_button"][address] = new_button
-            await self._hass.data[DOMAIN][
-                "nikobus_instance"
-            ]._nikobus_config.write_json_data(
-                "nikobus_button_config.json", "button", self.dict_button_data
+            if "nikobus_button" not in self._dict_button_data:
+                self._dict_button_data["nikobus_button"] = {}
+            self._dict_button_data["nikobus_button"][address] = new_button
+            await self._hass.data[DOMAIN]["nikobus_instance"]._nikobus_config.write_json_data(
+                "nikobus_button_config.json", "button", self._dict_button_data
             )
             _LOGGER.debug(f"New button configuration added for address {address}.")
 
@@ -217,7 +216,7 @@ class NikobusActuator:
                     f"*** Refreshing status for module {impacted_module_address} for group {impacted_group}"
                 )
 
-                if impacted_module_address in self.dict_module_data.get(
+                if impacted_module_address in self._dict_module_data.get(
                     "dimmer_module", {}
                 ):
                     _LOGGER.debug("Dimmer DETECTED - pausing to get final status")

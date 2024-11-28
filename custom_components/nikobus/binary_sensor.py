@@ -1,7 +1,5 @@
-import asyncio
 import logging
-
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, BRAND
@@ -10,110 +8,85 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
-    """Set up Nikobus binary sensor entities from a config entry."""
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    """Set up Nikobus button sensor entities from a config entry."""
+    coordinator = hass.data[DOMAIN]["coordinator"]
 
     entities = []
 
-    if dataservice.api.dict_button_data:
-        for button in dataservice.api.dict_button_data["nikobus_button"].values():
-            impacted_modules_info = [
-                {
-                    "address": impacted_module["address"],
-                    "group": impacted_module["group"],
-                }
-                for impacted_module in button["impacted_module"]
-            ]
-
-            entity = NikobusButtonBinarySensor(
+    if coordinator.dict_button_data:
+        for button in coordinator.dict_button_data.get("nikobus_button", {}).values():
+            entity = NikobusButtonSensor(
                 hass,
-                dataservice,
+                coordinator,
                 button.get("description"),
                 button.get("address"),
-                impacted_modules_info,
             )
-
             entities.append(entity)
 
-        # Register global event listener for all sensors
-        register_global_listener(hass, entities)
-
-        async_add_entities(entities)
+    async_add_entities(entities)
 
 
-def register_global_listener(hass: HomeAssistant, sensors: list):
-    """Register a single global event listener for all Nikobus sensors."""
-
-    async def handle_event(event):
-        for sensor in sensors:
-            if event.data["address"] == sensor._address:
-                await sensor.handle_button_press_event(event)
-
-    hass.bus.async_listen("nikobus_button_pressed", handle_event)
-
-
-class NikobusButtonBinarySensor(CoordinatorEntity, BinarySensorEntity):
-    """Represents a Nikobus button binary sensor entity within Home Assistant."""
+class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
+    """Represents a Nikobus button sensor entity within Home Assistant."""
 
     def __init__(
         self,
         hass: HomeAssistant,
-        dataservice,
-        description,
-        address,
-        impacted_modules_info,
+        coordinator,
+        description: str,
+        address: str,
     ) -> None:
-        """Initialize the binary sensor entity with data from the Nikobus system configuration."""
-        super().__init__(dataservice)
+        """Initialize the button sensor entity with data from the Nikobus system configuration."""
+        super().__init__(coordinator)
         self._hass = hass
-        self._dataservice = dataservice
+        self._coordinator = coordinator
         self._description = description
         self._address = address
-        self.impacted_modules_info = impacted_modules_info
-        self._state = False
 
-        self._attr_name = f"Nikobus Sensor {address}"
-        self._attr_unique_id = f"{DOMAIN}_{address}"
-        self._attr_device_class = "push"
+        self._attr_name = f"Nikobus Button Sensor {address}"
+        self._attr_unique_id = f"{DOMAIN}_button_sensor_{address}"
+        self._state = None
 
-    @callback
-    async def handle_button_press_event(self, event):
-        """Handle the nikobus_button_pressed event."""
-        if event.data["address"] == self._address:
-            self._state = True
-            self.async_write_ha_state()
-
-            # Delay to simulate the button press state
-            await asyncio.sleep(0.5)
-
-            self._state = False
-            self.async_write_ha_state()
-
-    @property
-    def is_on(self) -> bool:
-        """Return True if the button is pressed, else False."""
-        return self._state
+        # Register for button press events
+        self._hass.bus.async_listen("nikobus_button_pressed", self._handle_button_event)
 
     @property
     def device_info(self):
-        """Return device information about this binary sensor."""
+        """Return device information about this sensor."""
         return {
             "identifiers": {(DOMAIN, self._address)},
             "name": self._description,
             "manufacturer": BRAND,
-            "model": "Push Button",
+            "model": "Button Sensor",
         }
 
     @property
-    def extra_state_attributes(self) -> dict[str, str] | None:
-        """Return extra state attributes of the binary sensor."""
-        impacted_modules_str = ", ".join(
-            f"{module['address']}_{module['group']}"
-            for module in self.impacted_modules_info
-        )
-        return {"impacted_modules": impacted_modules_str}
+    def state(self):
+        """Return the state of the sensor."""
+        return self._state
 
-    async def async_update(self):
-        """Update method for the binary sensor."""
-        # No regular polling is needed, this can be left empty
-        pass
+    @callback
+    def _handle_button_event(self, event):
+        """Handle Nikobus button press events."""
+        event_data = event.data
+        address = event_data.get("address")
+
+        if address == self._address:
+            _LOGGER.debug(f"Button sensor {self._address} detected a press event.")
+            self._state = "Pressed"
+            self.async_write_ha_state()
+
+            # Optionally reset the state after a short delay
+            self._hass.loop.call_later(1, self._reset_state)
+
+    @callback
+    def _reset_state(self):
+        """Reset the sensor state to None."""
+        self._state = None
+        self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updates from the coordinator."""
+        # Update the state if necessary
+        pass  # Since the state is event-driven, we may not need to handle coordinator updates

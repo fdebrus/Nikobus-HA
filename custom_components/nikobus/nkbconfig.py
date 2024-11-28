@@ -68,9 +68,9 @@ class NikobusConfig:
             _LOGGER.info(
                 f"Button configuration file not found: {file_path}. A new file will be created upon discovering the first button."
             )
-        elif data_type != "scene":
+        else:
             raise HomeAssistantError(
-                f"{data_type.capitalize()} mandatory configuration file not found: {file_path}"
+                f"{data_type.capitalize()} configuration file not found: {file_path}"
             )
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
