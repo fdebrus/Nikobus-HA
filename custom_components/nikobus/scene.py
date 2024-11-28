@@ -124,7 +124,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             )
 
             # Get the module type and determine the value
-            module_type = self._coordinator.api.get_module_type(module_id)
+            module_type = self._coordinator.get_module_type(module_id)
             _LOGGER.debug(f"Detected module type for module {module_id}: {module_type}")
 
             value = get_value(module_type, state)
@@ -151,7 +151,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 module_id, bytearray(12)
             )
 
-            module_type = self._coordinator.api.get_module_type(module_id)
+            module_type = self._coordinator.get_module_type(module_id)
 
             # Check if any channel in group 1 (channels 1-6) was updated
             group1_updated = any(
