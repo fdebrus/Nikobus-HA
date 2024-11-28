@@ -58,14 +58,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             update_interval=self._update_interval,
         )
         self._unsub_update_listener = None
-        
+
         self._nikobus_connection = NikobusConnect(self._connection_string)
         self._nikobus_config = NikobusConfig(self._hass)
 
         self.dict_module_data = {}
         self.dict_button_data = {}
         self.dict_scene_data = {}
-        self._nikobus_module_states = {}
+        self.nikobus_module_states = {}
 
         self._nikobus_actuator = None
         self._nikobus_listener = None
@@ -89,7 +89,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 for module_type, modules in self.dict_module_data.items():
                     for address, module_info in modules.items():
                         module_address = module_info["address"]
-                        self._nikobus_module_states[module_address] = bytearray(12)
+                        self.nikobus_module_states[module_address] = bytearray(12)
 
                 self._nikobus_actuator = NikobusActuator(
                     self._hass,
@@ -112,9 +112,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     self._hass,
                     self._nikobus_connection,
                     self._nikobus_listener,
-                    self._nikobus_module_states,
+                    self.nikobus_module_states,
                 )
-                self._hass.data[DOMAIN]["nikobus_command_handler"] = self.nikobus_command_handler
+                self._hass.data[DOMAIN]["nikobus_command_handler"] = (
+                    self.nikobus_command_handler
+                )
 
                 self.api = NikobusAPI(self._hass, self)
                 self.hass.data[DOMAIN]["api"] = self.api
@@ -178,8 +180,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 )
                 state += group_state
 
-            self._nikobus_module_states[address] = bytearray.fromhex(state)
-            _LOGGER.debug(f"{self._nikobus_module_states[address]}")
+            self.nikobus_module_states[address] = bytearray.fromhex(state)
+            _LOGGER.debug(f"{self.nikobus_module_states[address]}")
 
     async def _process_feedback_data(self, module_group, data):
         """Process feedback data from Nikobus."""
@@ -193,15 +195,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 f"Processing feedback module data: module_address={module_address}, group={module_group}, module_state={module_state_raw}"
             )
 
-            if module_address not in self._nikobus_module_states:
-                self._nikobus_module_states[module_address] = bytearray(12)
+            if module_address not in self.nikobus_module_states:
+                self.nikobus_module_states[module_address] = bytearray(12)
 
             if module_group == 1:
-                self._nikobus_module_states[module_address][:6] = bytearray.fromhex(
+                self.nikobus_module_states[module_address][:6] = bytearray.fromhex(
                     module_state_raw
                 )
             elif module_group == 2:
-                self._nikobus_module_states[module_address][6:] = bytearray.fromhex(
+                self.nikobus_module_states[module_address][6:] = bytearray.fromhex(
                     module_state_raw
                 )
             else:
@@ -216,25 +218,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     def get_bytearray_state(self, address: str, channel: int) -> int:
         """Get the state of a specific channel."""
-        return self._nikobus_module_states.get(address, bytearray())[channel - 1]
+        return self.nikobus_module_states.get(address, bytearray())[channel - 1]
 
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
         """Set the state of a specific channel."""
-        if address in self._nikobus_module_states:
-            self._nikobus_module_states[address][channel - 1] = value
+        if address in self.nikobus_module_states:
+            self.nikobus_module_states[address][channel - 1] = value
         else:
             _LOGGER.error(f"Address {address} not found in Nikobus module")
 
     def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
         """Update the state of a specific group."""
         byte_value = bytearray.fromhex(value)
-        if address in self._nikobus_module_states:
+        if address in self.nikobus_module_states:
             if int(group) == 1:
-                self._nikobus_module_states[address][:6] = byte_value
+                self.nikobus_module_states[address][:6] = byte_value
             elif int(group) == 2:
-                self._nikobus_module_states[address][6:12] = byte_value
+                self.nikobus_module_states[address][6:12] = byte_value
             _LOGGER.debug(
-                f"New value set for array {self._nikobus_module_states[address]}."
+                f"New value set for array {self.nikobus_module_states[address]}."
             )
         else:
             _LOGGER.error(f"Address {address} not found in Nikobus module")
@@ -348,6 +350,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             else timedelta(seconds=self._refresh_interval)
         )
         await self._async_refresh()
+        
 
     def get_light_state(self, address: str, channel: int) -> bool:
         """Get the state of a light based on its address and channel."""
@@ -364,6 +367,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     def get_cover_state(self, address: str, channel: int) -> int:
         """Get the state of a cover based on its address and channel."""
         return self.get_bytearray_state(address, channel)
+
 
 class NikobusConnectError(Exception):
     """Custom exception for handling Nikobus connection errors."""
