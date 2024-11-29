@@ -4,7 +4,10 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, BRAND
 
+from .exceptions import NikobusError  # Import the custom exceptions
+
 _LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus light entities from a config entry."""
@@ -28,6 +31,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     ]
 
     async_add_entities(entities)
+
 
 class NikobusLightEntity(CoordinatorEntity, LightEntity):
     """Represents a Nikobus light (dimmer) entity within Home Assistant."""
@@ -68,13 +72,21 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     @property
     def is_on(self):
         """Return True if the light is on."""
-        brightness = self._coordinator.get_light_brightness(self._address, self._channel)
+        brightness = self.brightness
         return brightness > 0
 
     @property
     def brightness(self):
         """Return the brightness of the light."""
-        return self._coordinator.get_light_brightness(self._address, self._channel)
+        try:
+            return self._coordinator.get_light_brightness(self._address, self._channel)
+        except NikobusError as e:
+            _LOGGER.error(
+                f"Failed to get brightness for light at address {self._address}, channel {self._channel}: {e}"
+            )
+            # Optionally, you can set the entity as unavailable
+            # self._attr_available = False
+            return 0  # Assume brightness is 0 if an error occurs
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -88,18 +100,26 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
             await self._coordinator.api.turn_on_light(
                 self._address, self._channel, brightness
             )
-        except Exception as e:
+        except NikobusError as e:
             _LOGGER.error(
                 f"Failed to turn on light at address {self._address}, channel {self._channel}: {e}"
             )
-        self.async_write_ha_state()
+            # Optionally, set the entity as unavailable
+            # self._attr_available = False
+            return  # Do not update the UI state
+        else:
+            self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         """Turn the light off."""
         try:
             await self._coordinator.api.turn_off_light(self._address, self._channel)
-        except Exception as e:
+        except NikobusError as e:
             _LOGGER.error(
                 f"Failed to turn off light at address {self._address}, channel {self._channel}: {e}"
             )
-        self.async_write_ha_state()
+            # Optionally, set the entity as unavailable
+            # self._attr_available = False
+            return  # Do not update the UI state
+        else:
+            self.async_write_ha_state()

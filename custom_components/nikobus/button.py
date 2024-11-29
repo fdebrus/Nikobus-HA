@@ -15,9 +15,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
     entities = []
 
     if coordinator.dict_button_data:
-        for button in coordinator.dict_button_data.get(
-            "nikobus_button", {}
-        ).values():
+        for button in coordinator.dict_button_data.get("nikobus_button", {}).values():
             impacted_modules_info = [
                 {
                     "address": impacted_module["address"],

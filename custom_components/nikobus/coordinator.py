@@ -20,6 +20,13 @@ from .const import (
     CONF_HAS_FEEDBACK_MODULE,
 )
 
+from .exceptions import (
+    NikobusError,
+    NikobusSendError,
+    NikobusConnectionError,
+    NikobusDataError,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -28,10 +35,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the coordinator with Home Assistant and configuration entry."""
-        self._hass = hass
+        self.hass = hass
         self.api = None
 
-        self._config_entry = config_entry
+        self.config_entry = config_entry
         self._connection_string = config_entry.options.get(
             CONF_CONNECTION_STRING, config_entry.data.get(CONF_CONNECTION_STRING)
         )
@@ -51,7 +58,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         )
 
         super().__init__(
-            self._hass,
+            self.hass,
             _LOGGER,
             name="Nikobus",
             update_method=self._async_update_data,
@@ -59,30 +66,35 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         )
         self._unsub_update_listener = None
 
-        self._nikobus_connection = NikobusConnect(self._connection_string)
-        self._nikobus_config = NikobusConfig(self._hass)
+        self.nikobus_connection = NikobusConnect(self._connection_string)
+        self.nikobus_config = NikobusConfig(self.hass)
 
         self.dict_module_data = {}
         self.dict_button_data = {}
         self.dict_scene_data = {}
         self.nikobus_module_states = {}
 
-        self._nikobus_actuator = None
-        self._nikobus_listener = None
+        self.nikobus_actuator = None
+        self.nikobus_listener = None
 
         self.nikobus_command_handler = None
 
     async def connect(self):
         """Connect to the Nikobus system."""
-        if await self._nikobus_connection.connect():
+        try:
+            await self.nikobus_connection.connect()
+        except NikobusConnectionError as e:
+            _LOGGER.error(f"Failed to connect to Nikobus: {e}")
+            raise
+        else:
             try:
-                self.dict_module_data = await self._nikobus_config.load_json_data(
+                self.dict_module_data = await self.nikobus_config.load_json_data(
                     "nikobus_module_config.json", "module"
                 )
-                self.dict_button_data = await self._nikobus_config.load_json_data(
+                self.dict_button_data = await self.nikobus_config.load_json_data(
                     "nikobus_button_config.json", "button"
                 )
-                self.dict_scene_data = await self._nikobus_config.load_json_data(
+                self.dict_scene_data = await self.nikobus_config.load_json_data(
                     "nikobus_scene_config.json", "scene"
                 )
 
@@ -91,52 +103,53 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                         module_address = module_info["address"]
                         self.nikobus_module_states[module_address] = bytearray(12)
 
-                self._nikobus_actuator = NikobusActuator(
-                    self._hass,
+                self.nikobus_actuator = NikobusActuator(
+                    self.hass,
+                    self,
                     self.dict_button_data,
                     self.dict_module_data,
                     self.async_event_handler,
                 )
-                self._hass.data[DOMAIN]["nikobus_actuator"] = self._nikobus_actuator
 
-                self._nikobus_listener = NikobusEventListener(
-                    self._hass,
-                    self._config_entry,
-                    self._nikobus_actuator,
-                    self._nikobus_connection,
-                    self._process_feedback_data,
+                self.nikobus_listener = NikobusEventListener(
+                    self.hass,
+                    self.config_entry,
+                    self.nikobus_actuator,
+                    self.nikobus_connection,
+                    self.process_feedback_data,
                 )
-                self._hass.data[DOMAIN]["nikobus_listener"] = self._nikobus_listener
 
                 self.nikobus_command_handler = NikobusCommandHandler(
-                    self._hass,
-                    self._nikobus_connection,
-                    self._nikobus_listener,
+                    self.hass,
+                    self.nikobus_connection,
+                    self.nikobus_listener,
                     self.nikobus_module_states,
                 )
-                self._hass.data[DOMAIN]["nikobus_command_handler"] = (
-                    self.nikobus_command_handler
-                )
 
-                self.api = NikobusAPI(self._hass, self)
-                self.hass.data[DOMAIN]["api"] = self.api
+                self.api = NikobusAPI(self.hass, self)
+
+                self.hass.data[DOMAIN] = {
+                    "coordinator": self,
+                    "api": self.api,
+                    "actuator": self.nikobus_actuator,
+                    "listener": self.nikobus_listener,
+                    "command": self.nikobus_command_handler,
+                }
 
                 # Start command handler and event listener
                 await self.nikobus_command_handler.start()
-                await self._nikobus_listener.start()
+                await self.nikobus_listener.start()
 
-                # Possibly perform an initial data refresh
+                # Perform an initial data refresh
                 await self._async_config_entry_first_refresh()
-
             except HomeAssistantError as e:
-                _LOGGER.error("Failed to connect to Nikobus: %s", e)
-        else:
-            raise NikobusConnectError("Failed to connect to Nikobus.")
+                _LOGGER.error("Failed to initialize Nikobus components: %s", e)
+                raise
 
     async def _async_config_entry_first_refresh(self):
         """Handle the first data refresh and set up the update listener."""
         await self.async_refresh()
-        self._unsub_update_listener = self._config_entry.add_update_listener(
+        self._unsub_update_listener = self.config_entry.add_update_listener(
             self._async_config_entry_updated
         )
 
@@ -183,7 +196,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             self.nikobus_module_states[address] = bytearray.fromhex(state)
             _LOGGER.debug(f"{self.nikobus_module_states[address]}")
 
-    async def _process_feedback_data(self, module_group, data):
+    async def process_feedback_data(self, module_group, data):
         """Process feedback data from Nikobus."""
         try:
             module_address_raw = data[3:7]
@@ -260,14 +273,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         return "unknown"
 
     async def set_output_states_for_module(
-        self, address: str, channel_states: bytearray, completion_handler=None
+        self,
+        address: str,
+        group: int,
+        channel_states: bytearray,
+        completion_handler=None,
     ) -> None:
         """Set the output states for a module with multiple channel updates at once."""
         _LOGGER.debug(
-            f"Setting output states for module {address}: {channel_states.hex()}"
+            f"Setting output states for module {address}: group: {group} states: {channel_states.hex()}"
         )
         await self.nikobus_command_handler.set_output_states(
-            address, channel_states, completion_handler=completion_handler
+            address, group, channel_states, completion_handler=completion_handler
         )
 
     async def async_event_handler(self, event, data):
@@ -335,7 +352,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             if connection_changed:
                 await self.connect()
                 title = f"Nikobus - {connection_string}"
-                self._hass.config_entries.async_update_entry(entry, title=title)
+                self.hass.config_entries.async_update_entry(entry, title=title)
 
             _LOGGER.info(
                 f"Configuration updated: connection_string={self._connection_string}, "
@@ -367,13 +384,3 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     def get_cover_state(self, address: str, channel: int) -> int:
         """Get the state of a cover based on its address and channel."""
         return self.get_bytearray_state(address, channel)
-
-
-class NikobusConnectError(Exception):
-    """Custom exception for handling Nikobus connection errors."""
-
-    def __init__(
-        self, message="Failed to connect to Nikobus system", original_exception=None
-    ):
-        super().__init__(message)
-        self._original_exception = original_exception

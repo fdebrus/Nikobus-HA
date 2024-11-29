@@ -19,9 +19,10 @@ __version__ = "1.0"
 class NikobusActuator:
     """Handles button press events for the Nikobus system."""
 
-    def __init__(self, hass, dict_button_data, dict_module_data, async_event_handler):
+    def __init__(self, hass, coordinator, dict_button_data, dict_module_data, async_event_handler):
         """Initialize the Nikobus actuator."""
         self._hass = hass
+        self._coordinator = coordinator
         self._async_event_handler = async_event_handler
         self._dict_button_data = dict_button_data
         self._dict_module_data = dict_module_data
@@ -111,7 +112,6 @@ class NikobusActuator:
                         )
 
                     await self.button_discovery(address)
-                    self._reset_state()
                     break
 
         except asyncio.CancelledError:
@@ -174,7 +174,7 @@ class NikobusActuator:
             if "nikobus_button" not in self._dict_button_data:
                 self._dict_button_data["nikobus_button"] = {}
             self._dict_button_data["nikobus_button"][address] = new_button
-            await self._hass.data[DOMAIN]["nikobus_instance"]._nikobus_config.write_json_data(
+            await self._coordinator.nikobus_config.write_json_data(
                 "nikobus_button_config.json", "button", self._dict_button_data
             )
             _LOGGER.debug(f"New button configuration added for address {address}.")
@@ -186,9 +186,6 @@ class NikobusActuator:
 
         operation_time = float(button.get("operation_time", 0))
 
-        nikobus_instance = self._hass.data[DOMAIN].get("nikobus_instance")
-        command_handler = self._hass.data[DOMAIN].get("nikobus_command_handler")
-
         for impacted_module_info in button.get("impacted_module", []):
             impacted_module_address = impacted_module_info.get("address")
             impacted_group = impacted_module_info.get("group")
@@ -198,7 +195,7 @@ class NikobusActuator:
             ):
                 _LOGGER.debug("Skipping module refresh due to missing address or group")
                 operation_time = float(
-                    self.dict_button_data.get("nikobus_button", {})
+                    self._dict_button_data.get("nikobus_button", {})
                     .get(address, {})
                     .get("operation_time", 0)
                 )
@@ -222,14 +219,14 @@ class NikobusActuator:
                     _LOGGER.debug("Dimmer DETECTED - pausing to get final status")
                     await asyncio.sleep(DIMMER_DELAY)
 
-                value = await command_handler.get_output_state(
+                value = await self._coordinator.nikobus_command_handler.get_output_state(
                     impacted_module_address, impacted_group
                 )
 
                 _LOGGER.debug(f"VALUE RECEIVED: {value}")
 
                 if value is not None:
-                    nikobus_instance.set_bytearray_group_state(
+                    self._coordinator.set_bytearray_group_state(
                         impacted_module_address, impacted_group, value
                     )
                     await self._async_event_handler(

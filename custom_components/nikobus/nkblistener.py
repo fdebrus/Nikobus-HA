@@ -1,4 +1,4 @@
-"""nkblistener - Listener for Nikobus"""
+# nikobus_listener.py
 
 import logging
 import asyncio
@@ -46,11 +46,13 @@ class NikobusEventListener:
 
         self.nikobus_connection = nikobus_connection
         self.response_queue = asyncio.Queue()
+        self.cmd_response_queue = asyncio.Queue()  # Added for command acknowledgments
 
     async def start(self):
         """Start the event listener."""
         self._running = True
         self._listener_task = self._hass.loop.create_task(self.listen_for_events())
+        _LOGGER.info("Nikobus Event Listener started.")
 
     async def stop(self):
         """Stop the event listener."""
@@ -65,7 +67,7 @@ class NikobusEventListener:
 
     async def listen_for_events(self) -> None:
         """Continuously listen for and handle events from the Nikobus system."""
-        _LOGGER.info("Nikobus Event Listener starting")
+        _LOGGER.info("Nikobus Event Listener is running.")
         while self._running:
             try:
                 data = await asyncio.wait_for(
@@ -90,6 +92,7 @@ class NikobusEventListener:
     async def dispatch_message(self, message: str) -> None:
         """Handle and route incoming messages from the Nikobus system."""
         if message.startswith(BUTTON_COMMAND_PREFIX):
+            _LOGGER.debug(f"Button command received: {message}")
             await self._actuator.handle_button_press(message[2:8])
             return
 
@@ -99,6 +102,7 @@ class NikobusEventListener:
 
         if message.startswith(COMMAND_PROCESSED):
             _LOGGER.debug(f"Command acknowledged: {message}")
+            await self.cmd_response_queue.put(message)  # Place acknowledgment into cmd_response_queue
             return
 
         if message.startswith(CONTROLLER_ADDRESS):
@@ -117,7 +121,7 @@ class NikobusEventListener:
 
         if any(refresh in message for refresh in MANUAL_REFRESH_COMMAND):
             _LOGGER.debug(f"Manual refresh command answer: {message}")
-            if BUTTON_COMMAND_PREFIX not in message:
+            if not message.startswith(BUTTON_COMMAND_PREFIX):
                 await self.response_queue.put(message)
             return
 

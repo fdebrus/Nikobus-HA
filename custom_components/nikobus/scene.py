@@ -167,18 +167,19 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                     module_id, group=1, value=hex_value
                 )
 
-            # Check if any channel in group 2 (channels 7-12) was updated
-            group2_updated = any(
-                channel_states[i] != current_state[i] for i in range(6, 12)
-            )
-            if group2_updated:
-                hex_value = channel_states[6:12].hex()
-                _LOGGER.debug(
-                    f"Updating group 2 for module {module_id} with values: {hex_value}"
+            if module_type != "cover":
+                # Check if any channel in group 2 (channels 7-12) was updated
+                group2_updated = any(
+                    channel_states[i] != current_state[i] for i in range(6, 12)
                 )
-                self._coordinator.set_bytearray_group_state(
-                    module_id, group=2, value=hex_value
-                )
+                if group2_updated:
+                    hex_value = channel_states[6:12].hex()
+                    _LOGGER.debug(
+                        f"Updating group 2 for module {module_id} with values: {hex_value}"
+                    )
+                    self._coordinator.set_bytearray_group_state(
+                        module_id, group=2, value=hex_value
+                    )
 
             # Log the final updated state of the module and send the changes
             _LOGGER.debug(

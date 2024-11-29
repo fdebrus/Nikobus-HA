@@ -290,9 +290,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         # Only proceed if the event address matches this cover's module address
         if impacted_module_address == self._address:
             # Get the current state for this cover's channel
-            new_state = self._coordinator.get_cover_state(
-                self._address, self._channel
-            )
+            new_state = self._coordinator.get_cover_state(self._address, self._channel)
             self._process_state_change(new_state)
             self.async_write_ha_state()
 
