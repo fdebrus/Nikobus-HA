@@ -2,7 +2,9 @@ import logging
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
 from .const import DOMAIN, BRAND
+from .exceptions import NikobusError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +57,9 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
+        # Internal state variable for optimistic updates
+        self._is_on = None
+
     @property
     def device_info(self):
         """Return device information about this switch."""
@@ -68,29 +73,51 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     @property
     def is_on(self):
         """Return True if the switch is on."""
-        return self._coordinator.get_switch_state(self._address, self._channel)
+        if self._is_on is not None:
+            return self._is_on
+        try:
+            return self._coordinator.get_switch_state(self._address, self._channel)
+        except NikobusError as e:
+            _LOGGER.error(
+                f"Failed to get state for switch at address {self._address}, channel {self._channel}: {e}"
+            )
+            return False  # Assume switch is off if an error occurs
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+        # Reset the optimistic state since we have new data from the coordinator
+        self._is_on = None
         self.async_write_ha_state()
 
     async def async_turn_on(self):
         """Turn the switch on."""
+        # Optimistically update the internal state
+        self._is_on = True
+        self.async_write_ha_state()
+
         try:
             await self._coordinator.api.turn_on_switch(self._address, self._channel)
-        except Exception as e:
+        except NikobusError as e:
             _LOGGER.error(
                 f"Failed to turn on switch at address {self._address}, channel {self._channel}: {e}"
             )
-        self.async_write_ha_state()
+            # Revert the optimistic state on failure
+            self._is_on = None
+            self.async_write_ha_state()
 
     async def async_turn_off(self):
         """Turn the switch off."""
+        # Optimistically update the internal state
+        self._is_on = False
+        self.async_write_ha_state()
+
         try:
             await self._coordinator.api.turn_off_switch(self._address, self._channel)
-        except Exception as e:
+        except NikobusError as e:
             _LOGGER.error(
                 f"Failed to turn off switch at address {self._address}, channel {self._channel}: {e}"
             )
-        self.async_write_ha_state()
+            # Revert the optimistic state on failure
+            self._is_on = None
+            self.async_write_ha_state()

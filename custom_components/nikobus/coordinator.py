@@ -121,6 +121,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
                 self.nikobus_command_handler = NikobusCommandHandler(
                     self.hass,
+                    self,
                     self.nikobus_connection,
                     self.nikobus_listener,
                     self.nikobus_module_states,
@@ -271,21 +272,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         # If not found, return unknown
         _LOGGER.error(f"Module ID {module_id} not found in known module types")
         return "unknown"
-
-    async def set_output_states_for_module(
-        self,
-        address: str,
-        group: int,
-        channel_states: bytearray,
-        completion_handler=None,
-    ) -> None:
-        """Set the output states for a module with multiple channel updates at once."""
-        _LOGGER.debug(
-            f"Setting output states for module {address}: group: {group} states: {channel_states.hex()}"
-        )
-        await self.nikobus_command_handler.set_output_states(
-            address, group, channel_states, completion_handler=completion_handler
-        )
 
     async def async_event_handler(self, event, data):
         """Handle events received from the Nikobus system."""

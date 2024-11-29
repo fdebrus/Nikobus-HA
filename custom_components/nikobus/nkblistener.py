@@ -102,7 +102,7 @@ class NikobusEventListener:
 
         if message.startswith(COMMAND_PROCESSED):
             _LOGGER.debug(f"Command acknowledged: {message}")
-            await self.cmd_response_queue.put(message)  # Place acknowledgment into cmd_response_queue
+            await self.cmd_response_queue.put(message) 
             return
 
         if message.startswith(CONTROLLER_ADDRESS):

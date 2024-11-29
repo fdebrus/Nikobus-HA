@@ -183,10 +183,10 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
             # Log the final updated state of the module and send the changes
             _LOGGER.debug(
-                f"Sending updated state to module {module_id}: {channel_states.hex()}"
+                f"Sending updated state to module {module_id}: {channel_states}"
             )
-            await self._coordinator.set_output_states_for_module(
-                module_id, channel_states
+            await self._coordinator.api.set_output_states_for_module(
+                address = module_id
             )
 
             # Notify listeners of the state change

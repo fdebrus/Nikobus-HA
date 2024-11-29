@@ -186,3 +186,14 @@ class NikobusAPI:
         except NikobusError as e:
             _LOGGER.error(f"Failed to close cover at address {address}, channel {channel}: {e}")
             raise
+
+    async def set_output_states_for_module(
+        self, address: str, completion_handler=None
+    ) -> None:
+        """Set the output states for a module with multiple channel updates at once."""
+        _LOGGER.debug(
+            f"Setting output states for module {address}"
+        )
+        await self._coordinator.nikobus_command_handler.set_output_states(
+            address, completion_handler=completion_handler
+        )
