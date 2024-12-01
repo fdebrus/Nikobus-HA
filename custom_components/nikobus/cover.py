@@ -36,6 +36,14 @@ class PositionEstimator:
 
     def start(self, direction, position=None):
         """Start the movement in the given direction."""
+        if (direction == "closing" and self.position == 0) or (
+            direction == "opening" and self.position == 100
+        ):
+            _LOGGER.debug(
+                "PositionEstimator.start() called but cover already at target position. Ignoring."
+            )
+            return
+
         new_direction = 1 if direction == "opening" else -1
         if self._start_time is not None:
             if self._direction == new_direction:
@@ -304,8 +312,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     def _process_state_change(self, new_state):
         """Process the state change for the cover."""
         if new_state == self._previous_state:
+            return
+
+        # Prevent unnecessary state changes
+        if (new_state == STATE_CLOSING and self._position == 0) or (
+            new_state == STATE_OPENING and self._position == 100
+        ):
             _LOGGER.debug(
-                f"No state change detected for {self._attr_name}; skipping processing."
+                f"{self._attr_name}: Cover is already at target position. Skipping state change to {new_state}."
             )
             return
 
@@ -357,6 +371,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
+        if self.is_open:
+            _LOGGER.debug(f"{self._attr_name} is already open. Skipping open command.")
+            return
         try:
             await self._start_movement("opening")
         except Exception as e:
@@ -364,6 +381,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
     async def async_close_cover(self, **kwargs):
         """Close the cover."""
+        if self.is_closed:
+            _LOGGER.debug(
+                f"{self._attr_name} is already closed. Skipping close command."
+            )
+            return
         try:
             await self._start_movement("closing")
         except Exception as e:
@@ -406,6 +428,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
     async def async_stop_cover(self, **kwargs):
         """Stop the cover."""
+        if not self._in_motion:
+            _LOGGER.debug(f"{self._attr_name} is not in motion. Skipping stop command.")
+            return
+
         try:
             # Define completion handler
             async def completion_handler():
@@ -417,6 +443,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 self._direction,
                 completion_handler=completion_handler,
             )
+            _LOGGER.debug(f"Stop command sent for {self._attr_name}.")
         except Exception as e:
             _LOGGER.error(f"Failed to stop cover {self._attr_name}: {e}")
 

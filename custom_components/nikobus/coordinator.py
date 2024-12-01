@@ -6,7 +6,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
 
-from .nikobus import NikobusAPI
+from .nkbAPI import NikobusAPI
 from .nkbconnect import NikobusConnect
 from .nkbconfig import NikobusConfig
 from .nkblistener import NikobusEventListener
@@ -21,8 +21,6 @@ from .const import (
 )
 
 from .exceptions import (
-    NikobusError,
-    NikobusSendError,
     NikobusConnectionError,
     NikobusDataError,
 )
@@ -353,7 +351,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             else timedelta(seconds=self._refresh_interval)
         )
         await self._async_refresh()
-        
 
     def get_light_state(self, address: str, channel: int) -> bool:
         """Get the state of a light based on its address and channel."""

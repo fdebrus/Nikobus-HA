@@ -29,9 +29,7 @@ async def async_setup_entry(hass, entry, async_add_entities) -> bool:
             channel["description"],
         )
         for address, dimmer_module_data in dimmer_modules.items()
-        for i, channel in enumerate(
-            dimmer_module_data.get("channels", []), start=1
-        )
+        for i, channel in enumerate(dimmer_module_data.get("channels", []), start=1)
         if not channel["description"].startswith("not_in_use")
     ]
 
@@ -92,9 +90,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         if self._brightness is not None:
             return self._brightness
         try:
-            return self._coordinator.get_light_brightness(
-                self._address, self._channel
-            )
+            return self._coordinator.get_light_brightness(self._address, self._channel)
         except NikobusError as e:
             _LOGGER.error(
                 f"Failed to get brightness for light at address {self._address}, channel {self._channel}: {e}"
@@ -140,9 +136,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self.async_write_ha_state()
 
         try:
-            await self._coordinator.api.turn_off_light(
-                self._address, self._channel
-            )
+            await self._coordinator.api.turn_off_light(self._address, self._channel)
         except NikobusError as e:
             _LOGGER.error(
                 f"Failed to turn off light at address {self._address}, channel {self._channel}: {e}"

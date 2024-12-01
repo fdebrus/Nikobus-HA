@@ -1,4 +1,3 @@
-import re
 import asyncio
 import logging
 from .nkbprotocol import make_pc_link_command, calculate_group_number
@@ -13,9 +12,7 @@ from .const import (
 from .exceptions import (
     NikobusError,
     NikobusSendError,
-    NikobusConnectionError,
     NikobusTimeoutError,
-    NikobusDataError,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +24,12 @@ class NikobusCommandHandler:
     """Handles command processing for Nikobus."""
 
     def __init__(
-        self, hass, coordinator, nikobus_connection, nikobus_listener, nikobus_module_states
+        self,
+        hass,
+        coordinator,
+        nikobus_connection,
+        nikobus_listener,
+        nikobus_module_states,
     ):
         """Initialize the command handler."""
         self._hass = hass
@@ -68,10 +70,14 @@ class NikobusCommandHandler:
                 if callable(handler):  # Ensure it's callable
                     if asyncio.iscoroutinefunction(handler):  # Ensure it's awaitable
                         try:
-                            _LOGGER.debug(f"Executing completion handler for command: {command}")
+                            _LOGGER.debug(
+                                f"Executing completion handler for command: {command}"
+                            )
                             await handler()
                         except Exception as e:
-                            _LOGGER.error(f"Error executing completion handler for command {command}: {e}")
+                            _LOGGER.error(
+                                f"Error executing completion handler for command {command}: {e}"
+                            )
                         finally:
                             del self._command_completion_handlers[command]
                     else:
@@ -81,14 +87,14 @@ class NikobusCommandHandler:
             await asyncio.sleep(COMMAND_EXECUTION_DELAY)
 
     async def get_output_state(self, address: str, group: int) -> str:
-        """Get the output state of a module. """
+        """Get the output state of a module."""
         _LOGGER.debug(f"Getting output state - Address: {address}, Group: {group}")
         command_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(command_code, address)
         return await self.send_command_get_answer(command, address)
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
-        """Send a command and wait for an answer from the Nikobus system. """
+        """Send a command and wait for an answer from the Nikobus system."""
         _LOGGER.debug(
             f"Sending command {command} to address {address}, waiting for answer"
         )
@@ -115,7 +121,7 @@ class NikobusCommandHandler:
     async def _wait_for_ack_and_answer(
         self, command: str, wait_ack: str, wait_answer: str
     ) -> str:
-        """Wait for an acknowledgment and answer from the Nikobus system. """
+        """Wait for an acknowledgment and answer from the Nikobus system."""
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 await self.nikobus_connection.send(command)
@@ -146,7 +152,7 @@ class NikobusCommandHandler:
     async def _wait_for_ack_and_answer_state(
         self, wait_ack: str, wait_answer: str
     ) -> str | None:
-        """Wait for acknowledgment and answer, and extract the state. """
+        """Wait for acknowledgment and answer, and extract the state."""
         ack_received = False
         answer_received = False
         state = None
@@ -184,7 +190,7 @@ class NikobusCommandHandler:
     async def set_output_state(
         self, address: str, channel: int, value: int, completion_handler=None
     ) -> None:
-        """Set the output state of a module. """
+        """Set the output state of a module."""
         _LOGGER.debug(
             f"Setting output state - Address: {address}, Channel: {channel}, Value: {value}"
         )
@@ -203,13 +209,11 @@ class NikobusCommandHandler:
 
         # Create and send the command with the updated values
         command = make_pc_link_command(command_code, address, values)
-        await self.queue_command(
-            command, completion_handler=completion_handler
-        )
+        await self.queue_command(command, completion_handler=completion_handler)
         _LOGGER.debug("Command queued successfully.")
 
     async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
-        """Fetch the latest values from the hardware and prepare values for a command. """
+        """Fetch the latest values from the hardware and prepare values for a command."""
         # Fetch the latest state from the hardware
         latest_state_hex = await self.get_output_state(address, group)
         latest_state = bytearray.fromhex(latest_state_hex)
@@ -221,11 +225,9 @@ class NikobusCommandHandler:
         _LOGGER.debug(f"Queueing command: {command}")
         await self._command_queue.put(command)
         _LOGGER.debug(f"Command Queued: {command}")
-        if completion_handler:
-            self._command_completion_handlers[command] = completion_handler
 
     async def send_command(self, command: str) -> None:
-        """Send a command to the Nikobus system. """
+        """Send a command to the Nikobus system."""
         _LOGGER.debug(f"Sending command: {command}")
         try:
             await self.nikobus_connection.send(command)
@@ -233,13 +235,9 @@ class NikobusCommandHandler:
             _LOGGER.error(f"Failed to send command {command}: {e}")
             raise
 
-    async def set_output_states(
-        self, address: str, completion_handler=None
-    ) -> None:
-        """Prepare and queue the output states for a module. """
-        _LOGGER.debug(
-            f"Preparing to set output states for module {address}"
-        )
+    async def set_output_states(self, address: str, completion_handler=None) -> None:
+        """Prepare and queue the output states for a module."""
+        _LOGGER.debug(f"Preparing to set output states for module {address}")
         channel_states = self.nikobus_module_states[address][:6]
         command_code = 0x15
         command = make_pc_link_command(command_code, address, channel_states)

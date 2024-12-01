@@ -7,11 +7,9 @@ import re
 from .const import BAUD_RATE, COMMANDS_HANDSHAKE
 
 from .exceptions import (
-    NikobusError,
     NikobusSendError,
     NikobusConnectionError,
-    NikobusTimeoutError,
-    NikobusDataError,
+    NikobusReadError,
 )
 
 _COMMAND_WITH_ACK = COMMANDS_HANDSHAKE[3]
@@ -19,6 +17,7 @@ _COMMAND_WITH_ACK = COMMANDS_HANDSHAKE[3]
 _LOGGER = logging.getLogger(__name__)
 
 __version__ = "1.0"
+
 
 class NikobusConnect:
     """Manages connection to a Nikobus system via IP or Serial."""
@@ -31,7 +30,7 @@ class NikobusConnect:
         self._nikobus_writer = None
 
     async def connect(self):
-        """ Connect to the Nikobus system using the connection string. """
+        """Connect to the Nikobus system using the connection string."""
         if self._connection_type == "IP":
             await self._connect_ip()
         elif self._connection_type == "Serial":
@@ -73,7 +72,9 @@ class NikobusConnect:
             )
             _LOGGER.info(f"Connected to serial port {self._connection_string}")
         except (OSError, serial_asyncio.SerialException) as err:
-            error_msg = f"Failed to connect to serial port {self._connection_string} - {err}"
+            error_msg = (
+                f"Failed to connect to serial port {self._connection_string} - {err}"
+            )
             _LOGGER.error(error_msg)
             self._nikobus_reader = None
             self._nikobus_writer = None
@@ -114,7 +115,7 @@ class NikobusConnect:
             return False
 
     async def read(self):
-        """ Read data from the Nikobus system. """
+        """Read data from the Nikobus system."""
         if not self._nikobus_reader:
             error_msg = "Reader is not available for reading data."
             _LOGGER.error(error_msg)
@@ -126,7 +127,7 @@ class NikobusConnect:
             raise NikobusReadError(f"Failed to read data: {e}")
 
     async def send(self, s: str):
-        """ Send data from the Nikobus system. """
+        """Send data from the Nikobus system."""
         if not self._nikobus_writer:
             error_msg = "Writer is not available for sending commands."
             _LOGGER.error(error_msg)

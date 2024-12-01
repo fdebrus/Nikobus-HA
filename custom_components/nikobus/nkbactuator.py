@@ -4,7 +4,6 @@ import asyncio
 import time
 import logging
 from .const import (
-    DOMAIN,
     DIMMER_DELAY,
     SHORT_PRESS,
     MEDIUM_PRESS,
@@ -19,7 +18,9 @@ __version__ = "1.0"
 class NikobusActuator:
     """Handles button press events for the Nikobus system."""
 
-    def __init__(self, hass, coordinator, dict_button_data, dict_module_data, async_event_handler):
+    def __init__(
+        self, hass, coordinator, dict_button_data, dict_module_data, async_event_handler
+    ):
         """Initialize the Nikobus actuator."""
         self._hass = hass
         self._coordinator = coordinator
@@ -219,8 +220,10 @@ class NikobusActuator:
                     _LOGGER.debug("Dimmer DETECTED - pausing to get final status")
                     await asyncio.sleep(DIMMER_DELAY)
 
-                value = await self._coordinator.nikobus_command_handler.get_output_state(
-                    impacted_module_address, impacted_group
+                value = (
+                    await self._coordinator.nikobus_command_handler.get_output_state(
+                        impacted_module_address, impacted_group
+                    )
                 )
 
                 _LOGGER.debug(f"VALUE RECEIVED: {value}")
