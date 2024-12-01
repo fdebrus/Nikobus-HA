@@ -376,16 +376,13 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             await self.async_stop_cover()
 
         # Define completion handler
-        async def completion_handler(success):
-            if success:
-                self._direction = direction
-                self._in_motion = True
-                self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
-                self._position_estimator.start(self._direction, self._position)
-                self.async_write_ha_state()
-                await self._start_position_estimation(target_position=target_position)
-            else:
-                _LOGGER.error(f"Command to {direction} cover {self._attr_name} failed.")
+        async def completion_handler():
+            self._direction = direction
+            self._in_motion = True
+            self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
+            self._position_estimator.start(self._direction, self._position)
+            self.async_write_ha_state()
+            await self._start_position_estimation(target_position=target_position)
 
         # Send the command to operate the cover
         await self._operate_cover(direction, completion_handler)
@@ -411,11 +408,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         """Stop the cover."""
         try:
             # Define completion handler
-            async def completion_handler(success):
-                if success:
-                    await self._finalize_position_estimate()
-                else:
-                    _LOGGER.error(f"Command to stop cover {self._attr_name} failed.")
+            async def completion_handler():
+                await self._finalize_position_estimate()
 
             await self._coordinator.api.stop_cover(
                 self._address,

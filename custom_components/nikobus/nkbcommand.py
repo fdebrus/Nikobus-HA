@@ -2,6 +2,7 @@ import re
 import asyncio
 import logging
 from .nkbprotocol import make_pc_link_command, calculate_group_number
+
 from .const import (
     COMMAND_EXECUTION_DELAY,
     COMMAND_ACK_WAIT_TIMEOUT,
@@ -32,20 +33,52 @@ class NikobusCommandHandler:
         self._hass = hass
         self._coordinator = coordinator
         self._running = False
+        self._command_task = None
+        self._command_queue = asyncio.Queue()
         self._command_completion_handlers = {}
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
         self.nikobus_module_states = nikobus_module_states
 
     async def start(self):
-        """Start the command handler."""
+        """Start the command processing loop."""
         self._running = True
-        _LOGGER.info("NikobusCommandHandler started.")
+        self._command_task = self._hass.loop.create_task(self.process_commands())
 
     async def stop(self):
-        """Stop the command handler."""
+        """Stop the command processing loop."""
         self._running = False
-        _LOGGER.info("NikobusCommandHandler stopped.")
+        if self._command_task:
+            self._command_task.cancel()
+            try:
+                await self._command_task
+            except asyncio.CancelledError:
+                _LOGGER.info("Command processing task was cancelled")
+            self._command_task = None
+
+    async def process_commands(self) -> None:
+        """Process commands from the queue."""
+        _LOGGER.info("Nikobus Command Processing starting")
+        while self._running:
+            command = await self._command_queue.get()
+            _LOGGER.debug(f"Processing command: {command}")
+            await self.send_command(command)
+            if command in self._command_completion_handlers:
+                handler = self._command_completion_handlers[command]
+                if callable(handler):  # Ensure it's callable
+                    if asyncio.iscoroutinefunction(handler):  # Ensure it's awaitable
+                        try:
+                            _LOGGER.debug(f"Executing completion handler for command: {command}")
+                            await handler()
+                        except Exception as e:
+                            _LOGGER.error(f"Error executing completion handler for command {command}: {e}")
+                        finally:
+                            del self._command_completion_handlers[command]
+                    else:
+                        _LOGGER.debug(f"Handler for command {command} is not awaitable")
+                else:
+                    _LOGGER.debug(f"No valid handler defined for command {command}")
+            await asyncio.sleep(COMMAND_EXECUTION_DELAY)
 
     async def get_output_state(self, address: str, group: int) -> str:
         """Get the output state of a module. """
@@ -53,140 +86,6 @@ class NikobusCommandHandler:
         command_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(command_code, address)
         return await self.send_command_get_answer(command, address)
-
-    async def set_output_state(
-        self, address: str, channel: int, value: int, completion_handler=None
-    ) -> None:
-        """Set the output state of a module. """
-        _LOGGER.debug(
-            f"Setting output state - Address: {address}, Channel: {channel}, Value: {value}"
-        )
-        group = calculate_group_number(channel)
-        command_code = 0x15 if int(group) == 1 else 0x16
-
-        # Get the current state values for the relevant group
-        values = await self._prepare_values_for_command(address, group)
-        _LOGGER.debug(f"Current values before update: {values}")
-
-        # Calculate the zero-based index for the target channel
-        channel_index = (channel - 1) % 6
-        # Update the value for the target channel
-        values[channel_index] = value
-        _LOGGER.debug(f"Updated values: {values}")
-
-        # Create and send the command with the updated values
-        command = make_pc_link_command(command_code, address, values)
-        await self.queue_command(
-            command, address, channel, completion_handler=completion_handler
-        )
-        _LOGGER.debug("Command queued successfully.")
-
-    async def set_output_states(
-        self, address: str, completion_handler=None
-    ) -> None:
-        """Prepare and queue the output states for a module. """
-        _LOGGER.debug(
-            f"Preparing to set output states for module {address}"
-        )
-        channel_states = self.nikobus_module_states[address][:6]
-        command_code = 0x15
-        command = make_pc_link_command(command_code, address, channel_states)
-        _LOGGER.debug(f"1-6 {command}")
-        await self.queue_command(command, address, 1, completion_handler=completion_handler)
-
-        module_type = self._coordinator.get_module_type(address)
-        if module_type != "cover":
-            channel_states = self.nikobus_module_states[address][6:12]
-            command_code = 0x16
-            command = make_pc_link_command(command_code, address, channel_states)
-            _LOGGER.debug(f"7-12 {command}")
-            await self.queue_command(command, address, 2, completion_handler=completion_handler)
-
-    async def queue_command(self, command, address, channel, completion_handler=None):
-        """Process the command immediately without locking or queuing. """
-        unique_command_key = f"{command}_{address}_{channel}"
-        _LOGGER.debug(f"Processing command: {unique_command_key} for module {address}")
-        if completion_handler:
-            self._command_completion_handlers[unique_command_key] = completion_handler
-
-        withAck = unique_command_key in self._command_completion_handlers
-
-        try:
-            await self.send_command(command, address, withAck=withAck)
-            _LOGGER.debug(
-                f"Command {command} executed successfully for module {address}, channel {channel}"
-            )
-        except NikobusError as e:
-            _LOGGER.error(
-                f"Command {command} failed for module {address}, channel {channel}: {e}"
-            )
-            # Optionally, handle failure (e.g., retry logic)
-            raise
-
-        handler = self._command_completion_handlers.pop(unique_command_key, None)
-        if handler:
-            try:
-                if asyncio.iscoroutinefunction(handler):
-                    await handler(True)
-                else:
-                    handler(True)
-            except Exception as e:
-                _LOGGER.error(f"Error executing completion handler: {e}")
-
-        # Optional: Delay before processing the next command
-        # await asyncio.sleep(COMMAND_EXECUTION_DELAY)
-
-    async def send_command(self, command: str, address: str, withAck: bool) -> None:
-        """Send a command to the Nikobus system. """
-        _LOGGER.debug(f"Sending command: {command}")
-        _wait_command_ack, _wait_command_answer = self._prepare_ack_and_answer_signals(
-            command, address
-        )
-        try:
-            if not withAck:
-                await self.nikobus_connection.send(command)
-            else:
-                await self._send_command_with_ack(
-                    command, _wait_command_ack, _wait_command_answer
-                )
-        except NikobusError as e:
-            _LOGGER.error(f"Failed to send command {command}: {e}")
-            raise
-
-    async def _send_command_with_ack(
-        self, command: str, wait_ack: str, wait_answer: str
-    ) -> None:
-        """Send a command and wait for acknowledgment and answer. """
-        ack_received = False
-        answer_received = False
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            try:
-                await self.nikobus_connection.send(command)
-                _LOGGER.debug(
-                    f"Attempt {attempt} of {MAX_ATTEMPTS} waiting for {wait_ack} / {wait_answer[-4:]}"
-                )
-                ack_received, answer_received = await self._wait_for_ack_and_answer_signals(
-                    wait_ack, wait_answer
-                )
-                if ack_received and answer_received:
-                    _LOGGER.debug("Command acknowledged and answer received.")
-                    return
-            except NikobusSendError as e:
-                _LOGGER.warning(f"Send error on attempt {attempt}: {e}")
-                if attempt == MAX_ATTEMPTS:
-                    raise
-            except NikobusTimeoutError as e:
-                _LOGGER.warning(f"Timeout on attempt {attempt}: {e}")
-                if attempt == MAX_ATTEMPTS:
-                    raise
-            except Exception as e:
-                _LOGGER.error(f"Unhandled exception on attempt {attempt}: {e}")
-                if attempt == MAX_ATTEMPTS:
-                    raise NikobusError(f"Unhandled exception: {e}")
-
-        raise NikobusTimeoutError(
-            f"Failed to receive ACK and answer for command '{command}' after {MAX_ATTEMPTS} attempts."
-        )
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
         """Send a command and wait for an answer from the Nikobus system. """
@@ -205,36 +104,6 @@ class NikobusCommandHandler:
             )
         return state
 
-    async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
-        """Fetch the latest values from the hardware and prepare values for a command. """
-        # Fetch the latest state from the hardware
-        latest_state_hex = await self.get_output_state(address, group)
-        if latest_state_hex:
-            # Convert the hex string to a bytearray
-            latest_state = bytearray.fromhex(latest_state_hex)
-            # Update the module state
-            if int(group) == 1:
-                self.nikobus_module_states[address][:6] = latest_state[:6]
-            elif int(group) == 2:
-                self.nikobus_module_states[address][6:12] = latest_state[:6]
-            _LOGGER.debug(
-                f"Module state for {address}, group {group} updated to: {latest_state[:6]}"
-            )
-        else:
-            _LOGGER.error(
-                f"Failed to fetch latest state for module {address}, group {group}"
-            )
-            # Use the current state if fetching fails
-            latest_state = (
-                self.nikobus_module_states[address][:6]
-                if int(group) == 1
-                else self.nikobus_module_states[address][6:12]
-            )
-
-        # Append 0xFF to the values as per command format
-        values = latest_state[:6] + bytearray([0xFF])
-        return values
-
     def _prepare_ack_and_answer_signals(self, command: str, address: str) -> tuple:
         """Prepare the acknowledgment and answer signals for a command."""
         command_part = command[3:5]
@@ -242,36 +111,6 @@ class NikobusCommandHandler:
         answer_prefix = "$18" if command_part == "11" else "$1C"
         answer_signal = f"{answer_prefix}{address[2:]}{address[:2]}"
         return ack_signal, answer_signal
-
-    async def _wait_for_ack_and_answer_signals(
-        self, wait_ack: str, wait_answer: str
-    ) -> tuple:
-        """Wait for acknowledgment and answer signals. """
-        ack_received = False
-        answer_received = False
-        end_time = asyncio.get_event_loop().time() + COMMAND_ACK_WAIT_TIMEOUT
-        while asyncio.get_event_loop().time() < end_time:
-            try:
-                message = await asyncio.wait_for(
-                    self.nikobus_listener.cmd_response_queue.get(),
-                    timeout=COMMAND_ANSWER_WAIT_TIMEOUT,
-                )
-                _LOGGER.debug(f"Message received: {message}")
-                if wait_ack in message:
-                    _LOGGER.debug("ACK received")
-                    ack_received = True
-                if wait_answer[-4:] in message:
-                    _LOGGER.debug("Answer received")
-                    answer_received = True
-                if ack_received and answer_received:
-                    return ack_received, answer_received
-            except asyncio.TimeoutError:
-                _LOGGER.warning("Timeout while waiting for message")
-                break
-            except Exception as e:
-                _LOGGER.error(f"Error while waiting for messages: {e}")
-                raise NikobusError(f"Error while waiting for messages: {e}")
-        return ack_received, answer_received
 
     async def _wait_for_ack_and_answer(
         self, command: str, wait_ack: str, wait_answer: str
@@ -341,3 +180,76 @@ class NikobusCommandHandler:
         """Parse the state from a received message."""
         state_index = message.find(answer_signal) + len(answer_signal) + 2
         return message[state_index : state_index + 12]
+
+    async def set_output_state(
+        self, address: str, channel: int, value: int, completion_handler=None
+    ) -> None:
+        """Set the output state of a module. """
+        _LOGGER.debug(
+            f"Setting output state - Address: {address}, Channel: {channel}, Value: {value}"
+        )
+        group = calculate_group_number(channel)
+        command_code = 0x15 if int(group) == 1 else 0x16
+
+        # Get the current state values for the relevant group
+        values = await self._prepare_values_for_command(address, group)
+        _LOGGER.debug(f"Current values before update: {values}")
+
+        # Calculate the zero-based index for the target channel
+        channel_index = (channel - 1) % 6
+        # Update the value for the target channel
+        values[channel_index] = value
+        _LOGGER.debug(f"Updated values: {values}")
+
+        # Create and send the command with the updated values
+        command = make_pc_link_command(command_code, address, values)
+        await self.queue_command(
+            command, completion_handler=completion_handler
+        )
+        _LOGGER.debug("Command queued successfully.")
+
+    async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
+        """Fetch the latest values from the hardware and prepare values for a command. """
+        # Fetch the latest state from the hardware
+        latest_state_hex = await self.get_output_state(address, group)
+        latest_state = bytearray.fromhex(latest_state_hex)
+        values = latest_state[:6] + bytearray([0xFF])
+        return values
+
+    async def queue_command(self, command: str, completion_handler=None) -> None:
+        """Queue a command for processing."""
+        _LOGGER.debug(f"Queueing command: {command}")
+        await self._command_queue.put(command)
+        _LOGGER.debug(f"Command Queued: {command}")
+        if completion_handler:
+            self._command_completion_handlers[command] = completion_handler
+
+    async def send_command(self, command: str) -> None:
+        """Send a command to the Nikobus system. """
+        _LOGGER.debug(f"Sending command: {command}")
+        try:
+            await self.nikobus_connection.send(command)
+        except NikobusError as e:
+            _LOGGER.error(f"Failed to send command {command}: {e}")
+            raise
+
+    async def set_output_states(
+        self, address: str, completion_handler=None
+    ) -> None:
+        """Prepare and queue the output states for a module. """
+        _LOGGER.debug(
+            f"Preparing to set output states for module {address}"
+        )
+        channel_states = self.nikobus_module_states[address][:6]
+        command_code = 0x15
+        command = make_pc_link_command(command_code, address, channel_states)
+        _LOGGER.debug(f"1-6 {command}")
+        await self.queue_command(command, completion_handler=completion_handler)
+
+        module_type = self._coordinator.get_module_type(address)
+        if module_type != "cover":
+            channel_states = self.nikobus_module_states[address][6:12]
+            command_code = 0x16
+            command = make_pc_link_command(command_code, address, channel_states)
+            _LOGGER.debug(f"7-12 {command}")
+            await self.queue_command(command, completion_handler=completion_handler)
