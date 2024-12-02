@@ -101,7 +101,7 @@ class NikobusEventListener:
 
         if message.startswith(COMMAND_PROCESSED):
             _LOGGER.debug(f"Command acknowledged: {message}")
-            # Not processing command ack
+            await self.response_queue.put(message)
             return
 
         if message.startswith(CONTROLLER_ADDRESS):

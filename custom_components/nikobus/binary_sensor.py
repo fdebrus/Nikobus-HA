@@ -23,7 +23,21 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             )
             entities.append(entity)
 
+    # Register global event listener for all sensors
+    register_global_listener(hass, entities)
+
     async_add_entities(entities)
+
+
+def register_global_listener(hass: HomeAssistant, sensors: list):
+    """Register a single global event listener for all Nikobus sensors."""
+
+    async def handle_event(event):
+        for sensor in sensors:
+            if event.data["address"] == sensor._address:
+                await sensor._handle_button_event(event)
+
+    hass.bus.async_listen("nikobus_button_pressed", handle_event)
 
 
 class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
@@ -47,9 +61,6 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_button_sensor_{address}"
         self._state = None
 
-        # Register for button press events
-        self._hass.bus.async_listen("nikobus_button_pressed", self._handle_button_event)
-
     @property
     def device_info(self):
         """Return device information about this sensor."""
@@ -66,7 +77,7 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
         return self._state
 
     @callback
-    def _handle_button_event(self, event):
+    async def _handle_button_event(self, event):
         """Handle Nikobus button press events."""
         event_data = event.data
         address = event_data.get("address")

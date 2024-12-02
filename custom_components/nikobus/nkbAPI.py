@@ -32,7 +32,6 @@ class NikobusAPI:
                 await self._coordinator.nikobus_command_handler.set_output_state(
                     address, channel, 0xFF, completion_handler=completion_handler
                 )
-            # Update the state only after successful command
             self._coordinator.set_bytearray_state(address, channel, 0xFF)
         except NikobusError as e:
             _LOGGER.error(
@@ -58,7 +57,6 @@ class NikobusAPI:
                 await self._coordinator.nikobus_command_handler.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
                 )
-            # Update the state only after successful command
             self._coordinator.set_bytearray_state(address, channel, 0x00)
         except NikobusError as e:
             _LOGGER.error(
@@ -89,7 +87,6 @@ class NikobusAPI:
             await self._coordinator.nikobus_command_handler.set_output_state(
                 address, channel, brightness, completion_handler=completion_handler
             )
-            # Update the state only after successful command
             self._coordinator.set_bytearray_state(address, channel, brightness)
         except NikobusError as e:
             _LOGGER.error(
@@ -119,7 +116,6 @@ class NikobusAPI:
             await self._coordinator.nikobus_command_handler.set_output_state(
                 address, channel, 0x00, completion_handler=completion_handler
             )
-            # Update the state only after successful command
             self._coordinator.set_bytearray_state(address, channel, 0x00)
         except NikobusError as e:
             _LOGGER.error(
@@ -153,7 +149,6 @@ class NikobusAPI:
                 await self._coordinator.nikobus_command_handler.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
                 )
-            # Update the state only after successful command
             self._coordinator.set_bytearray_state(address, channel, 0x00)
         except NikobusError as e:
             _LOGGER.error(
@@ -179,7 +174,6 @@ class NikobusAPI:
                 await self._coordinator.nikobus_command_handler.set_output_state(
                     address, channel, 0x01, completion_handler=completion_handler
                 )
-            # Update the state only after successful command
             self._coordinator.set_bytearray_state(address, channel, 0x01)
         except NikobusError as e:
             _LOGGER.error(
@@ -205,7 +199,6 @@ class NikobusAPI:
                 await self._coordinator.nikobus_command_handler.set_output_state(
                     address, channel, 0x02, completion_handler=completion_handler
                 )
-            # Update the state only after successful command
             self._coordinator.set_bytearray_state(address, channel, 0x02)
         except NikobusError as e:
             _LOGGER.error(
