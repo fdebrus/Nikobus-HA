@@ -310,9 +310,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._previous_state = new_state
         self._state = new_state
 
-        if self._in_motion:            
-            await self.async_stop_cover()
-
         if new_state == STATE_OPENING:
             self._direction = "opening"
             self._in_motion = True
