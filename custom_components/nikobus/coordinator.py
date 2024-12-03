@@ -232,6 +232,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Get the state of a specific channel."""
         return self.nikobus_module_states.get(address, bytearray())[channel - 1]
 
+    def get_bytearray_group_state(self, address: str, group: int) -> int:
+        """Get the state of a specific group."""
+        if int(group) == 1:
+            return self.nikobus_module_states[address][:6]
+        elif int(group) == 2:
+            return self.nikobus_module_states[address][6:12]
+
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
         """Set the state of a specific channel."""
         if address in self.nikobus_module_states:

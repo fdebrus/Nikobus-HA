@@ -250,10 +250,15 @@ class NikobusCommandHandler:
         _LOGGER.debug("Command queued successfully.")
 
     async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
-        """Fetch the latest values from the hardware and prepare values for a command."""
+        """Fetch the latest values from the nikobus or memory and prepare values for a command."""
+
         # Fetch the latest state from Nikobus
-        latest_state_hex = await self.get_output_state(address, group)
-        latest_state = bytearray.fromhex(latest_state_hex)
+        # latest_state_hex = await self.get_output_state(address, group)
+        # latest_state = bytearray.fromhex(latest_state_hex)
+
+        # Fetch the latest state from Memory
+        latest_state = self._coordinator.get_bytearray_group_state(address, group)
+
         values = latest_state[:6] + bytearray([0xFF])
         return values
 
