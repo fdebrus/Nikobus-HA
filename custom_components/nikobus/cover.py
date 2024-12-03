@@ -310,7 +310,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._previous_state = new_state
         self._state = new_state
 
-        if new_state == STATE_OPENING:
+        if self._state == STATE_OPENING:
             self._direction = "opening"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
@@ -319,7 +319,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._update_position()
                 )
 
-        elif new_state == STATE_CLOSING:
+        elif self._state == STATE_CLOSING:
             self._direction = "closing"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
@@ -328,7 +328,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._update_position()
                 )
 
-        elif new_state == STATE_STOPPED:
+        elif self._state == STATE_STOPPED:
             if self._position_estimator._start_time is not None:
                 self._position_estimator.stop()
                 if self._position_estimator.position is not None:
@@ -376,8 +376,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             self._in_motion = True
             self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
             self._position_estimator.start(self._direction, self._position)
-            self.async_write_ha_state()
             await self._start_position_estimation(target_position=target_position)
+            self.async_write_ha_state()
 
         # Send the command to operate the cover
         await self._operate_cover(direction, completion_handler)
@@ -428,7 +428,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 )
         else:
             _LOGGER.debug(
-                f"Position estimator was not started for {self._attr_name}; skipping stop."
+                f"Position estimator was not started for {self._attr_name}."
             )
 
         # Cancel the movement task if it's running
@@ -548,8 +548,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                         self._in_motion = False
                         self._direction = None
                         self._state = STATE_STOPPED
-                        self.async_write_ha_state()
                         await self.async_stop_cover()
+                        self.async_write_ha_state()
                         return
 
                 # Handle full open or closed state with buffer time
