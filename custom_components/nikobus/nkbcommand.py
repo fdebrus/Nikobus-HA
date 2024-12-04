@@ -22,15 +22,6 @@ _LOGGER = logging.getLogger(__name__)
 __version__ = "1.0"
 
 
-@dataclass(order=True)
-class PrioritizedItem:
-    priority: int
-    command: str = field(compare=False)
-    address: str = field(compare=False)
-    future: Optional[asyncio.Future] = field(compare=False, default=None)
-    completion_handler: Optional[Callable] = field(compare=False, default=None)
-
-
 class NikobusCommandHandler:
     """Handles command processing for Nikobus."""
 
@@ -47,7 +38,7 @@ class NikobusCommandHandler:
         self._coordinator = coordinator
         self._running = False
         self._command_task = None
-        self._command_queue = asyncio.PriorityQueue()
+        self._command_queue = asyncio.Queue()
         self._command_completion_handlers = {}
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
@@ -74,15 +65,13 @@ class NikobusCommandHandler:
         _LOGGER.info("Nikobus Command Processing starting")
         while self._running:
             try:
-                prioritized_item: PrioritizedItem = await self._command_queue.get()
-                _LOGGER.debug(
-                    f"Dequeued command with priority {prioritized_item.priority}: {prioritized_item.command}"
-                )
+                command_item = await self._command_queue.get()
+                _LOGGER.debug(f"Dequeued command: {command_item['command']}")
 
-                command = prioritized_item.command
-                address = prioritized_item.address
-                future = prioritized_item.future
-                completion_handler = prioritized_item.completion_handler
+                command = command_item['command']
+                address = command_item['address']
+                future = command_item.get('future')
+                completion_handler = command_item.get('completion_handler')
 
                 try:
                     _LOGGER.debug(f"Processing command: {command}")
@@ -111,7 +100,7 @@ class NikobusCommandHandler:
         command_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(command_code, address)
         future = self._hass.loop.create_future()
-        await self.queue_command(5, command, address, future=future)
+        await self.queue_command(command, address, future=future)
         return await future
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
@@ -186,7 +175,7 @@ class NikobusCommandHandler:
 
     async def _wait_for_ack_and_answer_state(
         self, wait_ack: str, wait_answer: str
-    ) -> str | None:
+    ) -> Optional[str]:
         """Wait for acknowledgment and answer, and extract the state."""
         ack_received = False
         answer_received = False
@@ -245,16 +234,12 @@ class NikobusCommandHandler:
         # Create and send the command with the updated values
         command = make_pc_link_command(command_code, address, values)
         await self.queue_command(
-            3, command, address, completion_handler=completion_handler
+            command, address, completion_handler=completion_handler
         )
         _LOGGER.debug("Command queued successfully.")
 
     async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
         """Fetch the latest values from the nikobus or memory and prepare values for a command."""
-
-        # Fetch the latest state from Nikobus
-        # latest_state_hex = await self.get_output_state(address, group)
-        # latest_state = bytearray.fromhex(latest_state_hex)
 
         # Fetch the latest state from Memory
         latest_state = self._coordinator.get_bytearray_group_state(address, group)
@@ -263,14 +248,17 @@ class NikobusCommandHandler:
         return values
 
     async def queue_command(
-        self, priority, command: str, address: str, future=None, completion_handler=None
+        self, command: str, address: str, future=None, completion_handler=None
     ):
         """Queue a command for processing."""
         _LOGGER.debug(f"Queueing command: {command}")
-        prioritized_item = PrioritizedItem(
-            priority, command, address, future, completion_handler
-        )
-        await self._command_queue.put(prioritized_item)
+        command_item = {
+            'command': command,
+            'address': address,
+            'future': future,
+            'completion_handler': completion_handler
+        }
+        await self._command_queue.put(command_item)
         _LOGGER.debug(f"Command Queued: {command}")
 
     async def send_command(self, command: str) -> None:
@@ -289,7 +277,7 @@ class NikobusCommandHandler:
         command_code = 0x15
         command = make_pc_link_command(command_code, address, channel_states)
         await self.queue_command(
-            5, command, address, completion_handler=completion_handler
+            command, address, completion_handler=completion_handler
         )
 
         module_type = self._coordinator.get_module_type(address)
@@ -298,5 +286,5 @@ class NikobusCommandHandler:
             command_code = 0x16
             command = make_pc_link_command(command_code, address, channel_states)
             await self.queue_command(
-                5, command, address, completion_handler=completion_handler
+                command, address, completion_handler=completion_handler
             )
