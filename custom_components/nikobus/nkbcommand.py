@@ -220,17 +220,12 @@ class NikobusCommandHandler:
         )
         group = calculate_group_number(channel)
         command_code = 0x15 if int(group) == 1 else 0x16
-
         # Get the current state values for the relevant group
         values = await self._prepare_values_for_command(address, group)
-        _LOGGER.debug(f"Current values before update: {values}")
-
         # Calculate the zero-based index for the target channel
         channel_index = (channel - 1) % 6
         # Update the value for the target channel
         values[channel_index] = value
-        _LOGGER.debug(f"Updated values: {values}")
-
         # Create and send the command with the updated values
         command = make_pc_link_command(command_code, address, values)
         await self.queue_command(
@@ -273,7 +268,7 @@ class NikobusCommandHandler:
     async def set_output_states(self, address: str, completion_handler=None) -> None:
         """Prepare and queue the output states for a module."""
         _LOGGER.debug(f"Preparing to set output states for module {address}")
-        channel_states = self.nikobus_module_states[address][:6]
+        channel_states = self.nikobus_module_states[address][:6] + bytearray([0xFF])
         command_code = 0x15
         command = make_pc_link_command(command_code, address, channel_states)
         await self.queue_command(
@@ -282,7 +277,7 @@ class NikobusCommandHandler:
 
         module_type = self._coordinator.get_module_type(address)
         if module_type != "cover":
-            channel_states = self.nikobus_module_states[address][6:12]
+            channel_states = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
             command_code = 0x16
             command = make_pc_link_command(command_code, address, channel_states)
             await self.queue_command(

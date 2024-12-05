@@ -18,8 +18,8 @@ STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
 STATE_UNKNOWN = 0x03
-FULL_OPERATION_BUFFER = 3
 
+FULL_OPERATION_BUFFER = 3
 
 class PositionEstimator:
     """Estimates the current position of the cover based on elapsed time and direction."""
@@ -311,6 +311,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._state = new_state
 
         if self._state == STATE_OPENING:
+            if self._position == 100:
+                _LOGGER.debug(
+                    f"Cover already at intended state {self._position}"
+                )
+                self.hass.async_create_task(self.async_stop_cover())
+                return
             self._direction = "opening"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
@@ -320,6 +326,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 )
 
         elif self._state == STATE_CLOSING:
+            if self._position == 0:
+                _LOGGER.debug(
+                    f"Cover already at intended state {self._position}"
+                )
+                # await self.async_stop_cover()
+                return
             self._direction = "closing"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
