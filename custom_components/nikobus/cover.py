@@ -273,8 +273,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             except asyncio.CancelledError:
                 _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
 
-    @callback
-    def _handle_nikobus_button_event(self, event):
+    async def _handle_nikobus_button_event(self, event):
         """Handle the nikobus_button_pressed event and update cover state."""
         impacted_module_address = event.data.get("impacted_module_address")
 
@@ -283,24 +282,23 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             button_operation_time = event.data.get("operation_time", None)
             # Set operation time if provided
             if button_operation_time:
-                _LOGGER.debug(
-                    "Button operation_time received: %s", button_operation_time
-                )
+                _LOGGER.debug("Button operation_time received: %s", button_operation_time)
                 self._button_operation_time = float(button_operation_time)
+
             # Get the current state for this cover's channel
             new_state = self._coordinator.get_cover_state(self._address, self._channel)
-            self._process_state_change(new_state)
+
+            # Await the asynchronous process_state_change method
+            await self._process_state_change(new_state)
             self.async_write_ha_state()
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
+    async def _async_handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         new_state = self._coordinator.get_cover_state(self._address, self._channel)
-        self._process_state_change(new_state)
+        await self._process_state_change(new_state)
         self.async_write_ha_state()
 
-    def _process_state_change(self, new_state):
-        """Process the state change for the cover."""
+    async def _process_state_change(self, new_state):
         if new_state == self._previous_state:
             return
 
@@ -311,34 +309,45 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._state = new_state
 
         if self._state == STATE_OPENING:
+            # Cancel any ongoing movement task before starting a new one
+            if self._movement_task is not None and not self._movement_task.done():
+                _LOGGER.debug(
+                    f"Cancelling ongoing movement task before starting new OPENING task for {self._attr_name}"
+                )
+                self._movement_task.cancel()
+                await self._wait_for_movement_task()
+
             if self._position == 100:
                 _LOGGER.debug(
                     f"Cover already at intended state {self._position}"
                 )
-                self.hass.async_create_task(self.async_stop_cover())
+                await self.async_stop_cover()
                 return
+
             self._direction = "opening"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
-            if not self._movement_task or self._movement_task.done():
-                self._movement_task = self.hass.async_create_task(
-                    self._update_position()
-                )
+            self._movement_task = self.hass.async_create_task(self._update_position())
 
         elif self._state == STATE_CLOSING:
+            # Cancel any ongoing movement task before starting a new one
+            if self._movement_task is not None and not self._movement_task.done():
+                _LOGGER.debug(
+                    f"Cancelling ongoing movement task before starting new CLOSING task for {self._attr_name}"
+                )
+                self._movement_task.cancel()
+                await self._wait_for_movement_task()
+
             if self._position == 0:
                 _LOGGER.debug(
                     f"Cover already at intended state {self._position}"
                 )
-                # await self.async_stop_cover()
                 return
+
             self._direction = "closing"
             self._in_motion = True
             self._position_estimator.start(self._direction, self._position)
-            if not self._movement_task or self._movement_task.done():
-                self._movement_task = self.hass.async_create_task(
-                    self._update_position()
-                )
+            self._movement_task = self.hass.async_create_task(self._update_position())
 
         elif self._state == STATE_STOPPED:
             if self._position_estimator._start_time is not None:
@@ -353,11 +362,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 _LOGGER.debug(
                     f"Position estimator was not started for {self._attr_name}; skipping stop."
                 )
+
             self._in_motion = False
             self._direction = None
             if self._movement_task is not None and not self._movement_task.done():
                 self._movement_task.cancel()
-                self.hass.async_create_task(self._wait_for_movement_task())
+                await self._wait_for_movement_task()
 
         else:
             _LOGGER.warning(f"Unknown state '{new_state}' for {self._attr_name}")
