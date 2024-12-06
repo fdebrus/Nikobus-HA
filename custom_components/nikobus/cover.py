@@ -561,11 +561,15 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 if target_position is not None:
                     if (
                         self._direction == "opening"
-                        and self._position >= target_position
+                        and self._position >= target_position and target_position < 100
                     ) or (
                         self._direction == "closing"
-                        and self._position <= target_position
+                        and self._position <= target_position and target_position > 0
                     ):
+                        _LOGGER.debug(
+                            "Position reached for %s",
+                            self._position,
+                        )
                         self._position = target_position
                         self._in_motion = False
                         self._direction = None
@@ -578,6 +582,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 if (self._direction == "opening" and self._position >= 100) or (
                     self._direction == "closing" and self._position <= 0
                 ):
+                    _LOGGER.debug(
+                        "Full Position reached for %s",
+                        self._position,
+                    )
                     self._position = 100 if self._direction == "opening" else 0
                     self._in_motion = False
                     self._direction = None
