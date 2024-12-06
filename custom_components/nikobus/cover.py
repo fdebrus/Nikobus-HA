@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
-STATE_UNKNOWN = 0x03
+STATE_ERROR = 0x03
 
 FULL_OPERATION_BUFFER = 3
 
@@ -211,7 +211,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     @property
     def available(self):
         """Indicate whether the cover is available."""
-        return self._state != STATE_UNKNOWN
+        return self._state != STATE_ERROR
 
     @property
     def supported_features(self):
@@ -368,6 +368,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             if self._movement_task is not None and not self._movement_task.done():
                 self._movement_task.cancel()
                 await self._wait_for_movement_task()
+
+        elif self._state == STATE_ERROR:
+            _LOGGER.warning(f"Unknown state (0x03) encountered for {self._attr_name}, sending stop command.")
+            await self.async_stop_cover()
 
         else:
             _LOGGER.warning(f"Unknown state '{new_state}' for {self._attr_name}")
