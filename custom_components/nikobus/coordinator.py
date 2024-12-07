@@ -288,6 +288,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             await self._handle_nikobus_refreshed(data)
         self.async_update_listeners()
 
+### BUG
     async def _handle_ha_button_pressed(self, data):
         """Handle HA button press events."""
         address = data.get("address")

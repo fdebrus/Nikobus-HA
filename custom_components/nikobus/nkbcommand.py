@@ -69,19 +69,22 @@ class NikobusCommandHandler:
                 _LOGGER.debug(f"Dequeued command: {command_item['command']}")
 
                 command = command_item['command']
-                address = command_item['address']
+                address = command_item.get('address')
                 future = command_item.get('future')
                 completion_handler = command_item.get('completion_handler')
 
                 try:
                     _LOGGER.debug(f"Processing command: {command}")
 
-                    result = await self.send_command_get_answer(command, address)
-                    if future:
-                        future.set_result(result)
+                    if not address:     
+                        await self.send_command(command)
+                    else:
+                        result = await self.send_command_get_answer(command, address)
+                        if future:
+                            future.set_result(result)
 
-                    if completion_handler and callable(completion_handler):
-                        await completion_handler()
+                        if completion_handler and callable(completion_handler):
+                            await completion_handler()
 
                 except Exception as e:
                     _LOGGER.error(f"Error processing command {command}: {e}")
@@ -243,7 +246,7 @@ class NikobusCommandHandler:
         return values
 
     async def queue_command(
-        self, command: str, address: str, future=None, completion_handler=None
+        self, command: str, address=None, future=None, completion_handler=None
     ):
         """Queue a command for processing."""
         _LOGGER.debug(f"Queueing command: {command}")

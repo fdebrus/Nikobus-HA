@@ -25,7 +25,7 @@ class NikobusAPI:
 
         try:
             if led_on:
-                await self._coordinator.nikobus_command_handler.send_command(
+                await self._coordinator.nikobus_command_handler.queue_command(
                     f"#N{led_on}\r#E1"
                 )
             else:
@@ -50,7 +50,7 @@ class NikobusAPI:
 
         try:
             if led_off:
-                await self._coordinator.nikobus_command_handler.send_command(
+                await self._coordinator.nikobus_command_handler.queue_command(
                     f"#N{led_off}\r#E1"
                 )
             else:
@@ -79,7 +79,7 @@ class NikobusAPI:
                 ]["channels"][channel - 1]
                 led_on = channel_info.get("led_on")
                 if led_on:
-                    await self._coordinator.nikobus_command_handler.send_command(
+                    await self._coordinator.nikobus_command_handler.queue_command(
                         f"#N{led_on}\r#E1"
                     )
 
@@ -108,7 +108,7 @@ class NikobusAPI:
                 ]["channels"][channel - 1]
                 led_off = channel_info.get("led_off")
                 if led_off:
-                    await self._coordinator.nikobus_command_handler.send_command(
+                    await self._coordinator.nikobus_command_handler.queue_command(
                         f"#N{led_off}\r#E1"
                     )
 
@@ -142,7 +142,7 @@ class NikobusAPI:
                 command = f"#N{led_off}\r#E1"
 
             if command:
-                await self._coordinator.nikobus_command_handler.send_command(
+                await self._coordinator.nikobus_command_handler.queue_command(
                     command
                 )
             else:
@@ -167,7 +167,7 @@ class NikobusAPI:
 
         try:
             if led_on:
-                await self._coordinator.nikobus_command_handler.send_command(
+                await self._coordinator.nikobus_command_handler.queue_command(
                     f"#N{led_on}\r#E1"
                 )
             else:
@@ -192,7 +192,7 @@ class NikobusAPI:
 
         try:
             if led_off:
-                await self._coordinator.nikobus_command_handler.send_command(
+                await self._coordinator.nikobus_command_handler.queue_command(
                     f"#N{led_off}\r#E1"
                 )
             else:

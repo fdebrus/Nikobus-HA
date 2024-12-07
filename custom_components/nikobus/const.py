@@ -57,7 +57,7 @@ CONTROLLER_ADDRESS = (
 
 # Command
 COMMAND_EXECUTION_DELAY = (
-    1  # Delay between command executions in seconds (min 1 second)
+    0.7  # Delay between command executions in seconds
 )
 COMMAND_ACK_WAIT_TIMEOUT = 15  # Timeout for waiting for command ACK in seconds
 COMMAND_ANSWER_WAIT_TIMEOUT = 5  # Timeout for waiting for command answer in each loop
