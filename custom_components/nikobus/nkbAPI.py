@@ -26,7 +26,7 @@ class NikobusAPI:
         try:
             if led_on:
                 await self._coordinator.nikobus_command_handler.queue_command(
-                    f"#N{led_on}\r#E1", completion_handler=completion_handler
+                    f"#N{led_on}\r#E1", address, completion_handler=completion_handler
                 )
             else:
                 await self._coordinator.nikobus_command_handler.set_output_state(
@@ -51,7 +51,7 @@ class NikobusAPI:
         try:
             if led_off:
                 await self._coordinator.nikobus_command_handler.queue_command(
-                    f"#N{led_off}\r#E1", completion_handler=completion_handler
+                    f"#N{led_off}\r#E1", address, completion_handler=completion_handler
                 )
             else:
                 await self._coordinator.nikobus_command_handler.set_output_state(
@@ -80,7 +80,7 @@ class NikobusAPI:
                 led_on = channel_info.get("led_on")
                 if led_on:
                     await self._coordinator.nikobus_command_handler.queue_command(
-                        f"#N{led_on}\r#E1", completion_handler=completion_handler
+                        f"#N{led_on}\r#E1", address, completion_handler=completion_handler
                     )
 
             # Set the new brightness and light state
@@ -109,7 +109,7 @@ class NikobusAPI:
                 led_off = channel_info.get("led_off")
                 if led_off:
                     await self._coordinator.nikobus_command_handler.queue_command(
-                        f"#N{led_off}\r#E1", completion_handler=completion_handler
+                        f"#N{led_off}\r#E1", address, completion_handler=completion_handler
                     )
 
             # Set the light state to off (brightness = 0)
@@ -143,7 +143,7 @@ class NikobusAPI:
 
             if command:
                 await self._coordinator.nikobus_command_handler.queue_command(
-                    command, completion_handler=completion_handler
+                    command, address, completion_handler=completion_handler
                 )
             else:
                 await self._coordinator.nikobus_command_handler.set_output_state(
@@ -168,7 +168,7 @@ class NikobusAPI:
         try:
             if led_on:
                 await self._coordinator.nikobus_command_handler.queue_command(
-                    f"#N{led_on}\r#E1", completion_handler=completion_handler
+                    f"#N{led_on}\r#E1", address, completion_handler=completion_handler
                 )
             else:
                 await self._coordinator.nikobus_command_handler.set_output_state(
@@ -193,7 +193,7 @@ class NikobusAPI:
         try:
             if led_off:
                 await self._coordinator.nikobus_command_handler.queue_command(
-                    f"#N{led_off}\r#E1", completion_handler=completion_handler
+                    f"#N{led_off}\r#E1", address, completion_handler=completion_handler
                 )
             else:
                 await self._coordinator.nikobus_command_handler.set_output_state(
