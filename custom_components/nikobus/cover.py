@@ -141,6 +141,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._state = STATE_STOPPED
         self._position = 100  # Default position is fully open
         self._previous_state = None
+        self._movement_source = None
 
         self._operation_time = float(operation_time) if operation_time else 30.0
         self._position_estimator = PositionEstimator(
@@ -289,7 +290,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             new_state = self._coordinator.get_cover_state(self._address, self._channel)
 
             # Await the asynchronous process_state_change method
-            await self._process_state_change(new_state)
+            await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
 
     async def _async_handle_coordinator_update(self) -> None:
@@ -298,7 +299,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         await self._process_state_change(new_state)
         self.async_write_ha_state()
 
-    async def _process_state_change(self, new_state):
+    async def _process_state_change(self, new_state, source="ha"):
         if new_state == self._previous_state:
             return
 
@@ -307,6 +308,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         )
         self._previous_state = new_state
         self._state = new_state
+        self._movement_source = source
 
         if self._state == STATE_OPENING:
             # Cancel any ongoing movement task before starting a new one
@@ -321,7 +323,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 _LOGGER.debug(
                     f"Cover already at intended state {self._position}"
                 )
-                await self.async_stop_cover()
                 return
 
             self._direction = "opening"
@@ -371,8 +372,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         elif self._state == STATE_ERROR:
             _LOGGER.warning(f"Unknown state (0x03) encountered for {self._attr_name}.")
-            # await self.async_stop_cover()
-
         else:
             _LOGGER.warning(f"Unknown state '{new_state}' for {self._attr_name}")
 
@@ -558,7 +557,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._button_operation_time
                     and elapsed >= self._button_operation_time
                 ):
-                    await self.async_stop_cover()
+                    if self._movement_source == "ha":
+                        await self.async_stop_cover()
+                    else:
+                        await self._finalize_local_stop()
                     return
 
                 # Stop if the target position is reached
@@ -578,8 +580,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                         self._in_motion = False
                         self._direction = None
                         self._state = STATE_STOPPED
-                        await self.async_stop_cover()
-                        self.async_write_ha_state()
+                        if self._movement_source == "ha":
+                            await self.async_stop_cover()
+                        else:
+                            await self._finalize_local_stop()
                         return
 
                 # Handle full open or closed state with buffer time
@@ -596,7 +600,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._state = STATE_STOPPED
                     self.async_write_ha_state()
                     await asyncio.sleep(FULL_OPERATION_BUFFER)
-                    await self.async_stop_cover()
+                    if self._movement_source == "ha":
+                        await self.async_stop_cover()
+                    else:
+                        await self._finalize_local_stop()
                     return
 
                 # Write state and wait before the next iteration
@@ -605,3 +612,34 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         except asyncio.CancelledError:
             _LOGGER.debug(f"Position update for {self._attr_name} was cancelled")
+
+    async def _finalize_local_stop(self):
+        """Finalize the position and state locally without sending any command to Nikobus."""
+        _LOGGER.debug("Locally finalizing position for %s", self._attr_name)
+
+        # Stop the estimator if running
+        if self._position_estimator._start_time is not None:
+            self._position_estimator.stop()
+            if self._position_estimator.position is not None:
+                self._position = self._position_estimator.position
+            else:
+                _LOGGER.warning(
+                    f"Position estimator returned None in _finalize_local_stop for {self._attr_name}"
+                )
+
+        # Cancel any movement tasks
+        if self._movement_task is not None and not self._movement_task.done():
+            self._movement_task.cancel()
+            try:
+                await self._movement_task
+            except asyncio.CancelledError:
+                _LOGGER.debug("Movement task for %s was cancelled locally.", self._attr_name)
+
+        # Reset flags
+        self._in_motion = False
+        self._direction = None
+        self._state = STATE_STOPPED
+        self._button_operation_time = None
+
+        # Update HA state
+        self.async_write_ha_state()
