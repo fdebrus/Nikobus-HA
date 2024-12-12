@@ -142,9 +142,7 @@ class NikobusAPI:
                 command = f"#N{led_off}\r#E1"
 
             if command:
-                await self._coordinator.nikobus_command_handler.queue_command(
-                    command
-                )
+                await self._coordinator.nikobus_command_handler.queue_command(command)
             else:
                 await self._coordinator.nikobus_command_handler.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler

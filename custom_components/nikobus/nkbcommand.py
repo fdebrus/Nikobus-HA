@@ -1,6 +1,5 @@
 import asyncio
-from dataclasses import dataclass, field
-from typing import Optional, Callable
+from typing import Optional
 import logging
 from .nkbprotocol import make_pc_link_command, calculate_group_number
 
@@ -68,15 +67,15 @@ class NikobusCommandHandler:
                 command_item = await self._command_queue.get()
                 _LOGGER.debug(f"Dequeued command: {command_item['command']}")
 
-                command = command_item['command']
-                address = command_item.get('address')
-                future = command_item.get('future')
-                completion_handler = command_item.get('completion_handler')
+                command = command_item["command"]
+                address = command_item.get("address")
+                future = command_item.get("future")
+                completion_handler = command_item.get("completion_handler")
 
                 try:
                     _LOGGER.debug(f"Processing command: {command}")
 
-                    if not address:     
+                    if not address:
                         await self.send_command(command)
                     else:
                         result = await self.send_command_get_answer(command, address)
@@ -251,10 +250,10 @@ class NikobusCommandHandler:
         """Queue a command for processing."""
         _LOGGER.debug(f"Queueing command: {command}")
         command_item = {
-            'command': command,
-            'address': address,
-            'future': future,
-            'completion_handler': completion_handler
+            "command": command,
+            "address": address,
+            "future": future,
+            "completion_handler": completion_handler,
         }
         await self._command_queue.put(command_item)
         _LOGGER.debug(f"Command Queued: {command}")
@@ -280,7 +279,9 @@ class NikobusCommandHandler:
 
         module_type = self._coordinator.get_module_type(address)
         if module_type != "cover":
-            channel_states = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
+            channel_states = self.nikobus_module_states[address][6:12] + bytearray(
+                [0xFF]
+            )
             command_code = 0x16
             command = make_pc_link_command(command_code, address, channel_states)
             await self.queue_command(
