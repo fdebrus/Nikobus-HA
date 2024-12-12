@@ -260,24 +260,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         else:
             _LOGGER.error(f"Address {address} not found in Nikobus module")
 
-    def get_module_type(self, module_id: str) -> str:
-        """Determine the module type based on the module ID."""
-        # Check in switch modules
-        if "switch_module" in self.dict_module_data:
-            if module_id in self.dict_module_data["switch_module"]:
-                return "switch"
-        # Check in dimmer modules
-        if "dimmer_module" in self.dict_module_data:
-            if module_id in self.dict_module_data["dimmer_module"]:
-                return "dimmer"
-        # Check in cover/roller modules
-        if "roller_module" in self.dict_module_data:
-            if module_id in self.dict_module_data["roller_module"]:
-                return "cover"
-        # If not found, return unknown
-        _LOGGER.error(f"Module ID {module_id} not found in known module types")
-        return "unknown"
-
     async def async_event_handler(self, event, data):
         """Handle events received from the Nikobus system."""
         if event == "ha_button_pressed":
@@ -288,7 +270,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             await self._handle_nikobus_refreshed(data)
         self.async_update_listeners()
 
-### BUG
     async def _handle_ha_button_pressed(self, data):
         """Handle HA button press events."""
         address = data.get("address")
@@ -359,6 +340,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             else timedelta(seconds=self._refresh_interval)
         )
         await self._async_refresh()
+
+    def get_module_type(self, module_id: str) -> str:
+        """Determine the module type based on the module ID."""
+        if "switch_module" in self.dict_module_data:
+            if module_id in self.dict_module_data["switch_module"]:
+                return "switch"
+        if "dimmer_module" in self.dict_module_data:
+            if module_id in self.dict_module_data["dimmer_module"]:
+                return "dimmer"
+        if "roller_module" in self.dict_module_data:
+            if module_id in self.dict_module_data["roller_module"]:
+                return "cover"
+        _LOGGER.error(f"Module ID {module_id} not found in known module types")
+        return "unknown"
 
     def get_light_state(self, address: str, channel: int) -> bool:
         """Get the state of a light based on its address and channel."""

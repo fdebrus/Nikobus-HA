@@ -141,7 +141,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._state = STATE_STOPPED
         self._position = 100  # Default position is fully open
         self._previous_state = None
-        self._movement_source = None
+        self._movement_source = "ha"
 
         self._operation_time = float(operation_time) if operation_time else 30.0
         self._position_estimator = PositionEstimator(
@@ -278,6 +278,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         """Handle the nikobus_button_pressed event and update cover state."""
         impacted_module_address = event.data.get("impacted_module_address")
 
+        _LOGGER.debug("***Button Pressed ***")
+
         # Only proceed if the event address matches this cover's module address
         if impacted_module_address == self._address:
             button_operation_time = event.data.get("operation_time", None)
@@ -289,14 +291,30 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             # Get the current state for this cover's channel
             new_state = self._coordinator.get_cover_state(self._address, self._channel)
 
+            # Check if direction is being reversed while currently driven by HA
+            _LOGGER.debug(f"***{self._in_motion} - {self._movement_source}***")
+            if self._in_motion and self._movement_source == "ha":
+                direction_reversed = (
+                    (self._state == STATE_CLOSING and new_state == STATE_ERROR)
+                    or (self._state == STATE_OPENING and new_state == STATE_ERROR)
+                )
+                if direction_reversed:
+                    _LOGGER.debug(
+                        f"Nikobus event reversing direction during HA-driven motion on {self._attr_name}. "
+                        "Sending stop command to sync with hardware."
+                    )
+                    # Send a stop command to Nikobus to avoid error state
+                    await self.async_stop_cover()
+
             # Await the asynchronous process_state_change method
             await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
-
-    async def _async_handle_coordinator_update(self) -> None:
+            
+    @callback
+    def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         new_state = self._coordinator.get_cover_state(self._address, self._channel)
-        await self._process_state_change(new_state)
+        self.hass.async_create_task(self._process_state_change(new_state))
         self.async_write_ha_state()
 
     async def _process_state_change(self, new_state, source="ha"):
@@ -306,6 +324,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         _LOGGER.debug(
             f"State changed from {self._previous_state} to {new_state} for {self._attr_name}"
         )
+
+        # Check if the cover is already at the intended position
+        if (new_state == STATE_OPENING and self._position == 100) or (new_state == STATE_CLOSING and self._position == 0):
+            _LOGGER.debug(
+                f"Cover {self._attr_name} is already at the intended position {self._position}. No state change."
+            )
+            return
+
         self._previous_state = new_state
         self._state = new_state
         self._movement_source = source
