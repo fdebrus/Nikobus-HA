@@ -169,9 +169,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         if "dimmer_module" in self.dict_module_data:
             await self._refresh_module_type(self.dict_module_data["dimmer_module"])
 
-        if "roller_module" in self.dict_module_data:
-            await self._refresh_module_type(self.dict_module_data["roller_module"])
-
         return True
 
     async def _refresh_module_type(self, modules_dict):
@@ -197,14 +194,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def process_feedback_data(self, module_group, data):
         """Process feedback data from Nikobus."""
+        module_address_raw = data[3:7]
+        module_address = module_address_raw[2:] + module_address_raw[:2]
+        module_type = self.get_module_type(module_address)
+        if module_type == "cover":
+            _LOGGER.debug("Data received for cover, cancelling refresh"
+            return
+
+        module_address = module_address_raw[2:] + module_address_raw[:2]
+        module_state_raw = data[9:21]
+
         try:
-            module_address_raw = data[3:7]
-            module_address = module_address_raw[2:] + module_address_raw[:2]
-
-            module_state_raw = data[9:21]
-
             _LOGGER.debug(
-                f"Processing feedback module data: module_address={module_address}, group={module_group}, module_state={module_state_raw}"
+                f"Processing feedback module data: module_type={module_type}, module_address={module_address}, group={module_group}, module_state={module_state_raw}"
             )
 
             if module_address not in self.nikobus_module_states:
