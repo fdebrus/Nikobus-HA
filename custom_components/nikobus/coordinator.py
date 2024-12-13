@@ -198,7 +198,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         module_address = module_address_raw[2:] + module_address_raw[:2]
         module_type = self.get_module_type(module_address)
         if module_type == "cover":
-            _LOGGER.debug("Data received for cover, cancelling refresh"
+            _LOGGER.debug("Data received for cover, cancelling refresh")
             return
 
         module_address = module_address_raw[2:] + module_address_raw[:2]
