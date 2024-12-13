@@ -573,10 +573,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._button_operation_time
                     and elapsed >= self._button_operation_time
                 ):
-                    if self._movement_source == "ha":
-                        await self.async_stop_cover()
-                    else:
-                        await self._finalize_local_stop()
+                    await self.async_stop_cover()
                     return
 
                 # Stop if the target position is reached
