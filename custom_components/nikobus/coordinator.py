@@ -37,7 +37,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.api = None
 
         self.config_entry = config_entry
-        self._connection_string = config_entry.options.get(
+        self.connection_string = config_entry.options.get(
             CONF_CONNECTION_STRING, config_entry.data.get(CONF_CONNECTION_STRING)
         )
         self._refresh_interval = config_entry.options.get(
@@ -64,7 +64,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         )
         self._unsub_update_listener = None
 
-        self.nikobus_connection = NikobusConnect(self._connection_string)
+        self.nikobus_connection = NikobusConnect(self.connection_string)
         self.nikobus_config = NikobusConfig(self.hass)
 
         self.dict_module_data = {}
@@ -149,7 +149,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle the first data refresh and set up the update listener."""
         await self.async_refresh()
         self._unsub_update_listener = self.config_entry.add_update_listener(
-            self._async_config_entry_updated
+            self.async_config_entry_updated
         )
 
     async def _async_update_data(self):
@@ -168,6 +168,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
         if "dimmer_module" in self.dict_module_data:
             await self._refresh_module_type(self.dict_module_data["dimmer_module"])
+
+        if "roller_module" in self.dict_module_data:
+            await self._refresh_module_type(self.dict_module_data["roller_module"])
 
         return True
 
@@ -197,10 +200,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         module_address_raw = data[3:7]
         module_address = module_address_raw[2:] + module_address_raw[:2]
         module_type = self.get_module_type(module_address)
-        if module_type == "cover":
-            _LOGGER.debug("Data received for cover, cancelling refresh")
-            return
-
         module_address = module_address_raw[2:] + module_address_raw[:2]
         module_state_raw = data[9:21]
 
@@ -305,7 +304,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             f"Nikobus has been refreshed for module {impacted_module_address}"
         )
 
-    async def _async_config_entry_updated(self, entry: ConfigEntry) -> None:
+    async def async_config_entry_updated(self, entry: ConfigEntry, *args) -> None:
         """Handle updates to the configuration entry."""
         connection_string = entry.options.get(
             CONF_CONNECTION_STRING, self.connection_string
@@ -313,12 +312,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         refresh_interval = entry.options.get(CONF_REFRESH_INTERVAL, 120)
         has_feedback_module = entry.options.get(CONF_HAS_FEEDBACK_MODULE, False)
 
-        connection_changed = connection_string != self._connection_string
+        connection_changed = connection_string != self.connection_string
         refresh_interval_changed = refresh_interval != self._refresh_interval
         feedback_module_changed = has_feedback_module != self._has_feedback_module
 
         if connection_changed or refresh_interval_changed or feedback_module_changed:
-            self._connection_string = connection_string
+            self.connection_string = connection_string
             self._refresh_interval = refresh_interval
             self._has_feedback_module = has_feedback_module
 
@@ -330,7 +329,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.hass.config_entries.async_update_entry(entry, title=title)
 
             _LOGGER.info(
-                f"Configuration updated: connection_string={self._connection_string}, "
+                f"Configuration updated: connection_string={self.connection_string}, "
                 f"refresh_interval={self._refresh_interval}, has_feedback_module={self._has_feedback_module}"
             )
 

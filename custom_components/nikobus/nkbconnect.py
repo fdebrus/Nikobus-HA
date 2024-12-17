@@ -95,6 +95,7 @@ class NikobusConnect:
     async def _perform_handshake(self) -> bool:
         """Perform a handshake with the Nikobus system to verify the connection."""
         for command in COMMANDS_HANDSHAKE:
+            _LOGGER.debug(f"Handshake: {command}")
             if not await self._send_with_retry(command):
                 return False
         return True

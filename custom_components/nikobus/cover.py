@@ -270,12 +270,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
+        _LOGGER.debug("*** _handle_coordinator_update")
         """Handle updated data from the coordinator."""
         new_state = self._coordinator.get_cover_state(self._address, self._channel)
         self.hass.async_create_task(self._process_state_change(new_state))
         self.async_write_ha_state()
 
     async def _handle_nikobus_button_event(self, event):
+        _LOGGER.debug("*** _handle_nikobus_button_event")
         """Handle the nikobus_button_pressed event and update cover state."""
         impacted_module_address = event.data.get("impacted_module_address")
 
@@ -297,6 +299,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             # Get the current state for this cover's channel
             new_state = self._coordinator.get_cover_state(self._address, self._channel)
 
+            _LOGGER.debug(
+                    "New_State: %s", new_state
+                )
+
             # Await the asynchronous process_state_change method
             await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
@@ -315,7 +321,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         except Exception as e:
             _LOGGER.error(f"Failed to close cover {self._attr_name}: {e}")
 
-    async def async_stop_cover(self, **kwargs): #OK
+    async def async_stop_cover(self, **kwargs):  # OK
         """Stop the cover."""
         try:
             # Define completion handler
@@ -363,24 +369,21 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         except Exception as e:
             _LOGGER.error(f"Failed to set position for cover {self._attr_name}: {e}")
 
-    async def _wait_for_movement_task(self):
-        if self._movement_task is not None:
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Movement task for %s was cancelled.", self._attr_name)
-
     async def _process_state_change(self, new_state, source="ha"):
         if new_state == self._previous_state:
             _LOGGER.debug(
                 "No State change from %s to %s for %s",
-                self._previous_state, new_state, self._attr_name
+                self._previous_state,
+                new_state,
+                self._attr_name,
             )
             return
 
         _LOGGER.debug(
             "State changed from %s to %s for %s",
-            self._previous_state, new_state, self._attr_name
+            self._previous_state,
+            new_state,
+            self._attr_name,
         )
 
         # If the cover is already at the final position, no need to proceed.
@@ -389,7 +392,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         ):
             _LOGGER.debug(
                 "Cover %s is already at the intended position %d. No state change.",
-                self._attr_name, self._position
+                self._attr_name,
+                self._position,
             )
             return
 
