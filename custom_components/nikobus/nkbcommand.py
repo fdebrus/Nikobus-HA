@@ -73,7 +73,7 @@ class NikobusCommandHandler:
                 completion_handler = command_item.get("completion_handler")
 
                 try:
-                    _LOGGER.debug(f"Processing command: {command}")
+                    _LOGGER.debug(f"Processing command: {command} with address: {address}")
 
                     if not address:
                         await self.send_command(command)
@@ -83,6 +83,7 @@ class NikobusCommandHandler:
                             future.set_result(result)
 
                         if completion_handler and callable(completion_handler):
+                            _LOGGER.debug("Calling completion handler")
                             await completion_handler()
 
                 except Exception as e:

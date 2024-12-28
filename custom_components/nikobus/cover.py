@@ -283,9 +283,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         # Only proceed if the event address matches this cover's module address
         if impacted_module_address == self._address:
-            # CHECK - if the cover is in motion, any button press would be a stop command
+
+            # CHECK - if the cover is in motion, any button press would be a IMMEDIATE stop command
             if self._in_motion:
-                await self.async_stop_cover()
+                await self._coordinator.api.stop_cover(self._address, self._channel, self._direction) 
+                await self._finalize_movement()
                 return
 
             button_operation_time = event.data.get("operation_time", None)
@@ -400,10 +402,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._previous_state = new_state
         self._movement_source = source
 
+# CHECK
+        _LOGGER.debug(f"**** PROCESSING STATE CHANGE source: {source} - from {self._state} - to {new_state}")
         if new_state in (STATE_OPENING, STATE_CLOSING):
-            # Cancel any ongoing movement task before starting a new one
             if self._in_motion:
-                await self._finalize_movement()
+                if self._state == new_state:
+                    return
+                else:
+                    await self._finalize_movement()
 
             self._direction = "opening" if new_state == STATE_OPENING else "closing"
             self._in_motion = True
@@ -586,6 +592,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._direction = None
         self._button_operation_time = None
         self._state = STATE_STOPPED
+
+        self._coordinator.set_bytearray_state(self._address, self._channel, 0x00)
 
         # Update HA state
         self.async_write_ha_state()
