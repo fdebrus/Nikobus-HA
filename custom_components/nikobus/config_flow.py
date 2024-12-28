@@ -145,7 +145,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize the options flow handler."""
-        self.config_entry = config_entry
+        # Instead of self.config_entry = config_entry,
+        # store it in a private variable to avoid the deprecation warning.
+        self._config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Handle the initial step of the options flow."""
@@ -154,8 +156,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_config(self, user_input=None):
         """Handle the configuration step in options flow."""
         errors = {}
-        data = self.config_entry.data
-        options = self.config_entry.options
+
+        # Retrieve data and options from the config entry
+        data = self._config_entry.data
+        options = self._config_entry.options
 
         # Retrieve current options or defaults
         connection_string = options.get(
