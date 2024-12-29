@@ -19,9 +19,6 @@ STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
 STATE_ERROR = 0x03
 
-FULL_OPERATION_BUFFER = 3
-
-
 class PositionEstimator:
     """Estimates the current position of the cover based on elapsed time and direction."""
 
@@ -62,11 +59,6 @@ class PositionEstimator:
         progress = (elapsed_time / self._duration_in_seconds) * 100 * self._direction
         new_position = max(0, min(100, self.position + progress))
 
-        _LOGGER.debug(
-            "Position calculated to: %s based on elapsed time: %s seconds",
-            new_position,
-            elapsed_time,
-        )
         return int(new_position)
 
     def stop(self):
@@ -552,8 +544,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._direction = None
                     self._state = STATE_STOPPED
                     self.async_write_ha_state()
-                    await asyncio.sleep(FULL_OPERATION_BUFFER)
                     if self._movement_source == "ha":
+                        # waiting a full operation time before to send a stop command to power off channel output
+                        await asyncio.sleep(self._operation_time)
                         await self.async_stop_cover()
                     else:
                         await self._finalize_movement()
@@ -593,6 +586,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._button_operation_time = None
         self._state = STATE_STOPPED
 
+        # Immediatly set the new state in memory
         self._coordinator.set_bytearray_state(self._address, self._channel, 0x00)
 
         # Update HA state
