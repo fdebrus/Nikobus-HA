@@ -265,41 +265,37 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         _LOGGER.debug("*** _handle_coordinator_update")
         """Handle updated data from the coordinator."""
         new_state = self._coordinator.get_cover_state(self._address, self._channel)
-        self.hass.async_create_task(self._process_state_change(new_state))
-        self.async_write_ha_state()
+        # Only process the state change if it is different from the previous state
+        if new_state != self._previous_state:
+            self.hass.async_create_task(self._process_state_change(new_state))
+            self.async_write_ha_state()
 
     async def _handle_nikobus_button_event(self, event):
         _LOGGER.debug("*** _handle_nikobus_button_event")
+
         """Handle the nikobus_button_pressed event and update cover state."""
         impacted_module_address = event.data.get("impacted_module_address")
 
         # Only proceed if the event address matches this cover's module address
-        if impacted_module_address == self._address:
+        if impacted_module_address != self._address:
+            _LOGGER.debug(f"Skipping event for {self._attr_name} (not impacted)")
+            return
 
-            # CHECK - if the cover is in motion, any button press would be a IMMEDIATE stop command
-            if self._in_motion:
-                await self._coordinator.api.stop_cover(self._address, self._channel, self._direction) 
-                await self._finalize_movement()
-                return
+        button_operation_time = event.data.get("operation_time", None)
+        if button_operation_time:
+            _LOGGER.debug(f"Button operation_time received for {self._attr_name}: {button_operation_time}")
+            self._button_operation_time = float(button_operation_time)
 
-            button_operation_time = event.data.get("operation_time", None)
-            # Set operation time if provided
-            if button_operation_time:
-                _LOGGER.debug(
-                    "Button operation_time received: %s", button_operation_time
-                )
-                self._button_operation_time = float(button_operation_time)
+        # Get the new state for this cover's channel from the coordinator
+        new_state = self._coordinator.get_cover_state(self._address, self._channel)
 
-            # Get the current state for this cover's channel
-            new_state = self._coordinator.get_cover_state(self._address, self._channel)
-
-            _LOGGER.debug(
-                    "New_State: %s", new_state
-                )
-
-            # Await the asynchronous process_state_change method
+        # Only process the state change if it is different from the previous state
+        if new_state != self._previous_state:
+            _LOGGER.debug(f"State changed for {self._attr_name}: {self._previous_state} -> {new_state}")
             await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
+        else:
+            _LOGGER.debug(f"No state change for {self._attr_name}, ignoring event.")
 
     async def async_open_cover(self, **kwargs):
         """Open the cover."""
@@ -364,15 +360,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             _LOGGER.error(f"Failed to set position for cover {self._attr_name}: {e}")
 
     async def _process_state_change(self, new_state, source="ha"):
-        if new_state == self._previous_state:
-            _LOGGER.debug(
-                "No State change from %s to %s for %s",
-                self._previous_state,
-                new_state,
-                self._attr_name,
-            )
-            return
-
         _LOGGER.debug(
             "State changed from %s to %s for %s",
             self._previous_state,
@@ -396,6 +383,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
 # CHECK
         _LOGGER.debug(f"**** PROCESSING STATE CHANGE source: {source} - from {self._state} - to {new_state}")
+
         if new_state in (STATE_OPENING, STATE_CLOSING):
             if self._in_motion:
                 if self._state == new_state:
@@ -415,7 +403,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 await self._finalize_movement()
 
         elif new_state == STATE_ERROR:
-            _LOGGER.warning("Unknown state (0x03) encountered for %s.", self._attr_name)
+            _LOGGER.warning("Error state (0x03) encountered for %s.", self._attr_name)
         else:
             _LOGGER.warning("Unknown state '%s' for %s", new_state, self._attr_name)
 

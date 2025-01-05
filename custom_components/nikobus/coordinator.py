@@ -262,7 +262,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error(f"Address {address} not found in Nikobus module")
 
     async def async_event_handler(self, event, data):
-        """Handle events received from the Nikobus system."""
+        """Handle events."""
         if event == "ha_button_pressed":
             await self._handle_ha_button_pressed(data)
         elif event == "nikobus_button_pressed":
