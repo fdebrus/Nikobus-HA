@@ -403,6 +403,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 await self._finalize_movement()
 
         elif new_state == STATE_ERROR:
+            await self.async_stop_cover()
             _LOGGER.warning("Error state (0x03) encountered for %s.", self._attr_name)
         else:
             _LOGGER.warning("Unknown state '%s' for %s", new_state, self._attr_name)
