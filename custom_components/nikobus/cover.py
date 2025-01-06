@@ -410,7 +410,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     async def _start_movement(self, direction, target_position=None):
         """Start movement in the specified direction."""
         if self._in_motion:
-            await self.async_stop_cover()
+            await self._finalize_movement()
 
         # Define completion handler
         async def completion_handler():
