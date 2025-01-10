@@ -99,6 +99,7 @@ class NikobusActuator:
                     _LOGGER.debug(
                         f"Button release detected for address: {address} - duration: {press_duration:.2f} seconds"
                     )
+                    self._hass.bus.async_fire("nikobus_button_released", {"address": address})
 
                     if press_duration < SHORT_PRESS:
                         self._handle_short_press(address, press_duration)
@@ -108,10 +109,9 @@ class NikobusActuator:
                         _LOGGER.debug(
                             f"Button press detected for 3 seconds for address: {address}"
                         )
-                        self._hass.bus.async_fire(
-                            "nikobus_button_pressed_3", {"address": address}
-                        )
-
+                        self._hass.bus.async_fire("nikobus_button_pressed_3", {"address": address})
+                        self._hass.bus.async_fire("nikobus_long_button_pressed", {"address": address})
+                        
                     await self.button_discovery(address)
                     break
 

@@ -82,7 +82,6 @@ class PositionEstimator:
         """Publicly expose the duration_in_seconds attribute."""
         return self._duration_in_seconds
 
-
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus cover entities from a config entry."""
     coordinator = hass.data[DOMAIN]["coordinator"]
