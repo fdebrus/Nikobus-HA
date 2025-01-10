@@ -83,7 +83,7 @@ class NikobusActuator:
         _LOGGER.debug(
             f"Timer event detected for {duration} seconds for address: {address}"
         )
-        self._hass.bus.async_fire(f"nikobus_timer_{duration}", {"address": address})
+        self._hass.bus.async_fire(f"nikobus_button_timer_{duration}", {"address": address})
 
     async def _wait_for_release(self, address: str):
         """Wait for the button to be released and handle the press duration."""
