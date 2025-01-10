@@ -81,7 +81,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         )
         return {"impacted_modules": impacted_modules_str}
 
-    async def async_press(self) -> None:
+    async def async_press(self) -> None:      
         """Handle button press."""
         event_data = {
             "address": self._address,
@@ -93,6 +93,3 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             _LOGGER.error(
                 f"Failed to handle button press for address {self._address}: {e}"
             )
-
-        # Call the coordinator's event handler for button press
-        await self._coordinator.async_event_handler("ha_button_pressed", event_data)
