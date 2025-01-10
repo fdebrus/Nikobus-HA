@@ -89,6 +89,23 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         }
         try:
             await self._coordinator.async_event_handler("ha_button_pressed", event_data)
+
+            # Trigger a module refresh for each impacted module
+            for module in self.impacted_modules_info:
+                module_address = module["address"]
+                module_group = module["group"]
+                _LOGGER.debug(f"Refreshing module {module_address}, group {module_group}")
+                value = (
+                    await self._coordinator.nikobus_command_handler.get_output_state(
+                        module_address, module_group
+                    )
+                )
+
+                if value is not None:
+                    self._coordinator.set_bytearray_group_state(
+                        module_address, module_group, value
+                    )
+
         except Exception as e:
             _LOGGER.error(
                 f"Failed to handle button press for address {self._address}: {e}"
