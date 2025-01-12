@@ -122,11 +122,14 @@ class NikobusActuator:
 
     async def button_discovery(self, address: str) -> None:
         """Discover a button and process it if configured."""
+        _LOGGER.debug(f"Discovering button at address: {address}.")
         if address in self._dict_button_data.get("nikobus_button", {}):
+            _LOGGER.debug(f"Button found in config.")
             await self.process_button_modules(
                 self._dict_button_data["nikobus_button"][address], address
             )
         else:
+            _LOGGER.debug(f"Creating new button in config.")
             new_button = {
                 "description": f"DISCOVERED - Nikobus Button #N{address}",
                 "address": address,
@@ -140,10 +143,15 @@ class NikobusActuator:
     async def process_button_modules(self, button: dict, address: str) -> None:
         """Process actions for each module impacted by the button press."""
         operation_time = float(button.get("operation_time", 0))
+        button_description = button.get("description")
+
+        _LOGGER.debug(f"Processing button press for {button_description} with operation time: {operation_time}")
+    
         for impacted_module_info in button.get("impacted_module", []):
             impacted_module_address = impacted_module_info.get("address")
             impacted_group = impacted_module_info.get("group")
             if not impacted_module_address or not impacted_group:
+                _LOGGER.debug("Skipping module refresh due to missing address or group")
                 continue
             try:
                 if impacted_module_address in self._dict_module_data.get("dimmer_module", {}):
