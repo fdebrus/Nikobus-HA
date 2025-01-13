@@ -265,8 +265,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle events."""
         if event == "ha_button_pressed":
             await self._handle_ha_button_pressed(data)
-        elif event == "nikobus_button_pressed":
-            await self._handle_nikobus_button_pressed(data)
         elif event == "nikobus_refreshed":
             await self._handle_nikobus_refreshed(data)
         self.async_update_listeners()
@@ -279,23 +277,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             f"HA Button {address} pressed with operation_time: {operation_time}"
         )
         await self.nikobus_command_handler.queue_command(f"#N{address}\r#E1")
-
-    async def _handle_nikobus_button_pressed(self, data):
-        """Handle Nikobus button press events."""
-        address = data.get("address")
-        operation_time = data.get("operation_time")
-        impacted_module_address = data.get("impacted_module_address")
-        _LOGGER.debug(
-            f"Nikobus button pressed at address {address}, operation_time: {operation_time}, impacted_module_address: {impacted_module_address}"
-        )
-        self.hass.bus.async_fire(
-            "nikobus_button_pressed",
-            {
-                "address": address,
-                "operation_time": operation_time,
-                "impacted_module_address": impacted_module_address,
-            },
-        )
 
     async def _handle_nikobus_refreshed(self, data):
         """Handle Nikobus refreshed events."""

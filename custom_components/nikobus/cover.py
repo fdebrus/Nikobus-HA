@@ -274,13 +274,14 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         """Handle the nikobus_button_pressed event and update cover state."""
         impacted_module_address = event.data.get("impacted_module_address")
+        button_operation_time = event.data.get("button_operation_time", None)
 
         # Only proceed if the event address matches this cover's module address
         if impacted_module_address != self._address:
             _LOGGER.debug(f"Skipping event for {self._attr_name} (not impacted)")
             return
 
-        button_operation_time = event.data.get("operation_time", None)
+        )
         if button_operation_time:
             _LOGGER.debug(f"Button operation_time received for {self._attr_name}: {button_operation_time}")
             self._button_operation_time = float(button_operation_time)

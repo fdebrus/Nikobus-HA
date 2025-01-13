@@ -4,7 +4,7 @@ import asyncio
 import time
 import logging
 from .const import (
-    DIMMER_DELAY,
+    REFRESH_DELAY,
     SHORT_PRESS,
     MEDIUM_PRESS,
     LONG_PRESS,
@@ -70,7 +70,7 @@ class NikobusActuator:
     async def _fire_event_after_duration(self, address: str, duration: int):
         """Fire an event after the specified duration."""
         await asyncio.sleep(duration)
-        _LOGGER.debug(f"Firing event: nikobus_button_timer_{duration} with data: {address}")
+        _LOGGER.debug(f"Firing event: nikobus_button_timer_{duration} with data: address: {address}")
         self._hass.bus.async_fire(f"nikobus_button_timer_{duration}", {"address": address})
 
     async def _wait_for_release(self, address: str):
@@ -84,22 +84,22 @@ class NikobusActuator:
 
                 if time_diff >= self._debounce_time_ms:
                     press_duration = current_time - start_time
-                    _LOGGER.debug(f"Firing event: nikobus_button_released with data: {address}")
+                    _LOGGER.debug(f"Firing event: nikobus_button_released with data: address: {address}")
                     self._hass.bus.async_fire("nikobus_button_released", {"address": address})
 
                     if press_duration < SHORT_PRESS:
-                        _LOGGER.debug(f"Firing event: nikobus_short_button_pressed with data: {address}")
+                        _LOGGER.debug(f"Firing event: nikobus_short_button_pressed with data: address: {address}")
                         self._hass.bus.async_fire("nikobus_short_button_pressed", {"address": address})
                     elif press_duration < MEDIUM_PRESS:
-                        _LOGGER.debug(f"Firing event: nikobus_button_pressed_1 with data: {address}")
+                        _LOGGER.debug(f"Firing event: nikobus_button_pressed_1 with data: address: {address}")
                         self._hass.bus.async_fire("nikobus_button_pressed_1", {"address": address})
                     elif press_duration < LONG_PRESS:
-                        _LOGGER.debug(f"Firing event: nikobus_button_pressed_2 with data: {address}")
+                        _LOGGER.debug(f"Firing event: nikobus_button_pressed_2 with data: address: {address}")
                         self._hass.bus.async_fire("nikobus_button_pressed_2", {"address": address})
                     else:
-                        _LOGGER.debug(f"Firing event: nikobus_button_pressed_3 with data: {address}")
+                        _LOGGER.debug(f"Firing event: nikobus_button_pressed_3 with data: address: {address}")
                         self._hass.bus.async_fire("nikobus_button_pressed_3", {"address": address})
-                        _LOGGER.debug(f"Firing event: nikobus_long_button_pressed with data: {address}")
+                        _LOGGER.debug(f"Firing event: nikobus_long_button_pressed with data: address: {address}")
                         self._hass.bus.async_fire("nikobus_long_button_pressed", {"address": address})
                     
                     await self.button_discovery(address)
@@ -140,22 +140,23 @@ class NikobusActuator:
                 "nikobus_button_config.json", "button", self._dict_button_data
             )
 
-    async def process_button_modules(self, button: dict, address: str) -> None:
+    async def process_button_modules(self, button_data: dict, button_address: str) -> None:
         """Process actions for each module impacted by the button press."""
-        operation_time = float(button.get("operation_time", 0))
-        button_description = button.get("description")
 
-        _LOGGER.debug(f"Processing button press for {button_description} with operation time: {operation_time}")
+        button_operation_time = float(button_data.get("operation_time", 0))
+        button_description = button_data.get("description")
+
+        _LOGGER.debug(f"Processing button press for {button_description} with operation time: {button_operation_time}")
     
-        for impacted_module_info in button.get("impacted_module", []):
+        for impacted_module_info in button_data.get("impacted_module", []):
             impacted_module_address = impacted_module_info.get("address")
             impacted_group = impacted_module_info.get("group")
+
             if not impacted_module_address or not impacted_group:
                 _LOGGER.debug("Skipping module refresh due to missing address or group")
                 continue
             try:
-                if impacted_module_address in self._dict_module_data.get("dimmer_module", {}):
-                    await asyncio.sleep(DIMMER_DELAY)
+                await asyncio.sleep(REFRESH_DELAY)
                 value = await self._coordinator.nikobus_command_handler.get_output_state(
                     impacted_module_address, impacted_group
                 )
@@ -163,9 +164,15 @@ class NikobusActuator:
                     self._coordinator.set_bytearray_group_state(
                         impacted_module_address, impacted_group, value
                     )
-                    await self._async_event_handler(
+                    _LOGGER.debug(f"Firing event: nikobus_button_pressed with data: address: {address} button_operation_time: {button_operation_time} impacted_module_address: {impacted_module_address} impacted_module_group: {impacted_group}")
+                    self.hass.bus.async_fire(
                         "nikobus_button_pressed",
-                        {"address": address, "operation_time": operation_time, "impacted_module_address": impacted_module_address},
+                        {
+                            "address": button_address,
+                            "button_operation_time": button_operation_time,
+                            "impacted_module_address": impacted_module_address,
+                            "impacted_module_group": impacted_group
+                        },
                     )
             except Exception as e:
                 _LOGGER.error(f"Error processing button press: {e}")
