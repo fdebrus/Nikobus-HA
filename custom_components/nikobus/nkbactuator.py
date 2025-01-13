@@ -100,8 +100,11 @@ class NikobusActuator:
 
     def _cancel_unneeded_timers(self, press_duration: float):
         """Cancel timers that exceed the actual press duration."""
-        self._timer_tasks = [task for task, duration in zip(self._timer_tasks, [1, 2, 3])
-                            if duration > press_duration or self._fired_timers[duration]]
+        for task, duration in zip(self._timer_tasks, [1, 2, 3]):
+            if duration > press_duration or self._fired_timers[duration]:
+                task.cancel()  # Properly indented
+
+        self._timer_tasks = []
 
     def _fire_duration_event(self, address: str, press_duration: float):
         """Fire events based on press duration."""
