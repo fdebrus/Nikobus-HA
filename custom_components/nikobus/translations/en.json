@@ -1,19 +1,27 @@
 {
+    "title": "Nikobus Integration",
     "config": {
         "step": {
             "user": {
-                "title": "Nikobus",
-                "description": "Please enter your connectivity details.",
+                "title": "Nikobus Setup",
+                "description": "Please enter your connection details for Nikobus.",
                 "data": {
-                    "connection_string": "IP address:Port or Serial device",
-                    "has_feedback_module": "Feedback Module installed and connected over PC-Link ?"
+                    "connection_string": "IP Address:Port or Serial Device",
+                    "has_feedback_module": "Is a Feedback Module installed and connected over PC-Link?"
                 }
             },
             "options": {
-                "title": "Nikobus",
-                "description": "Set your refresh interval",
+                "title": "Nikobus Configuration",
+                "description": "Adjust your settings below.",
                 "data": {
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
+                }
+            },
+            "reauth": {
+                "title": "Reauthenticate Nikobus",
+                "description": "The connection details need to be updated.",
+                "data": {
+                    "connection_string": "New IP Address:Port or Serial Device"
                 }
             }
         },
@@ -22,22 +30,35 @@
                 "title": "Error",
                 "description": "An error has occurred, please try again."
             },
-            "invalid_connection": "Invalid connection string.",
-            "invalid_input": "Invalid input, please check your data.",
-            "device_not_found_or_no_access": "Serial device not found or no access."
+            "invalid_connection": "Invalid connection string. Please ensure it is in the format IP:PORT or a valid serial path.",
+            "invalid_input": "Invalid input detected. Please check your data and try again.",
+            "device_not_found_or_no_access": "The specified serial device was not found or cannot be accessed. Please check permissions.",
+            "already_configured": "This integration is already configured. Only one instance is allowed.",
+            "reauth_required": "Reauthentication required. Please update your connection details."
         }
     },
     "options": {
         "step": {
             "config": {
-                "title": "Nikobus",
-                "description": "Update configuration",
+                "title": "Nikobus Settings",
+                "description": "Modify your integration settings.",
                 "data": {
-                    "connection_string": "IP address:Port or Serial device",
-                    "has_feedback_module": "Feedback Module installed and connected over PC-Link ?",
+                    "connection_string": "IP Address:Port or Serial Device",
+                    "has_feedback_module": "Is a Feedback Module installed and connected over PC-Link?",
                     "refresh_interval": "Refresh interval in seconds (60-3600)"
                 }
             }
         }
+    },
+    "device": {
+        "name": "Nikobus Controller",
+        "manufacturer": "Niko",
+        "model": "Nikobus Bridge",
+        "sw_version": "1.0",
+        "identifiers": ["nikobus"]
+    },
+    "diagnostics": {
+        "title": "Nikobus Diagnostics",
+        "description": "Check current configuration and connection status."
     }
 }
