@@ -21,8 +21,10 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _validate_connection_string(connection_string: str) -> bool:
-    """Validate the connection string, supporting both IP and serial connections."""
+async def async_validate_input(hass, user_input):
+    """Validate the connection string asynchronously."""
+    connection_string = user_input[CONF_CONNECTION_STRING]
+
     try:
         # Validate IP connection
         ip, port = connection_string.split(":")
@@ -30,28 +32,27 @@ def _validate_connection_string(connection_string: str) -> bool:
         port = int(port)
 
         if port < 1 or port > 65535:
-            return False
+            raise ValueError("invalid_connection")
 
-        # Test IP connection
-        with socket.create_connection((ip, port), timeout=5):
-            pass
-        return True
-    except (ValueError, socket.error) as e:
-        _LOGGER.error(f"IP/Port validation error: {e}")
+        # Test IP connection asynchronously
+        def test_connection():
+            with socket.create_connection((ip, port), timeout=5):
+                pass
 
+        await hass.async_add_executor_job(test_connection)
+        return {"title": f"Nikobus ({connection_string})"}
+
+    except (ValueError, socket.error):
         # Validate Serial connection
         if re.match(r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", connection_string):
             if os.path.exists(connection_string) and os.access(
                 connection_string, os.R_OK | os.W_OK
             ):
-                return True
+                return {"title": f"Nikobus ({connection_string})"}
             else:
-                _LOGGER.error(
-                    f"Serial device not found or no access: {connection_string}"
-                )
-                return False
+                raise ValueError("device_not_found_or_no_access")
 
-    return False
+    raise ValueError("invalid_connection")
 
 
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -60,79 +61,57 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
     async def async_step_user(self, user_input=None):
-        """Handle a flow initiated by the user."""
-        _LOGGER.debug("Starting user step with input: %s", user_input)
+        """Handle user setup, enforcing unique instance."""
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
+
         errors = {}
 
         if user_input is not None:
-            connection_string = user_input.get(CONF_CONNECTION_STRING, "")
-            has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
-
-            if not _validate_connection_string(connection_string):
-                if re.match(
-                    r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", connection_string
-                ):
-                    errors[CONF_CONNECTION_STRING] = "device_not_found_or_no_access"
-                else:
-                    errors[CONF_CONNECTION_STRING] = "invalid_connection"
-            else:
-                # Store the validated user input
-                self.connection_string = connection_string
-                self.has_feedback_module = has_feedback_module
-                return await self.async_step_options()
-
-        # Schema for user input
-        user_input_schema = vol.Schema(
-            {
-                vol.Required(CONF_CONNECTION_STRING): str,
-                vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=False): bool,
-            }
-        )
+            try:
+                info = await async_validate_input(self.hass, user_input)
+                return self.async_create_entry(title=info["title"], data=user_input)
+            except ValueError as err:
+                errors["base"] = str(err)
 
         return self.async_show_form(
             step_id="user",
-            data_schema=user_input_schema,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_CONNECTION_STRING): str,
+                    vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=False): bool,
+                }
+            ),
             errors=errors,
-            description_placeholders=None,
-            last_step=False,
         )
 
-    async def async_step_options(self, user_input=None):
-        """Handle the options step of the flow."""
-        _LOGGER.debug("Starting options step with input: %s", user_input)
+    async def async_step_import(self, user_input=None):
+        """Handle import from YAML configuration."""
+        existing_entry = await self.async_set_unique_id(DOMAIN)
+        if existing_entry:
+            return self.async_abort(reason="already_configured")
+
+        return await self.async_step_user(user_input)
+
+    async def async_step_reauth(self, user_input=None):
+        """Handle reauthentication request."""
         errors = {}
 
         if user_input is not None:
-            refresh_interval = user_input.get(CONF_REFRESH_INTERVAL, 120)
-            data = {
-                CONF_CONNECTION_STRING: self.connection_string,
-                CONF_HAS_FEEDBACK_MODULE: self.has_feedback_module,
-                CONF_REFRESH_INTERVAL: refresh_interval,
-            }
-            return await self._create_entry(data)
-
-        # Schema for options
-        user_input_schema = vol.Schema(
-            {
-                vol.Optional(CONF_REFRESH_INTERVAL, default=120): vol.All(
-                    cv.positive_int, vol.Range(min=60, max=3600)
-                ),
-            }
-        )
+            try:
+                await async_validate_input(self.hass, user_input)
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=user_input
+                )
+                return self.async_create_entry(title="Reauthenticated", data={})
+            except ValueError as err:
+                errors["base"] = str(err)
 
         return self.async_show_form(
-            step_id="options",
-            data_schema=user_input_schema,
+            step_id="reauth",
+            data_schema=vol.Schema({vol.Required(CONF_CONNECTION_STRING): str}),
             errors=errors,
-            description_placeholders=None,
-            last_step=True,
         )
-
-    async def _create_entry(self, data: Dict[str, Any]):
-        """Create an entry in the config flow."""
-        _LOGGER.debug("Creating entry with data: %s", data)
-        title = f"Nikobus - {data.get(CONF_CONNECTION_STRING, 'Unknown Connection')}"
-        return self.async_create_entry(title=title, data=data)
 
     @staticmethod
     def async_get_options_flow(config_entry):
@@ -145,9 +124,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize the options flow handler."""
-        # Instead of self.config_entry = config_entry,
-        # store it in a private variable to avoid the deprecation warning.
-        self._config_entry = config_entry
+        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Handle the initial step of the options flow."""
@@ -158,8 +135,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         errors = {}
 
         # Retrieve data and options from the config entry
-        data = self._config_entry.data
-        options = self._config_entry.options
+        data = self.config_entry.data
+        options = self.config_entry.options
 
         # Retrieve current options or defaults
         connection_string = options.get(
@@ -190,21 +167,21 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             has_feedback_module = user_input.get(CONF_HAS_FEEDBACK_MODULE, False)
             refresh_interval = user_input.get(CONF_REFRESH_INTERVAL, 120)
 
-            if not _validate_connection_string(connection_string):
-                if re.match(
-                    r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", connection_string
-                ):
-                    errors[CONF_CONNECTION_STRING] = "device_not_found_or_no_access"
-                else:
-                    errors[CONF_CONNECTION_STRING] = "invalid_connection"
-            else:
-                # Save the updated options
-                data = {
-                    CONF_CONNECTION_STRING: connection_string,
-                    CONF_HAS_FEEDBACK_MODULE: has_feedback_module,
-                    CONF_REFRESH_INTERVAL: refresh_interval,
-                }
-                return self.async_create_entry(title="Options Configured", data=data)
+            try:
+                await async_validate_input(self.hass, user_input)
+                # Save the updated options in `data`
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={
+                        CONF_CONNECTION_STRING: connection_string,
+                        CONF_HAS_FEEDBACK_MODULE: has_feedback_module,
+                        CONF_REFRESH_INTERVAL: refresh_interval,
+                    },
+                    options={},  # Reset options since we store everything in `data`
+                )
+                return self.async_create_entry(title="Reconfigured Successfully", data={})
+            except ValueError as err:
+                errors["base"] = str(err)
 
         return self.async_show_form(
             step_id="config",

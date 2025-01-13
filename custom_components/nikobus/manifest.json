@@ -1,13 +1,16 @@
 {
+  "domain": "nikobus",
+  "name": "Nikobus",
+  "version": "0.2.10",
+  "documentation": "https://github.com/fdebrus/nikobus-ha",
+  "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
   "codeowners": ["@fdebrus"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/fdebrus/nikobus-ha",
-  "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
-  "domain": "nikobus",
-  "name": "Nikobus",
   "requirements": ["aiofiles>=23.2.0"],
-  "version": "0.2.10",
   "iot_class": "local_polling",
-  "loggers": ["custom_components.nikobus"]
+  "loggers": ["custom_components.nikobus"],
+  "diagnostics": true,
+  "after_dependencies": ["device_registry"],
+  "is_built_in": false
 }
