@@ -199,5 +199,6 @@ class NikobusActuator:
                             "impacted_module_group": impacted_group,
                         },
                     )
+                    await self._coordinator.async_update_listeners()
             except Exception as e:
                 _LOGGER.error(f"Error processing button press: {e}")
