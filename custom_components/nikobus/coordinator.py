@@ -106,7 +106,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     self,
                     self.dict_button_data,
                     self.dict_module_data,
-                    self.async_event_handler,
                 )
 
                 self.nikobus_listener = NikobusEventListener(

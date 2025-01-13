@@ -373,6 +373,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 self._attr_name,
                 self._position,
             )
+            # resetting the channel in memory to 0x00
+            self._coordinator.set_bytearray_state(self._address, self._channel, 0x00)
             return
 
         self._previous_state = new_state
