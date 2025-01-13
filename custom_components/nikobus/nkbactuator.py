@@ -89,6 +89,7 @@ class NikobusActuator:
                     _LOGGER.debug(f"Button released for {address}, duration: {press_duration:.2f}s")
                     # Trigger the button discovery task only after release
                     self._hass.async_create_task(self.button_discovery(address))
+                    _LOGGER.debug(f"Firing timer event nikobus_button_released for address: {address}")
                     self._hass.bus.async_fire("nikobus_button_released", {"address": address})
                     self._cancel_unneeded_timers(press_duration)
                     self._fire_duration_event(address, press_duration)
@@ -109,13 +110,18 @@ class NikobusActuator:
     def _fire_duration_event(self, address: str, press_duration: float):
         """Fire events based on press duration."""
         if press_duration < SHORT_PRESS:
+            _LOGGER.debug(f"Firing event nikobus_short_button_pressed for address: {address}")
             self._hass.bus.async_fire("nikobus_short_button_pressed", {"address": address})
         elif press_duration < MEDIUM_PRESS:
+            _LOGGER.debug(f"Firing event nikobus_button_pressed_1 for address: {address}")
             self._hass.bus.async_fire("nikobus_button_pressed_1", {"address": address})
         elif press_duration < LONG_PRESS:
+            _LOGGER.debug(f"Firing event nikobus_button_pressed_2 for address: {address}")
             self._hass.bus.async_fire("nikobus_button_pressed_2", {"address": address})
         else:
+            _LOGGER.debug(f"Firing event nikobus_button_pressed_3 for address: {address}")
             self._hass.bus.async_fire("nikobus_button_pressed_3", {"address": address})
+            _LOGGER.debug(f"Firing event nikobus_long_button_pressed for address: {address}")
             self._hass.bus.async_fire("nikobus_long_button_pressed", {"address": address})
 
     def _reset_state(self):
