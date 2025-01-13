@@ -385,11 +385,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._previous_state = new_state
         self._movement_source = source
 
-        # CHECK
-        _LOGGER.debug(
-            f"**** PROCESSING STATE CHANGE source: {source} - from {self._state} - to {new_state}"
-        )
-
         if new_state in (STATE_OPENING, STATE_CLOSING):
             if self._in_motion:
                 if self._state == new_state:

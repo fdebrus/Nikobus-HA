@@ -102,7 +102,7 @@ class NikobusActuator:
         """Cancel timers that exceed the actual press duration."""
         for task, duration in zip(self._timer_tasks, [1, 2, 3]):
             if duration > press_duration or self._fired_timers[duration]:
-                task.cancel()  # Properly indented
+                task.cancel()
 
         self._timer_tasks = []
 
