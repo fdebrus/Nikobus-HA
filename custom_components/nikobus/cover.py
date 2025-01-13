@@ -270,8 +270,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             self.async_write_ha_state()
 
     async def _handle_nikobus_button_event(self, event):
-        _LOGGER.debug("*** _handle_nikobus_button_event")
-
         """Handle the nikobus_button_pressed event and update cover state."""
         impacted_module_address = event.data.get("impacted_module_address")
         button_operation_time = event.data.get("button_operation_time", None)
@@ -281,7 +279,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             _LOGGER.debug(f"Skipping event for {self._attr_name} (not impacted)")
             return
 
-        )
         if button_operation_time:
             _LOGGER.debug(f"Button operation_time received for {self._attr_name}: {button_operation_time}")
             self._button_operation_time = float(button_operation_time)
