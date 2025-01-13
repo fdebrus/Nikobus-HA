@@ -124,7 +124,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry):
         """Initialize the options flow handler."""
-        self.config_entry = config_entry
+        super().__init__(config_entry)
 
     async def async_step_init(self, user_input=None):
         """Handle the initial step of the options flow."""
@@ -134,31 +134,21 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Handle the configuration step in options flow."""
         errors = {}
 
-        # Retrieve data and options from the config entry
+        # Retrieve current settings from config entry
         data = self.config_entry.data
-        options = self.config_entry.options
+        options = self.options
 
-        # Retrieve current options or defaults
-        connection_string = options.get(
-            CONF_CONNECTION_STRING, data.get(CONF_CONNECTION_STRING, "")
-        )
-        has_feedback_module = options.get(
-            CONF_HAS_FEEDBACK_MODULE, data.get(CONF_HAS_FEEDBACK_MODULE, False)
-        )
-        refresh_interval = options.get(
-            CONF_REFRESH_INTERVAL, data.get(CONF_REFRESH_INTERVAL, 120)
-        )
+        # Retrieve current values or defaults
+        connection_string = options.get(CONF_CONNECTION_STRING, data.get(CONF_CONNECTION_STRING, ""))
+        has_feedback_module = options.get(CONF_HAS_FEEDBACK_MODULE, data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        refresh_interval = options.get(CONF_REFRESH_INTERVAL, data.get(CONF_REFRESH_INTERVAL, 120))
 
         # Schema for options form
         options_schema = vol.Schema(
             {
                 vol.Required(CONF_CONNECTION_STRING, default=connection_string): str,
-                vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval): vol.All(
-                    cv.positive_int, vol.Range(min=60, max=3600)
-                ),
-                vol.Optional(
-                    CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module
-                ): bool,
+                vol.Optional(CONF_REFRESH_INTERVAL, default=refresh_interval): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+                vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=has_feedback_module): bool,
             }
         )
 
@@ -169,17 +159,15 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
             try:
                 await async_validate_input(self.hass, user_input)
-                # Save the updated options in `data`
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
+
+                return self.async_create_entry(
+                    title="Reconfigured Successfully",
                     data={
                         CONF_CONNECTION_STRING: connection_string,
                         CONF_HAS_FEEDBACK_MODULE: has_feedback_module,
                         CONF_REFRESH_INTERVAL: refresh_interval,
                     },
-                    options={},  # Reset options since we store everything in `data`
                 )
-                return self.async_create_entry(title="Reconfigured Successfully", data={})
             except ValueError as err:
                 errors["base"] = str(err)
 

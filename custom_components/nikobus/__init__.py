@@ -34,14 +34,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration from a config entry."""
     _LOGGER.info("Starting setup of the Nikobus integration")
 
-    # Initialize storage for the integration
-    hass.data.setdefault(DOMAIN, {})
+    # Ensure hass.data[DOMAIN] exists
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
 
-    # Create the coordinator and store it in hass.data
+    # Store the entry in hass.data to prevent KeyError on unload
+    hass.data[DOMAIN][entry.entry_id] = entry
+
+    # Initialize the coordinator
     coordinator = NikobusDataCoordinator(hass, entry)
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
-    # Register device in HA Device Registry
+    # Register the device
     device_registry = async_get_device_registry(hass)
     nikobus_device = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -64,7 +68,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Error during connection setup: %s", e)
         raise HomeAssistantError(f"An error occurred loading configuration: {e}") from e
 
-    # Forward the setup to the appropriate platforms
+    # Forward setup to appropriate platforms
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception as forward_setup_error:
@@ -92,13 +96,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Remove stored data safely
     if unload_ok:
         if entry.entry_id in hass.data.get(DOMAIN, {}):
+            _LOGGER.debug("Removing Nikobus entry from hass.data: %s", entry.entry_id)
             hass.data[DOMAIN].pop(entry.entry_id)
         else:
             _LOGGER.warning("Nikobus entry not found in hass.data during unload")
 
     _LOGGER.info("Nikobus integration unloaded: %s", "Success" if unload_ok else "Failed")
     return unload_ok
-
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
