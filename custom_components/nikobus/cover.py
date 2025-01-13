@@ -263,7 +263,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        _LOGGER.debug("*** _handle_coordinator_update")
         """Handle updated data from the coordinator."""
         new_state = self._coordinator.get_cover_state(self._address, self._channel)
         # Only process the state change if it is different from the previous state
