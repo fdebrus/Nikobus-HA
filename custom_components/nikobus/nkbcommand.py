@@ -73,7 +73,9 @@ class NikobusCommandHandler:
                 completion_handler = command_item.get("completion_handler")
 
                 try:
-                    _LOGGER.debug(f"Processing command: {command} with address: {address}")
+                    _LOGGER.debug(
+                        f"Processing command: {command} with address: {address}"
+                    )
 
                     if not address:
                         await self.send_command(command)

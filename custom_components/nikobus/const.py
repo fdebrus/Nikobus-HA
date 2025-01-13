@@ -25,7 +25,8 @@ EXPECTED_HANDSHAKE_RESPONSE = "$0511"
 HANDSHAKE_TIMEOUT = 60
 
 # Buttons
-REFRESH_DELAY = 0.5  # When a Nikobus button is pressed, pause for REFRESH_DELAY before to retrieve status from Nikobus
+REFRESH_DELAY = 0.5  # When a Nikobus button is pressed (except for dimmer), pause for REFRESH_DELAY before to retrieve status from Nikobus
+DIMMER_DELAY = 1  # When a dimmer button is pressed, pause for DIMMER_DELAY before to retrieve status from Nikobus
 SHORT_PRESS = 1  # Duration in seconds that classifies a button press as a short press
 MEDIUM_PRESS = 2  # Duration in seconds that classifies a button press as a medium press
 LONG_PRESS = 3  # Duration in seconds that classifies a button press as a long press

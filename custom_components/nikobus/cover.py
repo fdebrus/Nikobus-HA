@@ -19,6 +19,7 @@ STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
 STATE_ERROR = 0x03
 
+
 class PositionEstimator:
     """Estimates the current position of the cover based on elapsed time and direction."""
 
@@ -81,6 +82,7 @@ class PositionEstimator:
     def duration_in_seconds(self):
         """Publicly expose the duration_in_seconds attribute."""
         return self._duration_in_seconds
+
 
 async def async_setup_entry(hass, entry, async_add_entities) -> bool:
     """Set up Nikobus cover entities from a config entry."""
@@ -280,7 +282,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             return
 
         if button_operation_time:
-            _LOGGER.debug(f"Button operation_time received for {self._attr_name}: {button_operation_time}")
+            _LOGGER.debug(
+                f"Button operation_time received for {self._attr_name}: {button_operation_time}"
+            )
             self._button_operation_time = float(button_operation_time)
 
         # Get the new state for this cover's channel from the coordinator
@@ -288,7 +292,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         # Only process the state change if it is different from the previous state
         if new_state != self._previous_state:
-            _LOGGER.debug(f"State changed for {self._attr_name}: {self._previous_state} -> {new_state}")
+            _LOGGER.debug(
+                f"State changed for {self._attr_name}: {self._previous_state} -> {new_state}"
+            )
             await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
         else:
@@ -380,8 +386,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._previous_state = new_state
         self._movement_source = source
 
-# CHECK
-        _LOGGER.debug(f"**** PROCESSING STATE CHANGE source: {source} - from {self._state} - to {new_state}")
+        # CHECK
+        _LOGGER.debug(
+            f"**** PROCESSING STATE CHANGE source: {source} - from {self._state} - to {new_state}"
+        )
 
         if new_state in (STATE_OPENING, STATE_CLOSING):
             if self._in_motion:

@@ -81,7 +81,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         )
         return {"impacted_modules": impacted_modules_str}
 
-    async def async_press(self) -> None:      
+    async def async_press(self) -> None:
         """Handle button press."""
         event_data = {
             "address": self._address,
@@ -94,7 +94,9 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             for module in self.impacted_modules_info:
                 module_address = module["address"]
                 module_group = module["group"]
-                _LOGGER.debug(f"Refreshing module {module_address}, group {module_group}")
+                _LOGGER.debug(
+                    f"Refreshing module {module_address}, group {module_group}"
+                )
                 value = (
                     await self._coordinator.nikobus_command_handler.get_output_state(
                         module_address, module_group
