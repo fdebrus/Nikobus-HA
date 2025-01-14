@@ -8,12 +8,11 @@ from .const import DOMAIN, BRAND
 _LOGGER = logging.getLogger(__name__)  # Initialize logger
 
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> None:
     """Set up Nikobus scenes from a config entry."""
     _LOGGER.debug("Setting up Nikobus scenes.")
 
     coordinator = hass.data[DOMAIN]["coordinator"]
-
     entities = []
 
     if coordinator.dict_scene_data:
@@ -32,7 +31,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             _LOGGER.debug(f"Scene channels: {impacted_modules_info}")
 
             entity = NikobusSceneEntity(
-                hass,
                 coordinator,
                 scene.get("description"),
                 scene.get("id"),
@@ -41,24 +39,16 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
 
             entities.append(entity)
 
-        _LOGGER.debug(f"Adding {len(entities)} Nikobus scene entities.")
-        async_add_entities(entities)
+    _LOGGER.debug(f"Adding {len(entities)} Nikobus scene entities.")
+    async_add_entities(entities)
 
 
 class NikobusSceneEntity(CoordinatorEntity, Scene):
     """Represents a Nikobus scene entity within Home Assistant."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        coordinator,
-        description,
-        scene_id,
-        impacted_modules_info,
-    ) -> None:
+    def __init__(self, coordinator, description, scene_id, impacted_modules_info) -> None:
         """Initialize the scene entity with data from the Nikobus system configuration."""
         super().__init__(coordinator)
-        self._hass = hass
         self._coordinator = coordinator
         self._description = description
         self._scene_id = scene_id
@@ -87,9 +77,11 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
     async def async_activate(self) -> None:
         """Activate the scene by updating only the specified channels and keeping other channels unchanged."""
         _LOGGER.debug(f"Activating scene: {self._description} (ID: {self._scene_id})")
+
         module_changes = {}
 
         def get_value(module_type, state):
+            """Map state values based on module type."""
             state = state.lower()
 
             module_state_map = {
@@ -97,21 +89,18 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 "cover": {"open": 1, "close": 2},
             }
 
-            if module_type == "switch" or module_type == "cover":
+            if module_type in module_state_map:
                 if state in module_state_map[module_type]:
                     return module_state_map[module_type][state]
-                else:
-                    _LOGGER.error(f"Invalid state for {module_type}: {state}")
-                    return None
+                _LOGGER.error(f"Invalid state for {module_type}: {state}")
+                return None
             elif module_type == "dimmer":
                 if state.isdigit():
                     return min(int(state), 255)  # Cap value for dimmers at 255
-                else:
-                    _LOGGER.error(f"Invalid state for dimmer: {state}")
-                    return None
-            else:
-                _LOGGER.error(f"Unknown module type: {module_type}")
+                _LOGGER.error(f"Invalid state for dimmer: {state}")
                 return None
+            _LOGGER.error(f"Unknown module type: {module_type}")
+            return None
 
         # Group changes by module
         for module in self._impacted_modules_info:
@@ -134,9 +123,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             # Initialize module changes if not yet fetched
             if module_id not in module_changes:
                 module_changes[module_id] = bytearray(
-                    self._coordinator.nikobus_module_states.get(
-                        module_id, bytearray(12)
-                    )
+                    self._coordinator.nikobus_module_states.get(module_id, bytearray(12))
                 )
                 _LOGGER.debug(
                     f"Fetched current state for module {module_id}: {module_changes[module_id].hex()}"
@@ -183,7 +170,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
             # Log the final updated state of the module and send the changes
             _LOGGER.debug(
-                f"Sending updated state to module {module_id}: {channel_states}"
+                f"Sending updated state to module {module_id}: {channel_states.hex()}"
             )
             await self._coordinator.api.set_output_states_for_module(address=module_id)
 

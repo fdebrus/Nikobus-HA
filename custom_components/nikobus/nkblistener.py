@@ -25,14 +25,14 @@ class NikobusEventListener:
 
     def __init__(
         self,
-        hass,
+        coordinator,
         config_entry: ConfigEntry,
         nikobus_actuator,
         nikobus_connection,
         feedback_callback,
     ):
         """Initialize the Nikobus event listener."""
-        self._hass = hass
+        self._coordinator = coordinator
         self._config_entry = config_entry
         self._listener_task = None
         self._running = False
@@ -49,19 +49,27 @@ class NikobusEventListener:
 
     async def start(self):
         """Start the event listener."""
+        if self._running:
+            _LOGGER.warning("Nikobus Event Listener is already running.")
+            return
+
         self._running = True
-        self._listener_task = self._hass.loop.create_task(self.listen_for_events())
+        self._listener_task = self._coordinator.hass.loop.create_task(self.listen_for_events())
         _LOGGER.info("Nikobus Event Listener started.")
 
     async def stop(self):
         """Stop the event listener."""
+        if not self._running:
+            _LOGGER.warning("Nikobus Event Listener is not running.")
+            return
+
         self._running = False
         if self._listener_task:
             self._listener_task.cancel()
             try:
                 await self._listener_task
             except asyncio.CancelledError:
-                _LOGGER.info("Nikobus event listener has been stopped")
+                _LOGGER.info("Nikobus Event Listener has been stopped.")
             self._listener_task = None
 
     async def listen_for_events(self) -> None:
@@ -73,16 +81,19 @@ class NikobusEventListener:
                     self.nikobus_connection.read(), timeout=10
                 )
                 if not data:
-                    _LOGGER.warning("Nikobus connection closed unexpectedly")
+                    _LOGGER.warning("Nikobus connection closed unexpectedly.")
                     break
+
                 message = data.decode("Windows-1252").strip()
                 _LOGGER.debug(f"Received message: {message}")
-                self._hass.async_create_task(self.dispatch_message(message))
+
+                self._coordinator.hass.async_create_task(self.dispatch_message(message))
+
             except asyncio.TimeoutError:
                 _LOGGER.debug("Read operation timed out. Waiting for next data...")
-                pass
+                continue
             except asyncio.CancelledError:
-                _LOGGER.info("Event listener was cancelled")
+                _LOGGER.info("Event listener was cancelled.")
                 break
             except Exception as e:
                 _LOGGER.error(f"Unexpected error in event listener: {e}", exc_info=True)
@@ -90,6 +101,8 @@ class NikobusEventListener:
 
     async def dispatch_message(self, message: str) -> None:
         """Handle and route incoming messages from the Nikobus system."""
+        _LOGGER.debug(f"Dispatching message: {message}")
+
         if message.startswith(BUTTON_COMMAND_PREFIX):
             _LOGGER.debug(f"Button command received: {message}")
             await self._actuator.handle_button_press(message[2:8])
@@ -135,6 +148,4 @@ class NikobusEventListener:
         elif module_group_identifier == "12":
             self._module_group = 1
         else:
-            _LOGGER.warning(
-                f"Unknown module group identifier: {module_group_identifier}"
-            )
+            _LOGGER.warning(f"Unknown module group identifier: {module_group_identifier}")

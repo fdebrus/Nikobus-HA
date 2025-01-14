@@ -1,4 +1,5 @@
 """Cover platform for the Nikobus integration with module-level devices."""
+
 from __future__ import annotations
 
 import asyncio
@@ -100,9 +101,7 @@ class PositionEstimator:
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """
     Set up Nikobus cover entities from a config entry.
@@ -114,8 +113,10 @@ async def async_setup_entry(
     """
     _LOGGER.debug("Setting up Nikobus cover entities.")
 
-    coordinator: NikobusDataCoordinator = hass.data[DOMAIN]["coordinator"]
-    roller_modules: Dict[str, Any] = coordinator.dict_module_data.get("roller_module", {})
+    coordinator: NikobusDataCoordinator = entry.runtime_data
+    roller_modules: Dict[str, Any] = coordinator.dict_module_data.get(
+        "roller_module", {}
+    )
 
     device_registry = dr.async_get(hass)
     entities: List[NikobusCoverEntity] = []
@@ -142,7 +143,7 @@ async def async_setup_entry(
 
             operation_time = channel_info.get("operation_time", "30")
             entity = NikobusCoverEntity(
-                hass=hass,
+                entry=entry,
                 coordinator=coordinator,
                 address=address,
                 channel=channel_idx,
@@ -185,7 +186,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
     def __init__(
         self,
-        hass: HomeAssistant,
+        entry: ConfigEntry,
         coordinator: NikobusDataCoordinator,
         address: str,
         channel: int,
@@ -208,7 +209,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             operation_time: Time in seconds for full open/close.
         """
         super().__init__(coordinator)
-        self.hass = hass
+        
         self._address = address
         self._channel = channel
         self._description = module_desc
@@ -237,7 +238,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         _LOGGER.debug(
             "NikobusCoverEntity initialized for %s (address=%s, channel=%s, operation_time=%s)",
-            channel_description, address, channel, operation_time
+            channel_description,
+            address,
+            channel,
+            operation_time,
         )
 
     @property
@@ -378,7 +382,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 "State changed for %s: %s -> %s",
                 self._attr_name,
                 self._previous_state,
-                new_state
+                new_state,
             )
             await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
@@ -521,7 +525,9 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                 self._address, self._channel, completion_handler=completion_handler
             )
         else:
-            _LOGGER.error("Invalid direction %s for cover %s", direction, self._attr_name)
+            _LOGGER.error(
+                "Invalid direction %s for cover %s", direction, self._attr_name
+            )
 
     async def _start_position_estimation(self, target_position=None):
         """Start position estimation and schedule the update task."""
@@ -565,7 +571,10 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
                 # Check button operation time
                 elapsed = time.monotonic() - start_time
-                if self._button_operation_time and elapsed >= self._button_operation_time:
+                if (
+                    self._button_operation_time
+                    and elapsed >= self._button_operation_time
+                ):
                     await self.async_stop_cover()
                     return
 

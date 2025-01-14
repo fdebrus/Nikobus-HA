@@ -1,4 +1,5 @@
 """The Nikobus integration (single-instance)."""
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create the coordinator and store it in hass.data
     coordinator = NikobusDataCoordinator(hass, entry)
-    hass.data[DOMAIN]["coordinator"] = coordinator
+    entry.runtime_data = coordinator
 
     # Attempt to connect the coordinator
     try:
@@ -69,10 +70,12 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register the Nikobus bridge (hub) as a device in Home Assistant."""
     device_registry = dr.async_get(hass)
 
-    existing_device = device_registry.async_get_device(identifiers={(DOMAIN, HUB_IDENTIFIER)})
+    existing_device = device_registry.async_get_device(
+        identifiers={(DOMAIN, HUB_IDENTIFIER)}
+    )
     if existing_device:
         _LOGGER.debug("Nikobus hub device already exists in registry.")
-        return  
+        return
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,

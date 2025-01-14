@@ -1,6 +1,5 @@
 import logging
 from homeassistant.components.button import ButtonEntity
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
@@ -8,9 +7,9 @@ from .const import DOMAIN, BRAND
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+async def async_setup_entry(hass, entry, async_add_entities) -> None:
     """Set up Nikobus button entities from a config entry."""
-    coordinator = hass.data[DOMAIN]["coordinator"]
+    coordinator = entry.runtime_data
 
     entities = []
 
@@ -25,7 +24,6 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> b
             ]
 
             entity = NikobusButtonEntity(
-                hass,
                 coordinator,
                 button.get("description"),
                 button.get("address"),
@@ -43,7 +41,6 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
 
     def __init__(
         self,
-        hass: HomeAssistant,
         coordinator,
         description,
         address,
@@ -52,7 +49,6 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     ) -> None:
         """Initialize the button entity with data from the Nikobus system configuration."""
         super().__init__(coordinator)
-        self._hass = hass
         self._coordinator = coordinator
         self._description = description
         self._address = address

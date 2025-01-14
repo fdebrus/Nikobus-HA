@@ -31,11 +31,6 @@ async def async_setup_entry(
 ) -> None:
     """
     Set up Nikobus light (dimmer) entities from a config entry.
-
-    Hierarchy:
-      - Hub device: 'Nikobus Bridge' (registered in __init__.py)
-      - Child device: each dimmer module (registered here)
-      - LightEntity: each dimmer channel
     """
     _LOGGER.debug("Setting up Nikobus light entities (modules).")
 
@@ -49,7 +44,6 @@ async def async_setup_entry(
         module_desc = dimmer_module_data.get("description", f"Dimmer Module {address}")
         module_model = dimmer_module_data.get("model", "Unknown Dimmer Model")
 
-        # 1) Register each dimmer module as a child device of the hub
         _register_nikobus_dimmer_device(
             device_registry=device_registry,
             entry=entry,
@@ -58,7 +52,6 @@ async def async_setup_entry(
             module_model=module_model,
         )
 
-        # 2) Create a light entity for each channel in the module
         for channel_index, channel_info in enumerate(
             dimmer_module_data.get("channels", []), start=1
         ):
@@ -101,12 +94,9 @@ def _register_nikobus_dimmer_device(
         via_device=(DOMAIN, HUB_IDENTIFIER),
     )
 
-
 class NikobusLightEntity(CoordinatorEntity, LightEntity):
     """
     Represents a Nikobus light (dimmer channel) in Home Assistant.
-
-    Each entity belongs to a specific module device.
     """
 
     def __init__(
@@ -120,14 +110,15 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     ) -> None:
         """Initialize the light entity from the Nikobus system configuration."""
         super().__init__(coordinator)
+
         self._address = address
         self._channel = channel
         self._channel_description = channel_description
         self._module_name = module_name
         self._module_model = module_model
 
-        # For uniqueness, combine domain, module address, and channel
-        self._attr_unique_id =  f"{DOMAIN}_{self._address}_{self._channel}"
+        # Unique ID for the entity
+        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
         self._attr_name = channel_description
 
         # Supported color modes: brightness
@@ -140,11 +131,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
-        """
-        Return device information referencing the dimmer module.
-
-        This ensures the entity is grouped under the module in the UI.
-        """
+        """Return device information referencing the dimmer module."""
         return {
             "identifiers": {(DOMAIN, self._address)},
             "manufacturer": BRAND,
@@ -171,14 +158,15 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         except NikobusError as err:
             _LOGGER.error(
                 "Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s",
-                self._address, self._channel, err
+                self._address,
+                self._channel,
+                err,
             )
             return 0
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        # Reset optimistic states
         self._is_on = None
         self._brightness = None
         self.async_write_ha_state()
@@ -195,9 +183,10 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         except NikobusError as err:
             _LOGGER.error(
                 "Failed to turn on Nikobus light (addr=%s, channel=%d): %s",
-                self._address, self._channel, err
+                self._address,
+                self._channel,
+                err,
             )
-            # Revert optimistic state
             self._is_on = None
             self._brightness = None
             self.async_write_ha_state()
@@ -213,9 +202,10 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         except NikobusError as err:
             _LOGGER.error(
                 "Failed to turn off Nikobus light (addr=%s, channel=%d): %s",
-                self._address, self._channel, err
+                self._address,
+                self._channel,
+                err,
             )
-            # Revert optimistic state
             self._is_on = None
             self._brightness = None
             self.async_write_ha_state()

@@ -15,7 +15,12 @@ from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
 from .nkbactuator import NikobusActuator
 
-from .const import DOMAIN, CONF_CONNECTION_STRING, CONF_REFRESH_INTERVAL, CONF_HAS_FEEDBACK_MODULE
+from .const import (
+    DOMAIN,
+    CONF_CONNECTION_STRING,
+    CONF_REFRESH_INTERVAL,
+    CONF_HAS_FEEDBACK_MODULE,
+)
 from .exceptions import NikobusConnectionError, NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,10 +37,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.config_entry = config_entry
         self.connection_string = config_entry.data.get(CONF_CONNECTION_STRING)
         self._refresh_interval = config_entry.data.get(CONF_REFRESH_INTERVAL, 120)
-        self._has_feedback_module = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
+        self._has_feedback_module = config_entry.data.get(
+            CONF_HAS_FEEDBACK_MODULE, False
+        )
 
         # Set update_interval to None if feedback module is present, disabling periodic updates
-        self._update_interval = None if self._has_feedback_module else timedelta(seconds=self._refresh_interval)
+        self._update_interval = (
+            None
+            if self._has_feedback_module
+            else timedelta(seconds=self._refresh_interval)
+        )
 
         super().__init__(
             self.hass,
@@ -67,9 +78,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         else:
             try:
                 # Load JSON configuration for modules, buttons, and scenes
-                self.dict_module_data = await self.nikobus_config.load_json_data("nikobus_module_config.json", "module")
-                self.dict_button_data = await self.nikobus_config.load_json_data("nikobus_button_config.json", "button")
-                self.dict_scene_data = await self.nikobus_config.load_json_data("nikobus_scene_config.json", "scene")
+                self.dict_module_data = await self.nikobus_config.load_json_data(
+                    "nikobus_module_config.json", "module"
+                )
+                self.dict_button_data = await self.nikobus_config.load_json_data(
+                    "nikobus_button_config.json", "button"
+                )
+                self.dict_scene_data = await self.nikobus_config.load_json_data(
+                    "nikobus_scene_config.json", "scene"
+                )
 
                 # Initialize module state tracking
                 for modules in self.dict_module_data.values():
@@ -77,17 +94,26 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                         self.nikobus_module_states[address] = bytearray(12)
 
                 # Instantiate main Nikobus components
-                self.nikobus_actuator = NikobusActuator(self.hass, self, self.dict_button_data, self.dict_module_data)
+                self.nikobus_actuator = NikobusActuator(
+                    self, self.dict_button_data, self.dict_module_data
+                )
                 self.nikobus_listener = NikobusEventListener(
-                    self.hass, self.config_entry, self.nikobus_actuator, self.nikobus_connection, self.process_feedback_data
+                    self,
+                    self.config_entry,
+                    self.nikobus_actuator,
+                    self.nikobus_connection,
+                    self.process_feedback_data,
                 )
                 self.nikobus_command_handler = NikobusCommandHandler(
-                    self.hass, self, self.nikobus_connection, self.nikobus_listener, self.nikobus_module_states
+                    self,
+                    self.nikobus_connection,
+                    self.nikobus_listener,
+                    self.nikobus_module_states,
                 )
 
                 # Expose API to Home Assistant
-                self.api = NikobusAPI(self.hass, self)
-                self.hass.data[DOMAIN] = {
+                self.api = NikobusAPI(self)
+                self.config_entry.runtime_data = {
                     "coordinator": self,
                     "api": self.api,
                     "actuator": self.nikobus_actuator,
@@ -132,18 +158,33 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
             for group in groups_to_query:
                 try:
-                    group_state = await self.nikobus_command_handler.get_output_state(address, group) or ""
-                    _LOGGER.debug(f"State for group {group}: {group_state} (Address: {address})")
+                    group_state = (
+                        await self.nikobus_command_handler.get_output_state(
+                            address, group
+                        )
+                        or ""
+                    )
+                    _LOGGER.debug(
+                        f"State for group {group}: {group_state} (Address: {address})"
+                    )
                     state += group_state
                 except Exception as e:
-                    _LOGGER.error(f"Error retrieving state for address {address}, group {group}: {e}")
+                    _LOGGER.error(
+                        f"Error retrieving state for address {address}, group {group}: {e}"
+                    )
 
             try:
                 self.nikobus_module_states[address] = bytearray.fromhex(state)
-                _LOGGER.debug(f"Updated module state for {address}: {self.nikobus_module_states[address]}")
+                _LOGGER.debug(
+                    f"Updated module state for {address}: {self.nikobus_module_states[address]}"
+                )
             except ValueError:
-                _LOGGER.error(f"Invalid hex state received for {address}, setting default state.")
-                self.nikobus_module_states[address] = bytearray(12)  # Default to all zeros
+                _LOGGER.error(
+                    f"Invalid hex state received for {address}, setting default state."
+                )
+                self.nikobus_module_states[address] = bytearray(
+                    12
+                )  # Default to all zeros
 
     async def process_feedback_data(self, module_group, data):
         """Process feedback data from Nikobus."""
@@ -161,13 +202,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.nikobus_module_states[module_address] = bytearray(12)
 
             if module_group == 1:
-                self.nikobus_module_states[module_address][:6] = bytearray.fromhex(module_state_raw)
+                self.nikobus_module_states[module_address][:6] = bytearray.fromhex(
+                    module_state_raw
+                )
             elif module_group == 2:
-                self.nikobus_module_states[module_address][6:] = bytearray.fromhex(module_state_raw)
+                self.nikobus_module_states[module_address][6:] = bytearray.fromhex(
+                    module_state_raw
+                )
             else:
                 raise ValueError(f"Invalid module group: {module_group}")
 
-            await self.async_event_handler("nikobus_refreshed", {"impacted_module_address": module_address})
+            await self.async_event_handler(
+                "nikobus_refreshed", {"impacted_module_address": module_address}
+            )
 
         except Exception as e:
             _LOGGER.error(f"Error processing feedback data: {e}", exc_info=True)
@@ -179,7 +226,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     def get_bytearray_group_state(self, address: str, group: int) -> int:
         """Get the state of a specific group."""
         if address in self.nikobus_module_states:
-            return self.nikobus_module_states[address][:6] if int(group) == 1 else self.nikobus_module_states[address][6:12]
+            return (
+                self.nikobus_module_states[address][:6]
+                if int(group) == 1
+                else self.nikobus_module_states[address][6:12]
+            )
         _LOGGER.error(f"Module address {address} not found, returning empty bytearray.")
         return bytearray(6)
 
@@ -200,7 +251,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.nikobus_module_states[address][:6] = byte_value
             elif int(group) == 2:
                 self.nikobus_module_states[address][6:12] = byte_value
-            _LOGGER.debug(f"Updated state for {address}: {self.nikobus_module_states[address]}")
+            _LOGGER.debug(
+                f"Updated state for {address}: {self.nikobus_module_states[address]}"
+            )
         else:
             _LOGGER.warning(f"Module {address} not found, creating new state array.")
             self.nikobus_module_states[address] = bytearray(12)
@@ -226,7 +279,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._refresh_interval = entry.data.get(CONF_REFRESH_INTERVAL, 120)
         self._has_feedback_module = entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
 
-        self._update_interval = None if self._has_feedback_module else timedelta(seconds=self._refresh_interval)
+        self._update_interval = (
+            None
+            if self._has_feedback_module
+            else timedelta(seconds=self._refresh_interval)
+        )
 
         await self.connect()
         await self.async_refresh()
@@ -235,7 +292,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle HA button press events."""
         address = data.get("address")
         operation_time = data.get("operation_time")
-        _LOGGER.debug(f"HA Button {address} pressed with operation_time: {operation_time}")
+        _LOGGER.debug(
+            f"HA Button {address} pressed with operation_time: {operation_time}"
+        )
         await self.nikobus_command_handler.queue_command(f"#N{address}\r#E1")
 
     async def _handle_nikobus_refreshed(self, data):
