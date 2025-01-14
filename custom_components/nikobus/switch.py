@@ -1,123 +1,184 @@
+"""Switch platform for the Nikobus integration with module-level devices."""
+
+from __future__ import annotations
+
 import logging
+from typing import Any, Dict, List
+
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
+from .coordinator import NikobusDataCoordinator
 from .exceptions import NikobusError
 
 _LOGGER = logging.getLogger(__name__)
 
+HUB_IDENTIFIER = "nikobus_hub"  
 
-async def async_setup_entry(hass, entry, async_add_entities) -> bool:
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback
+) -> None:
     """Set up Nikobus switch entities from a config entry."""
-    coordinator = hass.data[DOMAIN]["coordinator"]
+    _LOGGER.debug("Setting up Nikobus switch entities (modules).")
 
-    switch_modules = coordinator.dict_module_data.get("switch_module", {})
+    coordinator: NikobusDataCoordinator = hass.data[DOMAIN]["coordinator"]
+    switch_modules: Dict[str, Any] = coordinator.dict_module_data.get("switch_module", {})
 
-    entities = [
-        NikobusSwitchEntity(
-            hass,
-            coordinator,
-            switch_module_data.get("description"),
-            switch_module_data.get("model"),
-            address,
-            i,
-            channel["description"],
+    device_registry = dr.async_get(hass)
+    entities: List[NikobusSwitchEntity] = []
+
+    for address, switch_module_data in switch_modules.items():
+        module_desc = switch_module_data.get("description", f"Module {address}")
+        model = switch_module_data.get("model", "Unknown Module Model")
+
+        # 1) Register each module as a device (child) referencing the hub
+        _register_nikobus_module_device(
+            device_registry=device_registry,
+            entry=entry,
+            module_address=address,
+            module_name=module_desc,
+            module_model=model,
         )
-        for address, switch_module_data in switch_modules.items()
-        for i, channel in enumerate(switch_module_data.get("channels", []), start=1)
-        if not channel["description"].startswith("not_in_use")
-    ]
+
+        # 2) Create switch entities for each channel in the module
+        for channel_index, channel_info in enumerate(
+            switch_module_data.get("channels", []), start=1
+        ):
+            if channel_info["description"].startswith("not_in_use"):
+                continue
+
+            switch_entity = NikobusSwitchEntity(
+                coordinator=coordinator,
+                address=address,
+                channel=channel_index,
+                channel_description=channel_info["description"],
+                module_name=module_desc,
+                module_model=model,
+            )
+            entities.append(switch_entity)
 
     async_add_entities(entities)
+    _LOGGER.debug("Added %d Nikobus switch entities.", len(entities))
+
+
+def _register_nikobus_module_device(
+    device_registry: dr.DeviceRegistry,
+    entry: ConfigEntry,
+    module_address: str,
+    module_name: str,
+    module_model: str,
+) -> None:
+    """Register a single Nikobus module as a child device in the device registry."""
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, module_address)},  # Unique ID for this module
+        manufacturer=BRAND,
+        name=module_name,
+        model=module_model,
+        # Link this module to the hub device
+        via_device=(DOMAIN, HUB_IDENTIFIER),
+    )
 
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
-    """Represents a Nikobus switch entity within Home Assistant."""
+    """A switch entity representing one channel on a Nikobus module."""
 
     def __init__(
         self,
-        hass: HomeAssistant,
-        coordinator,
-        description,
-        model,
-        address,
-        channel,
-        channel_description,
+        coordinator: NikobusDataCoordinator,
+        address: str,
+        channel: int,
+        channel_description: str,
+        module_name: str,
+        module_model: str,
     ) -> None:
-        """Initialize the switch entity with data from the Nikobus system configuration."""
+        """Initialize the switch entity."""
         super().__init__(coordinator)
-        self._coordinator = coordinator
-        self._description = description
-        self._model = model
         self._address = address
         self._channel = channel
+        self._channel_description = channel_description
+        self._module_name = module_name
+        self._module_model = module_model
 
-        self._attr_name = channel_description
+        # This ensures a globally unique ID across your integration
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
 
-        # Internal state variable for optimistic updates
-        self._is_on = None
+        self._attr_name = channel_description
+        self._is_on: bool | None = None
 
     @property
     def device_info(self):
-        """Return device information about this switch."""
+        """
+        Return device info referencing the *module*.
+
+        This matches the identifiers for the *module* device,
+        not the main hub.
+        """
         return {
             "identifiers": {(DOMAIN, self._address)},
-            "name": self._description,
             "manufacturer": BRAND,
-            "model": self._model,
+            "name": self._module_name,
+            "model": self._module_model,
         }
 
     @property
-    def is_on(self):
+    def is_on(self) -> bool:
         """Return True if the switch is on."""
         if self._is_on is not None:
             return self._is_on
-        try:
-            return self._coordinator.get_switch_state(self._address, self._channel)
-        except NikobusError as e:
-            _LOGGER.error(
-                f"Failed to get state for switch at address {self._address}, channel {self._channel}: {e}"
-            )
-            return False  # Assume switch is off if an error occurs
+        return self._read_current_state()
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        # Reset the optimistic state since we have new data from the coordinator
-        self._is_on = None
+        """Handle new data from the coordinator."""
+        self._is_on = None  # reset optimistic state
         self.async_write_ha_state()
 
-    async def async_turn_on(self):
+    async def async_turn_on(self) -> None:
         """Turn the switch on."""
-        # Optimistically update the internal state
         self._is_on = True
         self.async_write_ha_state()
 
         try:
-            await self._coordinator.api.turn_on_switch(self._address, self._channel)
-        except NikobusError as e:
+            await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        except NikobusError as err:
             _LOGGER.error(
-                f"Failed to turn on switch at address {self._address}, channel {self._channel}: {e}"
+                "Failed to turn on switch (module=%s, channel=%d): %s",
+                self._address, self._channel, err
             )
-            # Revert the optimistic state on failure
+            # revert optimistic state
             self._is_on = None
             self.async_write_ha_state()
 
-    async def async_turn_off(self):
+    async def async_turn_off(self) -> None:
         """Turn the switch off."""
-        # Optimistically update the internal state
         self._is_on = False
         self.async_write_ha_state()
 
         try:
-            await self._coordinator.api.turn_off_switch(self._address, self._channel)
-        except NikobusError as e:
+            await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        except NikobusError as err:
             _LOGGER.error(
-                f"Failed to turn off switch at address {self._address}, channel {self._channel}: {e}"
+                "Failed to turn off switch (module=%s, channel=%d): %s",
+                self._address, self._channel, err
             )
-            # Revert the optimistic state on failure
             self._is_on = None
             self.async_write_ha_state()
+
+    def _read_current_state(self) -> bool:
+        """Fetch real-time state from the coordinator."""
+        try:
+            return self.coordinator.get_switch_state(self._address, self._channel)
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to get state for switch (module=%s, channel=%d): %s",
+                self._address, self._channel, err
+            )
+            return False

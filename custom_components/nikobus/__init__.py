@@ -1,7 +1,12 @@
-"""Nikobus Integration"""
+"""The Nikobus integration (single-instance)."""
+from __future__ import annotations
 
 import logging
+
 from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import device_registry as dr
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.components import (
     switch,
     light,
@@ -10,12 +15,9 @@ from homeassistant.components import (
     button,
     scene,
 )
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.device_registry import async_get as async_get_device_registry
-from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers import device_registry as dr
 
-from .const import DOMAIN, CONF_CONNECTION_STRING, CONF_HAS_FEEDBACK_MODULE, CONF_REFRESH_INTERVAL
+from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,89 +31,92 @@ PLATFORMS = [
     scene.DOMAIN,
 ]
 
+HUB_IDENTIFIER = "nikobus_hub"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the Nikobus integration from a config entry."""
-    _LOGGER.info("Starting setup of the Nikobus integration")
+    """
+    Set up the Nikobus integration from a config entry (single-instance).
+    """
+    _LOGGER.debug("Starting setup of Nikobus (single-instance)")
 
-    # Ensure hass.data[DOMAIN] exists
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
+    # Initialize the domain data structure
+    hass.data.setdefault(DOMAIN, {})
 
-    # Store the entry in hass.data to prevent KeyError on unload
-    hass.data[DOMAIN][entry.entry_id] = entry
-
-    # Initialize the coordinator
+    # Create the coordinator and store it in hass.data
     coordinator = NikobusDataCoordinator(hass, entry)
-    hass.data[DOMAIN][entry.entry_id] = coordinator
-
-    # Register the device
-    device_registry = async_get_device_registry(hass)
-    nikobus_device = device_registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, entry.entry_id)},
-        manufacturer="Niko",
-        name="Nikobus Controller",
-        model="Nikobus Bridge",
-        sw_version="1.0",
-    )
-
-    _LOGGER.debug("Nikobus device registered: %s", nikobus_device)
-
-    # Listen for config entry updates
-    entry.async_on_unload(entry.add_update_listener(async_update_options))
+    hass.data[DOMAIN]["coordinator"] = coordinator
 
     # Attempt to connect the coordinator
     try:
         await coordinator.connect()
-    except HomeAssistantError as e:
-        _LOGGER.error("Error during connection setup: %s", e)
-        raise HomeAssistantError(f"An error occurred loading configuration: {e}") from e
+    except HomeAssistantError as err:
+        _LOGGER.error("Error connecting to Nikobus: %s", err)
+        raise ConfigEntryNotReady(f"Cannot connect to Nikobus: {err}") from err
 
-    # Forward setup to appropriate platforms
+    _register_hub_device(hass, entry)
+
+    # Forward the setup to the appropriate platforms
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    except Exception as forward_setup_error:
-        _LOGGER.error("Error while forwarding entry setups: %s", forward_setup_error)
-        return False
+        _LOGGER.debug("Successfully forwarded setup to Nikobus platforms")
+    except Exception as err:
+        _LOGGER.error("Error forwarding setup to Nikobus platforms: %s", err)
+        raise ConfigEntryNotReady(
+            f"Error setting up Nikobus platforms: {err}"
+        ) from err
 
-    _LOGGER.info("Nikobus integration setup completed successfully")
+    # Add an update listener to handle configuration updates
+    entry.add_update_listener(async_update_options)
+
+    _LOGGER.info("Nikobus (single-instance) setup complete.")
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Handle removal of an entry."""
-    _LOGGER.info("Unloading Nikobus integration")
+def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """
+    Register a Nikobus device in Home Assistant's device registry.
+    
+    This ensures we have a device entry that can be referenced by entities,
+    diagnostics, etc.
+    """
+    device_registry = dr.async_get(hass)
 
-    # Remove devices from HA registry
-    device_registry = async_get_device_registry(hass)
-    for device in list(device_registry.devices.values()):
-        if DOMAIN in device.identifiers:
-            _LOGGER.debug("Removing Nikobus device: %s", device.name)
-            device_registry.async_remove_device(device.id)
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, HUB_IDENTIFIER)},
+        manufacturer="Niko",
+        name="Nikobus Bridge",
+        model="PC-Link Bridge",
+        )
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """
+    Unload the single Nikobus integration entry.
+    """
+    _LOGGER.debug("Unloading Nikobus (single-instance)")
 
     # Unload platforms
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unload_ok:
+        _LOGGER.error("Failed to unload Nikobus platforms.")
+        return False
 
-    # Remove stored data safely
-    if unload_ok:
-        if entry.entry_id in hass.data.get(DOMAIN, {}):
-            _LOGGER.debug("Removing Nikobus entry from hass.data: %s", entry.entry_id)
-            hass.data[DOMAIN].pop(entry.entry_id)
-        else:
-            _LOGGER.warning("Nikobus entry not found in hass.data during unload")
+    # Remove the coordinator from hass.data
+    hass.data.pop(DOMAIN, None)
 
-    _LOGGER.info("Nikobus integration unloaded: %s", "Success" if unload_ok else "Failed")
-    return unload_ok
+    _LOGGER.info("Nikobus integration unloaded successfully.")
+    return True
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update for the Nikobus integration."""
-    _LOGGER.info("Updating Nikobus integration options")
+    """Handle options update for the single-instance Nikobus integration."""
+    _LOGGER.debug("Updating Nikobus options")
 
-    coordinator = hass.data[DOMAIN].get(entry.entry_id)
-    if coordinator:
-        await coordinator.async_config_entry_updated(entry)
-        _LOGGER.info("Nikobus integration options updated")
-    else:
-        _LOGGER.warning("Nikobus coordinator not found during options update")
+    coordinator = hass.data[DOMAIN].get("coordinator")
+    if not coordinator:
+        _LOGGER.error("Coordinator not found in domain data.")
+        return
+
+    await coordinator.async_config_entry_updated(entry)
+    _LOGGER.info("Nikobus options updated.")
