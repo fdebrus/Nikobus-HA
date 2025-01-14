@@ -324,14 +324,11 @@ For discussions/general requests, please refer to [this](https://community.home-
 During the integration setup, you will be asked to provide your connection string, which can be either an IP
 or a USB port. If your setup includes a Nikobus Feedback Module and you are connected to Nikobus over the PC-Link interface, check the box. In this case, the integration will refresh based on the Feedback Module's refresh cycle and feedback data instead of the custom refresh rate.
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/218966e0-6c51-42e1-b29b-858c0601b84a)
+![image](https://github.com/user-attachments/assets/e59e646a-39be-4c69-88db-c9b2ddec6e20)
 
-If you do not have a Nikobus Feedback Module, leave the box unchecked. You will then be presented with another screen to set up your custom integration refresh rate. Avoid setting the refresh interval too low to prevent excessive traffic on the bus.
+You can always revisit these options after setup by selecting the "RECONFIGURE" option from the integration 3 dots menu.
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/4f3a894b-5a39-4dd3-bdd9-f9b628e547b3)
+![image](https://github.com/user-attachments/assets/22d881fd-0736-43d2-9430-0df657522bb3)
 
-You can always revisit these options after setup by selecting the "CONFIGURE" option from the integration menu.
+![image](https://github.com/user-attachments/assets/c64e4b8a-fe0d-4510-83be-d7a320b9b499)
 
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/e985517a-ccb5-49f9-9938-e6a4594764f4)
-
-![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/062ac6ea-27c6-433b-ab48-be0c562c5cff)
