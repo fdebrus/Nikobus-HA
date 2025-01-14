@@ -15,7 +15,6 @@ from homeassistant.components import (
     button,
     scene,
 )
-from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
@@ -33,10 +32,9 @@ PLATFORMS = [
 
 HUB_IDENTIFIER = "nikobus_hub"
 
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """
-    Set up the Nikobus integration from a config entry (single-instance).
-    """
+    """Set up the Nikobus integration from a config entry (single-instance)."""
     _LOGGER.debug("Starting setup of Nikobus (single-instance)")
 
     # Initialize the domain data structure
@@ -51,7 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.connect()
     except HomeAssistantError as err:
         _LOGGER.error("Error connecting to Nikobus: %s", err)
-        raise ConfigEntryNotReady(f"Cannot connect to Nikobus: {err}") from err
+        raise ConfigEntryNotReady from err
 
     _register_hub_device(hass, entry)
 
@@ -61,25 +59,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("Successfully forwarded setup to Nikobus platforms")
     except Exception as err:
         _LOGGER.error("Error forwarding setup to Nikobus platforms: %s", err)
-        raise ConfigEntryNotReady(
-            f"Error setting up Nikobus platforms: {err}"
-        ) from err
-
-    # Add an update listener to handle configuration updates
-    entry.add_update_listener(async_update_options)
+        return False
 
     _LOGGER.info("Nikobus (single-instance) setup complete.")
     return True
 
 
 def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """
-    Register a Nikobus device in Home Assistant's device registry.
-    
-    This ensures we have a device entry that can be referenced by entities,
-    diagnostics, etc.
-    """
+    """Register the Nikobus bridge (hub) as a device in Home Assistant."""
     device_registry = dr.async_get(hass)
+
+    existing_device = device_registry.async_get_device(identifiers={(DOMAIN, HUB_IDENTIFIER)})
+    if existing_device:
+        _LOGGER.debug("Nikobus hub device already exists in registry.")
+        return  
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -87,36 +80,20 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
         manufacturer="Niko",
         name="Nikobus Bridge",
         model="PC-Link Bridge",
-        )
+    )
+    _LOGGER.debug("Nikobus hub registered in Home Assistant device registry.")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """
-    Unload the single Nikobus integration entry.
-    """
+    """Unload the single Nikobus integration entry."""
     _LOGGER.debug("Unloading Nikobus (single-instance)")
 
-    # Unload platforms
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if not unload_ok:
         _LOGGER.error("Failed to unload Nikobus platforms.")
         return False
 
-    # Remove the coordinator from hass.data
     hass.data.pop(DOMAIN, None)
 
-    _LOGGER.info("Nikobus integration unloaded successfully.")
+    _LOGGER.info("Nikobus integration fully unloaded.")
     return True
-
-
-async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update for the single-instance Nikobus integration."""
-    _LOGGER.debug("Updating Nikobus options")
-
-    coordinator = hass.data[DOMAIN].get("coordinator")
-    if not coordinator:
-        _LOGGER.error("Coordinator not found in domain data.")
-        return
-
-    await coordinator.async_config_entry_updated(entry)
-    _LOGGER.info("Nikobus options updated.")
