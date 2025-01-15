@@ -1,9 +1,9 @@
-"""Light platform for the Nikobus integration with module-level devices."""
+""" ***FINAL*** Light platform for the Nikobus integration."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from homeassistant.components.light import (
     LightEntity,
@@ -24,21 +24,18 @@ _LOGGER = logging.getLogger(__name__)
 
 HUB_IDENTIFIER = "nikobus_hub"
 
+
 async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """
-    Set up Nikobus light (dimmer) entities from a config entry.
-    """
+    """Set up Nikobus light entities (modules)."""
     _LOGGER.debug("Setting up Nikobus light entities (modules).")
 
-    coordinator: NikobusDataCoordinator = hass.data[DOMAIN]["coordinator"]
-    dimmer_modules: Dict[str, Any] = coordinator.dict_module_data.get("dimmer_module", {})
+    coordinator: NikobusDataCoordinator = entry.runtime_data
+    dimmer_modules: dict[str, Any] = coordinator.dict_module_data.get("dimmer_module", {})
 
     device_registry = dr.async_get(hass)
-    entities: List[NikobusLightEntity] = []
+    entities: list[NikobusLightEntity] = []
 
     for address, dimmer_module_data in dimmer_modules.items():
         module_desc = dimmer_module_data.get("description", f"Dimmer Module {address}")
@@ -52,72 +49,53 @@ async def async_setup_entry(
             module_model=module_model,
         )
 
-        for channel_index, channel_info in enumerate(
-            dimmer_module_data.get("channels", []), start=1
-        ):
+        for channel_index, channel_info in enumerate(dimmer_module_data.get("channels", []), start=1):
             if channel_info["description"].startswith("not_in_use"):
                 continue
 
-            entity = NikobusLightEntity(
-                coordinator=coordinator,
-                address=address,
-                channel=channel_index,
-                channel_description=channel_info["description"],
-                module_name=module_desc,
-                module_model=module_model,
+            entities.append(
+                NikobusLightEntity(
+                    coordinator=coordinator,
+                    address=address,
+                    channel=channel_index,
+                    channel_description=channel_info["description"],
+                    module_name=module_desc,
+                    module_model=module_model,
+                )
             )
-            entities.append(entity)
 
     async_add_entities(entities)
     _LOGGER.debug("Added %d Nikobus light (dimmer) entities.", len(entities))
 
 
 def _register_nikobus_dimmer_device(
-    device_registry: dr.DeviceRegistry,
-    entry: ConfigEntry,
-    module_address: str,
-    module_name: str,
-    module_model: str,
+    device_registry: dr.DeviceRegistry, entry: ConfigEntry, module_address: str, module_name: str, module_model: str
 ) -> None:
-    """
-    Register a single Nikobus dimmer module as a child device in the device registry.
-
-    This links the module to the hub device (via_device).
-    """
+    """Register a Nikobus dimmer module in the device registry."""
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, module_address)},  # unique ID for this module
+        identifiers={(DOMAIN, module_address)},
         manufacturer=BRAND,
         name=module_name,
         model=module_model,
-        # Link module to the hub device
         via_device=(DOMAIN, HUB_IDENTIFIER),
     )
 
+
 class NikobusLightEntity(CoordinatorEntity, LightEntity):
-    """
-    Represents a Nikobus light (dimmer channel) in Home Assistant.
-    """
+    """Represents a Nikobus dimmer light entity within Home Assistant."""
 
     def __init__(
-        self,
-        coordinator: NikobusDataCoordinator,
-        address: str,
-        channel: int,
-        channel_description: str,
-        module_name: str,
-        module_model: str,
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int, channel_description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize the light entity from the Nikobus system configuration."""
         super().__init__(coordinator)
-
         self._address = address
         self._channel = channel
         self._channel_description = channel_description
         self._module_name = module_name
         self._module_model = module_model
 
-        # Unique ID for the entity
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
         self._attr_name = channel_description
 
@@ -131,7 +109,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
 
     @property
     def device_info(self) -> dict[str, Any]:
-        """Return device information referencing the dimmer module."""
+        """Return device information about this light."""
         return {
             "identifiers": {(DOMAIN, self._address)},
             "manufacturer": BRAND,
@@ -142,9 +120,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     @property
     def is_on(self) -> bool:
         """Return True if the light is on (non-zero brightness)."""
-        if self._is_on is not None:
-            return self._is_on
-        return self.brightness > 0
+        return self._is_on if self._is_on is not None else self.brightness > 0
 
     @property
     def brightness(self) -> int:
@@ -152,16 +128,10 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         if self._brightness is not None:
             return self._brightness
 
-        # Fallback to real-time state from the coordinator
         try:
             return self.coordinator.get_light_brightness(self._address, self._channel)
         except NikobusError as err:
-            _LOGGER.error(
-                "Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s",
-                self._address,
-                self._channel,
-                err,
-            )
+            _LOGGER.error("Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s", self._address, self._channel, err)
             return 0
 
     @callback
@@ -181,12 +151,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         try:
             await self.coordinator.api.turn_on_light(self._address, self._channel, brightness)
         except NikobusError as err:
-            _LOGGER.error(
-                "Failed to turn on Nikobus light (addr=%s, channel=%d): %s",
-                self._address,
-                self._channel,
-                err,
-            )
+            _LOGGER.error("Failed to turn on Nikobus light (addr=%s, channel=%d): %s", self._address, self._channel, err)
             self._is_on = None
             self._brightness = None
             self.async_write_ha_state()
@@ -200,12 +165,7 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         try:
             await self.coordinator.api.turn_off_light(self._address, self._channel)
         except NikobusError as err:
-            _LOGGER.error(
-                "Failed to turn off Nikobus light (addr=%s, channel=%d): %s",
-                self._address,
-                self._channel,
-                err,
-            )
+            _LOGGER.error("Failed to turn off Nikobus light (addr=%s, channel=%d): %s", self._address, self._channel, err)
             self._is_on = None
             self._brightness = None
             self.async_write_ha_state()

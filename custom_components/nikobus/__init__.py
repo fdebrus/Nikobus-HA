@@ -1,8 +1,9 @@
-"""The Nikobus integration (single-instance)."""
+""" ***FINAL*** The Nikobus integration."""
 
 from __future__ import annotations
 
 import logging
+from typing import Final
 
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -22,7 +23,7 @@ from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [
+PLATFORMS: Final[list[str]] = [
     switch.DOMAIN,
     light.DOMAIN,
     cover.DOMAIN,
@@ -31,17 +32,14 @@ PLATFORMS = [
     scene.DOMAIN,
 ]
 
-HUB_IDENTIFIER = "nikobus_hub"
+HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration from a config entry (single-instance)."""
     _LOGGER.debug("Starting setup of Nikobus (single-instance)")
 
-    # Initialize the domain data structure
-    hass.data.setdefault(DOMAIN, {})
-
-    # Create the coordinator and store it in hass.data
+    # Create and store the coordinator
     coordinator = NikobusDataCoordinator(hass, entry)
     entry.runtime_data = coordinator
 
@@ -54,7 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _register_hub_device(hass, entry)
 
-    # Forward the setup to the appropriate platforms
+    # Forward the setup to all configured platforms
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         _LOGGER.debug("Successfully forwarded setup to Nikobus platforms")
@@ -70,12 +68,9 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register the Nikobus bridge (hub) as a device in Home Assistant."""
     device_registry = dr.async_get(hass)
 
-    existing_device = device_registry.async_get_device(
-        identifiers={(DOMAIN, HUB_IDENTIFIER)}
-    )
-    if existing_device:
+    if device_registry.async_get_device(identifiers={(DOMAIN, HUB_IDENTIFIER)}):
         _LOGGER.debug("Nikobus hub device already exists in registry.")
-        return
+        return  
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -95,8 +90,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not unload_ok:
         _LOGGER.error("Failed to unload Nikobus platforms.")
         return False
-
-    hass.data.pop(DOMAIN, None)
 
     _LOGGER.info("Nikobus integration fully unloaded.")
     return True

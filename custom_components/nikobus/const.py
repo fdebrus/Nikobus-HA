@@ -1,17 +1,20 @@
-"""Constants"""
+""" ***FINAL*** Constants for the Nikobus integration."""
 
-DOMAIN = "nikobus"
-BRAND = "Niko"
+from typing import Final
 
-# Configuration
-CONF_CONNECTION_STRING = "connection_string"
-CONF_REFRESH_INTERVAL = "refresh_interval"
-CONF_HAS_FEEDBACK_MODULE = "has_feedback_module"
-CONF_HAS_PC_LINK = "has_pc_link"
+# General
+DOMAIN: Final[str] = "nikobus"
+BRAND: Final[str] = "Niko"
 
-# Connect
-BAUD_RATE = 9600
-COMMANDS_HANDSHAKE = [
+# Configuration Keys
+CONF_CONNECTION_STRING: Final[str] = "connection_string"
+CONF_REFRESH_INTERVAL: Final[str] = "refresh_interval"
+CONF_HAS_FEEDBACK_MODULE: Final[str] = "has_feedback_module"
+CONF_HAS_PC_LINK: Final[str] = "has_pc_link"
+
+# Serial Connection
+BAUD_RATE: Final[int] = 9600
+COMMANDS_HANDSHAKE: Final[list[str]] = [
     "++++",
     "ATH0",
     "ATZ",
@@ -21,43 +24,30 @@ COMMANDS_HANDSHAKE = [
     "#L0",
     "#E1",
 ]
-EXPECTED_HANDSHAKE_RESPONSE = "$0511"
-HANDSHAKE_TIMEOUT = 60
+EXPECTED_HANDSHAKE_RESPONSE: Final[str] = "$0511"
+HANDSHAKE_TIMEOUT: Final[int] = 60  # Timeout for handshake in seconds
 
 # Buttons
-REFRESH_DELAY = 0.5  # When a Nikobus button is pressed (except for dimmer), pause for REFRESH_DELAY before to retrieve status from Nikobus
-DIMMER_DELAY = 1  # When a dimmer button is pressed, pause for DIMMER_DELAY before to retrieve status from Nikobus
-SHORT_PRESS = 1  # Duration in seconds that classifies a button press as a short press
-MEDIUM_PRESS = 2  # Duration in seconds that classifies a button press as a medium press
-LONG_PRESS = 3  # Duration in seconds that classifies a button press as a long press
+REFRESH_DELAY: Final[float] = 0.5  # Delay before retrieving status after button press
+DIMMER_DELAY: Final[int] = 1  # Delay before retrieving dimmer status
+SHORT_PRESS: Final[int] = 1  # Short press duration in seconds
+MEDIUM_PRESS: Final[int] = 2  # Medium press duration in seconds
+LONG_PRESS: Final[int] = 3  # Long press duration in seconds
 
 # Covers
-COVER_DELAY_BEFORE_STOP = 1  # Delay (in seconds) before sending the stop command when the cover is fully open or closed.
+COVER_DELAY_BEFORE_STOP: Final[int] = 1  # Delay before stopping cover movement
 
-# Listener
-BUTTON_COMMAND_PREFIX = "#N"  # Button pressed prefix
-IGNORE_ANSWER = "$0E"  # ***Unkwown***
-FEEDBACK_REFRESH_COMMAND = (
-    "$1012",
-    "$1017",
-)  # Receiving a refresh command initiated from the feedback module
-FEEDBACK_MODULE_ANSWER = (
-    "$1C"  # Receiving refresh command result answering the feeback module request
-)
-MANUAL_REFRESH_COMMAND = (
-    "$0512",
-    "$0517",
-)  # Receiving refresh command result answering an integration refresh command
-COMMAND_PROCESSED = (
-    "$0515",
-    "$0516",
-)  # Confirms the command has been received and executed
-CONTROLLER_ADDRESS = (
-    "$18"  # Prefix the Nikobus PC-Link address following an '#A' request
-)
+# Listener Commands
+BUTTON_COMMAND_PREFIX: Final[str] = "#N"
+IGNORE_ANSWER: Final[str] = "$0E"  # Unknown response
+FEEDBACK_REFRESH_COMMAND: Final[tuple[str, str]] = ("$1012", "$1017")
+FEEDBACK_MODULE_ANSWER: Final[str] = "$1C"
+MANUAL_REFRESH_COMMAND: Final[tuple[str, str]] = ("$0512", "$0517")
+COMMAND_PROCESSED: Final[tuple[str, str]] = ("$0515", "$0516")
+CONTROLLER_ADDRESS: Final[str] = "$18"
 
-# Command
-COMMAND_EXECUTION_DELAY = 0.7  # Delay between command executions in seconds
-COMMAND_ACK_WAIT_TIMEOUT = 15  # Timeout for waiting for command ACK in seconds
-COMMAND_ANSWER_WAIT_TIMEOUT = 5  # Timeout for waiting for command answer in each loop
-MAX_ATTEMPTS = 3  # Maximum attempts for sending commands and waiting for an answer
+# Command Execution
+COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
+COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15  # Timeout for command ACK
+COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5  # Timeout for each loop waiting for an answer
+MAX_ATTEMPTS: Final[int] = 3  # Maximum retry attempts

@@ -1,12 +1,15 @@
-"""Diagnostics support for the Nikobus integration (single-instance)."""
-
-from __future__ import annotations
+""" ***FINAL*** Diagnostics support for the Nikobus integration (single-instance)."""
 
 import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.device_registry import async_get as async_get_device_registry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import (
+    DeviceEntry,
+    DeviceRegistry,
+    async_get as async_get_device_registry,
+)
 
 from .const import (
     DOMAIN,
@@ -19,29 +22,21 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_get_config_entry_diagnostics(
-    hass, config_entry: ConfigEntry
+    hass: HomeAssistant, config_entry: ConfigEntry
 ) -> dict[str, Any]:
-    """Return diagnostics for the single Nikobus config entry."""
     _LOGGER.debug(
         "Generating diagnostics for single-instance Nikobus entry: %s",
         config_entry.entry_id,
     )
 
+    # Retrieve the device registry
+    device_registry: DeviceRegistry = async_get_device_registry(hass)
 
-    coordinator = config_entry.runtime_data
-
-    device_registry = async_get_device_registry(hass)
-    if not device_registry:
-        _LOGGER.warning("Device registry unavailable.")
-        return {
-            "error": "Device registry unavailable",
-            "entry_id": config_entry.entry_id,
-        }
-
-    nikobus_devices = [
-        dev
-        for dev in device_registry.devices.values()
-        if any(ident for ident in dev.identifiers if DOMAIN in ident)
+    # Gather all Nikobus devices
+    nikobus_devices: list[DeviceEntry] = [
+        device
+        for device in device_registry.devices.values()
+        if any(ident for ident in device.identifiers if DOMAIN in ident)
     ]
 
     _LOGGER.debug(
@@ -50,34 +45,32 @@ async def async_get_config_entry_diagnostics(
         config_entry.entry_id,
     )
 
-    devices_info = [
+    # Build device info list
+    devices_info: list[dict[str, Any]] = [
         {
             "id": dev.id,
             "name": dev.name,
             "model": dev.model,
             "manufacturer": dev.manufacturer,
+            "sw_version": dev.sw_version,
         }
         for dev in nikobus_devices
     ]
 
-    diagnostics_data = {
+    # Build config entry diagnostics
+    diagnostics_data: dict[str, Any] = {
         "config_entry": {
             "connection_string": config_entry.options.get(
-                CONF_CONNECTION_STRING,
-                config_entry.data.get(CONF_CONNECTION_STRING, "Unknown"),
+                CONF_CONNECTION_STRING, config_entry.data.get(CONF_CONNECTION_STRING, "Unknown")
             ),
             "has_feedback_module": config_entry.options.get(
-                CONF_HAS_FEEDBACK_MODULE,
-                config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, "Unknown"),
+                CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, "Unknown")
             ),
             "refresh_interval": config_entry.options.get(
-                CONF_REFRESH_INTERVAL,
-                config_entry.data.get(CONF_REFRESH_INTERVAL, "Unknown"),
+                CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, "Unknown")
             ),
         },
-
-        "runtime_data": coordinator.get_diagnostics_data() if coordinator else "Unavailable",
-        "devices_info": devices_info,
+        "devices_info": devices_info,  # Return a list of all Nikobus devices
     }
 
     _LOGGER.debug(
