@@ -1,0 +1,41 @@
+{
+    "title": "Nikobus Integratie",
+    "config": {
+        "step": {
+            "user": {
+                "title": "Nikobus Configuratie",
+                "description": "Voer uw verbindingsgegevens voor Nikobus in.",
+                "data": {
+                    "connection_string": "IP-adres:Poort of seriële apparaat",
+                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
+                    "has_feedback_module": "Is een feedbackmodule geïnstalleerd en verbonden via PC-Link?"
+                }
+            },
+            "reconfigure": {
+                "title": "Nikobus Configuratie",
+                "description": "Pas hieronder uw instellingen aan.",
+                "data": {
+                    "connection_string": "IP-adres:Poort of seriële apparaat",
+                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
+                    "has_feedback_module": "Is een feedbackmodule geïnstalleerd en verbonden via PC-Link?"
+                }
+            }
+        },
+        "error": {
+            "base": {
+                "title": "Fout",
+                "description": "Er is een fout opgetreden, probeer het opnieuw."
+            },
+            "invalid_connection": "Ongeldige verbindingsstring. Gebruik IP:PORT of een geldig serieel pad.",
+            "invalid_port": "Ongeldig poortnummer. Moet tussen 1 en 65535 liggen.",
+            "device_not_found_or_no_access": "Het opgegeven seriële apparaat is niet gevonden of niet toegankelijk. Controleer de rechten.",
+            "reauth_required": "Opnieuw inloggen vereist. Werk uw verbindingsgegevens bij.",
+            "unknown": "Er is een onverwachte fout opgetreden. Zie de logboeken voor meer informatie."
+        },
+        "abort": {
+            "already_configured": "Deze integratie is al geconfigureerd. Slechts één instantie is toegestaan.",
+            "reconfigure_successful": "Hergeconfigureerd succesvol. Uw instellingen zijn bijgewerkt.",
+            "no_existing_entry": "Geen bestaande Nikobus-configuratie gevonden. Stel eerst de integratie in."
+        }
+    }
+}

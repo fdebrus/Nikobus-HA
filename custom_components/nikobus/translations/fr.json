@@ -1,0 +1,41 @@
+{
+    "title": "Intégration Nikobus",
+    "config": {
+        "step": {
+            "user": {
+                "title": "Configuration de Nikobus",
+                "description": "Veuillez entrer vos informations de connexion pour Nikobus.",
+                "data": {
+                    "connection_string": "Adresse IP:Port ou périphérique série",
+                    "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)",
+                    "has_feedback_module": "Un module de retour d'information est-il installé et connecté via PC-Link ?"
+                }
+            },
+            "reconfigure": {
+                "title": "Configuration Nikobus",
+                "description": "Ajustez vos paramètres ci-dessous.",
+                "data": {
+                    "connection_string": "Adresse IP:Port ou périphérique série",
+                    "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)",
+                    "has_feedback_module": "Un module de retour d'information est-il installé et connecté via PC-Link ?"
+                }
+            }
+        },
+        "error": {
+            "base": {
+                "title": "Erreur",
+                "description": "Une erreur s'est produite, veuillez réessayer."
+            },
+            "invalid_connection": "Chaîne de connexion invalide. Veuillez utiliser IP:PORT ou un chemin série valide.",
+            "invalid_port": "Numéro de port invalide. Il doit être compris entre 1 et 65535.",
+            "device_not_found_or_no_access": "Le périphérique série spécifié est introuvable ou inaccessible. Vérifiez les permissions.",
+            "reauth_required": "Réauthentification requise. Veuillez mettre à jour vos informations de connexion.",
+            "unknown": "Une erreur inattendue s'est produite. Consultez les journaux pour plus d'informations."
+        },
+        "abort": {
+            "already_configured": "Cette intégration est déjà configurée. Une seule instance est autorisée.",
+            "reconfigure_successful": "Reconfiguration réussie. Vos paramètres ont été mis à jour.",
+            "no_existing_entry": "Aucune configuration Nikobus existante trouvée. Veuillez d'abord configurer l'intégration."
+        }
+    }
+}
