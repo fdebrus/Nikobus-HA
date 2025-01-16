@@ -1,4 +1,4 @@
-""" ***FINAL*** Diagnostics support for the Nikobus integration (single-instance)."""
+"""***FINAL*** Diagnostics support for the Nikobus integration (single-instance)."""
 
 import logging
 from typing import Any
@@ -61,13 +61,16 @@ async def async_get_config_entry_diagnostics(
     diagnostics_data: dict[str, Any] = {
         "config_entry": {
             "connection_string": config_entry.options.get(
-                CONF_CONNECTION_STRING, config_entry.data.get(CONF_CONNECTION_STRING, "Unknown")
+                CONF_CONNECTION_STRING,
+                config_entry.data.get(CONF_CONNECTION_STRING, "Unknown"),
             ),
             "has_feedback_module": config_entry.options.get(
-                CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, "Unknown")
+                CONF_HAS_FEEDBACK_MODULE,
+                config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, "Unknown"),
             ),
             "refresh_interval": config_entry.options.get(
-                CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, "Unknown")
+                CONF_REFRESH_INTERVAL,
+                config_entry.data.get(CONF_REFRESH_INTERVAL, "Unknown"),
             ),
         },
         "devices_info": devices_info,  # Return a list of all Nikobus devices

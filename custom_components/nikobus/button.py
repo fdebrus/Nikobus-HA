@@ -1,4 +1,4 @@
-""" ***FINAL*** Button platform for the Nikobus integration."""
+"""***FINAL*** Button platform for the Nikobus integration."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -26,7 +27,9 @@ async def async_setup_entry(
     entities: list[NikobusButtonEntity] = []
 
     if coordinator.dict_button_data:
-        for button_data in coordinator.dict_button_data.get("nikobus_button", {}).values():
+        for button_data in coordinator.dict_button_data.get(
+            "nikobus_button", {}
+        ).values():
             impacted_modules_info = [
                 {"address": module["address"], "group": module["group"]}
                 for module in button_data.get("impacted_module", [])
@@ -106,14 +109,22 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             # Refresh state of impacted modules
             for module in self.impacted_modules_info:
                 module_address, module_group = module["address"], module["group"]
-                _LOGGER.debug("Refreshing module %s, group %s", module_address, module_group)
+                _LOGGER.debug(
+                    "Refreshing module %s, group %s", module_address, module_group
+                )
 
-                value = await self._coordinator.nikobus_command_handler.get_output_state(
-                    module_address, module_group
+                value = (
+                    await self._coordinator.nikobus_command_handler.get_output_state(
+                        module_address, module_group
+                    )
                 )
 
                 if value is not None:
-                    self._coordinator.set_bytearray_group_state(module_address, module_group, value)
+                    self._coordinator.set_bytearray_group_state(
+                        module_address, module_group, value
+                    )
 
         except Exception as err:
-            _LOGGER.error("Failed to handle button press for %s: %s", self._address, err)
+            _LOGGER.error(
+                "Failed to handle button press for %s: %s", self._address, err
+            )

@@ -1,4 +1,4 @@
-""" ***FINAL*** Nikobus Event Listener."""
+"""***FINAL*** Nikobus Event Listener."""
 
 from __future__ import annotations
 
@@ -72,7 +72,9 @@ class NikobusEventListener:
         _LOGGER.info("Nikobus Event Listener is running.")
         while self._running:
             try:
-                data = await asyncio.wait_for(self.nikobus_connection.read(), timeout=10)
+                data = await asyncio.wait_for(
+                    self.nikobus_connection.read(), timeout=10
+                )
                 if not data:
                     _LOGGER.warning("Nikobus connection closed unexpectedly.")
                     break
@@ -88,7 +90,9 @@ class NikobusEventListener:
                 _LOGGER.info("Event listener was cancelled.")
                 break
             except Exception as err:
-                _LOGGER.error("Unexpected error in event listener: %s", err, exc_info=True)
+                _LOGGER.error(
+                    "Unexpected error in event listener: %s", err, exc_info=True
+                )
                 break
 
     async def dispatch_message(self, message: str) -> None:
@@ -138,4 +142,6 @@ class NikobusEventListener:
         elif module_group_identifier == "12":
             self._module_group = 1
         else:
-            _LOGGER.warning("Unknown module group identifier: %s", module_group_identifier)
+            _LOGGER.warning(
+                "Unknown module group identifier: %s", module_group_identifier
+            )

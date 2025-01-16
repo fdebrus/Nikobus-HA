@@ -1,4 +1,4 @@
-""" ***FINAL*** The Nikobus integration."""
+"""***FINAL*** The Nikobus integration."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     if device_registry.async_get_device(identifiers={(DOMAIN, HUB_IDENTIFIER)}):
         _LOGGER.debug("Nikobus hub device already exists in registry.")
-        return  
+        return
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,

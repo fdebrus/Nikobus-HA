@@ -1,4 +1,4 @@
-""" ***FINAL*** Sensor platform for the Nikobus integration."""
+"""***FINAL*** Sensor platform for the Nikobus integration."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -26,7 +27,9 @@ async def async_setup_entry(
     entities: list[NikobusButtonSensor] = []
 
     if coordinator.dict_button_data:
-        for button_data in coordinator.dict_button_data.get("nikobus_button", {}).values():
+        for button_data in coordinator.dict_button_data.get(
+            "nikobus_button", {}
+        ).values():
             entity = NikobusButtonSensor(
                 hass=hass,
                 coordinator=coordinator,
@@ -42,7 +45,9 @@ async def async_setup_entry(
     _LOGGER.debug("Added %d Nikobus button sensor entities.", len(entities))
 
 
-def register_global_listener(hass: HomeAssistant, sensors: list[NikobusButtonSensor]) -> None:
+def register_global_listener(
+    hass: HomeAssistant, sensors: list[NikobusButtonSensor]
+) -> None:
     """Register a single global event listener for all Nikobus sensors."""
 
     @callback

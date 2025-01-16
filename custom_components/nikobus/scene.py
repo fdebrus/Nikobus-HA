@@ -1,4 +1,4 @@
-""" ***FINAL*** Scene platform for the Nikobus integration."""
+"""***FINAL*** Scene platform for the Nikobus integration."""
 
 import logging
 
@@ -14,15 +14,21 @@ from .coordinator import NikobusDataCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities
+) -> None:
     """Set up Nikobus scenes from a config entry."""
     _LOGGER.debug("Setting up Nikobus scenes.")
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
     entities: List[NikobusSceneEntity] = []
 
-    scene_data = coordinator.dict_scene_data.get("scene", []) if coordinator.dict_scene_data else []
-    
+    scene_data = (
+        coordinator.dict_scene_data.get("scene", [])
+        if coordinator.dict_scene_data
+        else []
+    )
+
     for scene in scene_data:
         scene_id = scene.get("id")
         description = scene.get("description", f"Unnamed Scene {scene_id}")
@@ -40,10 +46,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             for channel in scene.get("channels", [])
         ]
 
-        _LOGGER.debug("Processing scene: %s (ID: %s) | Channels: %s", description, scene_id, impacted_modules_info)
+        _LOGGER.debug(
+            "Processing scene: %s (ID: %s) | Channels: %s",
+            description,
+            scene_id,
+            impacted_modules_info,
+        )
 
         entities.append(
-            NikobusSceneEntity(hass, coordinator, description, scene_id, impacted_modules_info)
+            NikobusSceneEntity(
+                hass, coordinator, description, scene_id, impacted_modules_info
+            )
         )
 
     _LOGGER.debug("Adding %d Nikobus scene entities.", len(entities))
@@ -90,7 +103,9 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
     async def async_activate(self) -> None:
         """Activate the scene by updating only the specified channels while keeping others unchanged."""
-        _LOGGER.debug("Activating scene: %s (ID: %s)", self._description, self._scene_id)
+        _LOGGER.debug(
+            "Activating scene: %s (ID: %s)", self._description, self._scene_id
+        )
 
         module_changes = {}
 
@@ -98,7 +113,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             """Convert a scene state value into the correct integer representation."""
             if isinstance(state, str):
                 state = state.lower()
-            
+
             module_state_map = {
                 "switch": {"on": 255, "off": 0},
                 "cover": {"open": 1, "close": 2},
@@ -127,19 +142,30 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             state = module.get("state")
 
             if not module_id or channel is None:
-                _LOGGER.warning("Skipping module with missing ID or channel: %s", module)
+                _LOGGER.warning(
+                    "Skipping module with missing ID or channel: %s", module
+                )
                 continue
 
             try:
                 channel = int(channel)
             except ValueError:
-                _LOGGER.error("Invalid channel number for module %s: %s", module_id, channel)
+                _LOGGER.error(
+                    "Invalid channel number for module %s: %s", module_id, channel
+                )
                 continue
 
-            _LOGGER.debug("Processing module: %s, channel: %s, state: %s", module_id, channel, state)
+            _LOGGER.debug(
+                "Processing module: %s, channel: %s, state: %s",
+                module_id,
+                channel,
+                state,
+            )
 
             module_type = self._coordinator.get_module_type(module_id) or "unknown"
-            _LOGGER.debug("Detected module type for module %s: %s", module_id, module_type)
+            _LOGGER.debug(
+                "Detected module type for module %s: %s", module_id, module_type
+            )
 
             value = get_value(module_type, state)
             if value is None:
@@ -148,33 +174,59 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             # Initialize module changes if not yet fetched
             if module_id not in module_changes:
                 module_changes[module_id] = bytearray(
-                    self._coordinator.nikobus_module_states.get(module_id, bytearray(12))
+                    self._coordinator.nikobus_module_states.get(
+                        module_id, bytearray(12)
+                    )
                 )
-                _LOGGER.debug("Fetched current state for module %s: %s", module_id, module_changes[module_id].hex())
+                _LOGGER.debug(
+                    "Fetched current state for module %s: %s",
+                    module_id,
+                    module_changes[module_id].hex(),
+                )
 
             # Update the specific channel with the new value
             module_changes[module_id][channel - 1] = value
 
         # Send the combined command for each module after updating only the specified channels
         for module_id, channel_states in module_changes.items():
-            current_state = self._coordinator.nikobus_module_states.get(module_id, bytearray(12))
+            current_state = self._coordinator.nikobus_module_states.get(
+                module_id, bytearray(12)
+            )
 
             module_type = self._coordinator.get_module_type(module_id)
-            group1_updated = any(channel_states[i] != current_state[i] for i in range(6))
+            group1_updated = any(
+                channel_states[i] != current_state[i] for i in range(6)
+            )
 
             if group1_updated:
                 hex_value = channel_states[:6].hex()
-                _LOGGER.debug("Updating group 1 for module %s with values: %s", module_id, hex_value)
-                self._coordinator.set_bytearray_group_state(module_id, group=1, value=hex_value)
+                _LOGGER.debug(
+                    "Updating group 1 for module %s with values: %s",
+                    module_id,
+                    hex_value,
+                )
+                self._coordinator.set_bytearray_group_state(
+                    module_id, group=1, value=hex_value
+                )
 
             if module_type != "cover":
-                group2_updated = any(channel_states[i] != current_state[i] for i in range(6, 12))
+                group2_updated = any(
+                    channel_states[i] != current_state[i] for i in range(6, 12)
+                )
                 if group2_updated:
                     hex_value = channel_states[6:12].hex()
-                    _LOGGER.debug("Updating group 2 for module %s with values: %s", module_id, hex_value)
-                    self._coordinator.set_bytearray_group_state(module_id, group=2, value=hex_value)
+                    _LOGGER.debug(
+                        "Updating group 2 for module %s with values: %s",
+                        module_id,
+                        hex_value,
+                    )
+                    self._coordinator.set_bytearray_group_state(
+                        module_id, group=2, value=hex_value
+                    )
 
-            _LOGGER.debug("Sending updated state to module %s: %s", module_id, channel_states)
+            _LOGGER.debug(
+                "Sending updated state to module %s: %s", module_id, channel_states
+            )
             await self._coordinator.api.set_output_states_for_module(address=module_id)
 
             # Notify listeners of the state change

@@ -1,4 +1,4 @@
-""" ***FINAL*** Switch platform for the Nikobus integration with module-level devices."""
+"""***FINAL*** Switch platform for the Nikobus integration with module-level devices."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from .exceptions import NikobusError
 
 _LOGGER = logging.getLogger(__name__)
 
-HUB_IDENTIFIER = "nikobus_hub"  
+HUB_IDENTIFIER = "nikobus_hub"
 
 
 async def async_setup_entry(
@@ -28,7 +28,9 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up Nikobus switch entities (modules).")
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    switch_modules: dict[str, Any] = coordinator.dict_module_data.get("switch_module", {})
+    switch_modules: dict[str, Any] = coordinator.dict_module_data.get(
+        "switch_module", {}
+    )
 
     device_registry = dr.async_get(hass)
     entities: list[NikobusSwitchEntity] = []
@@ -45,7 +47,9 @@ async def async_setup_entry(
             module_model=model,
         )
 
-        for channel_index, channel_info in enumerate(switch_module_data.get("channels", []), start=1):
+        for channel_index, channel_info in enumerate(
+            switch_module_data.get("channels", []), start=1
+        ):
             if channel_info["description"].startswith("not_in_use"):
                 continue
 
@@ -65,7 +69,11 @@ async def async_setup_entry(
 
 
 def _register_nikobus_module_device(
-    device_registry: dr.DeviceRegistry, entry: ConfigEntry, module_address: str, module_name: str, module_model: str
+    device_registry: dr.DeviceRegistry,
+    entry: ConfigEntry,
+    module_address: str,
+    module_name: str,
+    module_model: str,
 ) -> None:
     """Register a single Nikobus module as a child device in the device registry."""
     device_registry.async_get_or_create(
@@ -82,7 +90,13 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     """A switch entity representing one channel on a Nikobus module."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: int, channel_description: str, module_name: str, module_model: str
+        self,
+        coordinator: NikobusDataCoordinator,
+        address: str,
+        channel: int,
+        channel_description: str,
+        module_name: str,
+        module_model: str,
     ) -> None:
         """Initialize the switch entity."""
         super().__init__(coordinator)
@@ -125,7 +139,12 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         try:
             await self.coordinator.api.turn_on_switch(self._address, self._channel)
         except NikobusError as err:
-            _LOGGER.error("Failed to turn on switch (module=%s, channel=%d): %s", self._address, self._channel, err)
+            _LOGGER.error(
+                "Failed to turn on switch (module=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
             self._is_on = None
             self.async_write_ha_state()
 
@@ -137,7 +156,12 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         try:
             await self.coordinator.api.turn_off_switch(self._address, self._channel)
         except NikobusError as err:
-            _LOGGER.error("Failed to turn off switch (module=%s, channel=%d): %s", self._address, self._channel, err)
+            _LOGGER.error(
+                "Failed to turn off switch (module=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
             self._is_on = None
             self.async_write_ha_state()
 
@@ -146,5 +170,10 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         try:
             return self.coordinator.get_switch_state(self._address, self._channel)
         except NikobusError as err:
-            _LOGGER.error("Failed to get state for switch (module=%s, channel=%d): %s", self._address, self._channel, err)
+            _LOGGER.error(
+                "Failed to get state for switch (module=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
             return False

@@ -1,4 +1,4 @@
-""" ***FINAL*** Light platform for the Nikobus integration."""
+"""***FINAL*** Light platform for the Nikobus integration."""
 
 from __future__ import annotations
 
@@ -32,7 +32,9 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up Nikobus light entities (modules).")
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    dimmer_modules: dict[str, Any] = coordinator.dict_module_data.get("dimmer_module", {})
+    dimmer_modules: dict[str, Any] = coordinator.dict_module_data.get(
+        "dimmer_module", {}
+    )
 
     device_registry = dr.async_get(hass)
     entities: list[NikobusLightEntity] = []
@@ -49,7 +51,9 @@ async def async_setup_entry(
             module_model=module_model,
         )
 
-        for channel_index, channel_info in enumerate(dimmer_module_data.get("channels", []), start=1):
+        for channel_index, channel_info in enumerate(
+            dimmer_module_data.get("channels", []), start=1
+        ):
             if channel_info["description"].startswith("not_in_use"):
                 continue
 
@@ -69,7 +73,11 @@ async def async_setup_entry(
 
 
 def _register_nikobus_dimmer_device(
-    device_registry: dr.DeviceRegistry, entry: ConfigEntry, module_address: str, module_name: str, module_model: str
+    device_registry: dr.DeviceRegistry,
+    entry: ConfigEntry,
+    module_address: str,
+    module_name: str,
+    module_model: str,
 ) -> None:
     """Register a Nikobus dimmer module in the device registry."""
     device_registry.async_get_or_create(
@@ -86,7 +94,13 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
     """Represents a Nikobus dimmer light entity within Home Assistant."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: int, channel_description: str, module_name: str, module_model: str
+        self,
+        coordinator: NikobusDataCoordinator,
+        address: str,
+        channel: int,
+        channel_description: str,
+        module_name: str,
+        module_model: str,
     ) -> None:
         """Initialize the light entity from the Nikobus system configuration."""
         super().__init__(coordinator)
@@ -131,7 +145,12 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         try:
             return self.coordinator.get_light_brightness(self._address, self._channel)
         except NikobusError as err:
-            _LOGGER.error("Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s", self._address, self._channel, err)
+            _LOGGER.error(
+                "Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
             return 0
 
     @callback
@@ -149,9 +168,16 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self.async_write_ha_state()
 
         try:
-            await self.coordinator.api.turn_on_light(self._address, self._channel, brightness)
+            await self.coordinator.api.turn_on_light(
+                self._address, self._channel, brightness
+            )
         except NikobusError as err:
-            _LOGGER.error("Failed to turn on Nikobus light (addr=%s, channel=%d): %s", self._address, self._channel, err)
+            _LOGGER.error(
+                "Failed to turn on Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
             self._is_on = None
             self._brightness = None
             self.async_write_ha_state()
@@ -165,7 +191,12 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         try:
             await self.coordinator.api.turn_off_light(self._address, self._channel)
         except NikobusError as err:
-            _LOGGER.error("Failed to turn off Nikobus light (addr=%s, channel=%d): %s", self._address, self._channel, err)
+            _LOGGER.error(
+                "Failed to turn off Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
             self._is_on = None
             self._brightness = None
             self.async_write_ha_state()

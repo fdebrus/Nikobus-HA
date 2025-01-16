@@ -1,8 +1,8 @@
-""" ***FINAL*** Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
+"""***FINAL*** Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
 
 import json
 import logging
-from aiofiles import open as aio_open 
+from aiofiles import open as aio_open
 from typing import Any
 from homeassistant.exceptions import HomeAssistantError
 
@@ -30,8 +30,12 @@ class NikobusConfig:
             self._handle_file_not_found(file_path, data_type)
 
         except json.JSONDecodeError as err:
-            _LOGGER.error(f"Failed to decode JSON in {data_type} file: {err}", exc_info=True)
-            raise HomeAssistantError(f"Failed to decode JSON in {data_type} file: {err}") from err
+            _LOGGER.error(
+                f"Failed to decode JSON in {data_type} file: {err}", exc_info=True
+            )
+            raise HomeAssistantError(
+                f"Failed to decode JSON in {data_type} file: {err}"
+            ) from err
 
         except Exception as err:
             _LOGGER.error(f"Failed to load {data_type} data: {err}", exc_info=True)
@@ -86,16 +90,30 @@ class NikobusConfig:
                 await file.write(json_data)
 
         except IOError as err:
-            _LOGGER.error(f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}", exc_info=True)
-            raise HomeAssistantError(f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}") from err
+            _LOGGER.error(
+                f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}",
+                exc_info=True,
+            )
+            raise HomeAssistantError(
+                f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}"
+            ) from err
 
         except TypeError as err:
-            _LOGGER.error(f"Failed to serialize {data_type} data to JSON: {err}", exc_info=True)
-            raise HomeAssistantError(f"Failed to serialize {data_type} data to JSON: {err}") from err
+            _LOGGER.error(
+                f"Failed to serialize {data_type} data to JSON: {err}", exc_info=True
+            )
+            raise HomeAssistantError(
+                f"Failed to serialize {data_type} data to JSON: {err}"
+            ) from err
 
         except Exception as err:
-            _LOGGER.error(f"Unexpected error writing {data_type} data to file {file_name}: {err}", exc_info=True)
-            raise HomeAssistantError(f"Unexpected error writing {data_type} data to file {file_name}: {err}") from err
+            _LOGGER.error(
+                f"Unexpected error writing {data_type} data to file {file_name}: {err}",
+                exc_info=True,
+            )
+            raise HomeAssistantError(
+                f"Unexpected error writing {data_type} data to file {file_name}: {err}"
+            ) from err
 
     def _transform_data_for_writing(self, data_type: str, data: dict) -> dict:
         """Transform the data for writing based on the data type."""

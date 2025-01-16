@@ -1,4 +1,4 @@
-""" ***FINAL*** Constants for the Nikobus integration."""
+"""***FINAL*** Constants for the Nikobus integration."""
 
 from typing import Final
 
@@ -49,5 +49,7 @@ CONTROLLER_ADDRESS: Final[str] = "$18"
 # Command Execution
 COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
 COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15  # Timeout for command ACK
-COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5  # Timeout for each loop waiting for an answer
+COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = (
+    5  # Timeout for each loop waiting for an answer
+)
 MAX_ATTEMPTS: Final[int] = 3  # Maximum retry attempts
