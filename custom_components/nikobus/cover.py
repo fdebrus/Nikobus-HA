@@ -362,22 +362,24 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             _LOGGER.debug("Skipping event for %s (not impacted).", self._attr_name)
             return
 
-        if button_operation_time is not None:
-            _LOGGER.debug(
-                "Received button operation time for %s: %s",
-                self._attr_name,
-                button_operation_time,
-            )
-            self._button_operation_time = float(button_operation_time)
-
         new_state = self.coordinator.get_cover_state(self._address, self._channel)
         if new_state != self._previous_state:
+
             _LOGGER.debug(
                 "State changed for %s: %s -> %s",
                 self._attr_name,
                 self._previous_state,
                 new_state,
             )
+
+            if button_operation_time is not None:
+                _LOGGER.debug(
+                    "Received button operation time for %s: %s",
+                    self._attr_name,
+                    button_operation_time,
+                )
+                self._button_operation_time = float(button_operation_time)
+
             await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
         else:

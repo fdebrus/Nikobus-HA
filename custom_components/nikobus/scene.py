@@ -115,8 +115,8 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 state = state.lower()
 
             module_state_map = {
-                "switch": {"on": 255, "off": 0},
-                "cover": {"open": 1, "close": 2},
+                "switch_module": {"on": 255, "off": 0},
+                "roller_module": {"open": 1, "close": 2},
             }
 
             if module_type in module_state_map and isinstance(state, str):
@@ -125,7 +125,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 _LOGGER.error("Invalid state for %s: %s", module_type, state)
                 return None
 
-            if module_type == "dimmer":
+            if module_type == "dimmer_module":
                 try:
                     return max(0, min(int(state), 255))  # Ensure valid brightness range
                 except ValueError:
@@ -162,7 +162,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 state,
             )
 
-            module_type = self._coordinator.get_module_type(module_id) or "unknown"
+            module_type = self.coordinator.get_module_type(module_id) or "unknown"
             _LOGGER.debug(
                 "Detected module type for module %s: %s", module_id, module_type
             )
@@ -174,7 +174,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             # Initialize module changes if not yet fetched
             if module_id not in module_changes:
                 module_changes[module_id] = bytearray(
-                    self._coordinator.nikobus_module_states.get(
+                    self.coordinator.nikobus_module_states.get(
                         module_id, bytearray(12)
                     )
                 )
@@ -189,11 +189,11 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
         # Send the combined command for each module after updating only the specified channels
         for module_id, channel_states in module_changes.items():
-            current_state = self._coordinator.nikobus_module_states.get(
+            current_state = self.coordinator.nikobus_module_states.get(
                 module_id, bytearray(12)
             )
 
-            module_type = self._coordinator.get_module_type(module_id)
+            module_type = self.coordinator.get_module_type(module_id)
             group1_updated = any(
                 channel_states[i] != current_state[i] for i in range(6)
             )
@@ -205,11 +205,11 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                     module_id,
                     hex_value,
                 )
-                self._coordinator.set_bytearray_group_state(
+                self.coordinator.set_bytearray_group_state(
                     module_id, group=1, value=hex_value
                 )
 
-            if module_type != "cover":
+            if module_type != "roller_module":
                 group2_updated = any(
                     channel_states[i] != current_state[i] for i in range(6, 12)
                 )
@@ -220,16 +220,16 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                         module_id,
                         hex_value,
                     )
-                    self._coordinator.set_bytearray_group_state(
+                    self.coordinator.set_bytearray_group_state(
                         module_id, group=2, value=hex_value
                     )
 
             _LOGGER.debug(
                 "Sending updated state to module %s: %s", module_id, channel_states
             )
-            await self._coordinator.api.set_output_states_for_module(address=module_id)
+            await self.coordinator.api.set_output_states_for_module(address=module_id)
 
             # Notify listeners of the state change
-            await self._coordinator.async_event_handler(
+            await self.coordinator.async_event_handler(
                 "nikobus_refreshed", {"impacted_module_address": module_id}
             )

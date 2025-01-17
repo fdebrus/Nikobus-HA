@@ -316,7 +316,7 @@ class NikobusCommandHandler:
             completion_handler=completion_handler,
         )
 
-        if self._coordinator.get_module_type(address) != "cover":
+        if self._coordinator.get_module_type(address) != "roller_module":
             channel_states = self.nikobus_module_states[address][6:12] + bytearray(
                 [0xFF]
             )
