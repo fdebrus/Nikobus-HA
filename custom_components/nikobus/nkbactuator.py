@@ -56,14 +56,17 @@ class NikobusActuator:
             self._last_press_time = current_time
 
     def _start_press_task(self, address: str) -> None:
-        """Start the task that waits for button release."""
+        """Start the Nikobus physical button handling."""
+
+        self._hass.async_create_task(self.button_discovery(address))
+
         if self._press_task_active:
             return
         self._press_task_active = True
 
         if self._press_task:
             self._press_task.cancel()
-
+        
         self._press_task = self._hass.async_create_task(self._wait_for_release(address))
 
     def _start_timer_tasks(self, address: str) -> None:
@@ -106,9 +109,6 @@ class NikobusActuator:
                         address,
                         press_duration,
                     )
-
-                    # Trigger the button discovery task only after release
-                    self._hass.async_create_task(self.button_discovery(address))
 
                     _LOGGER.debug(
                         "Firing timer event nikobus_button_released for address: %s",
