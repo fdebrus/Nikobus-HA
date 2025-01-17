@@ -39,13 +39,18 @@ async def async_validate_input(
                 return {"error": "invalid_port"}
 
             def test_connection() -> None:
-                with socket.create_connection((ip_str, port), timeout=5):
-                    pass
+                try:
+                    with socket.create_connection((ip_str, port), timeout=5):
+                        pass
+                except (socket.timeout, ConnectionRefusedError):
+                    raise ValueError("connection_unreachable")
 
             await hass.async_add_executor_job(test_connection)
             return {"title": f"Nikobus ({connection_string})"}
-        except (ValueError, socket.error):
-            pass
+
+        except ValueError as exc:
+            if str(exc) == "connection_unreachable":
+                return {"error": "connection_unreachable"}
 
     # Serial device validation
     serial_regex = r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$"

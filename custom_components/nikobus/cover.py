@@ -552,9 +552,26 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         try:
             while self._in_motion:
+                if self._position is None:
+                    _LOGGER.error(
+                        "self._position is None in _update_position for %s",
+                        self._attr_name,
+                    )
+                    self._position = 0 if self._direction == "closing" else 100
+                    _LOGGER.warning(
+                        "Defaulting self._position to %s for %s",
+                        self._position,
+                        self._attr_name,
+                    )
+
                 estimated_position = self._position_estimator.get_position()
                 if estimated_position is not None:
                     self._position = estimated_position
+                else:
+                    _LOGGER.warning(
+                        "Position estimator returned None in _update_position for %s",
+                        self._attr_name,
+                    )
 
                 elapsed = time.monotonic() - start_time
                 if (
@@ -568,9 +585,11 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     if (
                         self._direction == "opening"
                         and self._position >= target_position
+                        and target_position < 100
                     ) or (
                         self._direction == "closing"
                         and self._position <= target_position
+                        and target_position > 0
                     ):
                         _LOGGER.debug(
                             "Target position %d reached for %s",
@@ -578,7 +597,13 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                             self._attr_name,
                         )
                         self._position = target_position
-                        await self._finalize_movement()
+                        self._in_motion = False
+                        self._direction = None
+                        self._state = STATE_STOPPED
+                        if self._movement_source == "ha":
+                            await self.async_stop_cover()
+                        else:
+                            await self._finalize_movement()
                         return
 
                 if (self._direction == "opening" and self._position >= 100) or (
@@ -588,7 +613,15 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                         "Cover %s fully %s.", self._attr_name, self._direction
                     )
                     self._position = 100 if self._direction == "opening" else 0
-                    await self._finalize_movement()
+                    self._in_motion = False
+                    self._direction = None
+                    self._state = STATE_STOPPED
+                    self.async_write_ha_state()
+                    if self._movement_source == "ha":
+                        await asyncio.sleep(self._operation_time)
+                        await self.async_stop_cover()
+                    else:
+                        await self._finalize_movement()
                     return
 
                 self.async_write_ha_state()

@@ -172,24 +172,27 @@ class NikobusActuator:
         """Fire events based on press duration."""
         event_mapping = {
             "short": "nikobus_short_button_pressed",
-            "medium_1": "nikobus_button_pressed_1",
-            "medium_2": "nikobus_button_pressed_2",
-            "long": "nikobus_button_pressed_3",
-            "very_long": "nikobus_long_button_pressed",
+            "pressed_1": "nikobus_button_pressed_1",
+            "pressed_2": "nikobus_button_pressed_2",
+            "pressed_3": "nikobus_button_pressed_3",
+            "long": "nikobus_long_button_pressed",
         }
 
-        if press_duration < SHORT_PRESS:
-            event = event_mapping["short"]
-        elif press_duration < MEDIUM_PRESS:
-            event = event_mapping["medium_1"]
-        elif press_duration < LONG_PRESS:
-            event = event_mapping["medium_2"]
+        # Fire specific events based on press duration
+        if press_duration <= SHORT_PRESS:
+            _LOGGER.debug(f"Firing events {event_mapping['short']} for address: {address}")
+            self._hass.bus.async_fire(event_mapping["short"], {"address": address})
+        elif press_duration <= MEDIUM_PRESS:
+            _LOGGER.debug(f"Firing events {event_mapping['pressed_1']} for address: {address}")
+            self._hass.bus.async_fire(event_mapping["pressed_1"], {"address": address})
+        elif press_duration <= LONG_PRESS:
+            _LOGGER.debug(f"Firing events {event_mapping['pressed_2']} for address: {address}")
+            self._hass.bus.async_fire(event_mapping["pressed_2"], {"address": address})
         else:
-            event = event_mapping["long"]
-            self._hass.bus.async_fire(event_mapping["very_long"], {"address": address})
-
-        _LOGGER.debug(f"Firing event {event} for address: {address}")
-        self._hass.bus.async_fire(event, {"address": address})
+            _LOGGER.debug(f"Firing events {event_mapping['pressed_3']} for address: {address}")
+            self._hass.bus.async_fire(event_mapping["pressed_3"], {"address": address})
+            _LOGGER.debug(f"Firing event {event_mapping['long']} for address: {address}")
+            self._hass.bus.async_fire(event_mapping["long"], {"address": address})
 
     def _reset_state(self) -> None:
         """Reset internal state after button release."""
