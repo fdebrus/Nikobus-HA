@@ -23,7 +23,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
   - Button press events can be used as triggers in Home Assistant automations.
     
     The following events are available
-      -  **nikobus_button_pressed**
+      -  **nikobus_button_pressed** (To ensure Home Assistant's internal state is updated accurately after a physical button press, this event includes a slight delay of 0.5 second before firing, as it queries Nikobus for the updated state.)
         
     The following are available after release
       -  **nikobus_button_released**
