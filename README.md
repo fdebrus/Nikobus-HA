@@ -144,7 +144,6 @@ The integration will emit different messages on the Home Assistant bus:
 - **nikobus_button_released**
 - **nikobus_long_button_pressed**
 - **nikobus_short_button_pressed**
-- **nikobus_button_pressed_0** Button press detected after release for less than 1 second
 - **nikobus_button_pressed_1** Button press detected after release for 1 second
 - **nikobus_button_pressed_2** Button press detected after release for 2 seconds
 - **nikobus_button_pressed_3** Button press detected after release for 3 seconds
