@@ -1,4 +1,4 @@
-"""***FINAL*** Nikobus API for Controlling Switches, Lights, and Covers."""
+"""Nikobus API for Controlling Switches, Lights, and Covers."""
 
 import logging
 from .exceptions import NikobusError

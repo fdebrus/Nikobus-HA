@@ -1,4 +1,4 @@
-"""***FINAL*** Cover platform for the Nikobus integration."""
+"""Cover platform for the Nikobus integration."""
 
 from __future__ import annotations
 

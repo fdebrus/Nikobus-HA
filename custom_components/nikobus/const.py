@@ -1,4 +1,4 @@
-"""***FINAL*** Constants for the Nikobus integration."""
+"""Constants for the Nikobus integration."""
 
 from typing import Final
 

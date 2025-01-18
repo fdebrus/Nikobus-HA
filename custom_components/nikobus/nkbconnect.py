@@ -1,4 +1,4 @@
-"""***FINAL*** Nikobus Connection Manager."""
+"""Nikobus Connection Manager."""
 
 from __future__ import annotations
 

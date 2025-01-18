@@ -1,4 +1,4 @@
-"""***FINAL*** The Nikobus integration."""
+"""The Nikobus integration."""
 
 from __future__ import annotations
 

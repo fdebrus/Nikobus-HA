@@ -1,4 +1,4 @@
-"""***FINAL*** Diagnostics support for the Nikobus integration (single-instance)."""
+"""Diagnostics support for the Nikobus integration."""
 
 import logging
 from typing import Any

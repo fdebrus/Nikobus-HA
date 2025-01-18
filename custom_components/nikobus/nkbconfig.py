@@ -1,4 +1,4 @@
-"""***FINAL*** Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
+"""Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
 
 import json
 import logging

@@ -1,4 +1,4 @@
-"""***FINAL*** Nikobus Event Listener."""
+"""Nikobus Event Listener."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""***FINAL*** Custom exceptions for the Nikobus integration."""
+"""Custom exceptions for the Nikobus integration."""
 
 
 class NikobusError(Exception):

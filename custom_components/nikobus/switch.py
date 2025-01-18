@@ -1,4 +1,4 @@
-"""***FINAL*** Switch platform for the Nikobus integration with module-level devices."""
+"""Switch platform for the Nikobus integration with module-level devices."""
 
 from __future__ import annotations
 

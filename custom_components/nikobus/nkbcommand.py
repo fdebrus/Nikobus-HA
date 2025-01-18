@@ -1,4 +1,4 @@
-"""***FINAL*** Nikobus Command Handler."""
+"""Nikobus Command Handler."""
 
 from __future__ import annotations
 

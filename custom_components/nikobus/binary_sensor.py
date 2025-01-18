@@ -1,4 +1,4 @@
-"""***FINAL*** Sensor platform for the Nikobus integration."""
+"""Sensor platform for the Nikobus integration."""
 
 from __future__ import annotations
 

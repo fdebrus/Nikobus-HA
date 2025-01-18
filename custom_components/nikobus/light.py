@@ -1,4 +1,4 @@
-"""***FINAL*** Light platform for the Nikobus integration."""
+"""Light platform for the Nikobus integration."""
 
 from __future__ import annotations
 

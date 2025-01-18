@@ -1,4 +1,4 @@
-"""***FINAL*** Config flow for Nikobus integration."""
+"""Config flow for Nikobus integration."""
 
 from __future__ import annotations
 

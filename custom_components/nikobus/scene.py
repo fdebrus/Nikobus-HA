@@ -1,4 +1,4 @@
-"""***FINAL*** Scene platform for the Nikobus integration."""
+"""Scene platform for the Nikobus integration."""
 
 import logging
 

@@ -1,4 +1,4 @@
-"""***FINAL*** Nikobus Button Press Events Handling"""
+"""Nikobus Button Press Events Handling"""
 
 import asyncio
 import time
@@ -57,9 +57,6 @@ class NikobusActuator:
 
     def _start_press_task(self, address: str) -> None:
         """Start the Nikobus physical button handling."""
-
-        self._hass.async_create_task(self.button_discovery(address))
-
         if self._press_task_active:
             return
         self._press_task_active = True
@@ -109,6 +106,9 @@ class NikobusActuator:
                         address,
                         press_duration,
                     )
+
+                    # Discover the button after release
+                    self._hass.async_create_task(self.button_discovery(address))
 
                     _LOGGER.debug(
                         "Firing timer event nikobus_button_released for address: %s",

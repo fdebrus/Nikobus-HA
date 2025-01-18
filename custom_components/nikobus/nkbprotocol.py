@@ -1,4 +1,4 @@
-"""***FINAL*** Nikobus Protocol Utilities."""
+"""Nikobus Protocol Utilities."""
 
 
 def int_to_hex(value: int, digits: int) -> str:
