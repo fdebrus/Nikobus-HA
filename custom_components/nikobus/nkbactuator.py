@@ -241,27 +241,25 @@ class NikobusActuator:
             button_operation_time,
         )
 
+        event_fired = False
+
         for impacted_module_info in button_data.get("impacted_module", []):
             impacted_module_address = impacted_module_info.get("address")
             impacted_group = impacted_module_info.get("group")
 
             if not impacted_module_address or not impacted_group:
                 _LOGGER.debug("Skipping module refresh due to missing address or group")
-                continue
+                break
 
             try:
-                if impacted_module_address in self._dict_module_data.get(
-                    "dimmer_module", {}
-                ):
+                if impacted_module_address in self._dict_module_data.get("dimmer_module", {}):
                     _LOGGER.debug("Dimmer DETECTED - pausing to get final status")
                     await asyncio.sleep(DIMMER_DELAY)
                 else:
                     await asyncio.sleep(REFRESH_DELAY)
 
-                value = (
-                    await self._coordinator.nikobus_command_handler.get_output_state(
-                        impacted_module_address, impacted_group
-                    )
+                value = await self._coordinator.nikobus_command_handler.get_output_state(
+                    impacted_module_address, impacted_group
                 )
 
                 if value is not None:
@@ -269,19 +267,31 @@ class NikobusActuator:
                         impacted_module_address, impacted_group, value
                     )
 
-                    event_data = {
-                        "address": button_address,
-                        "button_operation_time": button_operation_time,
-                        "impacted_module_address": impacted_module_address,
-                        "impacted_module_group": impacted_group,
-                    }
+                # Prepare event data for each valid module processed
+                event_data = {
+                    "address": button_address,
+                    "button_operation_time": button_operation_time,
+                    "impacted_module_address": impacted_module_address,
+                    "impacted_module_group": impacted_group,
+                }
 
-                    _LOGGER.debug(
-                        "Firing event: nikobus_button_pressed with data: %s", event_data
-                    )
-                    self._hass.bus.async_fire("nikobus_button_pressed", event_data)
+                _LOGGER.debug(
+                    "Firing event: nikobus_button_pressed with data: %s", event_data
+                )
 
-                    self._coordinator.async_update_listeners()
+                self._hass.bus.async_fire("nikobus_button_pressed", event_data)
+                event_fired = True
 
             except Exception as e:
                 _LOGGER.error("Error processing button press: %s", e, exc_info=True)
+
+        # If no valid module information was processed, fire a minimal event
+        if not event_fired:
+            minimal_event_data = {"address": button_address}
+            _LOGGER.debug(
+                "Firing minimal event: nikobus_button_pressed with data: %s", minimal_event_data
+            )
+            self._hass.bus.async_fire("nikobus_button_pressed", minimal_event_data)
+
+        # Notify listeners after all modules are processed
+        self._coordinator.async_update_listeners()
