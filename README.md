@@ -40,7 +40,7 @@ This integration enables the control of Nikobus systems via Home Assistant, allo
       -  **nikobus_button_timer_2** (Button press detected for 2 seconds)
       -  **nikobus_button_timer_3** (Button press detected for 3 seconds)
    
-    - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
+  - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
 - **HomeAssistant Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
