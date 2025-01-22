@@ -153,7 +153,9 @@ The integration will emit different messages on the Home Assistant bus:
 
 Any press duration above 500ms will be considered long press, you can adapt to your needs by updating the value in the const.py file from the integration custom directory and restart HA.
 ```
-LONG_PRESS_THRESHOLD_MS = 500 # Time in ms to detect a long press (>= LONG_PRESS_THRESHOLD_MS)
+SHORT_PRESS: Final[int] = 1  # Short press duration in seconds
+MEDIUM_PRESS: Final[int] = 2  # Medium press duration in seconds
+LONG_PRESS: Final[int] = 3  # Long press duration in seconds
 ```
 
 You can choose to use these events with or without specifying the button address. Without the button address, the automation will trigger for any button press. With the address, the automation will be specific to the button associated with that address.
