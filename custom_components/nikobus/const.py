@@ -44,12 +44,11 @@ FEEDBACK_REFRESH_COMMAND: Final[tuple[str, str]] = ("$1012", "$1017")
 FEEDBACK_MODULE_ANSWER: Final[str] = "$1C"
 MANUAL_REFRESH_COMMAND: Final[tuple[str, str]] = ("$0512", "$0517")
 COMMAND_PROCESSED: Final[tuple[str, str]] = ("$0515", "$0516")
-CONTROLLER_ADDRESS: Final[str] = "$18"
+DEVICE_ADDRESS: Final[str] = "$18"
+DEVICE_INVENTORY: Final[str] = "$0510"
 
 # Command Execution
 COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
 COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15  # Timeout for command ACK
-COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = (
-    5  # Timeout for each loop waiting for an answer
-)
+COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5  # Timeout for each loop waiting for an answer
 MAX_ATTEMPTS: Final[int] = 3  # Maximum retry attempts

@@ -206,7 +206,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 raise ValueError(f"Invalid module group: {module_group}")
 
             await self.async_event_handler(
-                "nikobus_refreshed", {"impacted_module_address": module_address}
+                "nikobus_refreshed", {"impacted_module_address": module_address, "impacted_module_group": module_group}
             )
 
         except Exception as e:
@@ -292,8 +292,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def _handle_nikobus_refreshed(self, data):
         """Handle Nikobus refreshed events."""
+        # Place holder, no need to process anything here the refresh of data is managed in process_feedback_data()
         impacted_module_address = data.get("impacted_module_address")
-        _LOGGER.debug(f"Nikobus refreshed for module {impacted_module_address}")
+        impacted_module_group = data.get("impacted_module_group")
+        _LOGGER.debug(f"Nikobus refreshed for module {impacted_module_address} group {impacted_module_group}")
 
     def get_module_type(self, module_id: str) -> str:
         """Determine the module type based on the module ID."""

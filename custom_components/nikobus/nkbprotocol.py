@@ -1,5 +1,8 @@
 """Nikobus Protocol Utilities."""
 
+import logging
+_LOGGER = logging.getLogger(__name__)
+
 
 def int_to_hex(value: int, digits: int) -> str:
     """Convert an integer to a hexadecimal string with a specified number of digits."""
@@ -38,6 +41,7 @@ def append_crc2(data: str) -> str:
 
 def make_pc_link_command(func: int, addr: str, args: bytes | None = None) -> str:
     """Construct a PC link command with the specified function, address, and optional arguments."""
+    _LOGGER.debug(f"PCLINK -- {func} {addr} {args}")
     addr_int = int(addr, 16)
     data = (
         int_to_hex(func, 2)
@@ -46,6 +50,8 @@ def make_pc_link_command(func: int, addr: str, args: bytes | None = None) -> str
     )
     if args:
         data += args.hex().upper()
+    _LOGGER.debug(f"PCLINK DATA-- {data}")
+    _LOGGER.debug(f"CRC2 - ${int_to_hex(len(data) + 10, 2)}{append_crc1(data)}")
     return append_crc2(f"${int_to_hex(len(data) + 10, 2)}{append_crc1(data)}")
 
 

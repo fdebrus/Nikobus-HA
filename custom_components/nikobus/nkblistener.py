@@ -9,6 +9,8 @@ from typing import Any, Callable
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from .nkbdiscovery import parse_response, classify_device_type
+
 from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     BUTTON_COMMAND_PREFIX,
@@ -17,7 +19,8 @@ from .const import (
     MANUAL_REFRESH_COMMAND,
     FEEDBACK_MODULE_ANSWER,
     COMMAND_PROCESSED,
-    CONTROLLER_ADDRESS,
+    DEVICE_ADDRESS,
+    DEVICE_INVENTORY,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -111,10 +114,6 @@ class NikobusEventListener:
             await self.response_queue.put(message)
             return
 
-        if message.startswith(CONTROLLER_ADDRESS):
-            _LOGGER.debug("Nikobus Controller Address: %s", message[3:7])
-            return
-
         if message.startswith(FEEDBACK_REFRESH_COMMAND) and self._has_feedback_module:
             _LOGGER.debug("Feedback module refresh command: %s", message)
             self._handle_feedback_refresh(message)
@@ -131,6 +130,25 @@ class NikobusEventListener:
                 await self.response_queue.put(message)
             return
 
+        # if message.startswith(DEVICE_INVENTORY):
+        #     parsed_data = await parse_response(message)
+        #    return 
+
+        if message.startswith(DEVICE_ADDRESS):
+            payload = message.lstrip("$")
+            payload_bytes = bytes.fromhex(payload)
+            
+            device_type_hex = format(payload_bytes[5], '02X')
+
+            device_info = classify_device_type(device_type_hex)
+
+            high_byte = payload_bytes[2]
+            low_byte = payload_bytes[1]
+            device_address = f"{high_byte:02X}{low_byte:02X}"
+
+            _LOGGER.info(f"Discovered device : {device_type_hex} {device_info} at {device_address} from message: {payload_bytes}")
+            return 
+        
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
         await self.response_queue.put(message)
 

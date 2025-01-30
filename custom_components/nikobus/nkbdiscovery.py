@@ -2,176 +2,71 @@ import logging
 
 _LOGGER = logging.getLogger(__name__)
 
-def parse_response(response):
-    """Parse the Nikobus response and decode its configuration."""
-    _LOGGER.debug("Parsing response: %s", response)
-    parsed_data = []
-
-    # Preprocess the response
+async def parse_response(payload):
     try:
-        response = response.replace("$", "").replace(" ", "")  # Clean input
-        if response.startswith("2E"):  # If $2E is a header, remove it explicitly
-            response = response[2:]  # Remove the $2E header
-        response_bytes = bytes.fromhex(response)  # Convert to bytes
-    except ValueError as e:
-        _LOGGER.error("Invalid response format: %s", e)
-        return "Invalid response format"
+        # Remove '$' prefix and convert payload to bytes
+        payload = payload.lstrip("$")
+        payload_bytes = bytes.fromhex(payload)
 
-    # Parse configuration data
-    pc_link_address = response_bytes[:2].hex().upper()  # Extract the PC-LINK address
-    module_type = classify_module_type(response_bytes)  # Classify module type
-    module_address = extract_impacted_module_address(response_bytes)  # Extract impacted module address
-    additional_segment = extract_additional_segment(response_bytes)  # Extract additional flags/control
-    channel_data = extract_channel_data(response_bytes)  # Extract channel data
-    timer_mode_data = response_bytes[14:15]  # Extract timer and mode data
+        # Extract the device type from the payload (byte at index 7)
+        device_type_hex = format(payload_bytes[7], '02X')
+        _LOGGER.debug(f"Extracted device type (hex): {device_type_hex}")
 
-    timer, mode = decode_timer_and_mode(timer_mode_data)  # Decode timer and mode
+        # Extract the device address from the payload (bytes at index 10 to 12)
+        device_address = payload_bytes[10:13].hex().upper()
+        _LOGGER.debug(f"Extracted device address: {device_address}")
 
-    parsed_data.append(f"PC-LINK Address: {pc_link_address}")
-    parsed_data.append(f"Module Type: {module_type}")
-    parsed_data.append(f"Additional Segment: {additional_segment}")
-    parsed_data.append(f"Impacted Module Address: {module_address}")
-    parsed_data.append(f"Linked Channels: {', '.join(decode_channels(channel_data))}")
-    parsed_data.append(f"Timer: {timer}")
-    parsed_data.append(f"Mode: {mode}")
+        # Classify the device
+        device_info = classify_device_type(device_type_hex)
+        _LOGGER.debug(f"Classified device type: {device_info}")
 
-    for line in parsed_data:
-        _LOGGER.debug(line)
-    return "\n".join(parsed_data)
+        if device_info == "Unknown Device":
+            _LOGGER.warning(
+                f"Unknown device detected: Type {device_type_hex} at Address {device_address}. "
+                "Please open an issue on https://github.com/fdebrus/Nikobus-HA/issues with this information."
+            )
+            return
 
-def extract_impacted_module_address(payload):
-    """ Extracts the impacted module address from the payload. OK """
-    try:
-        module_address = payload[10:12].hex().upper()
-        return module_address
+        # Handle Modules
+        if device_info["Category"] == "Module":
+            _LOGGER.debug(
+                f"Discovered Module - Type: {device_info['Name']}, Model: {device_info.get('Model', 'N/A')}, "
+                f"Address: {device_address}"
+            )
+
+        # Handle Buttons
+        elif device_info["Category"] == "Button":
+            _LOGGER.debug(
+                f"Discovered Button - Type: {device_info['Name']}, Model: {device_info.get('Model', 'N/A')}, "
+                f"Address: {device_address}"
+            )
+
     except Exception as e:
-        _LOGGER.debug("Failed to extract impacted module address: %s", e)
-        return "Unknown"
+        _LOGGER.error(f"Failed to parse Nikobus payload: {e}")
 
-def classify_module_type(payload):
-    """ Determines the type of module based on its payload. OK """ 
-    try:
-        module_type_bits = payload[2:3].hex().upper()  # Extract 1 byte
-        module_types = {
-            "03": "Compact Switch Module",  # Compact module
-            "04": "Switch Module",          # Standard switch
-            "05": "Dimmer Module",          # Dimmer control
-            "06": "Shutter Module",         # Shutter control
-            "07": "Thermostat Module",      # Thermostat
-            "08": "Scene Module",           # Scene configuration module
-            "09": "Input Module",           # Input handling
-            "0A": "Relay Module",           # Relay for high-power devices
-            "0B": "Blind Module",           # Blinds control
-            "0C": "PC-Link Interface",      # PC-Link module
-            "0D": "Logic Module",           # Logic processor for automation
-            "0E": "Timer Module",           # Timer-specific module
-            "0F": "Custom Module",          # Reserved for custom or user-defined modules
-        }
-        module_type = module_types.get(module_type_bits, "Unknown Module")
-        return module_type
-    except Exception as e:
-        _LOGGER.debug("Failed to classify module type: %s", e)
-        return "Unknown"
-
-def extract_additional_segment(payload):
-    """Extract additional configuration or flags from the payload. OK"""
-    try:
-        additional_segment = payload[3:10].hex().upper()
-        _LOGGER.debug("Extracted Additional Segment: %s", additional_segment)
-        return additional_segment
-    except Exception as e:
-        _LOGGER.debug("Failed to extract additional segment: %s", e)
-        return "Unknown"
-
-def decode_channels(channel_data):
+def classify_device_type(device_type_hex):
     """
-    Decode active channels (keys) from the channel data dictionary.
+    Classify the device type based on the device type hex value.
     """
-    channels = []
-    try:
-        # Map each key to its corresponding channel name or ID
-        for key, active in channel_data.items():
-            if active:  # If the key is active
-                channels.append(key)
-        
-        _LOGGER.debug("Decoded Channels: %s", channels)
-        return channels
-    except Exception as e:
-        _LOGGER.debug("Failed to decode channels from data: %s", e)
-        return []
+    device_types = {
+        # Known Device Types
+        "01": {"Category": "Module", "Model": "05-000-02", "Name": "Switch Module"},                            # A5C9, 0747
+        "02": {"Category": "Module", "Model": "05-001-02", "Name": "Roller Shutter Module"},                    # 0591, 9483
+        "03": {"Category": "Module", "Model": "05-007-02", "Name": "Dimmer Module"},                            # 6C0E
+        "04": {"Category": "Button", "Model": "05-342", "Name": "Button with 2 Operation Points"},              # 72EF, FE09, 560C, CCC1, 020C, 4C16, 7E12, D41E, 7C15, 8214, D81E, 4A05, C81E, F8F2, 4C58
+        "06": {"Category": "Button", "Model": "05-346", "Name": "Button with 4 Operation Points"},              # B443, 54C5, 121F, 182F, 848D, A61E, A0FB, 4A0D, 4AFE, 40A8, 480D, 9EF3
+        "08": {"Category": "Module", "Model": "05-201", "Name": "PC Logic"},                                    # 0C94
+        "09": {"Category": "Module", "Model": "05-002-02", "Name": "Compact Switch Module"},                    # 055B
+        "0A": {"Category": "Module", "Model": "05-200", "Name": "PC Link"},                                     # F586
+        "0C": {"Category": "Button", "Model": "05-348", "Name": "IR Button with 4 Operation Points"},           # 801C, C0FE
+        "12": {"Category": "Button", "Model": "05-349", "Name": "Button with 8 Operation Points"},              # 56F2, E0F1
+        "1F": {"Category": "Button", "Model": "05-311", "Name": "RF Transmitter with 2 Operation Points"},      # F658
+        "23": {"Category": "Button", "Model": "05-312", "Name": "RF Transmitter with 4 Operation Points"},      # 5012, 1549, FFFF
+        "25": {"Category": "Button", "Model": "05-055", "Name": "All-Function Interface"},                      # 8723, 6621
+        "3F": {"Category": "Button", "Model": "05-344", "Name": "Feedback Button with 2 Operation Points"},     # 4E65
+        "40": {"Category": "Button", "Model": "05-347", "Name": "Feedback Button with 4 Operation Points"},     # 2B15, 6936
+        "42": {"Category": "Module", "Model": "05-207", "Name": "Feedback Module"},                             # 6C96
+        "44": {"Category": "Button", "Model": "05-057", "Name": "Switch Interface"},                            # DC34
+    }
 
-def extract_channel_data(payload):
-    """
-    Extract channel data from the payload.
-    Decodes specific bits for Key A, B, C, and D.
-    """
-    try:
-        # Extracting the byte containing the channel/key information
-        key_byte = payload[10]  # Adjust index based on documentation; example uses byte 10.
-        
-        # Extract individual bits for Key A, B, C, and D
-        key_a = (key_byte & 0b00000001) > 0  # LSB
-        key_b = (key_byte & 0b00000010) > 0
-        key_c = (key_byte & 0b00000100) > 0
-        key_d = (key_byte & 0b00001000) > 0  # MSB
-        
-        # Return a dictionary with decoded key states
-        return {
-            "Key A": key_a,
-            "Key B": key_b,
-            "Key C": key_c,
-            "Key D": key_d,
-        }
-    except Exception as e:
-        _LOGGER.debug("Failed to extract channel data: %s", e)
-        return {
-            "Key A": False,
-            "Key B": False,
-            "Key C": False,
-            "Key D": False,
-        }
-
-def decode_timer_and_mode(timer_mode_byte):
-    """Decode timer and mode from the combined byte."""
-    try:
-        timer_map = {
-            "0": "0 seconds",
-            "1": "6 seconds",
-            "2": "12 seconds",
-            "3": "18 seconds",
-            "4": "24 seconds",
-            "5": "30 seconds",
-            "6": "36 seconds",
-            "7": "42 seconds",
-            "8": "48 seconds",
-            "9": "54 seconds",
-            "A": "60 seconds (1 minute)",
-            "B": "2 minutes",
-            "C": "3 minutes",
-            "D": "5 minutes",
-            "E": "10 minutes",
-            "F": "20 minutes",
-        }
-
-        mode_map = {
-            "0": "M1 (On/Off)",
-            "1": "M2 (Timer-based On)",
-            "2": "M3 (Timer-based Off)",
-            "3": "M4 (Impulse)",
-            "4": "M5 (Delayed Down)",
-            "5": "M6 (Delayed Up)",
-            "6": "M7 (Short Down)",
-            "7": "M8 (Short Up)",
-            "8": "M9 (Custom Mode 1)",
-            "9": "M10 (Custom Mode 2)",
-            "A": "M11 (Reserved)",
-            "B": "M12 (Reserved)",
-        }
-
-        timer = timer_map.get(timer_mode_byte.hex()[1], "Unknown Timer")  # Lower nibble
-        mode = mode_map.get(timer_mode_byte.hex()[0], "Unknown Mode")  # Higher nibble
-
-        return timer, mode
-    except Exception as e:
-        _LOGGER.debug("Failed to decode timer and mode: %s", e)
-        return "Unknown Timer", "Unknown Mode"
+    return device_types.get(device_type_hex, "Unknown Device")
