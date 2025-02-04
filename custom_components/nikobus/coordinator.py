@@ -68,6 +68,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.nikobus_listener = None
         self.nikobus_command = None
         self.nikobus_discovery = None
+        self._discovery_running = False
+
+    @property
+    def discovery_running(self):
+        """Return whether device discovery is in progress."""
+        return self._discovery_running
+
+    @discovery_running.setter
+    def discovery_running(self, value):
+        self._discovery_running = value
 
     async def connect(self):
         """Connect to the Nikobus system."""
@@ -104,6 +114,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.nikobus_listener = NikobusEventListener(
                     self.hass,
                     self.config_entry,
+                    self,
                     self.nikobus_actuator,
                     self.nikobus_connection,
                     self.nikobus_discovery,
@@ -133,9 +144,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def discover_devices(self):
         """Discover available Nikobus devices."""
-        _LOGGER.debug("Requesting device discovery from Nikobus")
-    
-        # Get the PC Link Address
+        if self._discovery_running:
+            _LOGGER.warning("Device discovery is already running.")
+            return 
+        self._discovery_running = True
+        _LOGGER.debug("Starting device discovery from Nikobus")
         await self.nikobus_command.queue_command("#A")
 
     async def _async_update_data(self):

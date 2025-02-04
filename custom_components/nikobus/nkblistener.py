@@ -34,6 +34,7 @@ class NikobusEventListener:
         self,
         hass: HomeAssistant,
         config_entry: ConfigEntry,
+        coordinator,
         nikobus_actuator: Any,
         nikobus_connection: Any,
         nikobus_discovery: Any,
@@ -42,6 +43,7 @@ class NikobusEventListener:
         """Initialize the Nikobus event listener."""
         self._hass = hass
         self._config_entry = config_entry
+        self._coordinator = coordinator
         self._listener_task: asyncio.Task | None = None
         self._running = False
         self._feedback_callback = feedback_callback
@@ -133,22 +135,21 @@ class NikobusEventListener:
                 await self.response_queue.put(message)
             return
 
-        if message.startswith(DEVICE_INVENTORY):
+        if message.startswith(DEVICE_INVENTORY): # Receive $0510
             _LOGGER.debug("Device inventory: %s", message)
             parsed_data = await self.nikobus_discovery.parse_inventory_response(message)
             return 
 
-# Device central inventory: $0510$2EF586130000000400008082141D0015000000C247B9
-
         if message.startswith(DEVICE_ADDRESS_INVENTORY): # Receive $18
             _LOGGER.debug("Device address inventory: %s", message)
-            parsed_json = await self.nikobus_discovery.query_pc_link_module(message[3:7])
+            if self._coordinator.discovery_running:
+                parsed_json = await self.nikobus_discovery.query_pc_link_module(message[3:7])
+            else:
+                parsed_json = await self.nikobus_discovery.process_mode_button_message(message)
+            self._coordinator.discovery_running = False
             parsed_json = json.dumps(parsed_json, indent=4)
             _LOGGER.info(f"{parsed_json}")
-            return          
-
-# await self.nikobus_discovery.process_button_command_payload(message)
- # parsed_json = await self.nikobus_discovery.process_mode_button_message(message)
+            return 
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
         await self.response_queue.put(message)

@@ -20,6 +20,9 @@ class NikobusDiscovery:
             "Category": "Unknown", "Model": "Unknown", "Channels": 0, "Name": "Unknown Device"
         })
 
+#
+# Received a request to dump PC Link Data, Loop till FF for now, need to optimize when no data to stop earlier       
+#
     async def query_pc_link_module(self, device_address):
         """
         Generates and sends PC Link commands to get Nikobus inventory
@@ -39,6 +42,10 @@ class NikobusDiscovery:
 
             # Send the command asynchronously.
             await self._coordinator.nikobus_command.queue_command(pc_link_command)
+
+#
+# Received an inventory response from PC Link data
+#
 
     async def parse_inventory_response(self, payload):
         try:
@@ -70,75 +77,9 @@ class NikobusDiscovery:
         except Exception as e:
             _LOGGER.error(f"Failed to parse Nikobus payload: {e}")
 
-##############
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def convert_address(self, payload):
-        """
-        Converts a 6-digit hex payload to a new 6-digit hex result based on bit ordering logic.
-
-        Args:
-            payload (str): A 6-character hex string (e.g., "04E650")
-
-        Returns:
-            str: The transformed 6-character hex string (e.g., "143981")
-        """
-
-        # Validate input
-        if len(payload) != 6 or not all(c in "0123456789ABCDEF" for c in payload.upper()):
-            raise ValueError("Payload must be a 6-character hexadecimal string.")
-
-        # Convert hex digits to binary (4 bits each)
-        binary_representation = "".join(f"{int(c, 16):04b}" for c in payload)
-
-        # Define bit ordering mapping (each nibble corresponds to certain positions)
-        ordering_map = {
-            0: [6, 5, 4, 3],       # First hex digit (all 4 bits)
-            1: [2, 1],             # Second hex digit (only 2 leftmost bits)
-            2: [14, 13, 12, 11],   # Third hex digit (all 4 bits)
-            3: [10, 9, 8, 7],      # Fourth hex digit (all 4 bits)
-            4: [22, 21, 20, 19],   # Fifth hex digit (all 4 bits)
-            5: [18, 17, 16, 15]    # Sixth hex digit (all 4 bits)
-        }
-
-        # Store bit values in a dictionary using ordering positions
-        bit_ordering = {}
-        index = 0
-        for nibble_index, positions in ordering_map.items():
-            for pos in positions:
-                bit_ordering[pos] = binary_representation[index]
-                index += 1
-
-        # Reconstruct the final 22-bit sequence based on ordering from 22 down to 1
-        final_bits = "".join(bit_ordering[order] for order in range(22, 0, -1))
-
-        # Split into 6 groups for final hex conversion
-        groups = [
-            final_bits[0:2].rjust(4, '0'),  # First group: pad left to 4 bits
-            final_bits[2:6],
-            final_bits[6:10],
-            final_bits[10:14],
-            final_bits[14:18],
-            final_bits[18:22]
-        ]
-
-        # Convert each group of 4 bits to a hexadecimal digit
-        result = "".join(hex(int(g, 2))[2:].upper() for g in groups)
-    
-        return result
-
-
+#
+# A yellow "Mode Button" has been pressed on a module, identify and report the module
+#
 
     async def process_mode_button_message(self, message):
         payload = message.lstrip("$")
@@ -147,29 +88,23 @@ class NikobusDiscovery:
         device_type_hex = format(payload_bytes[5], '02X')
         device_info = self.classify_device_type(device_type_hex)
 
-        high_byte = payload_bytes[2]
-        low_byte = payload_bytes[1]
-        device_address_reverse = f"{high_byte:02X}{low_byte:02X}"
-        device_address = f"{low_byte:02X}{high_byte:02X}"
+        converted_address = payload_bytes[1:3][::-1].hex().upper()
 
-        if device_address_reverse not in self.discovered_devices:
+        if converted_address not in self.discovered_devices:
             num_channels = int(device_info["Channels"]) if "Channels" in device_info else 0
 
-            self.discovered_devices[device_address_reverse] = {
-                "description": f"{device_info['Name']} at {device_address_reverse}",
+            self.discovered_devices[converted_address] = {
+                "description": f"{device_info['Name']} at {converted_address}",
                 "model": device_info["Model"],
-                "address": device_address_reverse,
+                "address": converted_address,
                 "channels": [
                     {"description": f"{device_info['Name']} Output {i+1}", "led_on": "", "led_off": ""}
                     for i in range(num_channels)
                 ]
             }
 
-            _LOGGER.info(f"Discovered device: {device_type_hex} {device_info} at {device_address_reverse} from message: {payload}")
+            _LOGGER.info(f"Discovered device: {device_type_hex} {device_info} at {converted_address} from message: {payload}")
 
-        if device_info["Model"] == "05-200":
-            await self.query_pc_link_module(device_address)
-            return None
         return self.generate_module_json()
 
     def generate_module_json(self):
@@ -191,6 +126,7 @@ class NikobusDiscovery:
 
         return json.dumps(output_structure, indent=4)
 
+#####################LOT OF WORK BELOW THIS LINE STILL TO BE DONE#################################
 
     def decode_command_payload(self, payload_bytes):
         """
