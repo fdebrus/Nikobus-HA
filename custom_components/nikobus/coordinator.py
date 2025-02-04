@@ -14,6 +14,7 @@ from .nkbconfig import NikobusConfig
 from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
 from .nkbactuator import NikobusActuator
+from .nkbdiscovery import NikobusDiscovery
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -65,7 +66,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
         self.nikobus_actuator = None
         self.nikobus_listener = None
-        self.nikobus_command_handler = None
+        self.nikobus_command = None
+        self.nikobus_discovery = None
 
     async def connect(self):
         """Connect to the Nikobus system."""
@@ -96,14 +98,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.nikobus_actuator = NikobusActuator(
                     self.hass, self, self.dict_button_data, self.dict_module_data
                 )
+                
+                self.nikobus_discovery = NikobusDiscovery(self)
+
                 self.nikobus_listener = NikobusEventListener(
                     self.hass,
                     self.config_entry,
                     self.nikobus_actuator,
                     self.nikobus_connection,
+                    self.nikobus_discovery,
                     self.process_feedback_data,
                 )
-                self.nikobus_command_handler = NikobusCommandHandler(
+                
+                self.nikobus_command = NikobusCommandHandler(
                     self.hass,
                     self,
                     self.nikobus_connection,
@@ -115,7 +122,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.api = NikobusAPI(self.hass, self)
 
                 # Start event listener and command handler
-                await self.nikobus_command_handler.start()
+                await self.nikobus_command.start()
                 await self.nikobus_listener.start()
 
                 # Perform an initial data refresh
@@ -123,6 +130,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             except HomeAssistantError as e:
                 _LOGGER.error("Failed to initialize Nikobus components: %s", e)
                 raise
+
+    async def discover_devices(self):
+        """Discover available Nikobus devices."""
+        _LOGGER.debug("Requesting device discovery from Nikobus")
+    
+        # Get the PC Link Address
+        await self.nikobus_command.queue_command("#A")
 
     async def _async_update_data(self):
         """Fetch the latest data from the Nikobus system."""
@@ -152,7 +166,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             for group in groups_to_query:
                 try:
                     group_state = (
-                        await self.nikobus_command_handler.get_output_state(
+                        await self.nikobus_command.get_output_state(
                             address, group
                         )
                         or ""
@@ -288,7 +302,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             f"HA Button {address} pressed with operation_time: {operation_time}"
         )
-        await self.nikobus_command_handler.queue_command(f"#N{address}\r#E1")
+        await self.nikobus_command.queue_command(f"#N{address}\r#E1")
 
     async def _handle_nikobus_refreshed(self, data):
         """Handle Nikobus refreshed events."""

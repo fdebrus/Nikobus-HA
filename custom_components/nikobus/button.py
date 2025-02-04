@@ -114,7 +114,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
                 )
 
                 value = (
-                    await self._coordinator.nikobus_command_handler.get_output_state(
+                    await self._coordinator.nikobus_command.get_output_state(
                         module_address, module_group
                     )
                 )

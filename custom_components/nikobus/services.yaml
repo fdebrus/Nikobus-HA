@@ -1,0 +1,6 @@
+scan_for_module:
+  description: "Trigger a manual Nikobus module discovery."
+  fields:
+    scan_type:
+      description: "Type of scan to perform (optional)."
+      example: "full"

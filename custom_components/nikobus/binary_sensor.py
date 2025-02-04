@@ -80,7 +80,7 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
 
         self._attr_name = f"Nikobus Button Sensor {address}"
         self._attr_unique_id = f"{DOMAIN}_button_sensor_{address}"
-        self._state: str | None = None
+        self._state: str | None = "idle"
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -111,7 +111,7 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _reset_state(self) -> None:
         """Reset the sensor state to None after a short delay."""
-        self._state = None
+        self._state = "idle"
         self.async_write_ha_state()
 
     @callback

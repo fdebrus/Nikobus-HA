@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 from typing import Final
+import voluptuous as vol
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.components import (
     switch,
@@ -32,6 +33,12 @@ PLATFORMS: Final[list[str]] = [
     scene.DOMAIN,
 ]
 
+SCAN_MODULE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("scan_type", default="full"): cv.string,
+    }
+)
+
 HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
 
@@ -51,6 +58,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from err
 
     _register_hub_device(hass, entry)
+
+    async def handle_module_discovery(call: ServiceCall):
+        """Manually trigger device discovery."""
+        scan_type = call.data.get("scan_type", "full")
+
+        _LOGGER.info(f"Starting manual Nikobus discovery with scan_type: {scan_type}")
+
+        # Discovery logic (optional)
+        discovered_devices = await coordinator.discover_devices()
+        # hass.data.setdefault("nikobus", {})["devices"] = discovered_devices
+
+        _LOGGER.info("Nikobus discovery completed")
+
+    hass.services.async_register(DOMAIN, "scan_for_module", handle_module_discovery, SCAN_MODULE_SCHEMA)
 
     # Forward the setup to all configured platforms
     try:

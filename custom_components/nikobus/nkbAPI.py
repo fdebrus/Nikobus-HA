@@ -32,11 +32,11 @@ class NikobusAPI:
                 _LOGGER.debug(
                     f"Sending LED ON command for switch at {address}, channel {channel}"
                 )
-                await self._coordinator.nikobus_command_handler.queue_command(
+                await self._coordinator.nikobus_command.queue_command(
                     f"#N{led_on}\r#E1"
                 )
             else:
-                await self._coordinator.nikobus_command_handler.set_output_state(
+                await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0xFF, completion_handler=completion_handler
                 )
             self._coordinator.set_bytearray_state(address, channel, 0xFF)
@@ -63,11 +63,11 @@ class NikobusAPI:
                 _LOGGER.debug(
                     f"Sending LED OFF command for switch at {address}, channel {channel}"
                 )
-                await self._coordinator.nikobus_command_handler.queue_command(
+                await self._coordinator.nikobus_command.queue_command(
                     f"#N{led_off}\r#E1"
                 )
             else:
-                await self._coordinator.nikobus_command_handler.set_output_state(
+                await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
                 )
             self._coordinator.set_bytearray_state(address, channel, 0x00)
@@ -96,11 +96,11 @@ class NikobusAPI:
                 _LOGGER.debug(
                     f"Sending LED ON command for dimmer at {address}, channel {channel}"
                 )
-                await self._coordinator.nikobus_command_handler.queue_command(
+                await self._coordinator.nikobus_command.queue_command(
                     f"#N{led_on}\r#E1"
                 )
 
-            await self._coordinator.nikobus_command_handler.set_output_state(
+            await self._coordinator.nikobus_command.set_output_state(
                 address, channel, brightness, completion_handler=completion_handler
             )
             self._coordinator.set_bytearray_state(address, channel, brightness)
@@ -128,11 +128,11 @@ class NikobusAPI:
                 _LOGGER.debug(
                     f"Sending LED OFF command for dimmer at {address}, channel {channel}"
                 )
-                await self._coordinator.nikobus_command_handler.queue_command(
+                await self._coordinator.nikobus_command.queue_command(
                     f"#N{led_off}\r#E1"
                 )
 
-            await self._coordinator.nikobus_command_handler.set_output_state(
+            await self._coordinator.nikobus_command.set_output_state(
                 address, channel, 0x00, completion_handler=completion_handler
             )
             self._coordinator.set_bytearray_state(address, channel, 0x00)
@@ -167,9 +167,9 @@ class NikobusAPI:
                 _LOGGER.debug(
                     f"Sending STOP command for cover at {address}, channel {channel}, direction {direction}"
                 )
-                await self._coordinator.nikobus_command_handler.queue_command(command)
+                await self._coordinator.nikobus_command.queue_command(command)
             else:
-                await self._coordinator.nikobus_command_handler.set_output_state(
+                await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
                 )
 
@@ -195,11 +195,11 @@ class NikobusAPI:
                 _LOGGER.debug(
                     f"Sending OPEN command for cover at {address}, channel {channel}"
                 )
-                await self._coordinator.nikobus_command_handler.queue_command(
+                await self._coordinator.nikobus_command.queue_command(
                     f"#N{led_on}\r#E1"
                 )
             else:
-                await self._coordinator.nikobus_command_handler.set_output_state(
+                await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x01, completion_handler=completion_handler
                 )
 
@@ -225,11 +225,11 @@ class NikobusAPI:
                 _LOGGER.debug(
                     f"Sending CLOSE command for cover at {address}, channel {channel}"
                 )
-                await self._coordinator.nikobus_command_handler.queue_command(
+                await self._coordinator.nikobus_command.queue_command(
                     f"#N{led_off}\r#E1"
                 )
             else:
-                await self._coordinator.nikobus_command_handler.set_output_state(
+                await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x02, completion_handler=completion_handler
                 )
 
@@ -243,6 +243,6 @@ class NikobusAPI:
     ) -> None:
         """Set the output states for a module with multiple channel updates at once."""
         _LOGGER.debug(f"Setting output states for module {address}")
-        await self._coordinator.nikobus_command_handler.set_output_states(
+        await self._coordinator.nikobus_command.set_output_states(
             address, completion_handler=completion_handler
         )

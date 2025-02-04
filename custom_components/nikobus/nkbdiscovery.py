@@ -1,72 +1,316 @@
 import logging
 
+import json
+import binascii
+
+from .nkbprotocol import make_pc_link_inventory_command
+
+from .const import DEVICE_TYPES
+
 _LOGGER = logging.getLogger(__name__)
 
-async def parse_response(payload):
-    try:
-        # Remove '$' prefix and convert payload to bytes
-        payload = payload.lstrip("$")
+class NikobusDiscovery:
+    def __init__(self, coordinator):
+        self.discovered_devices = {}
+        self._coordinator = coordinator
+
+    def classify_device_type(self, device_type_hex):
+        """ Classify the device type based on the device type hex value. """
+        return DEVICE_TYPES.get(device_type_hex, {
+            "Category": "Unknown", "Model": "Unknown", "Channels": 0, "Name": "Unknown Device"
+        })
+
+    async def query_pc_link_module(self, device_address):
+        """
+        Generates and sends PC Link commands to get Nikobus inventory
+        The full command is built as:
+        "$1410" + device_address + <command_code> + "04" + <CRC>
+        """
+        for cmd in range(0xA3, 0xFF):
+            # Format the command code as two uppercase hexadecimal digits.
+            command_code = f"{cmd:02X}"
+
+            # Construct the partial command (without CRC) according to the protocol:
+            # Header (10) + Module Address + Command Code + Fixed Part (04)
+            partial_hex = f"10{device_address}{command_code}04"
+
+            # Generate the full command by appending the CRC etc.
+            pc_link_command = make_pc_link_inventory_command(partial_hex)
+
+            # Send the command asynchronously.
+            await self._coordinator.nikobus_command.queue_command(pc_link_command)
+
+    async def parse_inventory_response(self, payload):
+        try:
+            if payload.startswith("$0510$"):
+                payload = payload[6:] 
+    
+            # Remove any additional "$" at the start if necessary
+            payload = payload.lstrip("$")
+            payload_bytes = bytes.fromhex(payload)
+
+            converted_address = payload_bytes[11:14][::-1].hex().upper()
+            _LOGGER.debug(f"Processed address: {converted_address}")
+
+            device_type_hex = format(payload_bytes[7], '02X')
+            _LOGGER.debug(f"Extracted device type (hex): {device_type_hex}")
+
+            device_info = self.classify_device_type(device_type_hex)
+            _LOGGER.debug(f"Classified device type: {device_info}")
+
+            if device_info["Category"] == "Unknown":
+                _LOGGER.warning(
+                    f"Unknown device detected: Type {device_type_hex} at Address {converted_address}. "
+                    "Please open an issue on https://github.com/fdebrus/Nikobus-HA/issues with this information."
+                )
+                return
+
+            _LOGGER.info(f"Discovered {device_info['Category']} - {device_info['Name']}, Model: {device_info.get('Model', 'N/A')}, at Address: {converted_address}")
+
+        except Exception as e:
+            _LOGGER.error(f"Failed to parse Nikobus payload: {e}")
+
+##############
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def convert_address(self, payload):
+        """
+        Converts a 6-digit hex payload to a new 6-digit hex result based on bit ordering logic.
+
+        Args:
+            payload (str): A 6-character hex string (e.g., "04E650")
+
+        Returns:
+            str: The transformed 6-character hex string (e.g., "143981")
+        """
+
+        # Validate input
+        if len(payload) != 6 or not all(c in "0123456789ABCDEF" for c in payload.upper()):
+            raise ValueError("Payload must be a 6-character hexadecimal string.")
+
+        # Convert hex digits to binary (4 bits each)
+        binary_representation = "".join(f"{int(c, 16):04b}" for c in payload)
+
+        # Define bit ordering mapping (each nibble corresponds to certain positions)
+        ordering_map = {
+            0: [6, 5, 4, 3],       # First hex digit (all 4 bits)
+            1: [2, 1],             # Second hex digit (only 2 leftmost bits)
+            2: [14, 13, 12, 11],   # Third hex digit (all 4 bits)
+            3: [10, 9, 8, 7],      # Fourth hex digit (all 4 bits)
+            4: [22, 21, 20, 19],   # Fifth hex digit (all 4 bits)
+            5: [18, 17, 16, 15]    # Sixth hex digit (all 4 bits)
+        }
+
+        # Store bit values in a dictionary using ordering positions
+        bit_ordering = {}
+        index = 0
+        for nibble_index, positions in ordering_map.items():
+            for pos in positions:
+                bit_ordering[pos] = binary_representation[index]
+                index += 1
+
+        # Reconstruct the final 22-bit sequence based on ordering from 22 down to 1
+        final_bits = "".join(bit_ordering[order] for order in range(22, 0, -1))
+
+        # Split into 6 groups for final hex conversion
+        groups = [
+            final_bits[0:2].rjust(4, '0'),  # First group: pad left to 4 bits
+            final_bits[2:6],
+            final_bits[6:10],
+            final_bits[10:14],
+            final_bits[14:18],
+            final_bits[18:22]
+        ]
+
+        # Convert each group of 4 bits to a hexadecimal digit
+        result = "".join(hex(int(g, 2))[2:].upper() for g in groups)
+    
+        return result
+
+
+
+    async def process_mode_button_message(self, message):
+        payload = message.lstrip("$")
         payload_bytes = bytes.fromhex(payload)
 
-        # Extract the device type from the payload (byte at index 7)
-        device_type_hex = format(payload_bytes[7], '02X')
-        _LOGGER.debug(f"Extracted device type (hex): {device_type_hex}")
+        device_type_hex = format(payload_bytes[5], '02X')
+        device_info = self.classify_device_type(device_type_hex)
 
-        # Extract the device address from the payload (bytes at index 10 to 12)
-        device_address = payload_bytes[10:13].hex().upper()
-        _LOGGER.debug(f"Extracted device address: {device_address}")
+        high_byte = payload_bytes[2]
+        low_byte = payload_bytes[1]
+        device_address_reverse = f"{high_byte:02X}{low_byte:02X}"
+        device_address = f"{low_byte:02X}{high_byte:02X}"
 
-        # Classify the device
-        device_info = classify_device_type(device_type_hex)
-        _LOGGER.debug(f"Classified device type: {device_info}")
+        if device_address_reverse not in self.discovered_devices:
+            num_channels = int(device_info["Channels"]) if "Channels" in device_info else 0
 
-        if device_info == "Unknown Device":
-            _LOGGER.warning(
-                f"Unknown device detected: Type {device_type_hex} at Address {device_address}. "
-                "Please open an issue on https://github.com/fdebrus/Nikobus-HA/issues with this information."
-            )
-            return
+            self.discovered_devices[device_address_reverse] = {
+                "description": f"{device_info['Name']} at {device_address_reverse}",
+                "model": device_info["Model"],
+                "address": device_address_reverse,
+                "channels": [
+                    {"description": f"{device_info['Name']} Output {i+1}", "led_on": "", "led_off": ""}
+                    for i in range(num_channels)
+                ]
+            }
 
-        # Handle Modules
-        if device_info["Category"] == "Module":
-            _LOGGER.debug(
-                f"Discovered Module - Type: {device_info['Name']}, Model: {device_info.get('Model', 'N/A')}, "
-                f"Address: {device_address}"
-            )
+            _LOGGER.info(f"Discovered device: {device_type_hex} {device_info} at {device_address_reverse} from message: {payload}")
 
-        # Handle Buttons
-        elif device_info["Category"] == "Button":
-            _LOGGER.debug(
-                f"Discovered Button - Type: {device_info['Name']}, Model: {device_info.get('Model', 'N/A')}, "
-                f"Address: {device_address}"
-            )
+        if device_info["Model"] == "05-200":
+            await self.query_pc_link_module(device_address)
+            return None
+        return self.generate_module_json()
 
-    except Exception as e:
-        _LOGGER.error(f"Failed to parse Nikobus payload: {e}")
+    def generate_module_json(self):
+        output_structure = {
+            "switch_module": [],
+            "dimmer_module": [],
+            "roller_module": []
+        }
 
-def classify_device_type(device_type_hex):
-    """
-    Classify the device type based on the device type hex value.
-    """
-    device_types = {
-        # Known Device Types
-        "01": {"Category": "Module", "Model": "05-000-02", "Name": "Switch Module"},                            # A5C9, 0747
-        "02": {"Category": "Module", "Model": "05-001-02", "Name": "Roller Shutter Module"},                    # 0591, 9483
-        "03": {"Category": "Module", "Model": "05-007-02", "Name": "Dimmer Module"},                            # 6C0E
-        "04": {"Category": "Button", "Model": "05-342", "Name": "Button with 2 Operation Points"},              # 72EF, FE09, 560C, CCC1, 020C, 4C16, 7E12, D41E, 7C15, 8214, D81E, 4A05, C81E, F8F2, 4C58
-        "06": {"Category": "Button", "Model": "05-346", "Name": "Button with 4 Operation Points"},              # B443, 54C5, 121F, 182F, 848D, A61E, A0FB, 4A0D, 4AFE, 40A8, 480D, 9EF3
-        "08": {"Category": "Module", "Model": "05-201", "Name": "PC Logic"},                                    # 0C94
-        "09": {"Category": "Module", "Model": "05-002-02", "Name": "Compact Switch Module"},                    # 055B
-        "0A": {"Category": "Module", "Model": "05-200", "Name": "PC Link"},                                     # F586
-        "0C": {"Category": "Button", "Model": "05-348", "Name": "IR Button with 4 Operation Points"},           # 801C, C0FE
-        "12": {"Category": "Button", "Model": "05-349", "Name": "Button with 8 Operation Points"},              # 56F2, E0F1
-        "1F": {"Category": "Button", "Model": "05-311", "Name": "RF Transmitter with 2 Operation Points"},      # F658
-        "23": {"Category": "Button", "Model": "05-312", "Name": "RF Transmitter with 4 Operation Points"},      # 5012, 1549, FFFF
-        "25": {"Category": "Button", "Model": "05-055", "Name": "All-Function Interface"},                      # 8723, 6621
-        "3F": {"Category": "Button", "Model": "05-344", "Name": "Feedback Button with 2 Operation Points"},     # 4E65
-        "40": {"Category": "Button", "Model": "05-347", "Name": "Feedback Button with 4 Operation Points"},     # 2B15, 6936
-        "42": {"Category": "Module", "Model": "05-207", "Name": "Feedback Module"},                             # 6C96
-        "44": {"Category": "Button", "Model": "05-057", "Name": "Switch Interface"},                            # DC34
-    }
+        for device in self.discovered_devices.values():
+            if "Switch Module" in device["description"] or "Compact Switch Module" in device["description"]:
+                output_structure["switch_module"].append(device)
+            elif "Dimmer Module" in device["description"]:
+                output_structure["dimmer_module"].append(device)
+            elif "Roller Shutter Module" in device["description"]:
+                for channel in device["channels"]:
+                    channel["operation_time"] = "40"
+                output_structure["roller_module"].append(device)
 
-    return device_types.get(device_type_hex, "Unknown Device")
+        return json.dumps(output_structure, indent=4)
+
+
+    def decode_command_payload(self, payload_bytes):
+        """
+        Decodes a 10–hex–digit command payload.
+
+        - First 6 hex digits (24 bits): Button address, sent with bits reversed.
+        - Last 4 hex digits (16 bits): Command portion, sent with bits reversed.
+
+        The command portion contains:
+        - Mode (M): First nibble (4 bits)
+        - Timer (T): Full 4 bits, dependent on Mode.
+        - Channel (C): Third nibble (4 bits)
+        - Key (K): Lower 2 bits of the last nibble.
+
+        """
+        _LOGGER.debug(f"Payload: {payload_bytes.hex().upper()}")
+
+        # --- Process the 24-bit button address (first 3 bytes) ---
+        addr_bytes = payload_bytes[:3]  # First 3 bytes for button address
+        addr_bits = ''.join(f"{byte:08b}" for byte in addr_bytes)  # Convert bytes to binary
+        addr_bits_reversed = addr_bits[::-1]  # Reverse all bits
+        button_address = format(int(addr_bits_reversed, 2), '06X')  # Convert back to HEX
+
+        # --- Process the 16-bit command portion (last 2 bytes) ---
+        command_bytes = payload_bytes[3:]  # Last 2 bytes
+        command_bits = ''.join(f"{byte:08b}" for byte in command_bytes)  # Convert bytes to binary
+        command_bits_reversed = command_bits[::-1]  # Reverse all bits
+        command_rev_hex = format(int(command_bits_reversed, 2), '04X')  # Convert back to HEX
+
+        # Extract Mode, Timer, Channel, and Key
+        mode = int(command_rev_hex[0], 16)  # Mode (M)
+        timer_raw = int(command_rev_hex[1], 16)  # Timer (T), full 4-bit value
+        channel = int(command_rev_hex[2], 16)  # Channel (C)
+        key = int(command_rev_hex[3], 16) & 0x3  # Key (K) uses only the lower 2 bits
+
+        # Convert Timer based on Mode
+        timer_mapping = {
+            0x6: 10, 0x7: 10, 0xB: 0.5, 0xC: 45, 0xD: 60,
+            0xE: 90, 0xF: 120, 0x2: 0, 0x3: 0, 0x8: 8, 0x9: 9, 0xA: 15
+        }
+        timer = timer_mapping.get(mode, timer_raw)  # Default to raw value if mode unknown
+
+        return {
+            "button_address": button_address,
+            "K": key,
+            "C": channel,
+            "T": timer,
+            "M": mode,
+            "raw_command_reversed_hex": command_rev_hex
+        }
+
+
+    def decode_nikobus_payload(self, full_payload):
+        """
+        Decodes a full Nikobus command string:
+        - Type Code (2 hex digits)
+        - Header (4 hex digits)
+        - Commands (each 10 hex digits)
+        """
+        _LOGGER.debug(f"Original payload: {full_payload}")
+
+        # Remove known prefixes
+        if full_payload.startswith("$0510$"):
+            full_payload = full_payload[6:]
+
+        full_payload = full_payload.lstrip("$")  # Remove any additional "$"
+
+        try:
+            payload_bytes = bytes.fromhex(full_payload)
+        except ValueError:
+            _LOGGER.error(f"Invalid hex payload received: {full_payload}")
+            return None
+
+        type_code = payload_bytes[:1].hex().upper()  # First byte
+        header = payload_bytes[1:3].hex().upper()   # Next 2 bytes
+        commands_bytes = payload_bytes[3:]  # Remaining bytes
+
+        # Remove CRC if present (8 hex digits = 4 bytes)
+        if len(commands_bytes) % 5 == 4:
+            _LOGGER.info("Detected 8 trailing CRC hex digits, ignoring them.")
+            commands_bytes = commands_bytes[:-4]
+
+        elif len(commands_bytes) % 5 != 0:
+            remainder = len(commands_bytes) % 5
+            _LOGGER.warning(f"Command portion has {remainder} extra bytes that will be ignored.")
+
+        # Decode each command payload (5 bytes each)
+        n_commands = len(commands_bytes) // 5
+        commands = []
+        for i in range(0, n_commands * 5, 5):
+            cmd_payload = commands_bytes[i:i+5]  # Get 5 bytes directly
+            decoded_cmd = self.decode_command_payload(cmd_payload)  # Pass as bytes
+            commands.append(decoded_cmd)
+
+        return {
+            "type_code": type_code,
+            "header": header,
+            "commands": commands
+        }
+
+    async def process_button_command_payload(self, full_payload):
+        """
+        Processes a full Nikobus Button command payload and logs the decoded button data.
+
+        Uses the decode_nikobus_payload() helper to decode the payload and then
+        prints (via _LOGGER.info) the following information for each command:
+          - Button Address
+          - Key (K)
+          - Channel (C)
+          - Timer (T)
+          - Mode (M)
+        """
+        try:
+            decoded = self.decode_nikobus_payload(full_payload)
+            _LOGGER.info("Decoded Button Commands:")
+            _LOGGER.info(f"Type Code: {decoded['type_code']}, Header: {decoded['header']}")
+            for idx, cmd in enumerate(decoded['commands'], start=1):
+                _LOGGER.info(
+                    f"Command {idx}: Button Address: {cmd['button_address']}, "
+                    f"Key: {cmd['K']}, Channel: {cmd['C']}, Timer: {cmd['T']}, Mode: {cmd['M']}"
+                )
+        except Exception as e:
+            _LOGGER.error(f"Failed to decode button command payload: {e}")

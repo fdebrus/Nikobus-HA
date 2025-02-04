@@ -6,10 +6,11 @@ import logging
 import asyncio
 from typing import Any, Callable
 
+import binascii
+import json
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-
-from .nkbdiscovery import parse_response, classify_device_type
 
 from .const import (
     CONF_HAS_FEEDBACK_MODULE,
@@ -19,7 +20,7 @@ from .const import (
     MANUAL_REFRESH_COMMAND,
     FEEDBACK_MODULE_ANSWER,
     COMMAND_PROCESSED,
-    DEVICE_ADDRESS,
+    DEVICE_ADDRESS_INVENTORY,
     DEVICE_INVENTORY,
 )
 
@@ -35,6 +36,7 @@ class NikobusEventListener:
         config_entry: ConfigEntry,
         nikobus_actuator: Any,
         nikobus_connection: Any,
+        nikobus_discovery: Any,
         feedback_callback: Callable[[int, str], None],
     ) -> None:
         """Initialize the Nikobus event listener."""
@@ -51,8 +53,9 @@ class NikobusEventListener:
         self._actuator = nikobus_actuator
 
         self.nikobus_connection = nikobus_connection
+        self.nikobus_discovery = nikobus_discovery
         self.response_queue: asyncio.Queue[str] = asyncio.Queue()
-
+        
     async def start(self) -> None:
         """Start the event listener."""
         self._running = True
@@ -130,25 +133,23 @@ class NikobusEventListener:
                 await self.response_queue.put(message)
             return
 
-        # if message.startswith(DEVICE_INVENTORY):
-        #     parsed_data = await parse_response(message)
-        #    return 
-
-        if message.startswith(DEVICE_ADDRESS):
-            payload = message.lstrip("$")
-            payload_bytes = bytes.fromhex(payload)
-            
-            device_type_hex = format(payload_bytes[5], '02X')
-
-            device_info = classify_device_type(device_type_hex)
-
-            high_byte = payload_bytes[2]
-            low_byte = payload_bytes[1]
-            device_address = f"{high_byte:02X}{low_byte:02X}"
-
-            _LOGGER.info(f"Discovered device : {device_type_hex} {device_info} at {device_address} from message: {payload_bytes}")
+        if message.startswith(DEVICE_INVENTORY):
+            _LOGGER.debug("Device inventory: %s", message)
+            parsed_data = await self.nikobus_discovery.parse_inventory_response(message)
             return 
-        
+
+# Device central inventory: $0510$2EF586130000000400008082141D0015000000C247B9
+
+        if message.startswith(DEVICE_ADDRESS_INVENTORY): # Receive $18
+            _LOGGER.debug("Device address inventory: %s", message)
+            parsed_json = await self.nikobus_discovery.query_pc_link_module(message[3:7])
+            parsed_json = json.dumps(parsed_json, indent=4)
+            _LOGGER.info(f"{parsed_json}")
+            return          
+
+# await self.nikobus_discovery.process_button_command_payload(message)
+ # parsed_json = await self.nikobus_discovery.process_mode_button_message(message)
+
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
         await self.response_queue.put(message)
 

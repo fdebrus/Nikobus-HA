@@ -258,7 +258,7 @@ class NikobusActuator:
                 else:
                     await asyncio.sleep(REFRESH_DELAY)
 
-                value = await self._coordinator.nikobus_command_handler.get_output_state(
+                value = await self._coordinator.nikobus_command.get_output_state(
                     impacted_module_address, impacted_group
                 )
 
