@@ -1,5 +1,5 @@
-scan_for_module:
-  description: "Trigger a manual Nikobus discovery."
+query_pclink_module:
+  description: "Trigger a PClink Nikobus inventory."
   fields:
     scan_type:
       description: "Type of scan to perform (optional)."

@@ -109,7 +109,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     self.hass, self, self.dict_button_data, self.dict_module_data
                 )
                 
-                self.nikobus_discovery = NikobusDiscovery(self)
+                self.nikobus_discovery = NikobusDiscovery(self.hass, self)
 
                 self.nikobus_listener = NikobusEventListener(
                     self.hass,

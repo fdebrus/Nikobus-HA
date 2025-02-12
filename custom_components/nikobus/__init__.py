@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         _LOGGER.info("Nikobus discovery completed")
 
-    hass.services.async_register(DOMAIN, "scan_for_module", handle_module_discovery, SCAN_MODULE_SCHEMA)
+    hass.services.async_register(DOMAIN, "query_pclink_module", handle_module_discovery, SCAN_MODULE_SCHEMA)
 
     # Forward the setup to all configured platforms
     try:

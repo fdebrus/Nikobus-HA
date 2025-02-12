@@ -137,18 +137,19 @@ class NikobusEventListener:
 
         if message.startswith(DEVICE_INVENTORY): # Receive $0510
             _LOGGER.debug("Device inventory: %s", message)
-            parsed_data = await self.nikobus_discovery.parse_inventory_response(message)
+            # if self._coordinator.discovery_running:
+                # For PCLink or Yellow Button
+            await self.nikobus_discovery.parse_inventory_response(message)
+            # else:
+            #     await self.nikobus_discovery.parse_module_inventory_response(message)
             return 
 
         if message.startswith(DEVICE_ADDRESS_INVENTORY): # Receive $18
             _LOGGER.debug("Device address inventory: %s", message)
-            if self._coordinator.discovery_running:
-                parsed_json = await self.nikobus_discovery.query_pc_link_module(message[3:7])
-            else:
-                parsed_json = await self.nikobus_discovery.process_mode_button_message(message)
-            self._coordinator.discovery_running = False
-            parsed_json = json.dumps(parsed_json, indent=4)
-            _LOGGER.info(f"{parsed_json}")
+            # if self._coordinator.discovery_running:
+            await self.nikobus_discovery.query_pclink_inventory(message[3:7])
+            # else:
+            #     await self.nikobus_discovery.process_mode_button_press(message)
             return 
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
