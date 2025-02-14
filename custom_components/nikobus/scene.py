@@ -174,9 +174,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             # Initialize module changes if not yet fetched
             if module_id not in module_changes:
                 module_changes[module_id] = bytearray(
-                    self.coordinator.nikobus_module_states.get(
-                        module_id, bytearray(12)
-                    )
+                    self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
                 )
                 _LOGGER.debug(
                     "Fetched current state for module %s: %s",

@@ -69,6 +69,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.nikobus_command = None
         self.nikobus_discovery = None
         self._discovery_running = False
+        self.discovery_module_address = None
 
     @property
     def discovery_running(self):
@@ -108,7 +109,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.nikobus_actuator = NikobusActuator(
                     self.hass, self, self.dict_button_data, self.dict_module_data
                 )
-                
+
                 self.nikobus_discovery = NikobusDiscovery(self.hass, self)
 
                 self.nikobus_listener = NikobusEventListener(
@@ -120,7 +121,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     self.nikobus_discovery,
                     self.process_feedback_data,
                 )
-                
+
                 self.nikobus_command = NikobusCommandHandler(
                     self.hass,
                     self,
@@ -142,14 +143,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Failed to initialize Nikobus components: %s", e)
                 raise
 
-    async def discover_devices(self):
-        """Discover available Nikobus devices."""
+    async def discover_devices(self, module_address):
+        """Discover available module inventory."""
         if self._discovery_running:
             _LOGGER.warning("Device discovery is already running.")
-            return 
+            return
         self._discovery_running = True
         _LOGGER.debug("Starting device discovery from Nikobus")
-        await self.nikobus_command.queue_command("#A")
+        if module_address:
+            self.discovery_module_address = module_address
+            await self.nikobus_discovery.query_module_inventory(module_address)
+        else:
+            # Get the PCLink address from Nikobus and read its data
+            await self.nikobus_command.queue_command("#A")
 
     async def _async_update_data(self):
         """Fetch the latest data from the Nikobus system."""
@@ -179,9 +185,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             for group in groups_to_query:
                 try:
                     group_state = (
-                        await self.nikobus_command.get_output_state(
-                            address, group
-                        )
+                        await self.nikobus_command.get_output_state(address, group)
                         or ""
                     )
                     _LOGGER.debug(
@@ -233,7 +237,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 raise ValueError(f"Invalid module group: {module_group}")
 
             await self.async_event_handler(
-                "nikobus_refreshed", {"impacted_module_address": module_address, "impacted_module_group": module_group}
+                "nikobus_refreshed",
+                {
+                    "impacted_module_address": module_address,
+                    "impacted_module_group": module_group,
+                },
             )
 
         except Exception as e:
@@ -322,7 +330,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         # Place holder, no need to process anything here the refresh of data is managed in process_feedback_data()
         impacted_module_address = data.get("impacted_module_address")
         impacted_module_group = data.get("impacted_module_group")
-        _LOGGER.debug(f"Nikobus refreshed for module {impacted_module_address} group {impacted_module_group}")
+        _LOGGER.debug(
+            f"Nikobus refreshed for module {impacted_module_address} group {impacted_module_group}"
+        )
 
     def get_module_type(self, module_id: str) -> str:
         """Determine the module type based on the module ID."""

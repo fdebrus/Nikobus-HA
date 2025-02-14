@@ -1,6 +1,7 @@
 """Nikobus Protocol Utilities."""
 
 import logging
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -18,6 +19,7 @@ def calc_crc1(data: str) -> int:
             crc = (crc << 1) ^ 0x1021 if (crc >> 15) & 1 else crc << 1
     return crc & 0xFFFF
 
+
 def calc_crc2(data: str) -> int:
     """Calculate CRC-8 (CRC-8-ATM) for the given data."""
     crc = 0
@@ -26,6 +28,7 @@ def calc_crc2(data: str) -> int:
         for _ in range(8):
             crc = (crc << 1) ^ 0x99 if (crc & 0xFF) >> 7 else crc << 1
     return crc & 0xFF
+
 
 def append_crc1(data: str) -> str:
     """Append CRC-16/ANSI X3.28 (CRC-16-IBM) to the given data."""
@@ -57,6 +60,7 @@ def calculate_group_number(channel: int) -> int:
     """Calculate the group number of a channel."""
     return (channel + 5) // 6
 
+
 def make_pc_link_inventory_command(payload):
     # Calculate CRC-16/ANSI
     crc1_result = calc_crc1(payload)
@@ -67,6 +71,7 @@ def make_pc_link_inventory_command(payload):
 
     return f"$14{payload}{crc1_result:04X}{crc2_result:02X}"
 
+
 def reverse_24bit_to_hex(n: int) -> str:
     """
     Convert a decimal number to a 24-bit binary string,
@@ -74,18 +79,19 @@ def reverse_24bit_to_hex(n: int) -> str:
     """
     # 1) Convert the number to a 24-bit binary string
     bin_24 = f"{n:024b}"
-    
+
     # 2) Reverse the bit string
     reversed_bin = bin_24[::-1]
-    
+
     # 3) Convert reversed binary to an integer
     reversed_int = int(reversed_bin, 2)
-    
+
     # 4) Format as 6-digit hex (uppercase)
     reversed_hex = format(reversed_int, "06X")
     return reversed_hex
 
-def nikobus_to_button_address(hex_address, button='1A'):
+
+def nikobus_to_button_address(hex_address, button="1A"):
     """
     Convert a 24-bit Nikobus module 'hex_address' (e.g. '123456')
     into the special '#Nxxxxxx' form for the given 'button' (1A..2D).
@@ -93,17 +99,19 @@ def nikobus_to_button_address(hex_address, button='1A'):
 
     # 3-bit codes for the 8 possible buttons
     button_map = {
-        '1A': 0b101,
-        '1B': 0b111,
-        '1C': 0b001,
-        '1D': 0b011,
-        '2A': 0b100,
-        '2B': 0b110,
-        '2C': 0b000,
-        '2D': 0b010,
+        "1A": 0b101,
+        "1B": 0b111,
+        "1C": 0b001,
+        "1D": 0b011,
+        "2A": 0b100,
+        "2B": 0b110,
+        "2C": 0b000,
+        "2D": 0b010,
     }
     if button not in button_map:
-        raise ValueError(f"Unknown button '{button}'. Must be one of {list(button_map.keys())}.")
+        raise ValueError(
+            f"Unknown button '{button}'. Must be one of {list(button_map.keys())}."
+        )
 
     # 1) Parse the original address as a 24-bit integer
     original_24 = int(hex_address, 16) & 0xFFFFFF
@@ -127,6 +135,7 @@ def nikobus_to_button_address(hex_address, button='1A'):
 
     # 5) Format as hex, uppercase, zero-padded to 6 digits, then prepend '#N'
     return "#N" + f"{reversed_24:06X}"
+
 
 def nikobus_button_to_module(button_hex):
     """
@@ -162,17 +171,17 @@ def nikobus_button_to_module(button_hex):
 
     # 6) Translate 'button_code' back to a label
     inverse_button_map = {
-        0b101: '1A',
-        0b111: '1B',
-        0b001: '1C',
-        0b011: '1D',
-        0b100: '2A',
-        0b110: '2B',
-        0b000: '2C',
-        0b010: '2D',
+        0b101: "1A",
+        0b111: "1B",
+        0b001: "1C",
+        0b011: "1D",
+        0b100: "2A",
+        0b110: "2B",
+        0b000: "2C",
+        0b010: "2D",
     }
 
-    button_label = inverse_button_map.get(button_code, 'UNKNOWN')
+    button_label = inverse_button_map.get(button_code, "UNKNOWN")
 
     # 7) Format the module address as 6 hex digits, uppercase
     module_hex = f"{original_24:06X}"

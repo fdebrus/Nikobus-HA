@@ -6,8 +6,6 @@ import logging
 import asyncio
 from typing import Any, Callable
 
-import binascii
-import json
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -57,7 +55,7 @@ class NikobusEventListener:
         self.nikobus_connection = nikobus_connection
         self.nikobus_discovery = nikobus_discovery
         self.response_queue: asyncio.Queue[str] = asyncio.Queue()
-        
+
     async def start(self) -> None:
         """Start the event listener."""
         self._running = True
@@ -135,22 +133,24 @@ class NikobusEventListener:
                 await self.response_queue.put(message)
             return
 
-        if message.startswith(DEVICE_INVENTORY): # Receive $0510
+        if message.startswith(DEVICE_INVENTORY):  # Receive $0510
             _LOGGER.debug("Device inventory: %s", message)
-            # if self._coordinator.discovery_running:
+            if self._coordinator.discovery_module_address:
+                # if module address exists at coordinator
+                await self.nikobus_discovery.parse_module_inventory_response(message)
+            else:
                 # For PCLink or Yellow Button
-            await self.nikobus_discovery.parse_inventory_response(message)
-            # else:
-            #     await self.nikobus_discovery.parse_module_inventory_response(message)
-            return 
+                await self.nikobus_discovery.parse_inventory_response(message)
+            return
 
-        if message.startswith(DEVICE_ADDRESS_INVENTORY): # Receive $18
+        if message.startswith(DEVICE_ADDRESS_INVENTORY):  # Receive $18
             _LOGGER.debug("Device address inventory: %s", message)
-            # if self._coordinator.discovery_running:
-            await self.nikobus_discovery.query_pclink_inventory(message[3:7])
-            # else:
-            #     await self.nikobus_discovery.process_mode_button_press(message)
-            return 
+            if self._coordinator.discovery_running:
+                await self.nikobus_discovery.query_module_inventory(message[3:7])
+            else:
+                await self.nikobus_discovery.process_mode_button_press(message)
+            self._coordinator.discovery_running(False)
+            return
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
         await self.response_queue.put(message)

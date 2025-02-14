@@ -113,10 +113,8 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
                     "Refreshing module %s, group %s", module_address, module_group
                 )
 
-                value = (
-                    await self._coordinator.nikobus_command.get_output_state(
-                        module_address, module_group
-                    )
+                value = await self._coordinator.nikobus_command.get_output_state(
+                    module_address, module_group
                 )
 
                 if value is not None:

@@ -1,6 +1,5 @@
-query_pclink_module:
-  description: "Trigger a PClink Nikobus inventory."
+query_module_inventory:
+  description: "Trigger a Nikobus module inventory."
   fields:
-    scan_type:
-      description: "Type of scan to perform (optional)."
-      example: "full"
+    module_address:
+      description: "Module address"

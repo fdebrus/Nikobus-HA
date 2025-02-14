@@ -1,7 +1,6 @@
 import logging
 
 import json
-import binascii
 import aiofiles
 
 from .nkbprotocol import make_pc_link_inventory_command
@@ -10,85 +9,163 @@ _LOGGER = logging.getLogger(__name__)
 
 DEVICE_TYPES = {
     # Known Device Types
-    "01": {"Category": "Module", "Model": "05-000-02", "Channels": 12, "Name": "Switch Module"},
-    "02": {"Category": "Module", "Model": "05-001-02", "Channels": 6, "Name": "Roller Shutter Module"},
-    "03": {"Category": "Module", "Model": "05-007-02", "Channels": 12, "Name": "Dimmer Module"},
-    "04": {"Category": "Button", "Model": "05-342", "Channels": 2, "Name": "Button with 2 Operation Points"},
-    "06": {"Category": "Button", "Model": "05-346", "Channels": 4, "Name": "Button with 4 Operation Points"},
-    "08": {"Category": "Module", "Model": "05-201", "Name": "PC Logic"},
-    "09": {"Category": "Module", "Model": "05-002-02", "Channels": 4, "Name": "Compact Switch Module"},
-    "0F": {"Category": "Module", "Model": "05-200", "Name": "PC Link"},
-    "0C": {"Category": "Button", "Model": "05-348", "Channels": 4, "Name": "IR Button with 4 Operation Points"},
-    "12": {"Category": "Button", "Model": "05-349", "Channels": 8, "Name": "Button with 8 Operation Points"},
-    "1F": {"Category": "Button", "Model": "05-311", "Channels": 2, "Name": "RF Transmitter with 2 Operation Points"},
-    "23": {"Category": "Button", "Model": "05-312", "Channels": 4, "Name": "RF Transmitter with 4 Operation Points"},
-    "25": {"Category": "Button", "Model": "05-055", "Name": "All-Function Interface"},
-    "25": {"Category": "Button", "Model": "05-055", "Name": "All-Function Interface"},
-    "31": {"Category": "Module", "Model": "05-002-02", "Channels": 4, "Name": "Compact Switch Module??"},
-    "3F": {"Category": "Button", "Model": "05-344", "Channels": 2, "Name": "Feedback Button with 2 Operation Points"},
-    "40": {"Category": "Button", "Model": "05-347", "Channels": 4, "Name": "Feedback Button with 4 Operation Points"},
-    "42": {"Category": "Module", "Model": "05-207", "Name": "Feedback Module"},
-    "44": {"Category": "Button", "Model": "05-057", "Name": "Switch Interface"},
+    "01": {
+        "Category": "Module",
+        "Model": "05-000-02",
+        "Channels": 12,
+        "Name": "Switch Module",
+    },
+    "02": {
+        "Category": "Module",
+        "Model": "05-001-02",
+        "Channels": 6,
+        "Name": "Roller Shutter Module",
+    },
+    "03": {
+        "Category": "Module",
+        "Model": "05-007-02",
+        "Channels": 12,
+        "Name": "Dimmer Module",
+    },
+    "04": {
+        "Category": "Button",
+        "Model": "05-342",
+        "Channels": 2,
+        "Name": "Button with 2 Operation Points",
+    },
+    "06": {
+        "Category": "Button",
+        "Model": "05-346",
+        "Channels": 4,
+        "Name": "Button with 4 Operation Points",
+    },
+    "08": {
+        "Category": "Module", 
+        "Model": "05-201", 
+        "Name": 
+        "PC Logic"
+    },
+    "09": {
+        "Category": "Module",
+        "Model": "05-002-02",
+        "Channels": 4,
+        "Name": "Compact Switch Module",
+    },
+    "0A": {
+        "Category": "Module", 
+        "Model": "05-200", 
+        "Name": "PC Link"
+    },
+    "0C": {
+        "Category": "Button",
+        "Model": "05-348",
+        "Channels": 4,
+        "Name": "IR Button with 4 Operation Points",
+    },
+    "12": {
+        "Category": "Button",
+        "Model": "05-349",
+        "Channels": 8,
+        "Name": "Button with 8 Operation Points",
+    },
+    "1F": {
+        "Category": "Button",
+        "Model": "05-311",
+        "Channels": 2,
+        "Name": "RF Transmitter with 2 Operation Points",
+    },
+    "23": {
+        "Category": "Button",
+        "Model": "05-312",
+        "Channels": 4,
+        "Name": "RF Transmitter with 4 Operation Points",
+    },
+    "25": {
+        "Category": "Button", 
+        "Model": "05-055", 
+        "Name": 
+        "All-Function Interface"
+    },
+    "31": {
+        "Category": "Module",
+        "Model": "05-002-02",
+        "Channels": 4,
+        "Name": "Compact Switch Module??",
+    },
+    "3F": {
+        "Category": "Button",
+        "Model": "05-344",
+        "Channels": 2,
+        "Name": "Feedback Button with 2 Operation Points",
+    },
+    "40": {
+        "Category": "Button",
+        "Model": "05-347",
+        "Channels": 4,
+        "Name": "Feedback Button with 4 Operation Points",
+    },
+    "42": {
+        "Category": "Module", 
+        "Model": "05-207", 
+        "Name": "Feedback Module"
+    },
+    "44": {
+        "Category": "Button", 
+        "Model": "05-057", 
+        "Name": "Switch Interface"
+    },
 }
 
 MODE_MAPPING = {
-    0: "M01 On/Off", 
-    1: "M02 On with operating time", 
+    0: "M01 On/Off",
+    1: "M02 On with operating time",
     2: "M03 Off with operation time",
-    3: "M04 Pushbutton", 
-    4: "M05 Impulse", 
+    3: "M04 Pushbutton",
+    4: "M05 Impulse",
     5: "M06 Delayed off (long up to 2h)",
-    6: "M07 Delayed on (long up to 2h)", 
-    7: "M08 Flashing", 
+    6: "M07 Delayed on (long up to 2h)",
+    7: "M08 Flashing",
     8: "M11 Delayed off (short up to 50s)",
     9: "M12 Delayed on (short up to 50s)",
     11: "M14 Light scene on",
-    12: "M15 Light scene on / off"
+    12: "M15 Light scene on / off",
 }
 
 TIMER_MAPPING = {
-    0: ["10s", "0.5s", "0s"], 
-    1: ["1m", "1s", "1s"], 
+    0: ["10s", "0.5s", "0s"],
+    1: ["1m", "1s", "1s"],
     2: ["2m", "2s", "2s"],
-    3: ["3m", "3s", "3s"], 
-    4: ["4m", "4s", None], 
+    3: ["3m", "3s", "3s"],
+    4: ["4m", "4s", None],
     5: ["5m", "5s", None],
-    6: ["6m", "6s", None], 
-    7: ["7m", "7s", None], 
+    6: ["6m", "6s", None],
+    7: ["7m", "7s", None],
     8: ["8m", "8s", None],
-    9: ["9m", "9s", None], 
-    10: ["15m", "15s", None], 
+    9: ["9m", "9s", None],
+    10: ["15m", "15s", None],
     11: ["30m", "20s", None],
-    12: ["45m", "25s", None], 
-    13: ["60m", "30s", None], 
+    12: ["45m", "25s", None],
+    13: ["60m", "30s", None],
     14: ["90m", "40s", None],
-    15: ["120m", "50s", None]
+    15: ["120m", "50s", None],
 }
 
 KEY_MAPPING = {
-    2: {
-        "1A": "8",            
-        "1B": "C"
-    },
-    4: {
-        "1A": "8",
-        "1B": "C",
-        "1C": "0",
-        "1D": "4"
-    },
+    2: {"1A": "8", "1B": "C"},
+    4: {"1A": "8", "1B": "C", "1C": "0", "1D": "4"},
     8: {
-        # Mappings for the "first row" buttons
         "1A": "A",
         "1B": "E",
         "1C": "2",
         "1D": "6",
-        # Mappings for the "second row" buttons
         "2A": "8",
         "2B": "C",
         "2C": "0",
-        "2D": "4"
-    }
+        "2D": "4",
+    },
 }
+
+KEY_MAPPING2 = {0: "1C", 1: "1A", 2: "1D", 3: "1B", 4: "2C", 5: "2A", 6: "2D", 7: "2B"}
 
 CHANNEL_MAPPING = {
     0: "Channel 1",
@@ -102,8 +179,9 @@ CHANNEL_MAPPING = {
     8: "Channel 9",
     9: "Channel 10",
     10: "Channel 11",
-    11: "Channel 12"
+    11: "Channel 12",
 }
+
 
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):
@@ -112,10 +190,16 @@ class NikobusDiscovery:
         self._hass = hass
 
     def _classify_device_type(self, device_type_hex):
-        """ Classify the device type based on the device type hex value. """
-        return DEVICE_TYPES.get(device_type_hex, {
-            "Category": "Unknown", "Model": "Unknown", "Channels": 0, "Name": "Unknown"
-        })
+        """Classify the device type based on the device type hex value."""
+        return DEVICE_TYPES.get(
+            device_type_hex,
+            {
+                "Category": "Unknown",
+                "Model": "Unknown",
+                "Channels": 0,
+                "Name": "Unknown",
+            },
+        )
 
     def _reverse_hex(self, hex_str):
         b = bytes.fromhex(hex_str)
@@ -126,7 +210,7 @@ class NikobusDiscovery:
         # Extract the lower 21 bits.
         address = int(address_string, 16)
         lower21 = address & ((1 << 21) - 1)
-        
+
         # Reverse bits 0..20.
         reversed_bits = 0
         for _ in range(21):
@@ -142,24 +226,25 @@ class NikobusDiscovery:
         # Format the nikobus address as a 6-digit hexadecimal string and map the button.
         return {"nikobus_address": f"{nikobus_address:06X}", "button": button}
 
-#
-# Received a request to dump PC Link Data, Loop till FF for now, need to optimize when no data to stop earlier (todo)       
-#
-    async def query_pclink_inventory(self, device_address):
+    #
+    # Received a request to dump a module Data, Loop till FF for now, need to optimize when no data to stop earlier (todo)
+    #
+    async def query_module_inventory(self, device_address):
         """
-        Generates and sends PC Link commands to get Nikobus inventory.
+        Generates and sends module commands to get Nikobus inventory.
         The full command is built as:
         "$1410" + device_address + <command_code> + "04" + <CRC>
         """
         base_command = f"10{device_address}"
-        for cmd in range(0xA3, 0xFF):
+        for cmd in range(0xA3, 0xFF):  ## register are different for modules vs pclink
+            # for cmd in range(0X10, 0x1F):
             partial_hex = f"{base_command}{cmd:02X}04"
             pc_link_command = make_pc_link_inventory_command(partial_hex)
             await self._coordinator.nikobus_command.queue_command(pc_link_command)
 
-#
-# A yellow "Mode Button" has been pressed on a module, identify and report the module
-#
+    #
+    # A yellow "Mode Button" has been pressed on a module, identify and report the module
+    #
 
     async def process_mode_button_press(self, message):
         # Remove the leading "$" once and convert the remaining hex string to bytes.
@@ -181,7 +266,7 @@ class NikobusDiscovery:
                 {
                     "description": f"{device_info['Name']} Output {i + 1}",
                     "led_on": "",
-                    "led_off": ""
+                    "led_off": "",
                 }
                 for i in range(num_channels)
             ]
@@ -198,14 +283,14 @@ class NikobusDiscovery:
                 device_type_hex,
                 device_info,
                 converted_address,
-                stripped_message
+                stripped_message,
             )
 
         await self.update_module_data()
 
-#
-# Received an inventory response from PC Link data
-#
+    #
+    # Received an inventory response from PC Link data
+    #
 
     async def parse_inventory_response(self, payload):
         try:
@@ -258,12 +343,16 @@ class NikobusDiscovery:
                 if category == "Module":
                     num_channels = int(device_info.get("Channels", 0))
                     base_device["channels"] = [
-                        {"description": f"{name} Output {i + 1}", "led_on": "", "led_off": ""}
+                        {
+                            "description": f"{name} Output {i + 1}",
+                            "led_on": "",
+                            "led_off": "",
+                        }
                         for i in range(num_channels)
                     ]
                 elif category == "Button":
                     base_device["impacted_module"] = [{"address": "xxxx", "group": "x"}]
-                    
+
                 self.discovered_devices[converted_address] = base_device
 
             _LOGGER.info(
@@ -291,6 +380,7 @@ class NikobusDiscovery:
             "switch_module": {},
             "dimmer_module": {},
             "roller_module": {},
+            "other_module": {},
         }
 
         for device in self.discovered_devices.values():
@@ -304,6 +394,8 @@ class NikobusDiscovery:
                 for channel in device.get("channels", []):
                     channel["operation_time"] = "40"
                 module_data["roller_module"][address] = device
+            else:
+                module_data["other_module"][address] = device
 
         try:
             file_path = self._hass.config.path("nikobus_module_discovery.json")
@@ -347,7 +439,9 @@ class NikobusDiscovery:
                 elif num_channels == 8:
                     keys = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"]
                 else:
-                    _LOGGER.error(f"Unexpected number of channels: {num_channels} for device {address}")
+                    _LOGGER.error(
+                        f"Unexpected number of channels: {num_channels} for device {address}"
+                    )
                     continue
 
                 # Get the mapping for the current number of channels.
@@ -363,7 +457,9 @@ class NikobusDiscovery:
                         "key": key,
                         "address": updated_addr,
                     }
-                    _LOGGER.info(f"Channel {idx} (Key {key}) for device {address}: {updated_addr}")
+                    _LOGGER.info(
+                        f"Channel {idx} (Key {key}) for device {address}: {updated_addr}"
+                    )
 
                 # Add the computed channels data to the device dictionary.
                 device["channels_data"] = channels_data
@@ -396,21 +492,38 @@ class NikobusDiscovery:
         try:
             decoded = self.decode_nikobus_payload(full_payload)
             if decoded is None:
+                _LOGGER.info("No valid commands to process.")
                 return
 
             _LOGGER.info("Decoded Button Commands:")
-            _LOGGER.info(f"Type Code: {decoded['type_code']}, module_address: {decoded['module_address']}")
-            for idx, cmd in enumerate(decoded['commands'], start=1):
+            _LOGGER.info(
+                f"Type Code: {decoded['type_code']}, module_address: {decoded['module_address']}"
+            )
+
+            for idx, cmd in enumerate(decoded["commands"], start=1):
                 _LOGGER.info(
-                    f"Command {idx}: Button Address: {cmd['button_address']}, Push Button Address: {cmd['push_button_address']},"
+                    f"Command {idx}: Button Address: {cmd['button_address']}, Push Button Address: {cmd['push_button_address']}, "
                     f"Key: {cmd['K']}, Channel: {cmd['C']}, Timer: {cmd['T']}, Mode: {cmd['M']}"
                 )
+
+            # Initialize discovered_relationship if it doesn't exist.
+            if not hasattr(self, "discovered_relationship"):
+                self.discovered_relationship = []
+
+            # Accumulate new commands.
+            self.discovered_relationship.extend(decoded["commands"])
+
+            # Dump the complete discovered_relationship list to the file.
+            file_path = self._hass.config.path(
+                "nikobus_button_discovered_relationship.json"
+            )
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
+                await file.write(json.dumps(self.discovered_relationship, indent=4))
+
         except Exception as e:
             _LOGGER.error(f"Failed to decode button command payload: {e}")
 
-        
     def decode_nikobus_payload(self, full_payload):
-
         _LOGGER.debug(f"Original payload: {full_payload}")
 
         full_payload = full_payload[6:-2]
@@ -426,24 +539,26 @@ class NikobusDiscovery:
 
         _LOGGER.debug(f"Type code: {type_code}")
         _LOGGER.debug(f"module_address: {module_address}")
-        _LOGGER.debug(f"Commands (hex): {commands_bytes.hex().upper()}")     
+        _LOGGER.debug(f"Commands (hex): {commands_bytes.hex().upper()}")
 
         # Each command is 6 bytes (12 hex digits)
         n_commands = len(commands_bytes) // 6
         commands = []
         for i in range(0, n_commands * 6, 6):
-            cmd_payload = commands_bytes[i:i+6]
+            cmd_payload = commands_bytes[i : i + 6]
             cmd_payload_hex = cmd_payload.hex().upper()
-            _LOGGER.debug(f"Command (payload): {cmd_payload_hex}") 
+            _LOGGER.debug(f"Command (payload): {cmd_payload_hex}")
             decoded_cmd = self.decode_command_payload(cmd_payload_hex)
+            if decoded_cmd is None:
+                _LOGGER.info("Command skipped due to FFFFFF in button address.")
+                return None
             commands.append(decoded_cmd)
 
         return {
             "type_code": type_code,
             "module_address": module_address,
-            "commands": commands
+            "commands": commands,
         }
-
 
     def decode_command_payload(self, payload_hex: str):
         # Ensure we are working with a hex string (if payload_hex is bytes, convert it)
@@ -458,14 +573,22 @@ class NikobusDiscovery:
         # --- Extract the two parts ---
         command_hex = payload_hex[2:6]
         button_address_hex_part = payload_hex[6:]
-    
+
+        # If the button address portion contains "FFFFFF", skip processing this command.
+        if "FFFFFF" in button_address_hex_part:
+            _LOGGER.info(
+                "Skipping command because button_address_hex_part contains FFFFFF: %s",
+                payload_hex,
+            )
+            return None
+
         _LOGGER.debug("Command portion (hex): %s", command_hex)
         _LOGGER.debug(f"Button address portion (hex): {button_address_hex_part}")
 
         # --- Process the Button Address Portion ---
         # Convert each hex digit to its 4-bit binary string.
         # (For example, "80C777" → "8"="1000", "0"="0000", "C"="1100", etc.)
-        bin_str = ''.join(format(int(ch, 16), '04b') for ch in button_address_hex_part)
+        bin_str = "".join(format(int(ch, 16), "04b") for ch in button_address_hex_part)
         _LOGGER.debug("Full 24-bit Binary: %s", bin_str)
 
         # According to our transformation, we drop two bits from the second nibble.
@@ -482,10 +605,10 @@ class NikobusDiscovery:
         #    group1: the first 6 bits (positions 6 down to 1),
         #    group2: the next 8 bits (positions 14 down to 7),
         #    group3: the final 8 bits (positions 22 down to 15).)
-        group1 = modified[0:6]    # least-significant group
+        group1 = modified[0:6]  # least-significant group
         group2 = modified[6:14]
         group3 = modified[14:]
-    
+
         # Reassemble into the new 22-bit binary string:
         new_bin = group3 + group2 + group1
         _LOGGER.debug("Reassembled new_bin: %s", new_bin)
@@ -493,17 +616,17 @@ class NikobusDiscovery:
         # Convert the new binary string to an integer and then to a hexadecimal string.
         result_int = int(new_bin, 2)
 
-        button_address = format(result_int, '06X')
-        result = self._convert_nikobus_address(address)
+        button_address = format(result_int, "06X")
+        result = self._convert_nikobus_address(button_address)
         push_button_address = result["nikobus_address"]
         button = result["button"]
-        _LOGGER.error(f"Address {push_button_address} button {button}")
+        _LOGGER.debug(f"Address {push_button_address} button {button}")
 
         # --- Process the 16-bit Command Portion (first 2 bytes) ---
         # Convert the command portion (first 4 hex digits) into bytes
         # and then into a reversed hex string.
         command_bytes = bytes.fromhex(command_hex)
-        command_rev_hex = ''.join(f"{byte:02X}" for byte in command_bytes)
+        command_rev_hex = "".join(f"{byte:02X}" for byte in command_bytes)
         _LOGGER.debug("Command Rev Hex: %s", command_rev_hex)
 
         # Decode individual nibbles from the command portion.
@@ -514,7 +637,7 @@ class NikobusDiscovery:
         _LOGGER.debug(f"K {key_raw} C {channel_raw} T {timer_raw} M {mode}")
 
         mode_description = MODE_MAPPING.get(mode, f"Unknown Mode ({mode})")
-    
+
         if mode in [5, 6]:
             timer_val = TIMER_MAPPING.get(timer_raw, ["Unknown"])[0]
         elif mode in [8, 9]:
@@ -525,7 +648,7 @@ class NikobusDiscovery:
             timer_val = None
 
         channel = CHANNEL_MAPPING.get(channel_raw, f"Unknown Channel ({channel_raw})")
-        key = KEY_MAPPING.get(key_raw, f"Unknown Key ({key_raw})")
+        key = KEY_MAPPING2.get(key_raw, f"Unknown Key ({key_raw})")
 
         return {
             "button_address": button_address,
@@ -534,6 +657,5 @@ class NikobusDiscovery:
             "C": channel,
             "T": timer_val,
             "M": mode_description,
-            "raw_command_reversed_hex": command_rev_hex
+            "raw_command_reversed_hex": command_rev_hex,
         }
-

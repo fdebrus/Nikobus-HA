@@ -364,7 +364,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
 
         new_state = self.coordinator.get_cover_state(self._address, self._channel)
         if new_state != self._previous_state:
-
             _LOGGER.debug(
                 "State changed for %s: %s -> %s",
                 self._attr_name,
