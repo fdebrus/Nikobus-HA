@@ -187,17 +187,19 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
         # Send the combined command for each module after updating only the specified channels
         for module_id, channel_states in module_changes.items():
-            current_state = self.coordinator.nikobus_module_states.get(
-                module_id, bytearray(12)
-            )
+            current_state = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
+            num_channels = len(current_state)  # Use the actual number of channels for this module
 
             module_type = self.coordinator.get_module_type(module_id)
+
+            # Group 1: first 6 channels (or less if the module has fewer channels)
+            group1_channels = min(6, num_channels)
             group1_updated = any(
-                channel_states[i] != current_state[i] for i in range(6)
+                channel_states[i] != current_state[i] for i in range(group1_channels)
             )
 
             if group1_updated:
-                hex_value = channel_states[:6].hex()
+                hex_value = channel_states[:group1_channels].hex()
                 _LOGGER.debug(
                     "Updating group 1 for module %s with values: %s",
                     module_id,
@@ -207,12 +209,13 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                     module_id, group=1, value=hex_value
                 )
 
-            if module_type != "roller_module":
+            # Group 2: if there are channels beyond the first group
+            if num_channels > 6:
                 group2_updated = any(
-                    channel_states[i] != current_state[i] for i in range(6, 12)
+                    channel_states[i] != current_state[i] for i in range(6, num_channels)
                 )
                 if group2_updated:
-                    hex_value = channel_states[6:12].hex()
+                    hex_value = channel_states[6:num_channels].hex()
                     _LOGGER.debug(
                         "Updating group 2 for module %s with values: %s",
                         module_id,

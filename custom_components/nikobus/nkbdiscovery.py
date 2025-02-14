@@ -561,20 +561,19 @@ class NikobusDiscovery:
         }
 
     def decode_command_payload(self, payload_hex: str):
-        # Ensure we are working with a hex string (if payload_hex is bytes, convert it)
+        # Ensure payload_hex is a hex string in uppercase.
         if not isinstance(payload_hex, str):
             payload_hex = payload_hex.hex().upper()
+        payload_hex = payload_hex.upper()
 
-        # A 6-byte command payload is expected to have 12 hex digits.
         if len(payload_hex) != 12:
             _LOGGER.error("Unexpected payload length: %s", payload_hex)
             return None
 
-        # --- Extract the two parts ---
+        # Extract portions: the command portion and the button address portion.
         command_hex = payload_hex[2:6]
         button_address_hex_part = payload_hex[6:]
 
-        # If the button address portion contains "FFFFFF", skip processing this command.
         if "FFFFFF" in button_address_hex_part:
             _LOGGER.info(
                 "Skipping command because button_address_hex_part contains FFFFFF: %s",
@@ -583,58 +582,45 @@ class NikobusDiscovery:
             return None
 
         _LOGGER.debug("Command portion (hex): %s", command_hex)
-        _LOGGER.debug(f"Button address portion (hex): {button_address_hex_part}")
+        _LOGGER.debug("Button address portion (hex): %s", button_address_hex_part)
 
-        # --- Process the Button Address Portion ---
-        # Convert each hex digit to its 4-bit binary string.
-        # (For example, "80C777" → "8"="1000", "0"="0000", "C"="1100", etc.)
-        bin_str = "".join(format(int(ch, 16), "04b") for ch in button_address_hex_part)
+        # Convert the 6-digit hex string to a 24-bit binary string.
+        bin_str = format(int(button_address_hex_part, 16), "024b")
         _LOGGER.debug("Full 24-bit Binary: %s", bin_str)
 
-        # According to our transformation, we drop two bits from the second nibble.
-        # That is, we keep:
-        #   - all 4 bits from the first nibble,
-        #   - the first 2 bits from the second nibble,
-        #   - and all bits from the remaining 4 nibbles.
-        # (This works correctly when the input is a 6–digit hex value.)
+        # Drop two bits from the second nibble:
+        #   Keep nibble1 (first 4 bits), first 2 bits of nibble2, then all of nibbles 3–6.
         modified = bin_str[:4] + bin_str[4:6] + bin_str[8:]
         _LOGGER.debug("Modified (22-bit) Address: %s", modified)
 
-        # Now assign groups according to the bit–position mapping.
-        # (Here the modified 22-bit string is assumed to be arranged as:
-        #    group1: the first 6 bits (positions 6 down to 1),
-        #    group2: the next 8 bits (positions 14 down to 7),
-        #    group3: the final 8 bits (positions 22 down to 15).)
-        group1 = modified[0:6]  # least-significant group
+        # Partition the modified 22-bit string into three groups:
+        #   group1: first 6 bits, group2: next 8 bits, group3: final 8 bits.
+        group1 = modified[:6]
         group2 = modified[6:14]
         group3 = modified[14:]
-
-        # Reassemble into the new 22-bit binary string:
         new_bin = group3 + group2 + group1
         _LOGGER.debug("Reassembled new_bin: %s", new_bin)
 
-        # Convert the new binary string to an integer and then to a hexadecimal string.
+        # Convert back to integer and then to a 6-digit hex string.
         result_int = int(new_bin, 2)
-
         button_address = format(result_int, "06X")
         result = self._convert_nikobus_address(button_address)
         push_button_address = result["nikobus_address"]
         button = result["button"]
-        _LOGGER.debug(f"Address {push_button_address} button {button}")
+        _LOGGER.debug("Address %s button %s", push_button_address, button)
 
-        # --- Process the 16-bit Command Portion (first 2 bytes) ---
-        # Convert the command portion (first 4 hex digits) into bytes
-        # and then into a reversed hex string.
-        command_bytes = bytes.fromhex(command_hex)
-        command_rev_hex = "".join(f"{byte:02X}" for byte in command_bytes)
+        # Process the command portion.
+        # (Using command_hex directly guarantees a 4–character uppercase string.)
+        command_rev_hex = command_hex.upper()
         _LOGGER.debug("Command Rev Hex: %s", command_rev_hex)
 
-        # Decode individual nibbles from the command portion.
-        key_raw = int(command_rev_hex[0], 16)
-        channel_raw = int(command_rev_hex[1], 16)
-        timer_raw = int(command_rev_hex[2], 16)
-        mode = int(command_rev_hex[3], 16)
-        _LOGGER.debug(f"K {key_raw} C {channel_raw} T {timer_raw} M {mode}")
+        try:
+            key_raw, channel_raw, timer_raw, mode = (int(x, 16) for x in command_rev_hex)
+        except ValueError:
+            _LOGGER.error("Invalid command hex: %s", command_rev_hex)
+            return None
+
+        _LOGGER.debug("K %s C %s T %s M %s", key_raw, channel_raw, timer_raw, mode)
 
         mode_description = MODE_MAPPING.get(mode, f"Unknown Mode ({mode})")
 
