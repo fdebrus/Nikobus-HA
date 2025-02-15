@@ -236,8 +236,9 @@ class NikobusDiscovery:
         "$1410" + device_address + <command_code> + "04" + <CRC>
         """
         base_command = f"10{device_address}"
-        for cmd in range(0xA3, 0xFF):  ## register are different for modules vs pclink
-            # for cmd in range(0X10, 0x1F):
+        command_range = range(0x10, 0x1F) if self._coordinator.discovery_module else range(0xA3, 0xFF)
+
+        for cmd in command_range:
             partial_hex = f"{base_command}{cmd:02X}04"
             pc_link_command = make_pc_link_inventory_command(partial_hex)
             await self._coordinator.nikobus_command.queue_command(pc_link_command)
@@ -245,7 +246,6 @@ class NikobusDiscovery:
     #
     # A yellow "Mode Button" has been pressed on a module, identify and report the module
     #
-
     async def process_mode_button_press(self, message):
         # Remove the leading "$" once and convert the remaining hex string to bytes.
         stripped_message = message.lstrip("$")

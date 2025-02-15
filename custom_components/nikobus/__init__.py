@@ -25,9 +25,9 @@ from .coordinator import NikobusDataCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: Final[list[str]] = [
+    cover.DOMAIN,
     switch.DOMAIN,
     light.DOMAIN,
-    cover.DOMAIN,
     binary_sensor.DOMAIN,
     button.DOMAIN,
     scene.DOMAIN,

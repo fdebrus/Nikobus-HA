@@ -69,12 +69,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.nikobus_command = None
         self.nikobus_discovery = None
         self._discovery_running = False
+        self._discovery_module = None
         self.discovery_module_address = None
 
     @property
     def discovery_running(self):
         """Return whether device discovery is in progress."""
         return self._discovery_running
+
+    @property
+    def discovery_module(self):
+        """Return whether device discovery is in progress from a module not PCLink."""
+        return self._discovery_module
 
     @discovery_running.setter
     def discovery_running(self, value):
@@ -93,8 +99,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.dict_module_data = await self.nikobus_config.load_json_data(
                     "nikobus_module_config.json", "module"
                 )
-                self.dict_button_data = await self.nikobus_config.load_json_data(
-                    "nikobus_button_config.json", "button"
+                # Load button configuration; default to {"nikobus_button": {}} if file not found.
+                self.dict_button_data = (
+                    await self.nikobus_config.load_json_data("nikobus_button_config.json", "button")
+                    or {"nikobus_button": {}}
                 )
                 self.dict_scene_data = await self.nikobus_config.load_json_data(
                     "nikobus_scene_config.json", "scene"
@@ -151,9 +159,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = True
         _LOGGER.debug("Starting device discovery from Nikobus")
         if module_address:
+            self._discovery_module = True
             self.discovery_module_address = module_address
             await self.nikobus_discovery.query_module_inventory(module_address)
         else:
+            self._discovery_module = False
             # Get the PCLink address from Nikobus and read its data
             await self.nikobus_command.queue_command("#A")
 
