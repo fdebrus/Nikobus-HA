@@ -19,7 +19,7 @@ To start the discovery process, follow these steps:
 
 1. **Install the Nikobus integration** in Home Assistant.
 2. Open **Developer Tools** in Home Assistant.
-3. Navigate to the **Services** tab.
+3. Navigate to the **Actions** tab.
 4. Call the action: "Nikobus Integration: query_module_inventory"
 
 This will scan your installation and generate inventory files for modules and buttons, which can help in configuring the integration.
