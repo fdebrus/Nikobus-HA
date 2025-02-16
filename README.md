@@ -4,6 +4,15 @@
 
 This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
 
+## Discovery Process
+
+The discovery process can be used when connected to a PC-Link module to automatically inventory the modules and buttons in your Nikobus installation. The discovered data will be stored in the Home Assistant configuration directory as:
+
+`nikobus_module_discovered.json`
+`nikobus_button_discovered.json`
+
+These files are not used by the integration itself; their sole purpose is to assist users in setting up the integration as described in the sections below.
+
 ## Supported Modules
 
 - **Switch Module**: `05-000-02` and **Compact Switch Module** `05-002-02`
@@ -282,7 +291,7 @@ Entries that define roller output include an additional argument, operation_time
             "address": "9105",
             "channels": [
                 {"description": "R1 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
-                {"description": "R1 Output 2", "operation_time": "40"},
+                {"description": "R1 Output 2", "operation_time": "40", "use_as_switch":true},
                 {"description": "R1 Output 3", "operation_time": "40"},
                 {"description": "R1 Output 4", "operation_time": "40"},
                 {"description": "R1 Output 5", "operation_time": "40"},
