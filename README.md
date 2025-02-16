@@ -15,11 +15,13 @@ These files are not used by the integration itself; their sole purpose is to ass
 
 In order to trigger the discovery process, install the integration, then over developer tool invoke "Nikobus Integration: query_module_inventory" action.
 
-To initiate the discovery process:
+To start the discovery process, follow these steps:
 
-Install the Nikobus integration in Home Assistant.
-Navigate to Developer Tools in Home Assistant.
-Invoke the action "Nikobus Integration: query_module_inventory" to start the discovery.
+1. **Install the Nikobus integration** in Home Assistant.
+2. Open **Developer Tools** in Home Assistant.
+3. Navigate to the **Services** tab.
+4. Call the action: "Nikobus Integration: query_module_inventory"
+
 This will scan your installation and generate inventory files for modules and buttons, which can help in configuring the integration.
 
 ## Supported Modules
