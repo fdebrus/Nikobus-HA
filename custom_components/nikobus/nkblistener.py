@@ -45,10 +45,7 @@ class NikobusEventListener:
         self._listener_task: asyncio.Task | None = None
         self._running = False
         self._feedback_callback = feedback_callback
-        self._has_feedback_module: bool = config_entry.options.get(
-            CONF_HAS_FEEDBACK_MODULE,
-            config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
-        )
+        self._has_feedback_module: bool = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
         self._module_group = 1
         self._actuator = nikobus_actuator
 
@@ -112,22 +109,28 @@ class NikobusEventListener:
             _LOGGER.debug("Ignored message: %s", message)
             return
 
-        if message.startswith(COMMAND_PROCESSED):
+        if any(message.startswith(command) for command in COMMAND_PROCESSED):
             _LOGGER.debug("Command acknowledged: %s", message)
             await self.response_queue.put(message)
             return
 
-        if message.startswith(FEEDBACK_REFRESH_COMMAND) and self._has_feedback_module:
-            _LOGGER.debug("Feedback module refresh command: %s", message)
-            self._handle_feedback_refresh(message)
+        if any(message.startswith(refresh) for refresh in FEEDBACK_REFRESH_COMMAND):
+            if self._has_feedback_module:
+                _LOGGER.debug("Feedback module refresh command: %s", message)
+                self._handle_feedback_refresh(message)
+            else: 
+                _LOGGER.debug("Dropping Feedback refresh command: %s", message)
             return
 
-        if message.startswith(FEEDBACK_MODULE_ANSWER) and self._has_feedback_module:
-            _LOGGER.debug("Feedback module answer: %s", message)
-            await self._feedback_callback(self._module_group, message)
+        if message.startswith(FEEDBACK_MODULE_ANSWER):
+            if self._has_feedback_module:
+                _LOGGER.debug("Feedback module answer: %s", message)
+                await self._feedback_callback(self._module_group, message)
+            else: 
+                _LOGGER.debug("Dropping Feedback module answer: %s", message)
             return
 
-        if any(refresh in message for refresh in MANUAL_REFRESH_COMMAND):
+        if any(message.startswith(refresh) for refresh in MANUAL_REFRESH_COMMAND):
             _LOGGER.debug("Manual refresh command answer: %s", message)
             if not message.startswith(BUTTON_COMMAND_PREFIX):
                 await self.response_queue.put(message)
@@ -149,7 +152,7 @@ class NikobusEventListener:
                 await self.nikobus_discovery.query_module_inventory(message[3:7])
             else:
                 await self.nikobus_discovery.process_mode_button_press(message)
-            self._coordinator.discovery_running(False)
+            self._coordinator.discovery_running = False
             return
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)

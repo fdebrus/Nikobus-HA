@@ -153,9 +153,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def discover_devices(self, module_address):
         """Discover available module inventory."""
-        if self._discovery_running:
-            _LOGGER.warning("Device discovery is already running.")
-            return
+        # if self._discovery_running:
+        #    _LOGGER.warning("Device discovery is already running.")
+        #    return
         self._discovery_running = True
         _LOGGER.debug("Starting device discovery from Nikobus")
         if module_address:

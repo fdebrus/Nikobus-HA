@@ -126,6 +126,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 return self.async_update_reload_and_abort(
                     existing_entry,
+                    title=validation["title"],
                     data={
                         CONF_CONNECTION_STRING: user_input[CONF_CONNECTION_STRING],
                         CONF_HAS_FEEDBACK_MODULE: user_input.get(

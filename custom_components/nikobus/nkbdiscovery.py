@@ -90,7 +90,7 @@ DEVICE_TYPES = {
         "Category": "Module",
         "Model": "05-002-02",
         "Channels": 4,
-        "Name": "Compact Switch Module??",
+        "Name": "Compact Switch Module",
     },
     "3F": {
         "Category": "Button",
@@ -302,8 +302,6 @@ class NikobusDiscovery:
 
             # Extract and classify the device type.
             device_type_hex = f"{payload_bytes[7]:02X}"
-            if "FF" in device_type_hex:
-                return
 
             _LOGGER.debug("Extracted device type (hex): %s", device_type_hex)
             device_info = self._classify_device_type(device_type_hex)
@@ -319,6 +317,9 @@ class NikobusDiscovery:
             # For Modules, use 2 bytes (slice_end=13); for others (e.g. Button) use 3 bytes (slice_end=14).
             slice_end = 13 if category == "Module" else 14
             converted_address = payload_bytes[11:slice_end][::-1].hex().upper()
+
+            if "FFFFFF" in converted_address or "FF" in device_type_hex:
+                return
 
             _LOGGER.debug("Processed address: %s", converted_address)
 
@@ -342,16 +343,11 @@ class NikobusDiscovery:
                 }
                 if category == "Module":
                     num_channels = int(device_info.get("Channels", 0))
-                    base_device["channels"] = [
-                        {
-                            "description": f"{name} Output {i + 1}",
-                            "led_on": "",
-                            "led_off": "",
-                        }
+                    base_device["channels"] = [{"description": f"{name} Output {i + 1}",}
                         for i in range(num_channels)
                     ]
-                elif category == "Button":
-                    base_device["impacted_module"] = [{"address": "xxxx", "group": "x"}]
+                # elif category == "Button":
+                #     base_device["impacted_module"] = [{"address": "xxxx", "group": "x"}]
 
                 self.discovered_devices[converted_address] = base_device
 
@@ -394,11 +390,11 @@ class NikobusDiscovery:
                 for channel in device.get("channels", []):
                     channel["operation_time"] = "40"
                 module_data["roller_module"][address] = device
-            else:
+            elif "Button" not in description:
                 module_data["other_module"][address] = device
 
         try:
-            file_path = self._hass.config.path("nikobus_module_discovery.json")
+            file_path = self._hass.config.path("nikobus_module_discovered.json")
             async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
                 await file.write(json.dumps(module_data, indent=4))
             _LOGGER.info("Module data written to file: %s", file_path)
@@ -428,8 +424,6 @@ class NikobusDiscovery:
                 # Compute the base push button address and the button value.
                 result = self._convert_nikobus_address(address)
                 pb_address = result["nikobus_address"]
-                button = result["button"]
-                _LOGGER.debug(f"Address {pb_address} button {button}")
 
                 # Determine the list of keys based on the number of channels.
                 if num_channels == 2:
@@ -469,7 +463,7 @@ class NikobusDiscovery:
 
         # Save the button data to a file.
         try:
-            file_path = self._hass.config.path("nikobus_button_discovery.json")
+            file_path = self._hass.config.path("nikobus_button_discovered.json")
             async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
                 await file.write(json.dumps(button_data, indent=4))
             _LOGGER.info("Button data written to file: %s", file_path)
@@ -478,6 +472,10 @@ class NikobusDiscovery:
 
         # Update the coordinator's data structure.
         # self._coordinator.dict_button_data = button_data
+
+#
+#   Received data from a module
+#
 
     async def parse_module_inventory_response(self, full_payload):
         """
@@ -502,7 +500,7 @@ class NikobusDiscovery:
 
             for idx, cmd in enumerate(decoded["commands"], start=1):
                 _LOGGER.info(
-                    f"Command {idx}: Button Address: {cmd['button_address']}, Push Button Address: {cmd['push_button_address']}, "
+                    f"Command {idx}: Payload: {cmd['payload']}, Button Address: {cmd['button_address']}, Push Button Address: {cmd['push_button_address']}, "
                     f"Key: {cmd['K']}, Channel: {cmd['C']}, Timer: {cmd['T']}, Mode: {cmd['M']}"
                 )
 
@@ -548,10 +546,13 @@ class NikobusDiscovery:
             cmd_payload = commands_bytes[i : i + 6]
             cmd_payload_hex = cmd_payload.hex().upper()
             _LOGGER.debug(f"Command (payload): {cmd_payload_hex}")
+            if "FFFFFF" in cmd_payload_hex:
+                _LOGGER.info(
+                    "Skipping command because cmd_payload_hex contains FFFFFF: %s",
+                    payload_hex,
+                )            
+                continue
             decoded_cmd = self.decode_command_payload(cmd_payload_hex)
-            if decoded_cmd is None:
-                _LOGGER.info("Command skipped due to FFFFFF in button address.")
-                return None
             commands.append(decoded_cmd)
 
         return {
@@ -573,13 +574,6 @@ class NikobusDiscovery:
         # Extract portions: the command portion and the button address portion.
         command_hex = payload_hex[2:6]
         button_address_hex_part = payload_hex[6:]
-
-        if "FFFFFF" in button_address_hex_part:
-            _LOGGER.info(
-                "Skipping command because button_address_hex_part contains FFFFFF: %s",
-                payload_hex,
-            )
-            return None
 
         _LOGGER.debug("Command portion (hex): %s", command_hex)
         _LOGGER.debug("Button address portion (hex): %s", button_address_hex_part)
@@ -604,6 +598,7 @@ class NikobusDiscovery:
         # Convert back to integer and then to a 6-digit hex string.
         result_int = int(new_bin, 2)
         button_address = format(result_int, "06X")
+
         result = self._convert_nikobus_address(button_address)
         push_button_address = result["nikobus_address"]
         button = result["button"]
@@ -637,6 +632,7 @@ class NikobusDiscovery:
         key = KEY_MAPPING2.get(key_raw, f"Unknown Key ({key_raw})")
 
         return {
+            "payload": payload_hex,
             "button_address": button_address,
             "push_button_address": push_button_address,
             "K": key,
