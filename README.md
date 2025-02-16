@@ -249,13 +249,13 @@ If you are using the Feedback Module with an LED button, register a button addre
             "address": "C9A5",
             "channels": [
                 {"description": "S1 Output 1", "led_on":"259B02", "led_off":"659B02"},
-                {"description": "S1 Output 2", "led_on":"", "led_off":""},
-                {"description": "S1 Output 3", "led_on":"", "led_off":""},,
-                {"description": "S1 Output 4", "led_on":"", "led_off":""},
-                {"description": "S1 Output 5", "led_on":"", "led_off":""},
-                {"description": "S1 Output 6", "led_on":"", "led_off":""},
-                {"description": "S1 Output 7", "led_on":"", "led_off":""},
-                {"description": "S1 Output 8", "led_on":"", "led_off":""},...
+                {"description": "S1 Output 2"},
+                {"description": "S1 Output 3"},
+                {"description": "S1 Output 4"},
+                {"description": "S1 Output 5"},
+                {"description": "S1 Output 6"},
+                {"description": "S1 Output 7"},
+                {"description": "S1 Output 8"},...
 ```
 
 ```json
@@ -266,10 +266,10 @@ If you are using the Feedback Module with an LED button, register a button addre
             "address": "0E6C",
             "channels": [
                 {"description": "D1 Output 1", "led_on":"", "led_off":""},
-                {"description": "D1 Output 2", "led_on":"", "led_off":""},
-                {"description": "D1 Output 3", "led_on":"", "led_off":""},
-                {"description": "D1 Output 4", "led_on":"", "led_off":""},
-                {"description": "D1 Output 5", "led_on":"", "led_off":""},...
+                {"description": "D1 Output 2"},
+                {"description": "D1 Output 3"},
+                {"description": "D1 Output 4"},
+                {"description": "D1 Output 5"},...
 ```
 
 Entries that define roller output include an additional argument, operation_time, which specifies the total time (in seconds) that a shutter takes to fully open or close. Update this value to reflect your shutter's actual operation time. This parameter is crucial as it allows the integration to simulate setting the shutter position, a feature not natively supported by Nikobus, by operating the shutter for a calculated period.
@@ -282,11 +282,11 @@ Entries that define roller output include an additional argument, operation_time
             "address": "9105",
             "channels": [
                 {"description": "R1 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
-                {"description": "R1 Output 2", "operation_time": "40", "led_on":"", "led_off":""},
-                {"description": "R1 Output 3", "operation_time": "40", "led_on":"", "led_off":""},
-                {"description": "R1 Output 4", "operation_time": "40", "led_on":"", "led_off":""},
-                {"description": "R1 Output 5", "operation_time": "40", "led_on":"", "led_off":""},
-                {"description": "R1 Output 6", "operation_time": "40", "led_on":"", "led_off":""}
+                {"description": "R1 Output 2", "operation_time": "40"},
+                {"description": "R1 Output 3", "operation_time": "40"},
+                {"description": "R1 Output 4", "operation_time": "40"},
+                {"description": "R1 Output 5", "operation_time": "40"},
+                {"description": "R1 Output 6", "operation_time": "40"}
             ]
         }
     ]
@@ -294,6 +294,7 @@ Entries that define roller output include an additional argument, operation_time
 
 To avoid setting up entries and entities for unused module outputs, prefix any output description with "not_in_use" so it will not be imported into the integration.
 For example:{"description": "**not_in_use** output_10"} 
+If you wish to use a shutter module output as a switch to trigger eg some light, you can add "use_as_switch":true in the channel definition. Doing so will define the output as a switch in home assistant vs a cover. For example: {"description": "R1 Output 1", "operation_time": "40", "led_on":"", "led_off":"", "use_as_switch":true},
 
 ### Button Configuration
 
