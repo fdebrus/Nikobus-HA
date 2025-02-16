@@ -13,6 +13,15 @@ The discovery process can be used when connected to a PC-Link module to automati
 
 These files are not used by the integration itself; their sole purpose is to assist users in setting up the integration as described in the sections below.
 
+In order to trigger the discovery process, install the integration, then over developer tool invoke "Nikobus Integration: query_module_inventory" action.
+
+To initiate the discovery process:
+
+Install the Nikobus integration in Home Assistant.
+Navigate to Developer Tools in Home Assistant.
+Invoke the action "Nikobus Integration: query_module_inventory" to start the discovery.
+This will scan your installation and generate inventory files for modules and buttons, which can help in configuring the integration.
+
 ## Supported Modules
 
 - **Switch Module**: `05-000-02` and **Compact Switch Module** `05-002-02`
