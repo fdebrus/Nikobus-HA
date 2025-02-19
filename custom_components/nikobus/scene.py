@@ -187,8 +187,12 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
         # Send the combined command for each module after updating only the specified channels
         for module_id, channel_states in module_changes.items():
-            current_state = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
-            num_channels = len(current_state)  # Use the actual number of channels for this module
+            current_state = self.coordinator.nikobus_module_states.get(
+                module_id, bytearray(12)
+            )
+            num_channels = len(
+                current_state
+            )  # Use the actual number of channels for this module
 
             module_type = self.coordinator.get_module_type(module_id)
 
@@ -212,7 +216,8 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             # Group 2: if there are channels beyond the first group
             if num_channels > 6:
                 group2_updated = any(
-                    channel_states[i] != current_state[i] for i in range(6, num_channels)
+                    channel_states[i] != current_state[i]
+                    for i in range(6, num_channels)
                 )
                 if group2_updated:
                     hex_value = channel_states[6:num_channels].hex()

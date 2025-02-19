@@ -39,23 +39,14 @@ DEVICE_TYPES = {
         "Channels": 4,
         "Name": "Button with 4 Operation Points",
     },
-    "08": {
-        "Category": "Module", 
-        "Model": "05-201", 
-        "Name": 
-        "PC Logic"
-    },
+    "08": {"Category": "Module", "Model": "05-201", "Name": "PC Logic"},
     "09": {
         "Category": "Module",
         "Model": "05-002-02",
         "Channels": 4,
         "Name": "Compact Switch Module",
     },
-    "0A": {
-        "Category": "Module", 
-        "Model": "05-200", 
-        "Name": "PC Link"
-    },
+    "0A": {"Category": "Module", "Model": "05-200", "Name": "PC Link"},
     "0C": {
         "Category": "Button",
         "Model": "05-348",
@@ -80,12 +71,7 @@ DEVICE_TYPES = {
         "Channels": 4,
         "Name": "RF Transmitter with 4 Operation Points",
     },
-    "25": {
-        "Category": "Button", 
-        "Model": "05-055", 
-        "Name": 
-        "All-Function Interface"
-    },
+    "25": {"Category": "Button", "Model": "05-055", "Name": "All-Function Interface"},
     "31": {
         "Category": "Module",
         "Model": "05-002-02",
@@ -104,16 +90,8 @@ DEVICE_TYPES = {
         "Channels": 4,
         "Name": "Feedback Button with 4 Operation Points",
     },
-    "42": {
-        "Category": "Module", 
-        "Model": "05-207", 
-        "Name": "Feedback Module"
-    },
-    "44": {
-        "Category": "Button", 
-        "Model": "05-057", 
-        "Name": "Switch Interface"
-    },
+    "42": {"Category": "Module", "Model": "05-207", "Name": "Feedback Module"},
+    "44": {"Category": "Button", "Model": "05-057", "Name": "Switch Interface"},
 }
 
 MODE_MAPPING = {
@@ -188,6 +166,10 @@ class NikobusDiscovery:
         self.discovered_devices = {}
         self._coordinator = coordinator
         self._hass = hass
+        self._payload_buffer = ""
+        self._chunks = []
+        self._module_address = None
+        self._message_complete = False
 
     def _classify_device_type(self, device_type_hex):
         """Classify the device type based on the device type hex value."""
@@ -200,11 +182,6 @@ class NikobusDiscovery:
                 "Name": "Unknown",
             },
         )
-
-    def _reverse_hex(self, hex_str):
-        b = bytes.fromhex(hex_str)
-        reversed_b = b[::-1]
-        return reversed_b.hex().upper()
 
     def _convert_nikobus_address(self, address_string: str) -> str:
         # Extract the lower 21 bits.
@@ -236,7 +213,11 @@ class NikobusDiscovery:
         "$1410" + device_address + <command_code> + "04" + <CRC>
         """
         base_command = f"10{device_address}"
-        command_range = range(0x10, 0x1F) if self._coordinator.discovery_module else range(0xA3, 0xFF)
+        command_range = (
+            range(0x10, 0x1F)
+            if self._coordinator.discovery_module
+            else range(0xA3, 0xFF)
+        )
 
         for cmd in command_range:
             partial_hex = f"{base_command}{cmd:02X}04"
@@ -265,8 +246,6 @@ class NikobusDiscovery:
             channels = [
                 {
                     "description": f"{device_info['Name']} Output {i + 1}",
-                    "led_on": "",
-                    "led_off": "",
                 }
                 for i in range(num_channels)
             ]
@@ -291,7 +270,6 @@ class NikobusDiscovery:
     #
     # Received an inventory response from PC Link data
     #
-
     async def parse_inventory_response(self, payload):
         try:
             # Normalize payload: Remove a leading "$0510$" if present, then any extra "$".
@@ -343,7 +321,10 @@ class NikobusDiscovery:
                 }
                 if category == "Module":
                     num_channels = int(device_info.get("Channels", 0))
-                    base_device["channels"] = [{"description": f"{name} Output {i + 1}",}
+                    base_device["channels"] = [
+                        {
+                            "description": f"{name} Output {i + 1}",
+                        }
                         for i in range(num_channels)
                     ]
                 # elif category == "Button":
@@ -473,96 +454,134 @@ class NikobusDiscovery:
         # Update the coordinator's data structure.
         # self._coordinator.dict_button_data = button_data
 
-#
-#   Received data from a module
-#
-
-    async def parse_module_inventory_response(self, full_payload):
+    #
+    #   Received data from a module
+    #
+    async def parse_module_inventory_response(self, message):
         """
-        Processes a full Nikobus Button command payload and logs the decoded button data.
-        For each command, the following is logged:
-            - Button Address
-            - Key (K)
-            - Channel (C)
-            - Timer (T)
-            - Mode (M)
+        Called for each incoming line.
+        This method:
+          1. Removes the header and CRC.
+          2. Extracts the module address (from the first valid line) and payload data.
+          3. If the message is already marked complete (_message_complete==True),
+             new lines are ignored.
+          4. Otherwise, appends the payload data to an internal buffer and splits into 12-character chunks.
+          5. As soon as a chunk equals "FFFFFFFFFFFF", it automatically calls process_complete_message()
+             and resets the buffers.
         """
-        try:
-            decoded = self.decode_nikobus_payload(full_payload)
-            if decoded is None:
-                _LOGGER.info("No valid commands to process.")
-                return
+        if self._message_complete:
+            _LOGGER.debug("Message already complete; ignoring new input.")
+            return
 
-            _LOGGER.info("Decoded Button Commands:")
-            _LOGGER.info(
-                f"Type Code: {decoded['type_code']}, module_address: {decoded['module_address']}"
-            )
+        _LOGGER.debug("Received message: %r", message)
+        header = "$0510$2E"
+        if not message.startswith(header):
+            _LOGGER.error("Message does not start with expected header.")
+            return
 
-            for idx, cmd in enumerate(decoded["commands"], start=1):
-                _LOGGER.info(
-                    f"Command {idx}: Payload: {cmd['payload']}, Button Address: {cmd['button_address']}, Push Button Address: {cmd['push_button_address']}, "
-                    f"Key: {cmd['K']}, Channel: {cmd['C']}, Timer: {cmd['T']}, Mode: {cmd['M']}"
-                )
+        # Remove header and CRC (last 6 hex characters)
+        data_with_crc = message[len(header):]
+        if len(data_with_crc) < 6:
+            _LOGGER.error("Data too short after header removal.")
+            return
+        data = data_with_crc[:-6]
 
-            # Initialize discovered_relationship if it doesn't exist.
-            if not hasattr(self, "discovered_relationship"):
-                self.discovered_relationship = []
+        # Extract module address (first 4 characters) if not already set.
+        if len(data) < 4:
+            _LOGGER.error("Data too short to extract module address.")
+            return
+        module_address = data[:4]
+        if self._module_address is None:
+            self._module_address = module_address
 
-            # Accumulate new commands.
-            self.discovered_relationship.extend(decoded["commands"])
+        # The remaining part is the button payload data.
+        payload_data = data[4:]
+        _LOGGER.debug("Appending payload data: %r", payload_data)
 
-            # Dump the complete discovered_relationship list to the file.
-            file_path = self._hass.config.path(
-                "nikobus_button_discovered_relationship.json"
-            )
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                await file.write(json.dumps(self.discovered_relationship, indent=4))
+        # Append payload data.
+        self._payload_buffer += payload_data
 
-        except Exception as e:
-            _LOGGER.error(f"Failed to decode button command payload: {e}")
+        # Process the accumulated buffer into complete 12-character chunks.
+        while len(self._payload_buffer) >= 12:
+            chunk = self._payload_buffer[:12]
+            self._chunks.append(chunk)
+            _LOGGER.debug("Extracted chunk: %r", chunk)
+            self._payload_buffer = self._payload_buffer[12:]
+            # Check for termination chunk.
+            if chunk.strip().upper() == "FFFFFFFFFFFF":
+                _LOGGER.debug("Termination chunk encountered: %r", chunk)
+                self._message_complete = True
+                # Automatically process the complete message.
+                await self.process_complete_message()
+                return  # Exit early—ignore any further input.
 
-    def decode_nikobus_payload(self, full_payload):
-        _LOGGER.debug(f"Original payload: {full_payload}")
+    async def process_complete_message(self):
+        """
+        Processes all accumulated complete chunks as one message.
+        If a termination chunk is encountered in the list, only chunks before it are processed.
+        After processing, the internal state is reset.
+        """
+        if not self._chunks:
+            _LOGGER.info("No complete chunks to process.")
+            return
 
-        full_payload = full_payload[6:-2]
-        full_payload = self._reverse_hex(full_payload)
-        payload_bytes = bytes.fromhex(full_payload)
+        # Determine the termination index.
+        termination_index = None
+        for i, chunk in enumerate(self._chunks):
+            if chunk.strip().upper() == "FFFFFFFFFFFF":
+                termination_index = i
+                _LOGGER.debug("Termination chunk encountered at index %d.", i)
+                break
 
-        _LOGGER.debug(f"Converted payload: {payload_bytes.hex().upper()}")
+        if termination_index is not None:
+            chunks_to_process = self._chunks[:termination_index]
+        else:
+            chunks_to_process = self._chunks
 
-        # Extract type code and module_address
-        type_code = payload_bytes[-1:].hex().upper()
-        module_address = payload_bytes[-3:-1][::-1].hex().upper()
-        commands_bytes = payload_bytes[:-3]
-
-        _LOGGER.debug(f"Type code: {type_code}")
-        _LOGGER.debug(f"module_address: {module_address}")
-        _LOGGER.debug(f"Commands (hex): {commands_bytes.hex().upper()}")
-
-        # Each command is 6 bytes (12 hex digits)
-        n_commands = len(commands_bytes) // 6
+        _LOGGER.debug("Processing complete message with %d chunks.", len(chunks_to_process))
         commands = []
-        for i in range(0, n_commands * 6, 6):
-            cmd_payload = commands_bytes[i : i + 6]
-            cmd_payload_hex = cmd_payload.hex().upper()
-            _LOGGER.debug(f"Command (payload): {cmd_payload_hex}")
-            if "FFFFFF" in cmd_payload_hex:
-                _LOGGER.info(
-                    "Skipping command because cmd_payload_hex contains FFFFFF: %s",
-                    payload_hex,
-                )            
-                continue
-            decoded_cmd = self.decode_command_payload(cmd_payload_hex)
-            commands.append(decoded_cmd)
+        for chunk in chunks_to_process:
+            _LOGGER.debug("Decoding chunk: %r", chunk)
+            reversed_chunk = self._reverse_hex(chunk)
+            decoded = self.decode_command_payload(reversed_chunk)
+            if decoded is not None:
+                commands.append(decoded)
+            else:
+                _LOGGER.error("Failed to decode chunk: %r", chunk)
 
-        return {
-            "type_code": type_code,
-            "module_address": module_address,
+        decoded_message = {
+            "module_address": self._module_address,
             "commands": commands,
         }
+        _LOGGER.info("Decoded Button Commands:")
+        _LOGGER.info("module_address: %s", decoded_message["module_address"])
+        for idx, cmd in enumerate(decoded_message["commands"], start=1):
+            _LOGGER.info(
+                "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, Timer: %s, Mode: %s",
+                idx, cmd["payload"], cmd["button_address"],
+                cmd["push_button_address"], cmd["K"], cmd["C"], cmd["T"], cmd["M"]
+            )
 
-    def decode_command_payload(self, payload_hex: str):
-        # Ensure payload_hex is a hex string in uppercase.
+        # Write the decoded message to a file.
+        file_path = self._hass.config.path("nikobus_button_discovered_relationship.json")
+        try:
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
+                await file.write(json.dumps(decoded_message, indent=4))
+            _LOGGER.info("Decoded message written to %s", file_path)
+        except Exception as e:
+            _LOGGER.error("Error writing decoded message to file: %s", e)
+
+        # Reset internal state.
+        self._payload_buffer = ""
+        self._chunks = []
+        self._module_address = None
+        self._message_complete = False
+
+    def decode_command_payload(self, payload_hex):
+        """
+        Decodes a 12-character button payload (expected to be reversed from the received chunk)
+        into its constituent components.
+        """
         if not isinstance(payload_hex, str):
             payload_hex = payload_hex.hex().upper()
         payload_hex = payload_hex.upper()
@@ -571,54 +590,48 @@ class NikobusDiscovery:
             _LOGGER.error("Unexpected payload length: %s", payload_hex)
             return None
 
-        # Extract portions: the command portion and the button address portion.
         command_hex = payload_hex[2:6]
         button_address_hex_part = payload_hex[6:]
-
         _LOGGER.debug("Command portion (hex): %s", command_hex)
         _LOGGER.debug("Button address portion (hex): %s", button_address_hex_part)
 
-        # Convert the 6-digit hex string to a 24-bit binary string.
-        bin_str = format(int(button_address_hex_part, 16), "024b")
-        _LOGGER.debug("Full 24-bit Binary: %s", bin_str)
+        try:
+            bin_str = format(int(button_address_hex_part, 16), "024b")
+        except Exception as e:
+            _LOGGER.error("Error converting button address to binary: %s", e)
+            return None
 
-        # Drop two bits from the second nibble:
-        #   Keep nibble1 (first 4 bits), first 2 bits of nibble2, then all of nibbles 3–6.
+        _LOGGER.debug("Full 24-bit Binary: %s", bin_str)
         modified = bin_str[:4] + bin_str[4:6] + bin_str[8:]
         _LOGGER.debug("Modified (22-bit) Address: %s", modified)
-
-        # Partition the modified 22-bit string into three groups:
-        #   group1: first 6 bits, group2: next 8 bits, group3: final 8 bits.
         group1 = modified[:6]
         group2 = modified[6:14]
         group3 = modified[14:]
         new_bin = group3 + group2 + group1
         _LOGGER.debug("Reassembled new_bin: %s", new_bin)
 
-        # Convert back to integer and then to a 6-digit hex string.
-        result_int = int(new_bin, 2)
-        button_address = format(result_int, "06X")
+        try:
+            result_int = int(new_bin, 2)
+        except Exception as e:
+            _LOGGER.error("Error converting binary to int: %s", e)
+            return None
 
+        button_address = format(result_int, "06X")
         result = self._convert_nikobus_address(button_address)
         push_button_address = result["nikobus_address"]
         button = result["button"]
-        _LOGGER.debug("Address %s button %s", push_button_address, button)
+        _LOGGER.debug("Converted address %s, button %s", push_button_address, button)
 
-        # Process the command portion.
-        # (Using command_hex directly guarantees a 4–character uppercase string.)
         command_rev_hex = command_hex.upper()
         _LOGGER.debug("Command Rev Hex: %s", command_rev_hex)
-
         try:
             key_raw, channel_raw, timer_raw, mode = (int(x, 16) for x in command_rev_hex)
         except ValueError:
             _LOGGER.error("Invalid command hex: %s", command_rev_hex)
             return None
 
-        _LOGGER.debug("K %s C %s T %s M %s", key_raw, channel_raw, timer_raw, mode)
-
+        _LOGGER.debug("Command %s K %s C %s T %s M %s", command_rev_hex, key_raw, channel_raw, timer_raw, mode)
         mode_description = MODE_MAPPING.get(mode, f"Unknown Mode ({mode})")
-
         if mode in [5, 6]:
             timer_val = TIMER_MAPPING.get(timer_raw, ["Unknown"])[0]
         elif mode in [8, 9]:
@@ -641,3 +654,8 @@ class NikobusDiscovery:
             "M": mode_description,
             "raw_command_reversed_hex": command_rev_hex,
         }
+
+    def _reverse_hex(self, hex_str):
+        b = bytes.fromhex(hex_str)
+        reversed_b = b[::-1]
+        return reversed_b.hex().upper()

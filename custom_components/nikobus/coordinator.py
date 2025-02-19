@@ -100,10 +100,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     "nikobus_module_config.json", "module"
                 )
                 # Load button configuration; default to {"nikobus_button": {}} if file not found.
-                self.dict_button_data = (
-                    await self.nikobus_config.load_json_data("nikobus_button_config.json", "button")
-                    or {"nikobus_button": {}}
-                )
+                self.dict_button_data = await self.nikobus_config.load_json_data(
+                    "nikobus_button_config.json", "button"
+                ) or {"nikobus_button": {}}
                 self.dict_scene_data = await self.nikobus_config.load_json_data(
                     "nikobus_scene_config.json", "scene"
                 )

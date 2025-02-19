@@ -45,7 +45,9 @@ class NikobusEventListener:
         self._listener_task: asyncio.Task | None = None
         self._running = False
         self._feedback_callback = feedback_callback
-        self._has_feedback_module: bool = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
+        self._has_feedback_module: bool = config_entry.data.get(
+            CONF_HAS_FEEDBACK_MODULE, False
+        )
         self._module_group = 1
         self._actuator = nikobus_actuator
 
@@ -118,7 +120,7 @@ class NikobusEventListener:
             if self._has_feedback_module:
                 _LOGGER.debug("Feedback module refresh command: %s", message)
                 self._handle_feedback_refresh(message)
-            else: 
+            else:
                 _LOGGER.debug("Dropping Feedback refresh command: %s", message)
             return
 
@@ -126,7 +128,7 @@ class NikobusEventListener:
             if self._has_feedback_module:
                 _LOGGER.debug("Feedback module answer: %s", message)
                 await self._feedback_callback(self._module_group, message)
-            else: 
+            else:
                 _LOGGER.debug("Dropping Feedback module answer: %s", message)
             return
 

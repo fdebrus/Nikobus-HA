@@ -1,5 +1,6 @@
 """Nikobus Protocol Utilities."""
 
+
 def int_to_hex(value: int, digits: int) -> str:
     """Convert an integer to a hexadecimal string with a specified number of digits."""
     return ("00000000" + format(value, "x").upper())[-digits:]

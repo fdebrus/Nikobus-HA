@@ -20,6 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 HUB_IDENTIFIER = "nikobus_hub"
 
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -31,7 +32,9 @@ async def async_setup_entry(
     entities: list = []
 
     # Process standard switch_module entities
-    switch_modules: dict[str, Any] = coordinator.dict_module_data.get("switch_module", {})
+    switch_modules: dict[str, Any] = coordinator.dict_module_data.get(
+        "switch_module", {}
+    )
     for address, switch_module_data in switch_modules.items():
         module_desc = switch_module_data.get("description", f"Module {address}")
         model = switch_module_data.get("model", "Unknown Module Model")
@@ -44,7 +47,9 @@ async def async_setup_entry(
             module_model=model,
         )
 
-        for channel_index, channel_info in enumerate(switch_module_data.get("channels", []), start=1):
+        for channel_index, channel_info in enumerate(
+            switch_module_data.get("channels", []), start=1
+        ):
             if channel_info["description"].startswith("not_in_use"):
                 continue
 
@@ -77,6 +82,7 @@ async def async_setup_entry(
     async_add_entities(entities)
     _LOGGER.debug("Added %d Nikobus switch entities.", len(entities))
 
+
 def _register_nikobus_module_device(
     device_registry: dr.DeviceRegistry,
     entry: ConfigEntry,
@@ -93,6 +99,7 @@ def _register_nikobus_module_device(
         model=module_model,
         via_device=(DOMAIN, HUB_IDENTIFIER),
     )
+
 
 class NikobusSwitchCoverEntity(SwitchEntity):
     """A switch entity for roller modules using `use_as_switch`."""
@@ -120,7 +127,7 @@ class NikobusSwitchCoverEntity(SwitchEntity):
         self._attr_unique_id = f"{DOMAIN}_switch_{self.address}_{self.channel}"
 
     @property
-    def device_info(self) -> Dict[str, Any]:
+    def device_info(self) -> dict[str, Any]:
         return {
             "identifiers": {(DOMAIN, self.address)},  # Same as covers
             "manufacturer": BRAND,
@@ -141,7 +148,10 @@ class NikobusSwitchCoverEntity(SwitchEntity):
     async def async_turn_off(self, **kwargs):
         """Simulate turning off the switch (closing cover)."""
         _LOGGER.debug("Turning OFF (simulating stop) for %s", self.channel_description)
-        await self.coordinator.api.stop_cover(self.address, self.channel, direction="closing")
+        await self.coordinator.api.stop_cover(
+            self.address, self.channel, direction="closing"
+        )
+
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
     """A switch entity representing one channel on a Nikobus module."""
