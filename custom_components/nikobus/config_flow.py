@@ -128,14 +128,17 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     existing_entry,
                     title=validation["title"],
                     data={
-                        CONF_CONNECTION_STRING: user_input[CONF_CONNECTION_STRING],
+                        CONF_CONNECTION_STRING: user_input.get(
+                            CONF_CONNECTION_STRING,
+                            existing_entry.data.get(CONF_CONNECTION_STRING, "")
+                        ),
                         CONF_HAS_FEEDBACK_MODULE: user_input.get(
                             CONF_HAS_FEEDBACK_MODULE,
-                            existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
+                            existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
                         ),
                         CONF_REFRESH_INTERVAL: user_input.get(
                             CONF_REFRESH_INTERVAL,
-                            existing_entry.data.get(CONF_REFRESH_INTERVAL, 120),
+                            existing_entry.data.get(CONF_REFRESH_INTERVAL, 120)
                         ),
                     },
                 )
@@ -154,9 +157,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
                     vol.Optional(
                         CONF_HAS_FEEDBACK_MODULE,
-                        default=existing_entry.data.get(
-                            CONF_HAS_FEEDBACK_MODULE, False
-                        ),
+                        default=existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
                     ): bool,
                 }
             ),
