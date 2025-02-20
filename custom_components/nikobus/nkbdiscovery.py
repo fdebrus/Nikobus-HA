@@ -517,7 +517,7 @@ class NikobusDiscovery:
 
     async def process_complete_message(self):
         """
-        Processes all accumulated complete chunks as one message.
+        Processes all accumulated complete chunks as one message.   
         If a termination chunk is encountered in the list, only chunks before it are processed.
         After processing, the internal state is reset.
         """
@@ -539,44 +539,85 @@ class NikobusDiscovery:
             chunks_to_process = self._chunks
 
         _LOGGER.debug("Processing complete message with %d chunks.", len(chunks_to_process))
-        commands = []
+        new_commands = []
         for chunk in chunks_to_process:
             _LOGGER.debug("Decoding chunk: %r", chunk)
             reversed_chunk = self._reverse_hex(chunk)
             decoded = self.decode_command_payload(reversed_chunk)
             if decoded is not None:
-                commands.append(decoded)
+                new_commands.append(decoded)
             else:
                 _LOGGER.error("Failed to decode chunk: %r", chunk)
 
-        decoded_message = {
-            "module_address": self._module_address,
-            "commands": commands,
-        }
+        # Use an in-memory buffer to accumulate decoded commands.
+        if not hasattr(self, "_decoded_buffer"):
+            self._decoded_buffer = {
+                "module_address": self._module_address,
+                "commands": []
+            }
+        else:
+            if self._decoded_buffer.get("module_address") is None:
+                self._decoded_buffer["module_address"] = self._module_address
+
+        # Append the new commands to the in-memory buffer.
+        self._decoded_buffer["commands"].extend(new_commands)
+
         _LOGGER.info("Decoded Button Commands:")
-        _LOGGER.info("module_address: %s", decoded_message["module_address"])
-        for idx, cmd in enumerate(decoded_message["commands"], start=1):
+        _LOGGER.info("module_address: %s", self._decoded_buffer["module_address"])
+        for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
             _LOGGER.info(
                 "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, Timer: %s, Mode: %s",
                 idx, cmd["payload"], cmd["button_address"],
                 cmd["push_button_address"], cmd["K"], cmd["C"], cmd["T"], cmd["M"]
             )
 
-        # Write the decoded message to a file.
+        # Transform the in-memory buffer into the new format.
+        # Group commands by their "C" key (channel), and remove that key from each command.
+        grouped = {
+            "module_address": self._decoded_buffer["module_address"],
+            "channels": {}
+        }
+        for cmd in self._decoded_buffer["commands"]:
+            channel = cmd["C"]  # e.g., "Channel 1"
+            # Create a new command dict with only the desired keys.
+            new_cmd = {
+                "button_address": cmd["button_address"],
+                "push_button_address": cmd["push_button_address"],
+                "button_key": cmd["K"],
+                "timer": cmd["T"],
+                "mode": cmd["M"]
+            }
+            if channel not in grouped["channels"]:
+                grouped["channels"][channel] = []
+            grouped["channels"][channel].append(new_cmd)
+
+        # Sort the channels by their numeric part.
+        try:
+            sorted_channels = dict(
+            sorted(
+                    grouped["channels"].items(),
+                    key=lambda x: int(x[0].split()[1]) if len(x[0].split()) > 1 and x[0].split()[1].isdigit() else 0
+                )
+            )
+            grouped["channels"] = sorted_channels
+        except Exception as e:
+            _LOGGER.error("Error sorting channels: %s", e)
+
+        # Write the transformed data to file.
         file_path = self._hass.config.path("nikobus_button_discovered_relationship.json")
         try:
             async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                await file.write(json.dumps(decoded_message, indent=4))
+                await file.write(json.dumps(grouped, indent=4))
             _LOGGER.info("Decoded message written to %s", file_path)
         except Exception as e:
             _LOGGER.error("Error writing decoded message to file: %s", e)
 
-        # Reset internal state.
+        # Reset message-related internal state (keeping the in-memory _decoded_buffer intact).
         self._payload_buffer = ""
         self._chunks = []
         self._module_address = None
         self._message_complete = False
-
+        
     def decode_command_payload(self, payload_hex):
         """
         Decodes a 12-character button payload (expected to be reversed from the received chunk)

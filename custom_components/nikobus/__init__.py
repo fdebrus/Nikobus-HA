@@ -46,7 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration from a config entry (single-instance)."""
     _LOGGER.debug("Starting setup of Nikobus (single-instance)")
 
-    # Create and store the coordinator
+    # Create and store the coordinator (which may start the event listener)
     coordinator = NikobusDataCoordinator(hass, entry)
     entry.runtime_data = coordinator
 
@@ -105,6 +105,14 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the single Nikobus integration entry."""
     _LOGGER.debug("Unloading Nikobus (single-instance)")
+
+    # Stop the coordinator's tasks (e.g., event listener) if applicable.
+    coordinator = entry.runtime_data
+    if coordinator and hasattr(coordinator, "stop"):
+        try:
+            await coordinator.stop()
+        except Exception as err:
+            _LOGGER.error("Error stopping Nikobus coordinator: %s", err)
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if not unload_ok:

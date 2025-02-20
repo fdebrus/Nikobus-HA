@@ -150,9 +150,9 @@ class NikobusConnect:
             _LOGGER.error(error_msg)
             raise NikobusSendError(error_msg) from err
 
-    async def close(self) -> None:
-        """Close the connection to the Nikobus system."""
+    async def disconnect(self) -> None:
+        """Disconnect the connection to the Nikobus system."""
         if self._nikobus_writer:
             self._nikobus_writer.close()
             await self._nikobus_writer.wait_closed()
-            _LOGGER.info("Nikobus connection closed.")
+            _LOGGER.info("Nikobus connection disconnected.")

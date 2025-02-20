@@ -108,9 +108,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 )
 
                 # Initialize module state tracking
+                # for modules in self.dict_module_data.values():
+                #    for address, module_info in modules.items():
+                #        self.nikobus_module_states[address] = bytearray(12)
+
+                # Initialize module state tracking dynamically based on channels
                 for modules in self.dict_module_data.values():
                     for address, module_info in modules.items():
-                        self.nikobus_module_states[address] = bytearray(12)
+                        channels = module_info.get("channels", [])
+                        num_channels = len(channels)
+                        self.nikobus_module_states[address] = bytearray(num_channels)
 
                 # Instantiate main Nikobus components
                 self.nikobus_actuator = NikobusActuator(
@@ -366,3 +373,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     def get_cover_state(self, address: str, channel: int) -> int:
         """Get the state of a cover based on its address and channel."""
         return self.get_bytearray_state(address, channel)
+
+    async def stop(self) -> None:
+        """Stop the coordinator and its running tasks."""
+        _LOGGER.debug("Stopping NikobusDataCoordinator")
+        if self.nikobus_listener:
+            try:
+                await self.nikobus_listener.stop()
+                _LOGGER.debug("Nikobus listener stopped.")
+            except Exception as e:
+                _LOGGER.error("Error stopping Nikobus listener: %s", e)
+        if self.nikobus_command:
+            try:
+                await self.nikobus_command.stop()
+                _LOGGER.debug("Nikobus command handler stopped.")
+            except Exception as e:
+                _LOGGER.error("Error stopping Nikobus command handler: %s", e)
+        if self.nikobus_connection:
+            try:
+                await self.nikobus_connection.disconnect()
+                _LOGGER.debug("Nikobus connection disconnected.")
+            except Exception as e:
+                _LOGGER.error("Error disconnecting Nikobus connection: %s", e)
