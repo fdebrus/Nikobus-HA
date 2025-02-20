@@ -1,165 +1,13 @@
 import logging
 
+import os
 import json
 import aiofiles
 
 from .nkbprotocol import make_pc_link_inventory_command
+from .const import DEVICE_TYPES, MODE_MAPPING, TIMER_MAPPING, KEY_MAPPING, KEY_MAPPING2, CHANNEL_MAPPING
 
 _LOGGER = logging.getLogger(__name__)
-
-DEVICE_TYPES = {
-    # Known Device Types
-    "01": {
-        "Category": "Module",
-        "Model": "05-000-02",
-        "Channels": 12,
-        "Name": "Switch Module",
-    },
-    "02": {
-        "Category": "Module",
-        "Model": "05-001-02",
-        "Channels": 6,
-        "Name": "Roller Shutter Module",
-    },
-    "03": {
-        "Category": "Module",
-        "Model": "05-007-02",
-        "Channels": 12,
-        "Name": "Dimmer Module",
-    },
-    "04": {
-        "Category": "Button",
-        "Model": "05-342",
-        "Channels": 2,
-        "Name": "Button with 2 Operation Points",
-    },
-    "06": {
-        "Category": "Button",
-        "Model": "05-346",
-        "Channels": 4,
-        "Name": "Button with 4 Operation Points",
-    },
-    "08": {"Category": "Module", "Model": "05-201", "Name": "PC Logic"},
-    "09": {
-        "Category": "Module",
-        "Model": "05-002-02",
-        "Channels": 4,
-        "Name": "Compact Switch Module",
-    },
-    "0A": {"Category": "Module", "Model": "05-200", "Name": "PC Link"},
-    "0C": {
-        "Category": "Button",
-        "Model": "05-348",
-        "Channels": 4,
-        "Name": "IR Button with 4 Operation Points",
-    },
-    "12": {
-        "Category": "Button",
-        "Model": "05-349",
-        "Channels": 8,
-        "Name": "Button with 8 Operation Points",
-    },
-    "1F": {
-        "Category": "Button",
-        "Model": "05-311",
-        "Channels": 2,
-        "Name": "RF Transmitter with 2 Operation Points",
-    },
-    "23": {
-        "Category": "Button",
-        "Model": "05-312",
-        "Channels": 4,
-        "Name": "RF Transmitter with 4 Operation Points",
-    },
-    "25": {"Category": "Button", "Model": "05-055", "Name": "All-Function Interface"},
-    "31": {
-        "Category": "Module",
-        "Model": "05-002-02",
-        "Channels": 4,
-        "Name": "Compact Switch Module",
-    },
-    "3F": {
-        "Category": "Button",
-        "Model": "05-344",
-        "Channels": 2,
-        "Name": "Feedback Button with 2 Operation Points",
-    },
-    "40": {
-        "Category": "Button",
-        "Model": "05-347",
-        "Channels": 4,
-        "Name": "Feedback Button with 4 Operation Points",
-    },
-    "42": {"Category": "Module", "Model": "05-207", "Name": "Feedback Module"},
-    "44": {"Category": "Button", "Model": "05-057", "Name": "Switch Interface"},
-}
-
-MODE_MAPPING = {
-    0: "M01 On/Off",
-    1: "M02 On with operating time",
-    2: "M03 Off with operation time",
-    3: "M04 Pushbutton",
-    4: "M05 Impulse",
-    5: "M06 Delayed off (long up to 2h)",
-    6: "M07 Delayed on (long up to 2h)",
-    7: "M08 Flashing",
-    8: "M11 Delayed off (short up to 50s)",
-    9: "M12 Delayed on (short up to 50s)",
-    11: "M14 Light scene on",
-    12: "M15 Light scene on / off",
-}
-
-TIMER_MAPPING = {
-    0: ["10s", "0.5s", "0s"],
-    1: ["1m", "1s", "1s"],
-    2: ["2m", "2s", "2s"],
-    3: ["3m", "3s", "3s"],
-    4: ["4m", "4s", None],
-    5: ["5m", "5s", None],
-    6: ["6m", "6s", None],
-    7: ["7m", "7s", None],
-    8: ["8m", "8s", None],
-    9: ["9m", "9s", None],
-    10: ["15m", "15s", None],
-    11: ["30m", "20s", None],
-    12: ["45m", "25s", None],
-    13: ["60m", "30s", None],
-    14: ["90m", "40s", None],
-    15: ["120m", "50s", None],
-}
-
-KEY_MAPPING = {
-    2: {"1A": "8", "1B": "C"},
-    4: {"1A": "8", "1B": "C", "1C": "0", "1D": "4"},
-    8: {
-        "1A": "A",
-        "1B": "E",
-        "1C": "2",
-        "1D": "6",
-        "2A": "8",
-        "2B": "C",
-        "2C": "0",
-        "2D": "4",
-    },
-}
-
-KEY_MAPPING2 = {0: "1C", 1: "1A", 2: "1D", 3: "1B", 4: "2C", 5: "2A", 6: "2D", 7: "2B"}
-
-CHANNEL_MAPPING = {
-    0: "Channel 1",
-    1: "Channel 2",
-    2: "Channel 3",
-    3: "Channel 4",
-    4: "Channel 5",
-    5: "Channel 6",
-    6: "Channel 7",
-    7: "Channel 8",
-    8: "Channel 9",
-    9: "Channel 10",
-    10: "Channel 11",
-    11: "Channel 12",
-}
-
 
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):
@@ -183,29 +31,42 @@ class NikobusDiscovery:
             },
         )
 
-    def _convert_nikobus_address(self, address_string: str) -> str:
-        # Extract the lower 21 bits.
-        address = int(address_string, 16)
-        lower21 = address & ((1 << 21) - 1)
+    def _convert_nikobus_address(self, address_string: str) -> dict[str, any]:
+        try:
+            # Convert the address string from hexadecimal to an integer.
+            address = int(address_string, 16)
+        
+            # Reverse the order of the lower 21 bits.
+            nikobus_address = 0
+            for i in range(21):
+                nikobus_address = (nikobus_address << 1) | ((address >> i) & 1)
+        
+            # Shift left by one bit (to form a 22-bit value).
+            nikobus_address <<= 1
+        
+            # Extract the "button" (bits 21 to 23).
+            button = (address >> 21) & 0x07
+        
+            # Format the nikobus address as a 6-digit hexadecimal string and map the button.
+            return {"nikobus_address": f"{nikobus_address:06X}", "button": self.map_button(button)}
+            
+        except ValueError:
+            return f"[{address_string}]"
 
-        # Reverse bits 0..20.
-        reversed_bits = 0
-        for _ in range(21):
-            reversed_bits = (reversed_bits << 1) | (lower21 & 1)
-            lower21 >>= 1
+    def map_button(self, button: int) -> str:
+        mapping = {
+            0: "1",
+            1: "5",
+            2: "2",
+            3: "6",
+            4: "3",
+            5: "7",
+            6: "4",
+            7: "8"
+        }
+        return mapping.get(button, "?")
 
-        # Shift left by 1 to produce the final 22-bit value.
-        nikobus_address = reversed_bits << 1
-
-        # Extract the "button" (bits 21..23). Needed ?
-        button = (address >> 21) & 0x07
-
-        # Format the nikobus address as a 6-digit hexadecimal string and map the button.
-        return {"nikobus_address": f"{nikobus_address:06X}", "button": button}
-
-    #
-    # Received a request to dump a module Data, Loop till FF for now, need to optimize when no data to stop earlier (todo)
-    #
+# OPTIMIZED
     async def query_module_inventory(self, device_address):
         """
         Generates and sends module commands to get Nikobus inventory.
@@ -213,63 +74,58 @@ class NikobusDiscovery:
         "$1410" + device_address + <command_code> + "04" + <CRC>
         """
         base_command = f"10{device_address}"
-        command_range = (
-            range(0x10, 0x1F)
-            if self._coordinator.discovery_module
-            else range(0xA3, 0xFF)
-        )
-
+        command_range = range(0x10, 0x1F) if self._coordinator.discovery_module else range(0xA3, 0xFF)
+    
+        # Sequential execution (order matters)
         for cmd in command_range:
             partial_hex = f"{base_command}{cmd:02X}04"
             pc_link_command = make_pc_link_inventory_command(partial_hex)
             await self._coordinator.nikobus_command.queue_command(pc_link_command)
 
-    #
-    # A yellow "Mode Button" has been pressed on a module, identify and report the module
-    #
+# OPTIMIZED
     async def process_mode_button_press(self, message):
-        # Remove the leading "$" once and convert the remaining hex string to bytes.
+        # Remove the leading "$" and convert the remaining hex string to bytes.
         stripped_message = message.lstrip("$")
         payload_bytes = bytes.fromhex(stripped_message)
 
-        # Extract device type from byte at index 5 as a two-digit hex string.
+        # Extract the device type from byte at index 5 and classify it.
         device_type_hex = f"{payload_bytes[5]:02X}"
         device_info = self._classify_device_type(device_type_hex)
 
-        # Convert the address:
-        # Extract bytes 1 and 2, reverse them, and convert to uppercase hex.
+        # Convert the address by extracting bytes 1 and 2, reversing them, and converting to uppercase hex.
         converted_address = payload_bytes[1:3][::-1].hex().upper()
 
-        # If the device is not yet discovered, add it.
-        if converted_address not in self.discovered_devices:
-            num_channels = int(device_info.get("Channels", 0))
-            channels = [
-                {
-                    "description": f"{device_info['Name']} Output {i + 1}",
-                }
-                for i in range(num_channels)
-            ]
+        # If the device is already discovered, simply update the module data.
+        if converted_address in self.discovered_devices:
+            await self.update_module_data()
+            return
 
-            self.discovered_devices[converted_address] = {
-                "description": f"{device_info['Name']} at {converted_address}",
-                "model": device_info["Model"],
-                "address": converted_address,
-                "channels": channels,
-            }
+        # Build the channels list based on the number of channels.
+        num_channels = int(device_info.get("Channels", 0))
+        channels = [
+            {"description": f"{device_info['Name']} Output {i + 1}"}
+            for i in range(num_channels)
+        ]
 
-            _LOGGER.info(
-                "Discovered device: %s %s at %s from message: %s",
-                device_type_hex,
-                device_info,
-                converted_address,
-                stripped_message,
-            )
+        # Add the new device to the discovered devices.
+        self.discovered_devices[converted_address] = {
+            "description": device_info["Name"],
+            "model": device_info["Model"],
+            "address": converted_address,
+            "channels": channels,
+        }
+
+        _LOGGER.info(
+            "Discovered device: %s %s at %s from message: %s",
+            device_type_hex,
+            device_info,
+            converted_address,
+            stripped_message,
+        )
 
         await self.update_module_data()
 
-    #
-    # Received an inventory response from PC Link data
-    #
+# OPTIMIZED
     async def parse_inventory_response(self, payload):
         try:
             # Normalize payload: Remove a leading "$0510$" if present, then any extra "$".
@@ -278,30 +134,22 @@ class NikobusDiscovery:
             payload = payload.lstrip("$")
             payload_bytes = bytes.fromhex(payload)
 
-            # Extract and classify the device type.
+            # Extract device type and classify.
             device_type_hex = f"{payload_bytes[7]:02X}"
-
-            _LOGGER.debug("Extracted device type (hex): %s", device_type_hex)
             device_info = self._classify_device_type(device_type_hex)
-            _LOGGER.debug("Classified device type: %s", device_info)
-
-            # Cache device properties for reuse.
             category = device_info.get("Category", "Unknown")
             name = device_info.get("Name", "Unknown")
             model = device_info.get("Model", "N/A")
             channels = device_info.get("Channels", 0)
 
             # Determine the slice to extract the address.
-            # For Modules, use 2 bytes (slice_end=13); for others (e.g. Button) use 3 bytes (slice_end=14).
             slice_end = 13 if category == "Module" else 14
             converted_address = payload_bytes[11:slice_end][::-1].hex().upper()
 
+            # Exit early if the payload is invalid.
             if "FFFFFF" in converted_address or "FF" in device_type_hex:
                 return
 
-            _LOGGER.debug("Processed address: %s", converted_address)
-
-            # Warn and exit if the device category is unknown.
             if category == "Unknown":
                 _LOGGER.warning(
                     "Unknown device detected: Type %s at Address %s. "
@@ -311,25 +159,20 @@ class NikobusDiscovery:
                 )
                 return
 
-            # Add device to discovered_devices if it is not already known.
+            # Add device if it hasn't been discovered yet.
             if converted_address not in self.discovered_devices:
                 base_device = {
-                    "description": f"{name} at {converted_address}",
+                    "description": name,
                     "model": model,
                     "address": converted_address,
                     "channels": channels,
                 }
                 if category == "Module":
-                    num_channels = int(device_info.get("Channels", 0))
+                    num_channels = int(channels)
                     base_device["channels"] = [
-                        {
-                            "description": f"{name} Output {i + 1}",
-                        }
+                        {"description": f"{name} Output {i + 1}"}
                         for i in range(num_channels)
                     ]
-                # elif category == "Button":
-                #     base_device["impacted_module"] = [{"address": "xxxx", "group": "x"}]
-
                 self.discovered_devices[converted_address] = base_device
 
             _LOGGER.info(
@@ -349,6 +192,7 @@ class NikobusDiscovery:
         except Exception as e:
             _LOGGER.error("Failed to parse Nikobus payload: %s", e)
 
+# OPTIMIZED
     async def update_module_data(self) -> None:
         """
         Organize discovered devices into module types for Home Assistant.
@@ -361,17 +205,23 @@ class NikobusDiscovery:
         }
 
         for device in self.discovered_devices.values():
-            description = device.get("description", "")
+            # Skip devices with category "Button"
+            if device.get("category") == "Button":
+                continue
+
             address = device.get("address")
+            description = device.get("description", "")
+
             if "Switch Module" in description or "Compact Switch Module" in description:
                 module_data["switch_module"][address] = device
             elif "Dimmer Module" in description:
                 module_data["dimmer_module"][address] = device
             elif "Roller Shutter Module" in description:
+                # Update each channel's operation time
                 for channel in device.get("channels", []):
                     channel["operation_time"] = "40"
                 module_data["roller_module"][address] = device
-            elif "Button" not in description:
+            else:
                 module_data["other_module"][address] = device
 
         try:
@@ -382,92 +232,136 @@ class NikobusDiscovery:
         except Exception as e:
             _LOGGER.error("Failed to write module data to file: %s", e)
 
-        # Update the coordinator's data structure.
-        # self._coordinator.dict_module_data = module_data
-
-    async def update_button_data(self) -> None:
+# OPTIMIZED
+    async def update_button_data(self):
         """
-        Organize discovered push button devices into the nikobus_button JSON structure,
-        including computed per-channel data.
+        Update or create the nikobus_button_config.json file with discovered button data.
         """
-        button_data = {
-            "nikobus_button": {},
-        }
+        file_path = self._hass.config.path("nikobus_button_config.json")
 
-        # Process each discovered device that matches the criteria.
-        for device in self.discovered_devices.values():
+        # Load existing data if the file exists
+        if os.path.exists(file_path):
+            async with aiofiles.open(file_path, "r", encoding="utf-8") as file:
+                try:
+                    existing_json = json.loads(await file.read())
+                    existing_data = existing_json.get("nikobus_button", [])
+                    if not isinstance(existing_data, list):
+                        existing_data = []
+                except json.JSONDecodeError:
+                    existing_data = []
+        else:
+            existing_data = []
+
+        # Make a working copy of the existing list of button entries.
+        updated_data = existing_data.copy()
+        # Create a lookup for fast access by discovered channel address.
+        lookup = {button.get("address"): button for button in updated_data if "address" in button}
+
+        # Process each discovered button
+        for device_address, device in self.discovered_devices.items():
+            if device.get("category") != "Button":
+                continue
+
             description = device.get("description", "")
-            address = device.get("address")
-            num_channels = device.get("channels")
+            model = device.get("model", "")
+            num_channels = device.get("channels", 0)
 
-            # Process only devices that are Buttons.
-            if "Button" in description:
-                # Compute the base push button address and the button value.
-                result = self._convert_nikobus_address(address)
-                pb_address = result["nikobus_address"]
+            # Determine the list of keys based on the number of channels
+            if num_channels == 2:
+                keys = ["1A", "1B"]
+            elif num_channels == 4:
+                keys = ["1A", "1B", "1C", "1D"]
+            elif num_channels == 8:
+                keys = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"]
+            else:
+                _LOGGER.error(f"Unexpected number of channels: {num_channels} for device {device_address}")
+                continue
 
-                # Determine the list of keys based on the number of channels.
-                if num_channels == 2:
-                    keys = ["1A", "1B"]
-                elif num_channels == 4:
-                    keys = ["1A", "1B", "1C", "1D"]
-                elif num_channels == 8:
-                    keys = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"]
+            mapping = KEY_MAPPING.get(num_channels, {})
+            channels_data = {}
+
+            # Compute the converted address once per device.
+            converted_result = self._convert_nikobus_address(device_address)
+            converted_address = converted_result["nikobus_address"]
+            original_nibble = int(converted_address[0], 16)
+
+            for idx, key in enumerate(keys, start=1):
+                if key in mapping:
+                    add_value = int(mapping[key], 16)
+                    new_nibble_value = original_nibble + add_value
+                    new_nibble_hex = f"{new_nibble_value:X}"
+                    updated_addr = new_nibble_hex + converted_address[1:]
+                    channels_data[f"channel_{idx}"] = {"key": key, "address": updated_addr}
+
+            # Save the computed channels_data with the discovered device.
+            device["channels_data"] = channels_data
+
+            # For each channel, update an existing button entry or add a new one.
+            for channel_info in channels_data.values():
+                discovered_channel_address = channel_info["address"]
+                key = channel_info["key"]
+
+                new_info = {
+                    "key": key,
+                    "type": description,
+                    "model": model,
+                    "address": device_address,
+                    "channels": num_channels,
+                }
+
+                # Use lookup for efficiency
+                button = lookup.get(discovered_channel_address)
+                if button:
+                    discovered_list = button.setdefault("discovered_info", [])
+                    # Find if there is already an entry matching new_info
+                    found_info = next(
+                        (info for info in discovered_list if info.get("key") == new_info["key"] and info.get("address") == new_info["address"]),
+                        None
+                    )
+                    if found_info:
+                        if (found_info.get("type") != new_info["type"] or
+                            found_info.get("model") != new_info["model"] or
+                            found_info.get("channels") != new_info["channels"]):
+                            found_info.update({
+                                "type": new_info["type"],
+                                "model": new_info["model"],
+                                "channels": new_info["channels"],
+                            })
+                    else:
+                        discovered_list.append(new_info)
                 else:
-                    _LOGGER.error(
-                        f"Unexpected number of channels: {num_channels} for device {address}"
-                    )
-                    continue
-
-                # Get the mapping for the current number of channels.
-                mapping = KEY_MAPPING[num_channels]
-
-                # Compute the channel-specific data.
-                channels_data = {}
-                for idx, key in enumerate(keys, start=1):
-                    new_nibble = mapping[key]
-                    # Replace the first nibble of pb_address with the new nibble.
-                    updated_addr = new_nibble + pb_address[1:]
-                    channels_data[f"channel_{idx}"] = {
-                        "key": key,
-                        "address": updated_addr,
+                    new_button = {
+                        "description": description,
+                        "address": discovered_channel_address,
+                        "impacted_module": [{"address": "", "group": ""}],
+                        "discovered_info": [new_info]
                     }
-                    _LOGGER.info(
-                        f"Channel {idx} (Key {key}) for device {address}: {updated_addr}"
-                    )
+                    updated_data.append(new_button)
+                    lookup[discovered_channel_address] = new_button
 
-                # Add the computed channels data to the device dictionary.
-                device["channels_data"] = channels_data
-
-                # Add or update the button entry in the main JSON structure.
-                button_data["nikobus_button"][address] = device
-
-        # Save the button data to a file.
+        # Write the updated data back to the file in the same JSON structure.
         try:
-            file_path = self._hass.config.path("nikobus_button_discovered.json")
             async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                await file.write(json.dumps(button_data, indent=4))
-            _LOGGER.info("Button data written to file: %s", file_path)
+                output_json = {"nikobus_button": updated_data}
+                await file.write(json.dumps(output_json, indent=4))
+            _LOGGER.info("Updated button data written to file: %s", file_path)
         except Exception as e:
             _LOGGER.error("Failed to write button data to file: %s", e)
 
-        # Update the coordinator's data structure.
-        # self._coordinator.dict_button_data = button_data
 
-    #
-    #   Received data from a module
-    #
+### MORE WORK HERE BELOW ###
+
     async def parse_module_inventory_response(self, message):
         """
-        Called for each incoming line.
-        This method:
-          1. Removes the header and CRC.
-          2. Extracts the module address (from the first valid line) and payload data.
-          3. If the message is already marked complete (_message_complete==True),
-             new lines are ignored.
-          4. Otherwise, appends the payload data to an internal buffer and splits into 12-character chunks.
-          5. As soon as a chunk equals "FFFFFFFFFFFF", it automatically calls process_complete_message()
-             and resets the buffers.
+        Called for each incoming line. This method:
+        1. Removes the header and CRC.
+        2. Extracts the module address (from the first valid line) and payload data.
+        3. If the message is already marked complete (_message_complete==True),
+        new lines are ignored.
+        4. Otherwise, appends the payload data to an internal buffer and splits it
+        into 12-character chunks.
+        5. As soon as a chunk equals "FFFFFFFFFFFF", it calls process_complete_message()
+        and resets the buffers.
         """
         if self._message_complete:
             _LOGGER.debug("Message already complete; ignoring new input.")
@@ -486,7 +380,7 @@ class NikobusDiscovery:
             return
         data = data_with_crc[:-6]
 
-        # Extract module address (first 4 characters) if not already set.
+        # Ensure there's enough data to extract the module address (first 4 characters)
         if len(data) < 4:
             _LOGGER.error("Data too short to extract module address.")
             return
@@ -494,26 +388,22 @@ class NikobusDiscovery:
         if self._module_address is None:
             self._module_address = module_address
 
-        # The remaining part is the button payload data.
+        # The remaining data is payload for the button.
         payload_data = data[4:]
         _LOGGER.debug("Appending payload data: %r", payload_data)
-
-        # Append payload data.
         self._payload_buffer += payload_data
 
-        # Process the accumulated buffer into complete 12-character chunks.
+        # Process the buffer into complete 12-character chunks.
         while len(self._payload_buffer) >= 12:
             chunk = self._payload_buffer[:12]
             self._chunks.append(chunk)
             _LOGGER.debug("Extracted chunk: %r", chunk)
             self._payload_buffer = self._payload_buffer[12:]
-            # Check for termination chunk.
             if chunk.strip().upper() == "FFFFFFFFFFFF":
                 _LOGGER.debug("Termination chunk encountered: %r", chunk)
                 self._message_complete = True
-                # Automatically process the complete message.
                 await self.process_complete_message()
-                return  # Exit early—ignore any further input.
+                return
 
     async def process_complete_message(self):
         """
@@ -594,7 +484,7 @@ class NikobusDiscovery:
         # Sort the channels by their numeric part.
         try:
             sorted_channels = dict(
-            sorted(
+                sorted(
                     grouped["channels"].items(),
                     key=lambda x: int(x[0].split()[1]) if len(x[0].split()) > 1 and x[0].split()[1].isdigit() else 0
                 )

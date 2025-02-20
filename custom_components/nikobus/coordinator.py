@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.components.persistent_notification import create as create_notification
 
 from .nkbAPI import NikobusAPI
 from .nkbconnect import NikobusConnect
@@ -107,11 +108,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     "nikobus_scene_config.json", "scene"
                 )
 
-                # Initialize module state tracking
-                # for modules in self.dict_module_data.values():
-                #    for address, module_info in modules.items():
-                #        self.nikobus_module_states[address] = bytearray(12)
-
                 # Initialize module state tracking dynamically based on channels
                 for modules in self.dict_module_data.values():
                     for address, module_info in modules.items():
@@ -158,20 +154,29 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 raise
 
     async def discover_devices(self, module_address):
-        """Discover available module inventory."""
-        # if self._discovery_running:
-        #    _LOGGER.warning("Device discovery is already running.")
-        #    return
+        """Discover available module / button."""
+        create_notification(
+            self.hass,
+            "Nikobus discovery is in progress. Please wait...",
+            title="Nikobus Discovery",
+            notification_id="nikobus_discovery"
+        )
         self._discovery_running = True
         _LOGGER.debug("Starting device discovery from Nikobus")
-        if module_address:
-            self._discovery_module = True
-            self.discovery_module_address = module_address
-            await self.nikobus_discovery.query_module_inventory(module_address)
-        else:
-            self._discovery_module = False
-            # Get the PCLink address from Nikobus and read its data
-            await self.nikobus_command.queue_command("#A")
+        try:
+            if module_address:
+                self._discovery_module = True
+                self.discovery_module_address = module_address
+                await self.nikobus_discovery.query_module_inventory(module_address)
+            else:
+                self._discovery_module = False
+                await self.nikobus_command.queue_command("#A")
+        finally:
+            await self.hass.services.async_call(
+                "persistent_notification",
+                "dismiss",
+                {"notification_id": "nikobus_discovery"}
+            )
 
     async def _async_update_data(self):
         """Fetch the latest data from the Nikobus system."""
