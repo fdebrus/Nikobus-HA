@@ -109,6 +109,7 @@ class NikobusDiscovery:
 
         # Add the new device to the discovered devices.
         self.discovered_devices[converted_address] = {
+            "category": device_info["Category"],
             "description": device_info["Name"],
             "model": device_info["Model"],
             "address": converted_address,
@@ -163,6 +164,7 @@ class NikobusDiscovery:
             if converted_address not in self.discovered_devices:
                 base_device = {
                     "description": name,
+                    "category": category,
                     "model": model,
                     "address": converted_address,
                     "channels": channels,
@@ -302,11 +304,11 @@ class NikobusDiscovery:
                 key = channel_info["key"]
 
                 new_info = {
-                    "key": key,
                     "type": description,
                     "model": model,
                     "address": device_address,
                     "channels": num_channels,
+                    "key": key,
                 }
 
                 # Use lookup for efficiency
