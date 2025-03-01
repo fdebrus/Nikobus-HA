@@ -9,10 +9,10 @@ from .const import (
     DEVICE_INVENTORY,
     DEVICE_TYPES,
     SWITCH_MODE_MAPPING,
-    SHUTTER_MODE_MAPPING,
+    ROLLER_MODE_MAPPING,
     DIMMER_MODE_MAPPING,
     SWITCH_TIMER_MAPPING,
-    SHUTTER_TIMER_MAPPING,
+    ROLLER_TIMER_MAPPING,
     DIMMER_TIMER_MAPPING,
     KEY_MAPPING,
     KEY_MAPPING_MODULE,
@@ -32,7 +32,7 @@ class NikobusDiscovery:
         self._module_type = None
         self._message_complete = False
         self._timeout_task = None
-        self._timeout_seconds = 5.0  # Adjust the timeout duration as needed
+        self._timeout_seconds = 5.0  # Adjust the timeout duration
 
     def _cancel_timeout(self):
         if self._timeout_task:
@@ -78,6 +78,17 @@ class NikobusDiscovery:
             return f"[{address_string}]"
 
     async def query_module_inventory(self, device_address):
+        if device_address == "ALL":
+            all_addresses = self._coordinator.get_all_module_addresses()
+            for addr in all_addresses:
+                _LOGGER.info("Starting discovery for module: %s", addr)
+                self._coordinator.discovery_module = True
+                await self.query_module_inventory(addr)
+                while self._coordinator.discovery_module:
+                    await asyncio.sleep(0.5)
+                _LOGGER.info("Completed discovery for module: %s", addr)
+            return
+
         base_command = f"10{device_address[2:4] + device_address[:2]}"
         self._module_address = device_address
         if self._coordinator.discovery_module:
@@ -94,7 +105,6 @@ class NikobusDiscovery:
             partial_hex = f"{base_command}{cmd:02X}04"
             pc_link_command = make_pc_link_inventory_command(partial_hex)
             await self._coordinator.nikobus_command.queue_command(pc_link_command)
-        self._coordinator.discovery_module = False
 
     async def process_mode_button_press(self, message):
         stripped_message = message.lstrip("$")
@@ -365,7 +375,6 @@ class NikobusDiscovery:
         for chunk in chunks_to_process:
             _LOGGER.debug("Decoding chunk: %r", chunk[:12])
             reversed_chunk = self._reverse_hex(chunk[:12])
-            # Limit to 6 bytes, needed ?? extra payload exist for dimmers
             decoded = self.decode_command_payload(reversed_chunk)
             if decoded is not None:
                 new_commands.append(decoded)
@@ -374,31 +383,21 @@ class NikobusDiscovery:
                 _LOGGER.error("Failed to decode chunk: %r", reversed_chunk)
 
         if not hasattr(self, "_decoded_buffer"):
-            self._decoded_buffer = {
-                "module_address": self._module_address,
-                "commands": []
-            }
+            self._decoded_buffer = {"module_address": self._module_address, "commands": []}
         else:
             if self._decoded_buffer.get("module_address") is None:
                 self._decoded_buffer["module_address"] = self._module_address
 
         self._decoded_buffer["commands"].extend(new_commands)
 
-        # Log decoded commands for inspection.
         _LOGGER.info("Decoded Button Commands:")
         _LOGGER.info("module_address: %s", self._decoded_buffer["module_address"])
         for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
-            _LOGGER.info(
-                "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, Timer: %s, Mode: %s",
-                idx, cmd.get("payload"), cmd.get("button_address"),
-                cmd.get("push_button_address"), cmd.get("K"), cmd.get("C"), cmd.get("T"), cmd.get("M")
-            )
+            _LOGGER.info("Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, Timer: %s, Mode: %s",
+                        idx, cmd.get("payload"), cmd.get("button_address"), cmd.get("push_button_address"),
+                        cmd.get("K"), cmd.get("C"), cmd.get("T"), cmd.get("M"))
 
-        # Group commands by channel.
-        grouped = {
-            "module_address": self._decoded_buffer["module_address"],
-            "channels": {}
-        }
+        grouped = {"module_address": self._decoded_buffer["module_address"], "channels": {}}
         for cmd in self._decoded_buffer["commands"]:
             channel = cmd.get("C")
             new_cmd = {
@@ -406,12 +405,12 @@ class NikobusDiscovery:
                 "push_button_address": cmd.get("push_button_address"),
                 "button_key": cmd.get("K"),
                 "timer": cmd.get("T"),
-                "mode": cmd.get("M")
+                "mode": cmd.get("M"),
+                "channel": cmd.get("C")
             }
             if channel not in grouped["channels"]:
                 grouped["channels"][channel] = []
             grouped["channels"][channel].append(new_cmd)
-
         try:
             sorted_channels = dict(
                 sorted(
@@ -424,22 +423,48 @@ class NikobusDiscovery:
         except Exception as e:
             _LOGGER.error("Error sorting channels: %s", e)
 
-        file_path = self._hass.config.path("nikobus_button_relationship.json")
+        # Update the button configuration with discovered_link info.
+        config_file_path = self._hass.config.path("nikobus_button_config.json")
         try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                data_to_write = json.dumps(grouped, indent=4)
-                _LOGGER.debug("Writing data to file %s: %s", file_path, data_to_write)
-                await file.write(data_to_write)
-            _LOGGER.info("Decoded message written to %s", file_path)
-        except Exception as e:
-            _LOGGER.error("Error writing decoded message to file: %s", e)
+            if os.path.exists(config_file_path):
+                async with aiofiles.open(config_file_path, "r", encoding="utf-8") as file:
+                    try:
+                        existing_json = json.loads(await file.read())
+                        buttons = existing_json.get("nikobus_button", [])
+                        if not isinstance(buttons, list):
+                            buttons = []
+                    except json.JSONDecodeError:
+                        buttons = []
+            else:
+                buttons = []
 
-        # Reset state.
+            for channel_cmds in grouped["channels"].values():
+                for cmd in channel_cmds:
+                    push_button_addr = cmd.get("push_button_address")
+                    for button in buttons:
+                        if button.get("address") == push_button_addr:
+                            button["discovered_link"] = {
+                                "module_address": grouped.get("module_address"),
+                                "channel": cmd.get("channel"),
+                                "mode": cmd.get("mode"),
+                                "timer": cmd.get("timer")
+                            }
+                            _LOGGER.info("Updated button %s with discovered_link", push_button_addr)
+                            break
+
+            updated_config = {"nikobus_button": buttons}
+            async with aiofiles.open(config_file_path, "w", encoding="utf-8") as file:
+                await file.write(json.dumps(updated_config, indent=4))
+            _LOGGER.info("Updated button configuration written to %s", config_file_path)
+        except Exception as e:
+            _LOGGER.error("Error updating button configuration: %s", e)
+
         self._payload_buffer = ""
         self._decoded_buffer = {"module_address": None, "commands": []}
         self._module_address = None
         self._message_complete = False
         self._coordinator.discovery_running = False
+        self._coordinator.discovery_module = False
 
     def get_button_address(self, payload):
         try:
@@ -518,7 +543,7 @@ class NikobusDiscovery:
         module_mappings = {
             'switch_module': (SWITCH_MODE_MAPPING, SWITCH_TIMER_MAPPING),
             'dimmer_module': (DIMMER_MODE_MAPPING, DIMMER_TIMER_MAPPING),
-            'shutter_module': (SHUTTER_MODE_MAPPING, SHUTTER_TIMER_MAPPING)
+            'roller_module': (ROLLER_MODE_MAPPING, ROLLER_TIMER_MAPPING)
         }
 
         # Default to 'switch_module' if the module type isn't found

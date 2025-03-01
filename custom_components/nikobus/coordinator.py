@@ -417,6 +417,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
 ## DISCOVERY SPECIFICS
 
+    def get_all_module_addresses(self):
+        """Return a list of all module addresses from the module configuration."""
+        all_addresses = []
+        for modules in self.dict_module_data.values():
+            all_addresses.extend(list(modules.keys()))
+        return all_addresses
+
     def get_button_channels(self, main_address: str):
         """Return the discovery channels for a given button discovered_info address."""
         buttons = self.dict_button_data.get("nikobus_button", {})
