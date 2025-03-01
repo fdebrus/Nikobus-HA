@@ -82,6 +82,7 @@ class NikobusDiscovery:
             all_addresses = self._coordinator.get_all_module_addresses()
             for addr in all_addresses:
                 _LOGGER.info("Starting discovery for module: %s", addr)
+                self._coordinator.discovery_running = True
                 self._coordinator.discovery_module = True
                 await self.query_module_inventory(addr)
                 while self._coordinator.discovery_module:
