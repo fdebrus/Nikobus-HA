@@ -89,9 +89,10 @@ class NikobusDiscovery:
                 _LOGGER.info("Completed discovery for module: %s", addr)
             return
 
-        base_command = f"10{device_address[2:4] + device_address[:2]}"
+        base_command = f"10{device_address}"
         self._module_address = device_address
         if self._coordinator.discovery_module:
+            base_command = f"10{device_address[2:4] + device_address[:2]}"
             self._module_type = self._coordinator.get_module_type(device_address)
             if self._module_type == "dimmer_module":
                 base_command = f"22{device_address[2:4] + device_address[:2]}"
