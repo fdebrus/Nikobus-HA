@@ -75,17 +75,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     @property
     def discovery_running(self):
-        """Return whether device discovery is in progress."""
         return self._discovery_running
 
     @property
     def discovery_module(self):
-        """Return whether device discovery is in progress from a module not PCLink."""
         return self._discovery_module
 
     @discovery_running.setter
     def discovery_running(self, value):
         self._discovery_running = value
+
+    @discovery_module.setter
+    def discovery_module(self, value):
+        self._discovery_module = value
 
     async def connect(self):
         """Connect to the Nikobus system."""
@@ -155,12 +157,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def discover_devices(self, module_address):
         """Discover available module / button."""
-        create_notification(
-            self.hass,
-            "Nikobus discovery is in progress. Please wait...",
-            title="Nikobus Discovery",
-            notification_id="nikobus_discovery"
+        # Create the persistent notification using the official service call.
+        await self.hass.services.async_call(
+            "persistent_notification",
+            "create",
+            {
+                "message": "Nikobus discovery is in progress. Please wait...",
+                "title": "Nikobus Discovery",
+                "notification_id": "nikobus_discovery"
+            },
+            blocking=True
         )
+
         self._discovery_running = True
         _LOGGER.debug("Starting device discovery from Nikobus")
         try:
@@ -171,18 +179,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             else:
                 self._discovery_module = False
                 await self.nikobus_command.queue_command("#A")
+        except Exception as e:
+            _LOGGER.error("Error during discovery: %s", e)
+            raise
         finally:
+            # Dismiss the persistent notification using the official service call.
             await self.hass.services.async_call(
                 "persistent_notification",
                 "dismiss",
-                {"notification_id": "nikobus_discovery"}
+                {"notification_id": "nikobus_discovery"},
+                blocking=True
             )
 
     async def _async_update_data(self):
         """Fetch the latest data from the Nikobus system."""
         try:
-            _LOGGER.debug("Refreshing Nikobus data")
-            return await self._refresh_nikobus_data()
+            if not self._discovery_running:
+                _LOGGER.debug("Refreshing Nikobus data")
+                return await self._refresh_nikobus_data()
         except NikobusDataError as e:
             _LOGGER.error("Error fetching Nikobus data: %s", e)
             raise UpdateFailed(f"Error fetching Nikobus data: {e}")
@@ -400,3 +414,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Nikobus connection disconnected.")
             except Exception as e:
                 _LOGGER.error("Error disconnecting Nikobus connection: %s", e)
+
+## DISCOVERY SPECIFICS
+
+    def get_button_channels(self, main_address: str):
+        """Return the discovery channels for a given button discovered_info address."""
+        buttons = self.dict_button_data.get("nikobus_button", {})
+        for button in buttons.values():
+            discovered_info = button.get("discovered_info", [])
+            if isinstance(discovered_info, list):
+                for info in discovered_info:
+                    if info.get("address") == main_address:
+                        return info.get("channels")
+        _LOGGER.error("Button with discovered_info address %s not found", main_address)
+        return None

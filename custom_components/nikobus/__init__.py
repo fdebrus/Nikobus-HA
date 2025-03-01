@@ -66,7 +66,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Starting manual Nikobus discovery with module_address: {module_address}"
         )
         await coordinator.discover_devices(module_address)
-        _LOGGER.info("Nikobus discovery completed")
 
     hass.services.async_register(
         DOMAIN, "query_module_inventory", handle_module_discovery, SCAN_MODULE_SCHEMA

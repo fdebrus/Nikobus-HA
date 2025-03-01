@@ -101,64 +101,66 @@ class NikobusEventListener:
                 break
 
     async def dispatch_message(self, message: str) -> None:
-        """Handle and route incoming messages from the Nikobus system."""
-        if message.startswith(BUTTON_COMMAND_PREFIX):
-            _LOGGER.debug("Button command received: %s", message)
-            await self._actuator.handle_button_press(message[2:8])
-            return
 
-        if message.startswith(IGNORE_ANSWER):
-            _LOGGER.debug("Ignored message: %s", message)
-            return
+        if not self._coordinator.discovery_running:
 
-        if any(message.startswith(command) for command in COMMAND_PROCESSED):
-            _LOGGER.debug("Command acknowledged: %s", message)
-            await self.response_queue.put(message)
-            return
+            """Handle and route incoming messages from the Nikobus system."""
+            if message.startswith(BUTTON_COMMAND_PREFIX):
+                _LOGGER.debug("Button command received: %s", message)
+                await self._actuator.handle_button_press(message[2:8])
+                return
 
-        if any(message.startswith(refresh) for refresh in FEEDBACK_REFRESH_COMMAND):
-            if self._has_feedback_module:
-                _LOGGER.debug("Feedback module refresh command: %s", message)
-                self._handle_feedback_refresh(message)
-            else:
-                _LOGGER.debug("Dropping Feedback refresh command: %s", message)
-            return
+            if message.startswith(IGNORE_ANSWER):
+                _LOGGER.debug("Ignored message: %s", message)
+                return
 
-        if message.startswith(FEEDBACK_MODULE_ANSWER):
-            if self._has_feedback_module:
-                _LOGGER.debug("Feedback module answer: %s", message)
-                await self._feedback_callback(self._module_group, message)
-            else:
-                _LOGGER.debug("Dropping Feedback module answer: %s", message)
-            return
-
-        if any(message.startswith(refresh) for refresh in MANUAL_REFRESH_COMMAND):
-            _LOGGER.debug("Manual refresh command answer: %s", message)
-            if not message.startswith(BUTTON_COMMAND_PREFIX):
+            if any(message.startswith(command) for command in COMMAND_PROCESSED):
+                _LOGGER.debug("Command acknowledged: %s", message)
                 await self.response_queue.put(message)
-            return
+                return
 
-        if message.startswith(DEVICE_INVENTORY):  # Receive $0510
-            _LOGGER.debug("Device inventory: %s", message)
-            if self._coordinator.discovery_module_address:
-                # if module address exists at coordinator
-                await self.nikobus_discovery.parse_module_inventory_response(message)
-            else:
-                # For PCLink or Yellow Button
-                await self.nikobus_discovery.parse_inventory_response(message)
-            return
+            if any(message.startswith(refresh) for refresh in FEEDBACK_REFRESH_COMMAND):
+                if self._has_feedback_module:
+                    _LOGGER.debug("Feedback module refresh command: %s", message)
+                    self._handle_feedback_refresh(message)
+                else:
+                    _LOGGER.debug("Dropping Feedback refresh command: %s", message)
+                return
 
-        if message.startswith(DEVICE_ADDRESS_INVENTORY):  # Receive $18
-            _LOGGER.debug("Device address inventory: %s", message)
-            if self._coordinator.discovery_running:
-                await self.nikobus_discovery.query_module_inventory(message[3:7])
-            else:
-                await self.nikobus_discovery.process_mode_button_press(message)
-            self._coordinator.discovery_running = False
-            return
+            if message.startswith(FEEDBACK_MODULE_ANSWER):
+                if self._has_feedback_module:
+                    _LOGGER.debug("Feedback module answer: %s", message)
+                    await self._feedback_callback(self._module_group, message)
+                else:
+                    _LOGGER.debug("Dropping Feedback module answer: %s", message)
+                return
 
-        _LOGGER.debug("Adding unknown message to response queue: %s", message)
-        await self.response_queue.put(message)
+            if any(message.startswith(refresh) for refresh in MANUAL_REFRESH_COMMAND):
+                _LOGGER.debug("Manual refresh command answer: %s", message)
+                if not message.startswith(BUTTON_COMMAND_PREFIX):
+                    await self.response_queue.put(message)
+                return
+        else:
+            if any(message.startswith(inventory) for inventory in DEVICE_INVENTORY):
+                _LOGGER.debug("Device inventory: %s", message)
+                if self._coordinator.discovery_module_address:
+                    # if module address exists at coordinator
+                    await self.nikobus_discovery.parse_module_inventory_response(message)
+                else:
+                    # For PCLink or Yellow Button
+                    await self.nikobus_discovery.parse_inventory_response(message)
+                return
+
+            if message.startswith(DEVICE_ADDRESS_INVENTORY):  # Receive $18
+                _LOGGER.debug("Device address inventory: %s", message)
+                if self._coordinator.discovery_running:
+                    await self.nikobus_discovery.query_module_inventory(message[3:7])
+                else:
+                    await self.nikobus_discovery.process_mode_button_press(message)
+                return
+
+            _LOGGER.debug("Adding unknown message to response queue: %s", message)
+            await self.response_queue.put(message)
 
     def _handle_feedback_refresh(self, message: str) -> None:
         """Handle feedback refresh commands."""

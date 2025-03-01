@@ -9,8 +9,8 @@ BRAND: Final[str] = "Niko"
 # Configuration Keys
 CONF_CONNECTION_STRING: Final[str] = "connection_string"
 CONF_REFRESH_INTERVAL: Final[str] = "refresh_interval"
-CONF_HAS_FEEDBACK_MODULE: Final[str] = "has_feedback_module"
-CONF_HAS_PC_LINK: Final[str] = "has_pc_link"
+CONF_HAS_FEEDBACK_MODULE: Final[str] = "has_feedbackmodule"
+CONF_HAS_PC_LINK: Final[str] = "has_pclink"
 
 # Serial Connection
 BAUD_RATE: Final[int] = 9600
@@ -37,7 +37,7 @@ LONG_PRESS: Final[int] = 3  # Long press duration in seconds
 # Covers
 COVER_DELAY_BEFORE_STOP: Final[int] = 1  # Delay before stopping cover movement
 
-# Listener Commands
+# Listener
 BUTTON_COMMAND_PREFIX: Final[str] = "#N"
 IGNORE_ANSWER: Final[str] = "$0E"  # Unknown response
 FEEDBACK_REFRESH_COMMAND: Final[tuple[str, str]] = ("$1012", "$1017")
@@ -45,17 +45,17 @@ FEEDBACK_MODULE_ANSWER: Final[str] = "$1C"
 MANUAL_REFRESH_COMMAND: Final[tuple[str, str]] = ("$0512", "$0517")
 COMMAND_PROCESSED: Final[tuple[str, str]] = ("$0515", "$0516")
 DEVICE_ADDRESS_INVENTORY: Final[str] = "$18"
-DEVICE_INVENTORY: Final[str] = "$0510"
+DEVICE_INVENTORY: Final[tuple[str, str]] = ("$0510$2E","$0522$1E")
 
 # Command Execution
 COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
 COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15  # Timeout for command ACK
-COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = (
-    5  # Timeout for each loop waiting for an answer
-)
+COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5  # Timeout for each loop waiting for an answer
 MAX_ATTEMPTS: Final[int] = 3  # Maximum retry 
 
+#
 # Discovery
+#
 DEVICE_TYPES = {
     "01": {"Category": "Module", "Model": "05-000-02", "Channels": 12, "Name": "Switch Module"},
     "02": {"Category": "Module", "Model": "05-001-02", "Channels": 6, "Name": "Roller Shutter Module"},
@@ -77,22 +77,60 @@ DEVICE_TYPES = {
     "44": {"Category": "Button", "Model": "05-057", "Channels": 4, "Name": "Switch Interface"},
 }
 
-MODE_MAPPING = {
-    0: "M01 On/Off",
-    1: "M02 On with operating time",
-    2: "M03 Off with operation time",
-    3: "M04 Pushbutton",
-    4: "M05 Impulse",
-    5: "M06 Delayed off (long up to 2h)",
-    6: "M07 Delayed on (long up to 2h)",
-    7: "M08 Flashing",
-    8: "M11 Delayed off (short up to 50s)",
-    9: "M12 Delayed on (short up to 50s)",
-    11: "M14 Light scene on",
-    12: "M15 Light scene on / off",
+CHANNEL_MAPPING = {
+    0: "Channel 1",
+    1: "Channel 2",
+    2: "Channel 3",
+    3: "Channel 4",
+    4: "Channel 5",
+    5: "Channel 6",
+    6: "Channel 7",
+    7: "Channel 8",
+    8: "Channel 9",
+    9: "Channel 10",
+    10: "Channel 11",
+    11: "Channel 12",
 }
 
-TIMER_MAPPING = {
+KEY_MAPPING = {
+    2: {"1A": "8", "1B": "C"},
+    4: {"1A": "8", "1B": "C", "1C": "0", "1D": "4"},
+    8: {
+        "1A": "A",
+        "1B": "E",
+        "1C": "2",
+        "1D": "6",
+        "2A": "8",
+        "2B": "C",
+        "2C": "0",
+        "2D": "4",
+    },
+}
+
+
+KEY_MAPPING_MODULE = {
+    2: {1: "8", 3: "C"},
+    4: {1: "8", 3: "C", 0: "0", 2: "4"},
+    8: {11: "A", 13: "E", 10: "2", 12: "6", 1: "8", 3: "C", 0: "0", 2: "4"},
+}
+
+# Switch
+SWITCH_MODE_MAPPING = {
+    0: "M01 (On / off)",
+    1: "M02 (On, with operating time)",
+    2: "M03 (Off, with operation time)",
+    3: "M04 (Pushbutton)",
+    4: "M05 (Impulse)",
+    5: "M06 (Delayed off (long up to 2h))",
+    6: "M07 (Delayed on (long up to 2h))",
+    7: "M08 (Flashing)",
+    8: "M11 (Delayed off (short up to 50sec.))",
+    9: "M12 (Delayed on (short up to 50sec.))",
+    10: "M14 (Light scene on)",
+    11: "M15 (Light scene on / off)",
+}
+
+SWITCH_TIMER_MAPPING = {
     0: ["10s", "0.5s", "0s"],
     1: ["1m", "1s", "1s"],
     2: ["2m", "2s", "2s"],
@@ -111,34 +149,64 @@ TIMER_MAPPING = {
     15: ["120m", "50s", None],
 }
 
-KEY_MAPPING = {
-    2: {"1A": "8", "1B": "C"},
-    4: {"1A": "8", "1B": "C", "1C": "0", "1D": "4"},
-    8: {
-        "1A": "A",
-        "1B": "E",
-        "1C": "2",
-        "1D": "6",
-        "2A": "8",
-        "2B": "C",
-        "2C": "0",
-        "2D": "4",
-    },
+# Shutter
+SHUTTER_MODE_MAPPING = {
+    0: "M01 (Open - stop - close)",
+    1: "M02 (Open)",
+    2: "M03 (Close)",
+    3: "M04 (Stop)",
+    4: "M05 (Interface- and RF-control)",
+    5: "M06 (Open with operating time)",
+    6: "M07 (Close with operating time)",
 }
 
-KEY_MAPPING2 = {0: "1C", 1: "1A", 2: "1D", 3: "1B", 4: "2C", 5: "2A", 6: "2D", 7: "2B"}
+SHUTTER_TIMER_MAPPING = {
+    0: ["10s", "0.5s", "0s"],
+    1: ["1m", "1s", "1s"],
+    2: ["2m", "2s", "2s"],
+    3: ["3m", "3s", "3s"],
+    4: ["4m", "4s", None],
+    5: ["5m", "5s", None],
+    6: ["6m", "6s", None],
+    7: ["7m", "7s", None],
+    8: ["8m", "8s", None],
+    9: ["9m", "9s", None],
+    10: ["15m", "15s", None],
+    11: ["30m", "20s", None],
+    12: ["45m", "25s", None],
+    13: ["60m", "30s", None],
+    14: ["90m", "40s", None],
+    15: ["120m", "50s", None],
+}
 
-CHANNEL_MAPPING = {
-    0: "Channel 1",
-    1: "Channel 2",
-    2: "Channel 3",
-    3: "Channel 4",
-    4: "Channel 5",
-    5: "Channel 6",
-    6: "Channel 7",
-    7: "Channel 8",
-    8: "Channel 9",
-    9: "Channel 10",
-    10: "Channel 11",
-    11: "Channel 12",
+# Dimmer
+DIMMER_MODE_MAPPING = {
+    0: "M01 (Dim on/off (2 buttons))",
+    1: "M02 (Dim on/off (4 buttons))",
+    2: "M03 (Light scene on/off)",
+    3: "M04 (Light scene on)",
+    4: "M05 (On (if necessary with operating time))",
+    5: "M06 (Off (eventually with operating time))",
+    6: "M07 (Delayed off)",
+    7: "M11 (Preset on/off)",
+    8: "M12 (Preset on)",
+}
+
+DIMMER_TIMER_MAPPING = {
+    0: ["10s", "0.5s", "0s"],
+    1: ["1m", "1s", "1s"],
+    2: ["2m", "2s", "2s"],
+    3: ["3m", "3s", "3s"],
+    4: ["4m", "4s", None],
+    5: ["5m", "5s", None],
+    6: ["6m", "6s", None],
+    7: ["7m", "7s", None],
+    8: ["8m", "8s", None],
+    9: ["9m", "9s", None],
+    10: ["15m", "15s", None],
+    11: ["30m", "20s", None],
+    12: ["45m", "25s", None],
+    13: ["60m", "30s", None],
+    14: ["90m", "40s", None],
+    15: ["120m", "50s", None],
 }

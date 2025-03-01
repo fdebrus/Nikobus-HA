@@ -58,6 +58,14 @@ class NikobusCommandHandler:
                 _LOGGER.info("Command processing task was cancelled.")
             self._command_task = None
 
+    async def clear_command_queue(self):
+        while not self._command_queue.empty():
+            try:
+                self._command_queue.get_nowait()
+                self._command_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
     async def process_commands(self) -> None:
         """Process commands from the queue."""
         _LOGGER.info("Nikobus Command Processing starting.")
