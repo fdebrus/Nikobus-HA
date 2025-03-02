@@ -72,6 +72,18 @@ class NikobusEventListener:
                 _LOGGER.info("Nikobus event listener has been stopped.")
             self._listener_task = None
 
+    @staticmethod
+    def _validate_length(message: str, expected_length: int) -> bool:
+        """Check if message meets the expected length criteria."""
+        if len(message) != expected_length:
+            _LOGGER.error(
+                "Invalid message length: %d (expected: %d).",
+                len(message),
+                expected_length
+            )
+            return False
+        return True
+
     async def listen_for_events(self) -> None:
         """Continuously listen for and handle events from the Nikobus system."""
         _LOGGER.info("Nikobus Event Listener is running.")
@@ -115,11 +127,17 @@ class NikobusEventListener:
                 return
 
             if any(message.startswith(command) for command in COMMAND_PROCESSED):
+                # eg $0512$1C9483000000000000005D252B (expected length: 32 characters)
+                if not self._validate_length(message, 32):
+                    return
                 _LOGGER.debug("Command acknowledged: %s", message)
                 await self.response_queue.put(message)
                 return
 
             if any(message.startswith(refresh) for refresh in FEEDBACK_REFRESH_COMMAND):
+                # eg $10170747ABDBF7 (expected length: 15 characters)
+                if not self._validate_length(message, 15):
+                    return
                 if self._has_feedback_module:
                     _LOGGER.debug("Feedback module refresh command: %s", message)
                     self._handle_feedback_refresh(message)
@@ -128,6 +146,9 @@ class NikobusEventListener:
                 return
 
             if message.startswith(FEEDBACK_MODULE_ANSWER):
+                # eg $1C6C0E000000FF00000080F51A (expected length: 27 characters)
+                if not self._validate_length(message, 27):
+                    return
                 if self._has_feedback_module:
                     _LOGGER.debug("Feedback module answer: %s", message)
                     await self._feedback_callback(self._module_group, message)
@@ -136,7 +157,10 @@ class NikobusEventListener:
                 return
 
             if any(message.startswith(refresh) for refresh in MANUAL_REFRESH_COMMAND):
+                # eg $0512$1C059100000000000000E858B3 (expected length: 32 characters)
                 _LOGGER.debug("Manual refresh command answer: %s", message)
+                if not self._validate_length(message, 32):
+                    return
                 if not message.startswith(BUTTON_COMMAND_PREFIX):
                     await self.response_queue.put(message)
                 return

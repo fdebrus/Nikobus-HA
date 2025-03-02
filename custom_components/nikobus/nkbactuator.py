@@ -6,6 +6,7 @@ import logging
 from typing import Dict, List, Optional
 
 from homeassistant.core import HomeAssistant
+from custom_components.nikobus.exceptions import NikobusTimeoutError
 
 from .const import (
     REFRESH_DELAY,
@@ -270,9 +271,17 @@ class NikobusActuator:
                 else:
                     await asyncio.sleep(REFRESH_DELAY)
 
-                value = await self._coordinator.nikobus_command.get_output_state(
-                    impacted_module_address, impacted_group
-                )
+                try:
+                    value = await self._coordinator.nikobus_command.get_output_state(
+                        impacted_module_address, impacted_group
+                    )
+                except NikobusTimeoutError as error:
+                    _LOGGER.error(
+                        "Timeout getting output state for module %s: %s",
+                        impacted_module_address,
+                        error,
+                    )
+                    value = None
 
                 if value is not None:
                     self._coordinator.set_bytearray_group_state(
