@@ -127,8 +127,8 @@ class NikobusEventListener:
                 return
 
             if any(message.startswith(command) for command in COMMAND_PROCESSED):
-                # eg $0512$1C9483000000000000005D252B (expected length: 32 characters)
-                if not self._validate_length(message, 32):
+                # eg $0515$0EFF6C0E0060 (expected length: 18 characters)
+                if not self._validate_length(message, 18):
                     return
                 _LOGGER.debug("Command acknowledged: %s", message)
                 await self.response_queue.put(message)
