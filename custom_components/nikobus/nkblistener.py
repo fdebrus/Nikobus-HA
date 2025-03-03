@@ -10,6 +10,8 @@ from typing import Any, Callable
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from custom_components.nikobus.exceptions import NikobusDataError
+
 from .nkbprotocol import int_to_hex, calc_crc1_ack, calc_crc1, calc_crc2
 
 from .const import (
@@ -98,8 +100,8 @@ class NikobusEventListener:
         expected_total_length = 1 + 2 + data_len + 4 + 2
         if len(message) != expected_total_length:
             _LOGGER.error(
-                "Message length mismatch: got %d, expected %d (based on length field %s).",
-                len(message), expected_total_length, len_field
+                "Message length mismatch: got %d, expected %d (based on length field %s). message %s",
+                len(message), expected_total_length, len_field, message
             )
             return False
 
@@ -115,10 +117,11 @@ class NikobusEventListener:
         intermediate_string = message[: 3 + data_len + 4]
         calc_crc8_val = int_to_hex(calc_crc2(intermediate_string), 2)
         if calc_crc8_val != crc8_str:
-            _LOGGER.error("CRC8 mismatch: calculated %s, expected %s", calc_crc8_val, crc8_str)
+            _LOGGER.error("CRC8 mismatch: calculated %s, expected %s, message %s", calc_crc8_val, crc8_str, message)
+            raise NikobusDataError("CRC8 mismatch: calculated %s, expected %s, message %s" % (calc_crc8_val, crc8_str, message))
             return False
         else:
-            _LOGGER.debug("CRC8 match: calculated %s, expected %s", calc_crc8_val, crc8_str)
+            _LOGGER.debug("CRC8 match: calculated %s, expected %s, message %s", calc_crc8_val, crc8_str, message)
             return True
 
     async def listen_for_events(self) -> None:
@@ -165,8 +168,8 @@ class NikobusEventListener:
 
             if any(message.startswith(command) for command in COMMAND_PROCESSED):
                 # eg $0515$0EFF6C0E0060 (expected length: 18 characters)
-                # if not self.validate_crc(message):
-                #    return
+                if not self.validate_crc(message):
+                    return
                 _LOGGER.debug("Command acknowledged: %s", message)
                 await self.response_queue.put(message)
                 return
@@ -220,8 +223,8 @@ class NikobusEventListener:
                     await self.nikobus_discovery.process_mode_button_press(message)
                 return
 
-            _LOGGER.debug("Adding unknown message to response queue: %s", message)
-            await self.response_queue.put(message)
+        _LOGGER.debug("Adding unknown message to response queue: %s", message)
+        await self.response_queue.put(message)
 
     def _handle_feedback_refresh(self, message: str) -> None:
         """Handle feedback refresh commands."""
