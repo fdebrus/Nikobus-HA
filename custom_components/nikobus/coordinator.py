@@ -433,5 +433,4 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 for info in discovered_info:
                     if info.get("address") == main_address:
                         return info.get("channels")
-        _LOGGER.error("Button with discovered_info address %s not found", main_address)
         return None

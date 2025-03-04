@@ -395,9 +395,11 @@ class NikobusDiscovery:
         _LOGGER.info("Decoded Button Commands:")
         _LOGGER.info("module_address: %s", self._decoded_buffer["module_address"])
         for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
-            _LOGGER.info("Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, Timer: %s, Mode: %s",
-                        idx, cmd.get("payload"), cmd.get("button_address"), cmd.get("push_button_address"),
-                        cmd.get("K"), cmd.get("C"), cmd.get("T"), cmd.get("M"))
+            _LOGGER.info(
+                "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, Timer: %s, Mode: %s",
+                idx, cmd.get("payload"), cmd.get("button_address"), cmd.get("push_button_address"),
+                cmd.get("K"), cmd.get("C"), cmd.get("T"), cmd.get("M")
+            )
 
         grouped = {"module_address": self._decoded_buffer["module_address"], "channels": {}}
         for cmd in self._decoded_buffer["commands"]:
@@ -440,18 +442,26 @@ class NikobusDiscovery:
             else:
                 buttons = []
 
+            # Process new discovered links and add them to the corresponding button without duplicating existing entries.
             for channel_cmds in grouped["channels"].values():
                 for cmd in channel_cmds:
                     push_button_addr = cmd.get("push_button_address")
                     for button in buttons:
                         if button.get("address") == push_button_addr:
-                            button["discovered_link"] = {
+                            discovered_link_entry = {
                                 "module_address": grouped.get("module_address"),
                                 "channel": cmd.get("channel"),
                                 "mode": cmd.get("mode"),
                                 "timer": cmd.get("timer")
                             }
-                            _LOGGER.info("Updated button %s with discovered_link", push_button_addr)
+                            if "discovered_link" not in button:
+                                button["discovered_link"] = []
+                            # Only add the new entry if it doesn't already exist.
+                            if discovered_link_entry not in button["discovered_link"]:
+                                button["discovered_link"].append(discovered_link_entry)
+                                _LOGGER.info("Added new discovered_link to button %s", push_button_addr)
+                            else:
+                                _LOGGER.debug("Discovered_link already exists for button %s", push_button_addr)
                             break
 
             updated_config = {"nikobus_button": buttons}
@@ -487,32 +497,53 @@ class NikobusDiscovery:
         return format(result_int, "06X")
 
     def get_push_button_address(self, key_raw, button_address):
+        second_part = False
+        # First, determine the channel count using the provided button address.
+        num_channels = self._coordinator.get_button_channels(button_address)
+        if num_channels is None:
+            # If no data and the last nibble is odd, try normalizing the address.
+            if int(button_address[-1], 16) % 2 == 1:
+                normalized_address = f"{int(button_address, 16) - 1:06X}"
+                num_channels = self._coordinator.get_button_channels(normalized_address)
+                if num_channels is not None:
+                    _LOGGER.info("Normalized button_address from %s to %s", button_address, normalized_address)
+                    button_address = normalized_address
+                    second_part = True
+                else:
+                    _LOGGER.error("Could not determine channels for button address %s or normalized %s", button_address, normalized_address)
+                    return None, button_address
+            else:
+                _LOGGER.error("Could not determine channels for button address %s", button_address)
+                return None, button_address
+
+        # Now, convert the (possibly normalized) button address.
         converted_result = self._convert_nikobus_address(button_address)
         push_button_address = converted_result["nikobus_address"]
-        num_channels = self._coordinator.get_button_channels(button_address)
 
-        # Retrieve the mapping for the given number of channels
         mapping = KEY_MAPPING_MODULE.get(num_channels, {})
-
-        # Debug output: shows the value of key_raw and available keys in mapping
         _LOGGER.debug("Debug: key_raw=%s, mapping keys=%s", key_raw, list(mapping.keys()))
 
-        # Check that key_raw is a valid key in mapping
-        if key_raw not in mapping:
-            _LOGGER.error("KeyError: key_raw '%s' not found in mapping. Available keys: %s",
-                        key_raw, list(mapping.keys()))
-            return None
+        # Adjust key if this is the second half (map key 0-3 to 4-7)
+        effective_key = key_raw
+        if num_channels == 8 and second_part:
+            effective_key = key_raw + 4
 
-        # Get the hex string from mapping and convert it to an integer
-        key_str = mapping[key_raw]
+        if effective_key not in mapping:
+            _LOGGER.error("KeyError: effective_key '%s' not found in mapping. Available keys: %s",
+                        effective_key, list(mapping.keys()))
+            return None, button_address
+
+        key_str = mapping[effective_key]
         add_value = int(key_str, 16)
-
-        # Convert the first nibble of the push button address to an integer
         original_nibble = int(push_button_address[0], 16)
         new_nibble_value = original_nibble + add_value
         new_nibble_hex = f"{new_nibble_value:X}"
+    
+        final_push_button_address = new_nibble_hex + push_button_address[1:]
 
-        return new_nibble_hex + push_button_address[1:]
+        _LOGGER.debug(f"button {button_address} key {key_raw} - {effective_key} - {key_str} - {final_push_button_address}")
+        
+        return final_push_button_address, button_address
 
     def decode_command_payload(self, payload_hex):
         if not isinstance(payload_hex, str):
@@ -538,7 +569,7 @@ class NikobusDiscovery:
         _LOGGER.debug(f"Converted button address : {button_address}")
 
         # Get the push button address
-        push_button_address = self.get_push_button_address(key_raw, button_address)
+        push_button_address, button_address = self.get_push_button_address(key_raw, button_address)
 
         channel_label = CHANNEL_MAPPING.get(channel_raw, f"Unknown Channel ({channel_raw})")
 

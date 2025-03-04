@@ -161,8 +161,8 @@ class NikobusEventListener:
                 _LOGGER.debug("Button command received: %s", message)
                 await self._actuator.handle_button_press(message[2:8])
                 return
-
-            if message.startswith(IGNORE_ANSWER):
+                
+            if message.startswith(IGNORE_ANSWER) or any(message.startswith(refresh + BUTTON_COMMAND_PREFIX) for refresh in MANUAL_REFRESH_COMMAND):
                 _LOGGER.debug("Ignored message: %s", message)
                 return
 
