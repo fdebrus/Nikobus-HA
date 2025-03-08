@@ -8,7 +8,7 @@
                 "data": {
                     "connection_string": "IP-adres:Poort of seriële apparaat",
                     "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
-                    "has_feedback_module": "Is een feedbackmodule geïnstalleerd en verbonden via PC-Link?"
+                    "has_feedbackmodule": "Is een feedbackmodule geïnstalleerd en verbonden via PC-Link?"
                 }
             },
             "reconfigure": {
@@ -17,7 +17,7 @@
                 "data": {
                     "connection_string": "IP-adres:Poort of seriële apparaat",
                     "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
-                    "has_feedback_module": "Is een feedbackmodule geïnstalleerd en verbonden via PC-Link?"
+                    "has_feedbackmodule": "Is een feedbackmodule geïnstalleerd en verbonden via PC-Link?"
                 }
             }
         },

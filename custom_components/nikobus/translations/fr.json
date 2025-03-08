@@ -8,7 +8,7 @@
                 "data": {
                     "connection_string": "Adresse IP:Port ou périphérique série",
                     "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)",
-                    "has_feedback_module": "Un module de retour d'information est-il installé et connecté via PC-Link ?"
+                    "has_feedbackmodule": "Un module de retour d'information est-il installé et connecté via PC-Link ?"
                 }
             },
             "reconfigure": {
@@ -17,7 +17,7 @@
                 "data": {
                     "connection_string": "Adresse IP:Port ou périphérique série",
                     "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)",
-                    "has_feedback_module": "Un module de retour d'information est-il installé et connecté via PC-Link ?"
+                    "has_feedbackmodule": "Un module de retour d'information est-il installé et connecté via PC-Link ?"
                 }
             }
         },
