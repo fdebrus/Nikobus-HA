@@ -377,6 +377,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         _LOGGER.error(f"Module ID {module_id} not found in known module types")
         return "unknown"
 
+    def get_module_channel_count(self, module_id: str) -> int:
+        for modules in self.dict_module_data.values():
+            if module_id in modules:
+                module_data = modules[module_id]
+                return len(module_data.get("channels", []))
+        _LOGGER.error(f"Module ID {module_id} not found in module configuration")
+        return 0
+
     def get_light_state(self, address: str, channel: int) -> bool:
         """Get the state of a light based on its address and channel."""
         return self.get_bytearray_state(address, channel) != 0x00

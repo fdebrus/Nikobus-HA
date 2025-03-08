@@ -4,8 +4,11 @@ import os
 import json
 import aiofiles
 
+from homeassistant.helpers.device_registry import async_get
+
 from .nkbprotocol import make_pc_link_inventory_command
 from .const import (
+    DOMAIN,
     DEVICE_INVENTORY,
     DEVICE_TYPES,
     SWITCH_MODE_MAPPING,
@@ -68,12 +71,23 @@ class NikobusDiscovery:
 
     def _convert_nikobus_address(self, address_string: str) -> dict[str, any]:
         try:
+            # Convert input hexadecimal string to an integer.
             address = int(address_string, 16)
             nikobus_address = 0
+        
+            # Reverse the order of the lowest 21 bits.
             for i in range(21):
                 nikobus_address = (nikobus_address << 1) | ((address >> i) & 1)
-            nikobus_address <<= 1
-            return {"nikobus_address": f"{nikobus_address:06X}"}
+            nikobus_address <<= 1  # Final left shift appends a zero bit.
+        
+            # Calculate the button value from bits 21-23.
+            button = (address >> 21) & 0x07
+        
+            # Add the button value to the Nikobus address.
+            final_address = nikobus_address + button
+        
+            # Return the final Nikobus address as a 6-digit hex string.
+            return {"nikobus_address": f"{final_address:06X}"}
         except ValueError:
             return f"[{address_string}]"
 
@@ -243,7 +257,9 @@ class NikobusDiscovery:
             description = device.get("description", "")
             model = device.get("model", "")
             num_channels = device.get("channels", 0)
-            if num_channels == 2:
+            if num_channels == 1:
+                keys = ["1A"]
+            elif num_channels == 2:
                 keys = ["1A", "1B"]
             elif num_channels == 4:
                 keys = ["1A", "1B", "1C", "1D"]
@@ -295,7 +311,7 @@ class NikobusDiscovery:
                         discovered_list.append(new_info)
                 else:
                     new_button = {
-                        "description": description,
+                        "description": f"{description} #N{discovered_channel_address}",
                         "address": discovered_channel_address,
                         "impacted_module": [{"address": "", "group": ""}],
                         "discovered_info": [new_info]
@@ -498,11 +514,12 @@ class NikobusDiscovery:
 
     def get_push_button_address(self, key_raw, button_address):
         second_part = False
-        # First, determine the channel count using the provided button address.
+        # Determine the channel count using the provided button address.
         num_channels = self._coordinator.get_button_channels(button_address)
         if num_channels is None:
-            # If no data and the last nibble is odd, try normalizing the address.
-            if int(button_address[-1], 16) % 2 == 1:
+            if button_address.startswith("0"):
+                num_channels = 4
+            elif int(button_address[-1], 16) % 2 == 1:
                 normalized_address = f"{int(button_address, 16) - 1:06X}"
                 num_channels = self._coordinator.get_button_channels(normalized_address)
                 if num_channels is not None:
@@ -516,14 +533,14 @@ class NikobusDiscovery:
                 _LOGGER.error("Could not determine channels for button address %s", button_address)
                 return None, button_address
 
-        # Now, convert the (possibly normalized) button address.
+        # Compute the full 6-digit address using your bit-reversal/shifting algorithm.
         converted_result = self._convert_nikobus_address(button_address)
         push_button_address = converted_result["nikobus_address"]
 
+        # Retrieve the mapping for this number of channels from your KEY_MAPPING_MODULE.
         mapping = KEY_MAPPING_MODULE.get(num_channels, {})
         _LOGGER.debug("Debug: key_raw=%s, mapping keys=%s", key_raw, list(mapping.keys()))
 
-        # Adjust key if this is the second half (map key 0-3 to 4-7)
         effective_key = key_raw
         if num_channels == 8 and second_part:
             effective_key = key_raw + 4
@@ -533,16 +550,19 @@ class NikobusDiscovery:
                         effective_key, list(mapping.keys()))
             return None, button_address
 
-        key_str = mapping[effective_key]
-        add_value = int(key_str, 16)
+        # For IR buttons (identified by a button_address starting with "0"),
+        # simply return the computed full 6-digit address.
+        # if button_address.startswith("0"):
+        #    final_push_button_address = push_button_address
+        #    _LOGGER.debug(f"IR button: final push button address: {final_push_button_address}")
+        # else:
+        # Regular processing for non-IR buttons.
+        add_value = int(mapping[effective_key], 16)
         original_nibble = int(push_button_address[0], 16)
         new_nibble_value = original_nibble + add_value
         new_nibble_hex = f"{new_nibble_value:X}"
-    
         final_push_button_address = new_nibble_hex + push_button_address[1:]
-
-        _LOGGER.debug(f"button {button_address} key {key_raw} - {effective_key} - {key_str} - {final_push_button_address}")
-        
+    
         return final_push_button_address, button_address
 
     def decode_command_payload(self, payload_hex):

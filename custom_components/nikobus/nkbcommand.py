@@ -324,10 +324,9 @@ class NikobusCommandHandler:
             completion_handler=completion_handler,
         )
 
-        if self._coordinator.get_module_type(address) != "roller_module":
-            channel_states = self.nikobus_module_states[address][6:12] + bytearray(
-                [0xFF]
-            )
+        # Check if module has more than 6 channels before sending the second group command.
+        if self._coordinator.get_module_channel_count(address) > 6:
+            channel_states = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
             await self.queue_command(
                 make_pc_link_command(0x16, address, channel_states),
                 address,

@@ -69,12 +69,12 @@ DEVICE_TYPES = {
     "12": {"Category": "Button", "Model": "05-349", "Channels": 8, "Name": "Button with 8 Operation Points"},
     "1F": {"Category": "Button", "Model": "05-311", "Channels": 2, "Name": "RF Transmitter with 2 Operation Points"},
     "23": {"Category": "Button", "Model": "05-312", "Channels": 4, "Name": "RF Transmitter with 4 Operation Points"},
-    "25": {"Category": "Button", "Model": "05-055", "Channels": 4, "Name": "All-Function Interface"},
+	"25": {"Category": "Button", "Model": "05-311", "Channels": 1, "Name": "Portable RF Transmitter with 1 Operation Point"},
     "31": {"Category": "Module", "Model": "05-002-02", "Channels": 4, "Name": "Compact Switch Module"},
     "3F": {"Category": "Button", "Model": "05-344", "Channels": 2, "Name": "Feedback Button with 2 Operation Points"},
     "40": {"Category": "Button", "Model": "05-347", "Channels": 4, "Name": "Feedback Button with 4 Operation Points"},
     "42": {"Category": "Module", "Model": "05-207", "Name": "Feedback Module"},
-    "44": {"Category": "Button", "Model": "05-057", "Channels": 4, "Name": "Switch Interface"},
+    "44": {"Category": "Button", "Model": "05-058", "Channels": 8, "Name": "Switch Interface"},
 }
 
 CHANNEL_MAPPING = {
@@ -93,6 +93,7 @@ CHANNEL_MAPPING = {
 }
 
 KEY_MAPPING = {
+	1: {"1A": "8"},
     2: {"1A": "8", "1B": "C"},
     4: {"1A": "8", "1B": "C", "1C": "0", "1D": "4"},
     8: {
@@ -108,6 +109,7 @@ KEY_MAPPING = {
 }
 
 KEY_MAPPING_MODULE = {
+	1: {1: "8"},
     2: {1: "8", 3: "C"},
     4: {0: "0", 1: "8", 2: "4", 3: "C"},
     8: {
@@ -122,7 +124,12 @@ KEY_MAPPING_MODULE = {
     },
 }
 
-# 8: {1: "A", 3: "E", 0: "2", 2: "6", 1: "8", 3: "C", 0: "0", 2: "4"},
+IR_CHANNEL_MAPPING = {
+    1: "A",
+    3: "B",
+    0: "C",
+    2: "D",
+}
 
 KEY_MAPPING_IR = {
 	"0": "01A",
@@ -331,22 +338,23 @@ ROLLER_MODE_MAPPING = {
 }
 
 ROLLER_TIMER_MAPPING = {
-    0: ["10s", "0.5s", "0s"],
-    1: ["1m", "1s", "1s"],
-    2: ["2m", "2s", "2s"],
-    3: ["3m", "3s", "3s"],
-    4: ["4m", "4s", None],
-    5: ["5m", "5s", None],
-    6: ["6m", "6s", None],
-    7: ["7m", "7s", None],
-    8: ["8m", "8s", None],
-    9: ["9m", "9s", None],
-    10: ["15m", "15s", None],
-    11: ["30m", "20s", None],
-    12: ["45m", "25s", None],
-    13: ["60m", "30s", None],
-    14: ["90m", "40s", None],
-    15: ["120m", "50s", None],
+    0: ["Turned off", None, None],
+    1: ["0,4 s (impuls)", None, None],
+    2: ["6 s", None, None],
+    3: ["8 s", None, None],
+    4: ["10 s", None, None],
+    5: ["12 s", None, None],
+    6: ["6 s", None, None],
+    7: ["14 s", None, None],
+    8: ["16 s", None, None],
+    9: ["18 s", None, None],
+    10: ["20 s", None, None],
+    11: ["25 s", None, None],
+    12: ["30 s", None, None],
+    13: ["40 s", None, None],
+    14: ["50 s", None, None],
+    15: ["60 s", None, None],
+	16: ["90 s", None, None],
 }
 
 # Dimmer
