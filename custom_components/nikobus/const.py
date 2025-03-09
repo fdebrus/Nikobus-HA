@@ -62,7 +62,7 @@ DEVICE_INVENTORY: Final[tuple[str, str]] = ("$0510$2E", "$0522$1E")
 # =============================================================================
 # Command Execution
 # =============================================================================
-COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
+COMMAND_EXECUTION_DELAY: Final[float] = 0.7    # Delay between command executions
 COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15      # Timeout for command ACK
 COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5    # Timeout for each loop waiting for an answer
 MAX_ATTEMPTS: Final[int] = 3                   # Maximum retry attempts

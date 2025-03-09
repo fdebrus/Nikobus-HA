@@ -75,12 +75,6 @@ class PositionEstimator:
         elapsed_time = time.monotonic() - self._start_time
         progress = (elapsed_time / self._duration_in_seconds) * 100 * self._direction_value
         new_position = max(0, min(100, self.position + progress))
-        _LOGGER.debug(
-            "Elapsed time: %.2f seconds, calculated progress: %.2f, estimated position: %d",
-            elapsed_time,
-            progress,
-            int(new_position),
-        )
         return int(new_position)
 
     def stop(self) -> None:
@@ -333,7 +327,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     async def _handle_nikobus_button_event(self, event: Any) -> None:
         """Handle the `nikobus_button_pressed` event and update the cover state."""
         if event.data.get("impacted_module_address") != self._address:
-            _LOGGER.debug("Skipping event for %s (not impacted).", self._attr_name)
             return
 
         new_state = self.coordinator.get_cover_state(self._address, self._channel)

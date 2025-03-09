@@ -108,7 +108,7 @@ class NikobusCommandHandler:
         command = make_pc_link_command(command_code, address)
         future = self._coordinator.hass.loop.create_future()
         await self.queue_command(command, address, future=future)
-        return await asyncio.wait_for(future, timeout=COMMAND_ANSWER_WAIT_TIMEOUT)
+        return await asyncio.wait_for(future, timeout=COMMAND_ACK_WAIT_TIMEOUT)
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
         """Send a command and wait for an answer from the Nikobus system."""
@@ -195,7 +195,6 @@ class NikobusCommandHandler:
                 if wait_answer in message:
                     _LOGGER.debug("Answer received")
                     state = self._parse_state_from_message(message, wait_answer)
-                    _LOGGER.debug("Extracted state from message: %s", state)
                     answer_received = True
                 if ack_received and answer_received:
                     return state
