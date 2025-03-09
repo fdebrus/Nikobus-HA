@@ -32,9 +32,7 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up Nikobus light entities (modules).")
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    dimmer_modules: dict[str, Any] = coordinator.dict_module_data.get(
-        "dimmer_module", {}
-    )
+    dimmer_modules: dict[str, Any] = coordinator.dict_module_data.get("dimmer_module", {})
 
     device_registry = dr.async_get(hass)
     entities: list[NikobusLightEntity] = []
@@ -51,9 +49,7 @@ async def async_setup_entry(
             module_model=module_model,
         )
 
-        for channel_index, channel_info in enumerate(
-            dimmer_module_data.get("channels", []), start=1
-        ):
+        for channel_index, channel_info in enumerate(dimmer_module_data.get("channels", []), start=1):
             if channel_info["description"].startswith("not_in_use"):
                 continue
 
@@ -141,7 +137,6 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         """Return the brightness of the light (0..255)."""
         if self._brightness is not None:
             return self._brightness
-
         try:
             return self.coordinator.get_light_brightness(self._address, self._channel)
         except NikobusError as err:
@@ -166,11 +161,8 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self._is_on = True
         self._brightness = brightness
         self.async_write_ha_state()
-
         try:
-            await self.coordinator.api.turn_on_light(
-                self._address, self._channel, brightness
-            )
+            await self.coordinator.api.turn_on_light(self._address, self._channel, brightness)
         except NikobusError as err:
             _LOGGER.error(
                 "Failed to turn on Nikobus light (addr=%s, channel=%d): %s",
@@ -187,7 +179,6 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         self._is_on = False
         self._brightness = 0
         self.async_write_ha_state()
-
         try:
             await self.coordinator.api.turn_off_light(self._address, self._channel)
         except NikobusError as err:

@@ -27,9 +27,7 @@ async def async_setup_entry(
     entities: list[NikobusButtonSensor] = []
 
     if coordinator.dict_button_data:
-        for button_data in coordinator.dict_button_data.get(
-            "nikobus_button", {}
-        ).values():
+        for button_data in coordinator.dict_button_data.get("nikobus_button", {}).values():
             entity = NikobusButtonSensor(
                 hass=hass,
                 coordinator=coordinator,
@@ -38,7 +36,7 @@ async def async_setup_entry(
             )
             entities.append(entity)
 
-    # Register global event listener for all sensors
+    # Register a single global event listener for all sensors
     register_global_listener(hass, entities)
 
     async_add_entities(entities)
@@ -53,10 +51,16 @@ def register_global_listener(
     @callback
     async def handle_event(event: Any) -> None:
         """Process button press events for registered sensors."""
-        address = event.data.get("address")
-        for sensor in sensors:
-            if sensor._address == address:
-                await sensor._handle_button_event(event)
+        try:
+            address = event.data.get("address")
+            if not address:
+                _LOGGER.warning("Received event without address: %s", event.data)
+                return
+            for sensor in sensors:
+                if sensor._address == address:
+                    await sensor._handle_button_event(event)
+        except Exception as e:
+            _LOGGER.error("Error handling nikobus_button_pressed event: %s", e, exc_info=True)
 
     hass.bus.async_listen("nikobus_button_pressed", handle_event)
 
@@ -110,11 +114,11 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
 
     @callback
     def _reset_state(self) -> None:
-        """Reset the sensor state to None after a short delay."""
+        """Reset the sensor state to idle after a short delay."""
         self._state = "idle"
         self.async_write_ha_state()
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the coordinator if needed."""
-        pass  # Since the state is event-driven, no coordinator updates required
+        pass  # Since the state is event-driven, no coordinator updates are required.

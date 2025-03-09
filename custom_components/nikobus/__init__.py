@@ -33,12 +33,7 @@ PLATFORMS: Final[list[str]] = [
     scene.DOMAIN,
 ]
 
-SCAN_MODULE_SCHEMA = vol.Schema(
-    {
-        vol.Optional("module_address", default=""): cv.string,
-    }
-)
-
+SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
 HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
 
@@ -59,12 +54,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _register_hub_device(hass, entry)
 
-    async def handle_module_discovery(call: ServiceCall):
+    async def handle_module_discovery(call: ServiceCall) -> None:
         """Manually trigger device discovery."""
         module_address = call.data.get("module_address", "")
-        _LOGGER.info(
-            f"Starting manual Nikobus discovery with module_address: {module_address}"
-        )
+        _LOGGER.info("Starting manual Nikobus discovery with module_address: %s", module_address)
         await coordinator.discover_devices(module_address)
 
     hass.services.async_register(
@@ -86,7 +79,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register the Nikobus bridge (hub) as a device in Home Assistant."""
     device_registry = dr.async_get(hass)
-
     if device_registry.async_get_device(identifiers={(DOMAIN, HUB_IDENTIFIER)}):
         _LOGGER.debug("Nikobus hub device already exists in registry.")
         return
@@ -104,8 +96,6 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the single Nikobus integration entry."""
     _LOGGER.debug("Unloading Nikobus (single-instance)")
-
-    # Stop the coordinator's tasks (e.g., event listener) if applicable.
     coordinator = entry.runtime_data
     if coordinator and hasattr(coordinator, "stop"):
         try:

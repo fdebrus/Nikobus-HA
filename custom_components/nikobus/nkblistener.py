@@ -6,14 +6,12 @@ import logging
 import asyncio
 from typing import Any, Callable
 
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from custom_components.nikobus.exceptions import NikobusDataError
 
-from .nkbprotocol import int_to_hex, calc_crc1_ack, calc_crc1, calc_crc2
-
+from .nkbprotocol import int_to_hex, calc_crc2
 from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     BUTTON_COMMAND_PREFIX,
@@ -36,7 +34,7 @@ class NikobusEventListener:
         self,
         hass: HomeAssistant,
         config_entry: ConfigEntry,
-        coordinator,
+        coordinator: Any,
         nikobus_actuator: Any,
         nikobus_connection: Any,
         nikobus_discovery: Any,
@@ -49,9 +47,7 @@ class NikobusEventListener:
         self._listener_task: asyncio.Task | None = None
         self._running = False
         self._feedback_callback = feedback_callback
-        self._has_feedback_module: bool = config_entry.data.get(
-            CONF_HAS_FEEDBACK_MODULE, False
-        )
+        self._has_feedback_module: bool = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
         self._module_group = 1
         self._actuator = nikobus_actuator
 
@@ -80,14 +76,13 @@ class NikobusEventListener:
         """
         Validate the CRC of a Nikobus message.
         """
-        # If the message contains a nested message (e.g. "$0512$1C059100000000000000E858B3"),
-        # extract and validate the inner message.
+        # If the message contains a nested message, extract and validate the inner message.
         if message.count('$') > 1:
             second_dollar = message.find('$', 1)
             inner_message = message[second_dollar:]
             return self.validate_crc(inner_message)
 
-        # Extract the two-digit length field right after the '$'
+        # Extract the two-digit length field after the '$'
         len_field = message[1:3]
         try:
             total_length = int(len_field, 16)
@@ -96,7 +91,7 @@ class NikobusEventListener:
             return False
 
         data_len = total_length - 10
-        # Total message length should be: 1 (for '$') + 2 (length field) + data_len + 4 (CRC16) + 2 (CRC8)
+        # Expected total length: 1 ('$') + 2 (length) + data_len + 4 (CRC16) + 2 (CRC8)
         expected_total_length = 1 + 2 + data_len + 4 + 2
         if len(message) != expected_total_length:
             _LOGGER.error(
@@ -105,33 +100,24 @@ class NikobusEventListener:
             )
             return False
 
-        # Extract the payload (the part over which the CRC16 is calculated)
-        payload = message[3: 3 + data_len]
-        # The next 4 characters are the CRC16
-        crc16_str = message[3 + data_len: 3 + data_len + 4]
-        # The last 2 characters are the CRC8
-        crc8_str = message[3 + data_len + 4:]
-
-        # The CRC8 is calculated over the string that contains:
-        #   "$" + <length field> + <payload> + <CRC16>
+        # Calculate CRC8 over: "$" + <length field> + <payload> + <CRC16>
         intermediate_string = message[: 3 + data_len + 4]
         calc_crc8_val = int_to_hex(calc_crc2(intermediate_string), 2)
+        crc8_str = message[3 + data_len + 4:]
         if calc_crc8_val != crc8_str:
             _LOGGER.error("CRC8 mismatch: calculated %s, expected %s, message %s", calc_crc8_val, crc8_str, message)
-            raise NikobusDataError("CRC8 mismatch: calculated %s, expected %s, message %s" % (calc_crc8_val, crc8_str, message))
-            return False
-        else:
-            _LOGGER.debug("CRC8 match: calculated %s, expected %s, message %s", calc_crc8_val, crc8_str, message)
-            return True
+            raise NikobusDataError(
+                "CRC8 mismatch: calculated %s, expected %s, message %s" % (calc_crc8_val, crc8_str, message)
+            )
+        _LOGGER.debug("CRC8 match: calculated %s, expected %s, message %s", calc_crc8_val, crc8_str, message)
+        return True
 
     async def listen_for_events(self) -> None:
         """Continuously listen for and handle events from the Nikobus system."""
         _LOGGER.info("Nikobus Event Listener is running.")
         while self._running:
             try:
-                data = await asyncio.wait_for(
-                    self.nikobus_connection.read(), timeout=10
-                )
+                data = await asyncio.wait_for(self.nikobus_connection.read(), timeout=10)
                 if not data:
                     _LOGGER.warning("Nikobus connection closed unexpectedly.")
                     break
@@ -142,32 +128,28 @@ class NikobusEventListener:
 
             except asyncio.TimeoutError:
                 _LOGGER.debug("Read operation timed out. Waiting for next data...")
-                pass
             except asyncio.CancelledError:
                 _LOGGER.info("Event listener was cancelled.")
                 break
             except Exception as err:
-                _LOGGER.error(
-                    "Unexpected error in event listener: %s", err, exc_info=True
-                )
+                _LOGGER.error("Unexpected error in event listener: %s", err, exc_info=True)
                 break
 
     async def dispatch_message(self, message: str) -> None:
-
         if not self._coordinator.discovery_running:
-
-            """Handle and route incoming messages from the Nikobus system."""
             if message.startswith(BUTTON_COMMAND_PREFIX):
                 _LOGGER.debug("Button command received: %s", message)
                 await self._actuator.handle_button_press(message[2:8])
                 return
-                
-            if message.startswith(IGNORE_ANSWER) or any(message.startswith(refresh + BUTTON_COMMAND_PREFIX) for refresh in MANUAL_REFRESH_COMMAND):
+
+            if message.startswith(IGNORE_ANSWER) or any(
+                message.startswith(refresh + BUTTON_COMMAND_PREFIX) for refresh in MANUAL_REFRESH_COMMAND
+            ):
                 _LOGGER.debug("Ignored message: %s", message)
                 return
 
             if any(message.startswith(command) for command in COMMAND_PROCESSED):
-                # eg $0515$0EFF6C0E0060 (expected length: 18 characters)
+                # e.g. "$0515$0EFF6C0E0060" (expected length: 18 characters)
                 if not self.validate_crc(message):
                     return
                 _LOGGER.debug("Command acknowledged: %s", message)
@@ -175,7 +157,7 @@ class NikobusEventListener:
                 return
 
             if any(message.startswith(refresh) for refresh in FEEDBACK_REFRESH_COMMAND):
-                # eg $10170747ABDBF7 (expected length: 15 characters)
+                # e.g. "$10170747ABDBF7" (expected length: 15 characters)
                 if not self.validate_crc(message):
                     return
                 if self._has_feedback_module:
@@ -186,7 +168,7 @@ class NikobusEventListener:
                 return
 
             if message.startswith(FEEDBACK_MODULE_ANSWER):
-                # eg $1C6C0E000000FF00000080F51A (expected length: 27 characters)
+                # e.g. "$1C6C0E000000FF00000080F51A" (expected length: 27 characters)
                 if not self.validate_crc(message):
                     return
                 if self._has_feedback_module:
@@ -197,7 +179,7 @@ class NikobusEventListener:
                 return
 
             if any(message.startswith(refresh) for refresh in MANUAL_REFRESH_COMMAND):
-                # eg $0512$1C059100000000000000E858B3 (expected length: 32 characters)
+                # e.g. "$0512$1C059100000000000000E858B3" (expected length: 32 characters)
                 _LOGGER.debug("Manual refresh command answer: %s", message)
                 if not self.validate_crc(message):
                     return
@@ -208,14 +190,12 @@ class NikobusEventListener:
             if any(message.startswith(inventory) for inventory in DEVICE_INVENTORY):
                 _LOGGER.debug("Device inventory: %s", message)
                 if self._coordinator.discovery_module_address:
-                    # if module address exists at coordinator
                     await self.nikobus_discovery.parse_module_inventory_response(message)
                 else:
-                    # For PCLink or Yellow Button
                     await self.nikobus_discovery.parse_inventory_response(message)
                 return
 
-            if message.startswith(DEVICE_ADDRESS_INVENTORY):  # Receive $18
+            if message.startswith(DEVICE_ADDRESS_INVENTORY):  # e.g. receive "$18"
                 _LOGGER.debug("Device address inventory: %s", message)
                 if self._coordinator.discovery_running:
                     await self.nikobus_discovery.query_module_inventory(message[3:7])
@@ -227,13 +207,11 @@ class NikobusEventListener:
         await self.response_queue.put(message)
 
     def _handle_feedback_refresh(self, message: str) -> None:
-        """Handle feedback refresh commands."""
+        """Handle feedback refresh commands using a mapping for module group identifiers."""
+        group_mapping = {"17": 2, "12": 1}
         module_group_identifier = message[3:5]
-        if module_group_identifier == "17":
-            self._module_group = 2
-        elif module_group_identifier == "12":
-            self._module_group = 1
+        new_group = group_mapping.get(module_group_identifier)
+        if new_group:
+            self._module_group = new_group
         else:
-            _LOGGER.warning(
-                "Unknown module group identifier: %s", module_group_identifier
-            )
+            _LOGGER.warning("Unknown module group identifier: %s", module_group_identifier)

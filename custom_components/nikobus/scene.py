@@ -1,7 +1,6 @@
 """Scene platform for the Nikobus integration."""
 
 import logging
-
 from typing import Any, Dict, List, Optional
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant
@@ -15,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: Any
 ) -> None:
     """Set up Nikobus scenes from a config entry."""
     _LOGGER.debug("Setting up Nikobus scenes.")
@@ -23,11 +22,7 @@ async def async_setup_entry(
     coordinator: NikobusDataCoordinator = entry.runtime_data
     entities: List[NikobusSceneEntity] = []
 
-    scene_data = (
-        coordinator.dict_scene_data.get("scene", [])
-        if coordinator.dict_scene_data
-        else []
-    )
+    scene_data = coordinator.dict_scene_data.get("scene", []) if coordinator.dict_scene_data else []
 
     for scene in scene_data:
         scene_id = scene.get("id")
@@ -103,9 +98,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
     async def async_activate(self) -> None:
         """Activate the scene by updating only the specified channels while keeping others unchanged."""
-        _LOGGER.debug(
-            "Activating scene: %s (ID: %s)", self._description, self._scene_id
-        )
+        _LOGGER.debug("Activating scene: %s (ID: %s)", self._description, self._scene_id)
 
         module_changes = {}
 
@@ -135,107 +128,63 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             _LOGGER.error("Unknown module type: %s", module_type)
             return None
 
-        # Group changes by module
+        # Process each module specified in the scene.
         for module in self._impacted_modules_info:
             module_id = module.get("module_id")
             channel = module.get("channel")
             state = module.get("state")
 
             if not module_id or channel is None:
-                _LOGGER.warning(
-                    "Skipping module with missing ID or channel: %s", module
-                )
+                _LOGGER.warning("Skipping module with missing ID or channel: %s", module)
                 continue
 
             try:
                 channel = int(channel)
             except ValueError:
-                _LOGGER.error(
-                    "Invalid channel number for module %s: %s", module_id, channel
-                )
+                _LOGGER.error("Invalid channel number for module %s: %s", module_id, channel)
                 continue
 
-            _LOGGER.debug(
-                "Processing module: %s, channel: %s, state: %s",
-                module_id,
-                channel,
-                state,
-            )
-
+            _LOGGER.debug("Processing module: %s, channel: %s, state: %s", module_id, channel, state)
             module_type = self.coordinator.get_module_type(module_id) or "unknown"
-            _LOGGER.debug(
-                "Detected module type for module %s: %s", module_id, module_type
-            )
+            _LOGGER.debug("Detected module type for module %s: %s", module_id, module_type)
 
             value = get_value(module_type, state)
             if value is None:
                 continue
 
-            # Initialize module changes if not yet fetched
+            # Retrieve current state and update specific channel value.
             if module_id not in module_changes:
-                module_changes[module_id] = bytearray(
-                    self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
-                )
-                _LOGGER.debug(
-                    "Fetched current state for module %s: %s",
-                    module_id,
-                    module_changes[module_id].hex(),
-                )
+                current_state = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
+                module_changes[module_id] = bytearray(current_state)
+                _LOGGER.debug("Fetched current state for module %s: %s", module_id, module_changes[module_id].hex())
 
-            # Update the specific channel with the new value
             module_changes[module_id][channel - 1] = value
 
-        # Send the combined command for each module after updating only the specified channels
+        # Send the updated states per module.
         for module_id, channel_states in module_changes.items():
-            current_state = self.coordinator.nikobus_module_states.get(
-                module_id, bytearray(12)
-            )
-            num_channels = len(
-                current_state
-            )  # Use the actual number of channels for this module
+            # Use coordinator function to get the actual number of channels.
+            num_channels = self.coordinator.get_module_channel_count(module_id)
+            current_state = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
 
-            module_type = self.coordinator.get_module_type(module_id)
-
-            # Group 1: first 6 channels (or less if the module has fewer channels)
+            # Update group 1: first 6 channels (or fewer, if module has fewer channels)
             group1_channels = min(6, num_channels)
-            group1_updated = any(
-                channel_states[i] != current_state[i] for i in range(group1_channels)
-            )
-
-            if group1_updated:
+            if any(channel_states[i] != current_state[i] for i in range(group1_channels)):
                 hex_value = channel_states[:group1_channels].hex()
-                _LOGGER.debug(
-                    "Updating group 1 for module %s with values: %s",
-                    module_id,
-                    hex_value,
-                )
-                self.coordinator.set_bytearray_group_state(
-                    module_id, group=1, value=hex_value
-                )
+                _LOGGER.debug("Updating group 1 for module %s with values: %s", module_id, hex_value)
+                self.coordinator.set_bytearray_group_state(module_id, group=1, value=hex_value)
 
-            # Group 2: if there are channels beyond the first group
-            if num_channels > 6:
-                group2_updated = any(
-                    channel_states[i] != current_state[i]
-                    for i in range(6, num_channels)
-                )
-                if group2_updated:
-                    hex_value = channel_states[6:num_channels].hex()
-                    _LOGGER.debug(
-                        "Updating group 2 for module %s with values: %s",
-                        module_id,
-                        hex_value,
-                    )
-                    self.coordinator.set_bytearray_group_state(
-                        module_id, group=2, value=hex_value
-                    )
+            # Update group 2: if there are channels beyond the first group
+            if num_channels > 6 and any(channel_states[i] != current_state[i] for i in range(6, num_channels)):
+                hex_value = channel_states[6:num_channels].hex()
+                _LOGGER.debug("Updating group 2 for module %s with values: %s", module_id, hex_value)
+                self.coordinator.set_bytearray_group_state(module_id, group=2, value=hex_value)
 
-            _LOGGER.debug(
-                "Sending updated state to module %s: %s", module_id, channel_states
-            )
-            await self.coordinator.api.set_output_states_for_module(address=module_id)
-
-            # Notify listeners of the state change
-            await self.coordinator.async_event_handler(
-                "nikobus_refreshed", {"impacted_module_address": module_id}
-            )
+            _LOGGER.debug("Sending updated state to module %s: %s", module_id, channel_states)
+            try:
+                await self.coordinator.api.set_output_states_for_module(address=module_id)
+            except Exception as e:
+                _LOGGER.error("Failed to set output state for module %s: %s", module_id, e, exc_info=True)
+            try:
+                await self.coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": module_id})
+            except Exception as e:
+                _LOGGER.error("Failed to handle event for module %s: %s", module_id, e, exc_info=True)

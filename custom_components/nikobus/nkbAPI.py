@@ -7,74 +7,56 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class NikobusAPI:
-    """Nikobus API for controlling switches and dimmers."""
+    """Nikobus API for controlling switches, dimmers, and covers."""
 
     def __init__(self, hass, coordinator):
         """Initialize the Nikobus API class with Home Assistant and the coordinator."""
         self._hass = hass
         self._coordinator = coordinator
 
-    #### SWITCHES
-    async def turn_on_switch(
-        self, address: str, channel: int, completion_handler=None
+    def _get_channel_info(self, module_key: str, address: str, channel: int) -> dict | None:
+        """Retrieve channel information safely from module data."""
+        module_data = self._coordinator.dict_module_data.get(module_key, {})
+        try:
+            return module_data.get(address, {}).get("channels", [])[channel - 1]
+        except IndexError:
+            _LOGGER.warning("Channel %d not found for %s in module %s", channel, address, module_key)
+            return None
+
+    async def _execute_command(
+        self, address: str, channel: int, command: str, state: int, completion_handler=None
     ) -> None:
+        """Execute a LED command if available; otherwise, set the output state."""
+        if command:
+            _LOGGER.debug("Sending LED command '%s' for %s at channel %d", command.strip(), address, channel)
+            await self._coordinator.nikobus_command.queue_command(f"#N{command}\r#E1")
+        else:
+            await self._coordinator.nikobus_command.set_output_state(
+                address, channel, state, completion_handler=completion_handler
+            )
+        self._coordinator.set_bytearray_state(address, channel, state)
+
+    #### SWITCHES
+    async def turn_on_switch(self, address: str, channel: int, completion_handler=None) -> None:
         """Turn on a switch specified by its address and channel."""
-        module_data = self._coordinator.dict_module_data.get("switch_module", {})
-        channel_info = (
-            module_data.get(address, {}).get("channels", [])[channel - 1]
-            if module_data
-            else None
-        )
+        channel_info = self._get_channel_info("switch_module", address, channel)
         led_on = channel_info.get("led_on") if channel_info else None
 
         try:
-            if led_on:
-                _LOGGER.debug(
-                    f"Sending LED ON command for switch at {address}, channel {channel}"
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_on}\r#E1"
-                )
-            else:
-                await self._coordinator.nikobus_command.set_output_state(
-                    address, channel, 0xFF, completion_handler=completion_handler
-                )
-            self._coordinator.set_bytearray_state(address, channel, 0xFF)
+            await self._execute_command(address, channel, led_on, 0xFF, completion_handler)
         except NikobusError as e:
-            _LOGGER.error(
-                f"Failed to turn on switch at {address}, channel {channel}: {e}"
-            )
+            _LOGGER.error("Failed to turn on switch at %s, channel %d: %s", address, channel, e)
             raise
 
-    async def turn_off_switch(
-        self, address: str, channel: int, completion_handler=None
-    ) -> None:
+    async def turn_off_switch(self, address: str, channel: int, completion_handler=None) -> None:
         """Turn off a switch specified by its address and channel."""
-        module_data = self._coordinator.dict_module_data.get("switch_module", {})
-        channel_info = (
-            module_data.get(address, {}).get("channels", [])[channel - 1]
-            if module_data
-            else None
-        )
+        channel_info = self._get_channel_info("switch_module", address, channel)
         led_off = channel_info.get("led_off") if channel_info else None
 
         try:
-            if led_off:
-                _LOGGER.debug(
-                    f"Sending LED OFF command for switch at {address}, channel {channel}"
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_off}\r#E1"
-                )
-            else:
-                await self._coordinator.nikobus_command.set_output_state(
-                    address, channel, 0x00, completion_handler=completion_handler
-                )
-            self._coordinator.set_bytearray_state(address, channel, 0x00)
+            await self._execute_command(address, channel, led_off, 0x00, completion_handler)
         except NikobusError as e:
-            _LOGGER.error(
-                f"Failed to turn off switch at {address}, channel {channel}: {e}"
-            )
+            _LOGGER.error("Failed to turn off switch at %s, channel %d: %s", address, channel, e)
             raise
 
     #### DIMMERS
@@ -83,63 +65,39 @@ class NikobusAPI:
     ) -> None:
         """Turn on a light specified by its address and channel with the given brightness."""
         current_brightness = self._coordinator.get_light_brightness(address, channel)
-        module_data = self._coordinator.dict_module_data.get("dimmer_module", {})
-        channel_info = (
-            module_data.get(address, {}).get("channels", [])[channel - 1]
-            if module_data
-            else None
-        )
+        channel_info = self._get_channel_info("dimmer_module", address, channel)
         led_on = channel_info.get("led_on") if channel_info else None
 
         try:
             if current_brightness == 0 and led_on:
-                _LOGGER.debug(
-                    f"Sending LED ON command for dimmer at {address}, channel {channel}"
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_on}\r#E1"
-                )
+                _LOGGER.debug("Sending LED ON command for dimmer at %s, channel %d", address, channel)
+                await self._coordinator.nikobus_command.queue_command(f"#N{led_on}\r#E1")
 
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, brightness, completion_handler=completion_handler
             )
             self._coordinator.set_bytearray_state(address, channel, brightness)
         except NikobusError as e:
-            _LOGGER.error(
-                f"Failed to turn on light at {address}, channel {channel}: {e}"
-            )
+            _LOGGER.error("Failed to turn on light at %s, channel %d: %s", address, channel, e)
             raise
 
-    async def turn_off_light(
-        self, address: str, channel: int, completion_handler=None
-    ) -> None:
+    async def turn_off_light(self, address: str, channel: int, completion_handler=None) -> None:
         """Turn off a light specified by its address and channel."""
         current_brightness = self._coordinator.get_light_brightness(address, channel)
-        module_data = self._coordinator.dict_module_data.get("dimmer_module", {})
-        channel_info = (
-            module_data.get(address, {}).get("channels", [])[channel - 1]
-            if module_data
-            else None
-        )
+        channel_info = self._get_channel_info("dimmer_module", address, channel)
         led_off = channel_info.get("led_off") if channel_info else None
 
         try:
             if current_brightness != 0 and led_off:
-                _LOGGER.debug(
-                    f"Sending LED OFF command for dimmer at {address}, channel {channel}"
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_off}\r#E1"
-                )
+                _LOGGER.debug("Sending LED OFF command for dimmer at %s, channel %d", address, channel)
+                await self._coordinator.nikobus_command.queue_command(f"#N{led_off}\r#E1")
 
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, 0x00, completion_handler=completion_handler
             )
             self._coordinator.set_bytearray_state(address, channel, 0x00)
         except NikobusError as e:
-            _LOGGER.error(
-                f"Failed to turn off light at {address}, channel {channel}: {e}"
-            )
+            _LOGGER.error("Failed to turn off light at %s, channel %d: %s", address, channel, e)
             raise
 
     #### COVERS
@@ -147,27 +105,20 @@ class NikobusAPI:
         self, address: str, channel: int, direction: str, completion_handler=None
     ) -> None:
         """Stop a cover specified by its address and channel."""
-        module_data = self._coordinator.dict_module_data.get("roller_module", {})
-        channel_data = (
-            module_data.get(address, {}).get("channels", [])[channel - 1]
-            if module_data
-            else None
-        )
+        channel_data = self._get_channel_info("roller_module", address, channel)
         led_on = channel_data.get("led_on") if channel_data else None
         led_off = channel_data.get("led_off") if channel_data else None
+
         command = None
+        if led_on and direction == "opening":
+            command = led_on
+        elif led_off and direction == "closing":
+            command = led_off
 
         try:
-            if led_on and direction == "opening":
-                command = f"#N{led_on}\r#E1"
-            elif led_off and direction == "closing":
-                command = f"#N{led_off}\r#E1"
-
             if command:
-                _LOGGER.debug(
-                    f"Sending STOP command for cover at {address}, channel {channel}, direction {direction}"
-                )
-                await self._coordinator.nikobus_command.queue_command(command)
+                _LOGGER.debug("Sending STOP command for cover at %s, channel %d, direction %s", address, channel, direction)
+                await self._coordinator.nikobus_command.queue_command(f"#N{command}\r#E1")
             else:
                 await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
@@ -175,74 +126,32 @@ class NikobusAPI:
 
             self._coordinator.set_bytearray_state(address, channel, 0x00)
         except NikobusError as e:
-            _LOGGER.error(f"Failed to stop cover at {address}, channel {channel}: {e}")
+            _LOGGER.error("Failed to stop cover at %s, channel %d: %s", address, channel, e)
             raise
 
-    async def open_cover(
-        self, address: str, channel: int, completion_handler=None
-    ) -> None:
+    async def open_cover(self, address: str, channel: int, completion_handler=None) -> None:
         """Open a cover specified by its address and channel."""
-        module_data = self._coordinator.dict_module_data.get("roller_module", {})
-        channel_data = (
-            module_data.get(address, {}).get("channels", [])[channel - 1]
-            if module_data
-            else None
-        )
+        channel_data = self._get_channel_info("roller_module", address, channel)
         led_on = channel_data.get("led_on") if channel_data else None
 
         try:
-            if led_on:
-                _LOGGER.debug(
-                    f"Sending OPEN command for cover at {address}, channel {channel}"
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_on}\r#E1"
-                )
-            else:
-                await self._coordinator.nikobus_command.set_output_state(
-                    address, channel, 0x01, completion_handler=completion_handler
-                )
-
-            self._coordinator.set_bytearray_state(address, channel, 0x01)
+            await self._execute_command(address, channel, led_on, 0x01, completion_handler)
         except NikobusError as e:
-            _LOGGER.error(f"Failed to open cover at {address}, channel {channel}: {e}")
+            _LOGGER.error("Failed to open cover at %s, channel %d: %s", address, channel, e)
             raise
 
-    async def close_cover(
-        self, address: str, channel: int, completion_handler=None
-    ) -> None:
+    async def close_cover(self, address: str, channel: int, completion_handler=None) -> None:
         """Close a cover specified by its address and channel."""
-        module_data = self._coordinator.dict_module_data.get("roller_module", {})
-        channel_data = (
-            module_data.get(address, {}).get("channels", [])[channel - 1]
-            if module_data
-            else None
-        )
+        channel_data = self._get_channel_info("roller_module", address, channel)
         led_off = channel_data.get("led_off") if channel_data else None
 
         try:
-            if led_off:
-                _LOGGER.debug(
-                    f"Sending CLOSE command for cover at {address}, channel {channel}"
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_off}\r#E1"
-                )
-            else:
-                await self._coordinator.nikobus_command.set_output_state(
-                    address, channel, 0x02, completion_handler=completion_handler
-                )
-
-            self._coordinator.set_bytearray_state(address, channel, 0x02)
+            await self._execute_command(address, channel, led_off, 0x02, completion_handler)
         except NikobusError as e:
-            _LOGGER.error(f"Failed to close cover at {address}, channel {channel}: {e}")
+            _LOGGER.error("Failed to close cover at %s, channel %d: %s", address, channel, e)
             raise
 
-    async def set_output_states_for_module(
-        self, address: str, completion_handler=None
-    ) -> None:
+    async def set_output_states_for_module(self, address: str, completion_handler=None) -> None:
         """Set the output states for a module with multiple channel updates at once."""
-        _LOGGER.debug(f"Setting output states for module {address}")
-        await self._coordinator.nikobus_command.set_output_states(
-            address, completion_handler=completion_handler
-        )
+        _LOGGER.debug("Setting output states for module %s", address)
+        await self._coordinator.nikobus_command.set_output_states(address, completion_handler=completion_handler)

@@ -1,10 +1,10 @@
 """Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
-
 import json
 import logging
 from aiofiles import open as aio_open
-from typing import Any
-from homeassistant.exceptions import HomeAssistantError
+from typing import Any, Callable, Dict, Optional
+
+from .exceptions import NikobusDataError  # Updated import
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class NikobusConfig:
         """Initialize the configuration handler."""
         self._hass = hass
 
-    async def load_json_data(self, file_name: str, data_type: str) -> dict | None:
+    async def load_json_data(self, file_name: str, data_type: str) -> Optional[dict]:
         """Load JSON data from a file and transform it based on the data type."""
         file_path = self._hass.config.path(file_name)
         _LOGGER.info(f"Loading {data_type} data from {file_path}")
@@ -33,23 +33,23 @@ class NikobusConfig:
             _LOGGER.error(
                 f"Failed to decode JSON in {data_type} file: {err}", exc_info=True
             )
-            raise HomeAssistantError(
+            raise NikobusDataError(
                 f"Failed to decode JSON in {data_type} file: {err}"
             ) from err
 
         except Exception as err:
             _LOGGER.error(f"Failed to load {data_type} data: {err}", exc_info=True)
-            raise HomeAssistantError(f"Failed to load {data_type} data: {err}") from err
+            raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
 
         return None
 
     def _transform_loaded_data(self, data: dict, data_type: str) -> dict:
         """Transform the loaded JSON data based on the data type."""
-        if data_type == "button":
-            return self._transform_button_data(data)
-        if data_type == "module":
-            return self._transform_module_data(data)
-        return data
+        transform_map: Dict[str, Callable[[dict], dict]] = {
+            "button": self._transform_button_data,
+            "module": self._transform_module_data,
+        }
+        return transform_map.get(data_type, lambda d: d)(data)
 
     def _transform_button_data(self, data: dict) -> dict:
         """Transform button data from a list to a dictionary."""
@@ -75,7 +75,7 @@ class NikobusConfig:
                 f"Button configuration file not found: {file_path}. A new file will be created upon discovering the first button."
             )
         else:
-            raise HomeAssistantError(
+            raise NikobusDataError(
                 f"{data_type.capitalize()} configuration file not found: {file_path}"
             )
 
@@ -94,7 +94,7 @@ class NikobusConfig:
                 f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}",
                 exc_info=True,
             )
-            raise HomeAssistantError(
+            raise NikobusDataError(
                 f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}"
             ) from err
 
@@ -102,7 +102,7 @@ class NikobusConfig:
             _LOGGER.error(
                 f"Failed to serialize {data_type} data to JSON: {err}", exc_info=True
             )
-            raise HomeAssistantError(
+            raise NikobusDataError(
                 f"Failed to serialize {data_type} data to JSON: {err}"
             ) from err
 
@@ -111,25 +111,25 @@ class NikobusConfig:
                 f"Unexpected error writing {data_type} data to file {file_name}: {err}",
                 exc_info=True,
             )
-            raise HomeAssistantError(
+            raise NikobusDataError(
                 f"Unexpected error writing {data_type} data to file {file_name}: {err}"
             ) from err
 
     def _transform_data_for_writing(self, data_type: str, data: dict) -> dict:
         """Transform the data for writing based on the data type."""
-        if data_type == "button":
-            return self._transform_button_data_for_writing(data)
-        return data
+        transform_map: Dict[str, Callable[[dict], dict]] = {
+            "button": self._transform_button_data_for_writing
+        }
+        return transform_map.get(data_type, lambda d: d)(data)
 
     def _transform_button_data_for_writing(self, data: dict) -> dict:
         """Transform button data from a dictionary back to a list for saving."""
-        button_data_list = []
-        for address, details in data.get("nikobus_button", {}).items():
-            button_data_list.append(
-                {
-                    "description": details["description"],
-                    "address": address,
-                    "impacted_module": details["impacted_module"],
-                }
-            )
+        button_data_list = [
+            {
+                "description": details["description"],
+                "address": address,
+                "impacted_module": details["impacted_module"],
+            }
+            for address, details in data.get("nikobus_button", {}).items()
+        ]
         return {"nikobus_button": button_data_list}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Dict
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
@@ -29,13 +29,11 @@ async def async_setup_entry(
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
     device_registry = dr.async_get(hass)
-    entities: list = []
+    entities: list[SwitchEntity] = []
 
     # Process standard switch_module entities
-    switch_modules: dict[str, Any] = coordinator.dict_module_data.get(
-        "switch_module", {}
-    )
-    for address, switch_module_data in switch_modules.items():
+    const_switch_modules: dict[str, Any] = coordinator.dict_module_data.get("switch_module", {})
+    for address, switch_module_data in const_switch_modules.items():
         module_desc = switch_module_data.get("description", f"Module {address}")
         model = switch_module_data.get("model", "Unknown Module Model")
 
@@ -47,9 +45,7 @@ async def async_setup_entry(
             module_model=model,
         )
 
-        for channel_index, channel_info in enumerate(
-            switch_module_data.get("channels", []), start=1
-        ):
+        for channel_index, channel_info in enumerate(switch_module_data.get("channels", []), start=1):
             if channel_info["description"].startswith("not_in_use"):
                 continue
 
@@ -65,7 +61,6 @@ async def async_setup_entry(
             )
 
     # Process roller_module channels marked with use_as_switch
-    # (These were stored by cover.py during its setup.)
     roller_switch_data = hass.data.setdefault(DOMAIN, {}).get("switch_entities", [])
     for switch_data in roller_switch_data:
         entities.append(
@@ -112,8 +107,8 @@ class NikobusSwitchCoverEntity(SwitchEntity):
         channel_description: str,
         module_desc: str,
         module_model: str,
-    ):
-        """Initialize the entity as a switch inside the roller module."""
+    ) -> None:
+        """Initialize the switch entity for a roller module."""
         super().__init__()
         self.coordinator = coordinator
         self.address = address
@@ -122,35 +117,40 @@ class NikobusSwitchCoverEntity(SwitchEntity):
         self.module_desc = module_desc
         self.module_model = module_model
 
-        # Set basic attributes
         self._attr_name = f"{module_desc} - {channel_description}"
         self._attr_unique_id = f"{DOMAIN}_switch_{self.address}_{self.channel}"
 
     @property
     def device_info(self) -> dict[str, Any]:
         return {
-            "identifiers": {(DOMAIN, self.address)},  # Same as covers
+            "identifiers": {(DOMAIN, self.address)},
             "manufacturer": BRAND,
             "name": self.module_desc,
             "model": self.module_model,
         }
 
     @property
-    def is_on(self):
-        """Return whether the cover is open (simulated as switch ON)."""
+    def is_on(self) -> bool:
+        """Return True if the simulated switch (cover open) is on."""
         return self.coordinator.get_cover_state(self.address, self.channel) == 0x01
 
-    async def async_turn_on(self, **kwargs):
+    async def async_turn_on(self, **kwargs: Any) -> None:
         """Simulate turning on the switch (opening cover)."""
         _LOGGER.debug("Turning ON (simulating open) for %s", self.channel_description)
-        await self.coordinator.api.open_cover(self.address, self.channel)
+        try:
+            await self.coordinator.api.open_cover(self.address, self.channel)
+        except NikobusError as err:
+            _LOGGER.error("Failed to open cover for %s: %s", self.channel_description, err, exc_info=True)
 
-    async def async_turn_off(self, **kwargs):
-        """Simulate turning off the switch (closing cover)."""
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Simulate turning off the switch (stopping cover)."""
         _LOGGER.debug("Turning OFF (simulating stop) for %s", self.channel_description)
-        await self.coordinator.api.stop_cover(
-            self.address, self.channel, direction="closing"
-        )
+        try:
+            await self.coordinator.api.stop_cover(
+                self.address, self.channel, direction="closing"
+            )
+        except NikobusError as err:
+            _LOGGER.error("Failed to stop cover for %s: %s", self.channel_description, err, exc_info=True)
 
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
@@ -202,7 +202,6 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         """Turn the switch on."""
         self._is_on = True
         self.async_write_ha_state()
-
         try:
             await self.coordinator.api.turn_on_switch(self._address, self._channel)
         except NikobusError as err:
@@ -219,7 +218,6 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         """Turn the switch off."""
         self._is_on = False
         self.async_write_ha_state()
-
         try:
             await self.coordinator.api.turn_off_switch(self._address, self._channel)
         except NikobusError as err:

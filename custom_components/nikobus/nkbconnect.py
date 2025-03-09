@@ -54,7 +54,7 @@ class NikobusConnect:
     async def _connect_ip(self) -> None:
         """Establish an IP connection to the Nikobus system."""
         try:
-            host, port_str = self._connection_string.split(":")
+            host, port_str = self._connection_string.split(":", 1)
             port = int(port_str)
             self._nikobus_reader, self._nikobus_writer = await asyncio.open_connection(
                 host, port
@@ -70,17 +70,12 @@ class NikobusConnect:
     async def _connect_serial(self) -> None:
         """Establish a serial connection to the Nikobus system."""
         try:
-            (
-                self._nikobus_reader,
-                self._nikobus_writer,
-            ) = await serial_asyncio.open_serial_connection(
+            self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(
                 url=self._connection_string, baudrate=BAUD_RATE
             )
             _LOGGER.info("Connected to serial port %s", self._connection_string)
         except (OSError, serial_asyncio.SerialException) as err:
-            error_msg = (
-                f"Failed to connect to serial port {self._connection_string} - {err}"
-            )
+            error_msg = f"Failed to connect to serial port {self._connection_string} - {err}"
             _LOGGER.error(error_msg)
             self._nikobus_reader = None
             self._nikobus_writer = None
@@ -88,13 +83,14 @@ class NikobusConnect:
 
     def _validate_connection_string(self) -> Literal["IP", "Serial", "Unknown"]:
         """Validate the connection string to determine the type (IP or Serial)."""
+        parts = self._connection_string.split(":", 1)
+        ip_candidate = parts[0]
         try:
-            ipaddress.ip_address(self._connection_string.split(":")[0])
+            ipaddress.ip_address(ip_candidate)
             return "IP"
         except ValueError:
-            if re.match(
-                r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string
-            ):
+            # Check for common serial port patterns.
+            if re.match(r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string):
                 return "Serial"
         return "Unknown"
 
@@ -107,7 +103,10 @@ class NikobusConnect:
         return True
 
     async def _send_with_retry(self, command: str) -> bool:
-        """Send a command and handle potential errors with retries."""
+        """Send a command and handle potential errors with retries.
+        
+        Future improvement: Add configurable retry attempts with delays.
+        """
         try:
             await self.send(command)
             return True

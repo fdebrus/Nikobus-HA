@@ -28,39 +28,44 @@ async def async_validate_input(
 ) -> dict[str, str]:
     """Validate the connection string asynchronously."""
     connection_string: str = user_input[CONF_CONNECTION_STRING]
+    _LOGGER.debug("Validating connection string: %s", connection_string)
 
     # IP:Port validation
     if ":" in connection_string:
         try:
-            ip_str, port_str = connection_string.split(":")
+            ip_str, port_str = connection_string.split(":", 1)
             ipaddress.ip_address(ip_str)
             port = int(port_str)
             if not (1 <= port <= 65535):
+                _LOGGER.debug("Port %s out of valid range", port)
                 return {"error": "invalid_port"}
 
             def test_connection() -> None:
                 try:
                     with socket.create_connection((ip_str, port), timeout=5):
                         pass
-                except (socket.timeout, ConnectionRefusedError):
+                except (socket.timeout, ConnectionRefusedError) as exc:
+                    _LOGGER.debug("Connection test failed: %s", exc)
                     raise ValueError("connection_unreachable")
 
             await hass.async_add_executor_job(test_connection)
             return {"title": f"Nikobus ({connection_string})"}
 
         except ValueError as exc:
+            _LOGGER.debug("ValueError during IP validation: %s", exc)
             if str(exc) == "connection_unreachable":
                 return {"error": "connection_unreachable"}
+            return {"error": "invalid_connection"}
 
     # Serial device validation
     serial_regex = r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$"
     if re.match(serial_regex, connection_string):
-        if os.path.exists(connection_string) and os.access(
-            connection_string, os.R_OK | os.W_OK
-        ):
+        if os.path.exists(connection_string) and os.access(connection_string, os.R_OK | os.W_OK):
             return {"title": f"Nikobus ({connection_string})"}
+        _LOGGER.debug("Serial device %s not found or not accessible", connection_string)
         return {"error": "device_not_found_or_no_access"}
 
+    _LOGGER.debug("Connection string did not match expected patterns")
     return {"error": "invalid_connection"}
 
 
@@ -83,9 +88,8 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if "error" in validation:
                 errors["base"] = validation["error"]
             else:
-                return self.async_create_entry(
-                    title=validation["title"], data=user_input
-                )
+                _LOGGER.debug("User input validated successfully with title: %s", validation["title"])
+                return self.async_create_entry(title=validation["title"], data=user_input)
 
         return self.async_show_form(
             step_id="user",
@@ -107,7 +111,6 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle YAML import of Nikobus configuration."""
         if self._get_existing_entry():
             return self.async_abort(reason="already_configured")
-
         return await self.async_step_user(user_input=import_config)
 
     async def async_step_reconfigure(
