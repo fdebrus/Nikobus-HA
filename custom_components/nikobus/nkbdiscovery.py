@@ -4,11 +4,9 @@ import os
 import json
 import aiofiles
 
-from homeassistant.helpers.device_registry import async_get
 
 from .nkbprotocol import make_pc_link_inventory_command
 from .const import (
-    DOMAIN,
     DEVICE_INVENTORY,
     DEVICE_TYPES,
     SWITCH_MODE_MAPPING,
@@ -23,6 +21,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
 
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):
@@ -74,18 +73,18 @@ class NikobusDiscovery:
             # Convert input hexadecimal string to an integer.
             address = int(address_string, 16)
             nikobus_address = 0
-        
+
             # Reverse the order of the lowest 21 bits.
             for i in range(21):
                 nikobus_address = (nikobus_address << 1) | ((address >> i) & 1)
             nikobus_address <<= 1  # Final left shift appends a zero bit.
-        
+
             # Calculate the button value from bits 21-23.
             button = (address >> 21) & 0x07
-        
+
             # Add the button value to the Nikobus address.
             final_address = nikobus_address + button
-        
+
             # Return the final Nikobus address as a 6-digit hex string.
             return {"nikobus_address": f"{final_address:06X}"}
         except ValueError:
@@ -116,7 +115,7 @@ class NikobusDiscovery:
                 command_range = range(0x10, 0xFF)
         else:
             command_range = range(0xA4, 0xFF)
-        
+
         for cmd in command_range:
             partial_hex = f"{base_command}{cmd:02X}04"
             pc_link_command = make_pc_link_inventory_command(partial_hex)
@@ -250,7 +249,11 @@ class NikobusDiscovery:
         else:
             existing_data = []
         updated_data = existing_data.copy()
-        lookup = {button.get("address"): button for button in updated_data if "address" in button}
+        lookup = {
+            button.get("address"): button
+            for button in updated_data
+            if "address" in button
+        }
         for device_address, device in self.discovered_devices.items():
             if device.get("category") != "Button":
                 continue
@@ -266,7 +269,9 @@ class NikobusDiscovery:
             elif num_channels == 8:
                 keys = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"]
             else:
-                _LOGGER.error(f"Unexpected number of channels: {num_channels} for device {device_address}")
+                _LOGGER.error(
+                    f"Unexpected number of channels: {num_channels} for device {device_address}"
+                )
                 continue
             mapping = KEY_MAPPING.get(num_channels, {})
             channels_data = {}
@@ -279,7 +284,10 @@ class NikobusDiscovery:
                     new_nibble_value = original_nibble + add_value
                     new_nibble_hex = f"{new_nibble_value:X}"
                     updated_addr = new_nibble_hex + converted_address[1:]
-                    channels_data[f"channel_{idx}"] = {"key": key, "address": updated_addr}
+                    channels_data[f"channel_{idx}"] = {
+                        "key": key,
+                        "address": updated_addr,
+                    }
             device["channels_data"] = channels_data
             for channel_info in channels_data.values():
                 discovered_channel_address = channel_info["address"]
@@ -295,18 +303,27 @@ class NikobusDiscovery:
                 if button:
                     discovered_list = button.setdefault("discovered_info", [])
                     found_info = next(
-                        (info for info in discovered_list if info.get("key") == new_info["key"] and info.get("address") == new_info["address"]),
-                        None
+                        (
+                            info
+                            for info in discovered_list
+                            if info.get("key") == new_info["key"]
+                            and info.get("address") == new_info["address"]
+                        ),
+                        None,
                     )
                     if found_info:
-                        if (found_info.get("type") != new_info["type"] or
-                            found_info.get("model") != new_info["model"] or
-                            found_info.get("channels") != new_info["channels"]):
-                            found_info.update({
-                                "type": new_info["type"],
-                                "model": new_info["model"],
-                                "channels": new_info["channels"],
-                            })
+                        if (
+                            found_info.get("type") != new_info["type"]
+                            or found_info.get("model") != new_info["model"]
+                            or found_info.get("channels") != new_info["channels"]
+                        ):
+                            found_info.update(
+                                {
+                                    "type": new_info["type"],
+                                    "model": new_info["model"],
+                                    "channels": new_info["channels"],
+                                }
+                            )
                     else:
                         discovered_list.append(new_info)
                 else:
@@ -314,7 +331,7 @@ class NikobusDiscovery:
                         "description": f"{description} #N{discovered_channel_address}",
                         "address": discovered_channel_address,
                         "impacted_module": [{"address": "", "group": ""}],
-                        "discovered_info": [new_info]
+                        "discovered_info": [new_info],
                     }
                     updated_data.append(new_button)
                     lookup[discovered_channel_address] = new_button
@@ -329,13 +346,15 @@ class NikobusDiscovery:
     async def parse_module_inventory_response(self, message):
         _LOGGER.debug("Received message: %r", message)
 
-        matched_header = next((h for h in DEVICE_INVENTORY if message.startswith(h)), None)
+        matched_header = next(
+            (h for h in DEVICE_INVENTORY if message.startswith(h)), None
+        )
         if not matched_header:
             _LOGGER.error("Message does not start with expected header.")
             return
 
         # Remove header and CRC (last 6 hex characters)
-        data_with_crc = message[len(matched_header):]
+        data_with_crc = message[len(matched_header) :]
 
         data = data_with_crc[:-6]
         payload_data = data[4:]
@@ -352,12 +371,12 @@ class NikobusDiscovery:
             "dimmer_module": 16,
             "roller_module": 12,
         }
-        
+
         expected_chunk_length = chunk_lengths.get(self._module_type)
 
         while len(self._payload_buffer) >= expected_chunk_length:
             candidate_chunk = self._payload_buffer[:expected_chunk_length]
-    
+
             # Check if this is the termination chunk (all F's).
             if candidate_chunk.strip().upper() == "F" * expected_chunk_length:
                 _LOGGER.debug("Termination chunk encountered: %r", candidate_chunk)
@@ -388,7 +407,9 @@ class NikobusDiscovery:
             chunks_to_process = self._chunks
         self._chunks = []
 
-        _LOGGER.debug("Processing complete message with %d chunks.", len(chunks_to_process))
+        _LOGGER.debug(
+            "Processing complete message with %d chunks.", len(chunks_to_process)
+        )
         new_commands = []
         for chunk in chunks_to_process:
             _LOGGER.debug("Decoding chunk: %r", chunk[:12])
@@ -401,7 +422,10 @@ class NikobusDiscovery:
                 _LOGGER.error("Failed to decode chunk: %r", reversed_chunk)
 
         if not hasattr(self, "_decoded_buffer"):
-            self._decoded_buffer = {"module_address": self._module_address, "commands": []}
+            self._decoded_buffer = {
+                "module_address": self._module_address,
+                "commands": [],
+            }
         else:
             if self._decoded_buffer.get("module_address") is None:
                 self._decoded_buffer["module_address"] = self._module_address
@@ -413,11 +437,21 @@ class NikobusDiscovery:
         for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
             _LOGGER.info(
                 "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, T1: %s, T2: %s, Mode: %s",
-                idx, cmd.get("payload"), cmd.get("button_address"), cmd.get("push_button_address"),
-                cmd.get("K"), cmd.get("C"), cmd.get("T1"), cmd.get("T2"), cmd.get("M")
+                idx,
+                cmd.get("payload"),
+                cmd.get("button_address"),
+                cmd.get("push_button_address"),
+                cmd.get("K"),
+                cmd.get("C"),
+                cmd.get("T1"),
+                cmd.get("T2"),
+                cmd.get("M"),
             )
 
-        grouped = {"module_address": self._decoded_buffer["module_address"], "channels": {}}
+        grouped = {
+            "module_address": self._decoded_buffer["module_address"],
+            "channels": {},
+        }
         for cmd in self._decoded_buffer["commands"]:
             channel = cmd.get("C")
             new_cmd = {
@@ -427,7 +461,7 @@ class NikobusDiscovery:
                 "t1": cmd.get("T1"),
                 "t2": cmd.get("T2"),
                 "mode": cmd.get("M"),
-                "channel": cmd.get("C")
+                "channel": cmd.get("C"),
             }
             if channel not in grouped["channels"]:
                 grouped["channels"][channel] = []
@@ -437,7 +471,8 @@ class NikobusDiscovery:
                 sorted(
                     grouped["channels"].items(),
                     key=lambda x: int(x[0].split()[1])
-                    if len(x[0].split()) > 1 and x[0].split()[1].isdigit() else 0
+                    if len(x[0].split()) > 1 and x[0].split()[1].isdigit()
+                    else 0,
                 )
             )
             grouped["channels"] = sorted_channels
@@ -448,7 +483,9 @@ class NikobusDiscovery:
         config_file_path = self._hass.config.path("nikobus_button_config.json")
         try:
             if os.path.exists(config_file_path):
-                async with aiofiles.open(config_file_path, "r", encoding="utf-8") as file:
+                async with aiofiles.open(
+                    config_file_path, "r", encoding="utf-8"
+                ) as file:
                     try:
                         existing_json = json.loads(await file.read())
                         buttons = existing_json.get("nikobus_button", [])
@@ -470,16 +507,22 @@ class NikobusDiscovery:
                                 "channel": cmd.get("channel"),
                                 "mode": cmd.get("mode"),
                                 "t1": cmd.get("t1"),
-                                "t2": cmd.get("t2")
+                                "t2": cmd.get("t2"),
                             }
                             if "discovered_link" not in button:
                                 button["discovered_link"] = []
                             # Only add the new entry if it doesn't already exist.
                             if discovered_link_entry not in button["discovered_link"]:
                                 button["discovered_link"].append(discovered_link_entry)
-                                _LOGGER.info("Added new discovered_link to button %s", push_button_addr)
+                                _LOGGER.info(
+                                    "Added new discovered_link to button %s",
+                                    push_button_addr,
+                                )
                             else:
-                                _LOGGER.debug("Discovered_link already exists for button %s", push_button_addr)
+                                _LOGGER.debug(
+                                    "Discovered_link already exists for button %s",
+                                    push_button_addr,
+                                )
                             break
 
             updated_config = {"nikobus_button": buttons}
@@ -525,14 +568,24 @@ class NikobusDiscovery:
                 normalized_address = f"{int(button_address, 16) - 1:06X}"
                 num_channels = self._coordinator.get_button_channels(normalized_address)
                 if num_channels is not None:
-                    _LOGGER.info("Normalized button_address from %s to %s", button_address, normalized_address)
+                    _LOGGER.info(
+                        "Normalized button_address from %s to %s",
+                        button_address,
+                        normalized_address,
+                    )
                     button_address = normalized_address
                     second_part = True
                 else:
-                    _LOGGER.error("Could not determine channels for button address %s or normalized %s", button_address, normalized_address)
+                    _LOGGER.error(
+                        "Could not determine channels for button address %s or normalized %s",
+                        button_address,
+                        normalized_address,
+                    )
                     return None, button_address
             else:
-                _LOGGER.error("Could not determine channels for button address %s", button_address)
+                _LOGGER.error(
+                    "Could not determine channels for button address %s", button_address
+                )
                 return None, button_address
 
         # Compute the full 6-digit address using your bit-reversal/shifting algorithm.
@@ -541,15 +594,20 @@ class NikobusDiscovery:
 
         # Retrieve the mapping for this number of channels from your KEY_MAPPING_MODULE.
         mapping = KEY_MAPPING_MODULE.get(num_channels, {})
-        _LOGGER.debug("Debug: key_raw=%s, mapping keys=%s", key_raw, list(mapping.keys()))
+        _LOGGER.debug(
+            "Debug: key_raw=%s, mapping keys=%s", key_raw, list(mapping.keys())
+        )
 
         effective_key = key_raw
         if num_channels == 8 and second_part:
             effective_key = key_raw + 4
 
         if effective_key not in mapping:
-            _LOGGER.error("KeyError: effective_key '%s' not found in mapping. Available keys: %s",
-                        effective_key, list(mapping.keys()))
+            _LOGGER.error(
+                "KeyError: effective_key '%s' not found in mapping. Available keys: %s",
+                effective_key,
+                list(mapping.keys()),
+            )
             return None, button_address
 
         add_value = int(mapping[effective_key], 16)
@@ -557,7 +615,7 @@ class NikobusDiscovery:
         new_nibble_value = original_nibble + add_value
         new_nibble_hex = f"{new_nibble_value:X}"
         final_push_button_address = new_nibble_hex + push_button_address[1:]
-    
+
         return final_push_button_address, button_address
 
     def decode_command_payload(self, payload_hex):
@@ -565,7 +623,7 @@ class NikobusDiscovery:
             payload_hex = payload_hex.hex().upper()
         payload_hex = payload_hex.upper()
 
-        command_hex = payload_hex[:6]  # Extract first 6 characters to process
+        payload_hex[:6]  # Extract first 6 characters to process
 
         try:
             t2_raw = int(payload_hex[1], 16)  # Extract second character (T2)
@@ -579,7 +637,11 @@ class NikobusDiscovery:
 
         _LOGGER.debug(
             "Command: T2=%s, Key=%s, Channel=%s, T1=%s, Mode=%s",
-            t2_raw, key_raw, channel_raw, t1_raw, mode_raw
+            t2_raw,
+            key_raw,
+            channel_raw,
+            t1_raw,
+            mode_raw,
         )
 
         # Get the physical button address
@@ -588,43 +650,48 @@ class NikobusDiscovery:
         _LOGGER.debug(f"Converted button address : {button_address}")
 
         # Get the push button address
-        push_button_address, button_address = self.get_push_button_address(key_raw, button_address)
+        push_button_address, button_address = self.get_push_button_address(
+            key_raw, button_address
+        )
 
-        channel_label = CHANNEL_MAPPING.get(channel_raw, f"Unknown Channel ({channel_raw})")
+        channel_label = CHANNEL_MAPPING.get(
+            channel_raw, f"Unknown Channel ({channel_raw})"
+        )
 
         module_mappings = {
-            'switch_module': (SWITCH_MODE_MAPPING, SWITCH_TIMER_MAPPING),
-            'dimmer_module': (DIMMER_MODE_MAPPING, DIMMER_TIMER_MAPPING),
-            'roller_module': (ROLLER_MODE_MAPPING, ROLLER_TIMER_MAPPING)
+            "switch_module": (SWITCH_MODE_MAPPING, SWITCH_TIMER_MAPPING),
+            "dimmer_module": (DIMMER_MODE_MAPPING, DIMMER_TIMER_MAPPING),
+            "roller_module": (ROLLER_MODE_MAPPING, ROLLER_TIMER_MAPPING),
         }
 
         # Default to 'switch_module' if the module type isn't found
-        mode_mapping, timer_mapping = module_mappings.get(self._module_type, module_mappings['switch_module'])
+        mode_mapping, timer_mapping = module_mappings.get(
+            self._module_type, module_mappings["switch_module"]
+        )
 
         mode_label = mode_mapping.get(mode_raw, f"Unknown Mode ({mode_raw})")
 
         t1_val = None
         t2_val = None
 
-        if self._module_type == 'switch_module':
+        if self._module_type == "switch_module":
             if mode_raw in [5, 6]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
             elif mode_raw in [8, 9]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[1]
             elif mode_raw in [1, 2]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
-            else:
-                t1_val = None
-        elif self._module_type == 'dimmer_module':
+        elif self._module_type == "dimmer_module":
             if mode_raw in [0, 1, 2]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[1]
                 t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
             elif mode_raw in [3]:
-                t1_val = None
                 t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
             elif mode_raw in [4, 5, 6, 7, 8]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
                 t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
+        elif self._module_type == "roller_module":
+            t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
 
         return {
             "payload": payload_hex,
