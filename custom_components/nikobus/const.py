@@ -174,7 +174,7 @@ DEVICE_TYPES = {
         "Name": "Modular Interface 6 inputs",
     },
     "3D": {
-        "Category": "Module",
+        "Category": "Button",
         "Model": "05-312",
         "Channels": 52,
         "Name": "RF Transmitter, 52 operation points",
