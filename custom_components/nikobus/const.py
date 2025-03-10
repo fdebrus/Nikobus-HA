@@ -73,12 +73,12 @@ MAX_ATTEMPTS: Final[int] = 3  # Maximum retry attempts
 # Discovery
 # =============================================================================
 DEVICE_TYPES = {
-    "01": {
-        "Category": "Module",
-        "Model": "05-000-02",
-        "Channels": 12,
-        "Name": "Switch Module",
-    },
+     "01": {
+         "Category": "Module",
+         "Model": "05-000-02",
+         "Channels": 12,
+         "Name": "Switch Module",
+     },
     "02": {
         "Category": "Module",
         "Model": "05-001-02",
@@ -160,6 +160,24 @@ DEVICE_TYPES = {
         "Model": "05-002-02",
         "Channels": 4,
         "Name": "Compact Switch Module",
+    },
+    "32": {
+        "Category": "Module",
+        "Model": "05-008-02",
+        "Channels": 4,
+        "Name": "Compact Dim Controller",
+    },
+    "37": {
+        "Category": "Module",
+        "Model": "05-206",
+        "Channels": 6,
+        "Name": "Modular Interface 6 inputs",
+    },
+    "3D": {
+        "Category": "Module",
+        "Model": "05-312",
+        "Channels": 52,
+        "Name": "RF Transmitter, 52 operation points",
     },
     "3F": {
         "Category": "Button",
