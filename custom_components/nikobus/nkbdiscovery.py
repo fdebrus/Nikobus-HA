@@ -412,9 +412,9 @@ class NikobusDiscovery:
         _LOGGER.info("module_address: %s", self._decoded_buffer["module_address"])
         for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
             _LOGGER.info(
-                "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, Timer: %s, Mode: %s",
+                "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, T1: %s, T2: %s, Mode: %s",
                 idx, cmd.get("payload"), cmd.get("button_address"), cmd.get("push_button_address"),
-                cmd.get("K"), cmd.get("C"), cmd.get("T"), cmd.get("M")
+                cmd.get("K"), cmd.get("C"), cmd.get("T1"), cmd.get("T2"), cmd.get("M")
             )
 
         grouped = {"module_address": self._decoded_buffer["module_address"], "channels": {}}
@@ -424,7 +424,8 @@ class NikobusDiscovery:
                 "button_address": cmd.get("button_address"),
                 "push_button_address": cmd.get("push_button_address"),
                 "button_key": cmd.get("K"),
-                "timer": cmd.get("T"),
+                "t1": cmd.get("T1"),
+                "t2": cmd.get("T2"),
                 "mode": cmd.get("M"),
                 "channel": cmd.get("C")
             }
@@ -468,7 +469,8 @@ class NikobusDiscovery:
                                 "module_address": grouped.get("module_address"),
                                 "channel": cmd.get("channel"),
                                 "mode": cmd.get("mode"),
-                                "timer": cmd.get("timer")
+                                "t1": cmd.get("t1"),
+                                "t2": cmd.get("t2")
                             }
                             if "discovered_link" not in button:
                                 button["discovered_link"] = []
@@ -550,13 +552,6 @@ class NikobusDiscovery:
                         effective_key, list(mapping.keys()))
             return None, button_address
 
-        # For IR buttons (identified by a button_address starting with "0"),
-        # simply return the computed full 6-digit address.
-        # if button_address.startswith("0"):
-        #    final_push_button_address = push_button_address
-        #    _LOGGER.debug(f"IR button: final push button address: {final_push_button_address}")
-        # else:
-        # Regular processing for non-IR buttons.
         add_value = int(mapping[effective_key], 16)
         original_nibble = int(push_button_address[0], 16)
         new_nibble_value = original_nibble + add_value
@@ -570,17 +565,21 @@ class NikobusDiscovery:
             payload_hex = payload_hex.hex().upper()
         payload_hex = payload_hex.upper()
 
-        command_hex = payload_hex[2:6]
+        command_hex = payload_hex[:6]  # Extract first 6 characters to process
 
-        # Get KCTM
         try:
-            key_raw, channel_raw, timer_raw, mode_raw = (int(x, 16) for x in command_hex)
+            t2_raw = int(payload_hex[1], 16)  # Extract second character (T2)
+            key_raw = int(payload_hex[2], 16)  # Extract third character (Key)
+            channel_raw = int(payload_hex[3], 16)  # Extract fourth character (Channel)
+            t1_raw = int(payload_hex[4], 16)  # Extract fifth character (Timer)
+            mode_raw = int(payload_hex[5], 16)  # Extract sixth character (Mode)
         except ValueError:
-            _LOGGER.error("Invalid command hex: %s", command_hex)
+            _LOGGER.error("Invalid command hex: %s", payload_hex)
             return None
+
         _LOGGER.debug(
-            "Command: Key=%s, Channel=%s, Timer=%s, Mode=%s",
-            key_raw, channel_raw, timer_raw, mode_raw
+            "Command: T2=%s, Key=%s, Channel=%s, T1=%s, Mode=%s",
+            t2_raw, key_raw, channel_raw, t1_raw, mode_raw
         )
 
         # Get the physical button address
@@ -604,14 +603,28 @@ class NikobusDiscovery:
 
         mode_label = mode_mapping.get(mode_raw, f"Unknown Mode ({mode_raw})")
 
-        if mode_raw in [5, 6]:
-            timer_val = timer_mapping.get(timer_raw, ["Unknown"])[0]
-        elif mode_raw in [8, 9]:
-            timer_val = timer_mapping.get(timer_raw, ["Unknown"])[1]
-        elif mode_raw in [1, 2]:
-            timer_val = timer_mapping.get(timer_raw, ["Unknown"])[2]
-        else:
-            timer_val = None
+        t1_val = None
+        t2_val = None
+
+        if self._module_type == 'switch_module':
+            if mode_raw in [5, 6]:
+                t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
+            elif mode_raw in [8, 9]:
+                t1_val = timer_mapping.get(t1_raw, ["Unknown"])[1]
+            elif mode_raw in [1, 2]:
+                t1_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
+            else:
+                t1_val = None
+        elif self._module_type == 'dimmer_module':
+            if mode_raw in [0, 1, 2]:
+                t1_val = timer_mapping.get(t1_raw, ["Unknown"])[1]
+                t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
+            elif mode_raw in [3]:
+                t1_val = None
+                t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
+            elif mode_raw in [4, 5, 6, 7, 8]:
+                t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
+                t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
 
         return {
             "payload": payload_hex,
@@ -619,6 +632,7 @@ class NikobusDiscovery:
             "push_button_address": push_button_address,
             "K": f"{key_raw}",
             "C": f"{channel_label}",
-            "T": f"{timer_val}",
+            "T1": f"{t1_val}",
+            "T2": f"{t2_val}",
             "M": f"{mode_label}",
         }
