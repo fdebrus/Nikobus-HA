@@ -27,11 +27,20 @@ async def async_setup_entry(
     entities: list[NikobusButtonEntity] = []
 
     if coordinator.dict_button_data:
-        for button_data in coordinator.dict_button_data.get("nikobus_button", {}).values():
+        for button_data in coordinator.dict_button_data.get(
+            "nikobus_button", {}
+        ).values():
             impacted_modules_info = [
                 {"address": module["address"], "group": module["group"]}
                 for module in button_data.get("impacted_module", [])
             ]
+
+            # Extract the discovered info from the list if available.
+            discovery_info = button_data.get("discovered_info", [])
+            if discovery_info:
+                discovery_info = discovery_info[0]
+            else:
+                discovery_info = {}
 
             entity = NikobusButtonEntity(
                 hass=hass,
@@ -40,6 +49,11 @@ async def async_setup_entry(
                 address=button_data.get("address", "unknown"),
                 operation_time=button_data.get("operation_time"),
                 impacted_modules_info=impacted_modules_info,
+                discovery_type=discovery_info.get("type"),
+                discovery_model=discovery_info.get("model"),
+                discovery_address=discovery_info.get("address"),
+                discovery_channel=discovery_info.get("channels"),
+                discovery_key=discovery_info.get("key"),
             )
             entities.append(entity)
 
@@ -58,6 +72,11 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         address: str,
         operation_time: int | None,
         impacted_modules_info: list[dict[str, Any]],
+        discovery_type: str,
+        discovery_model: str,
+        discovery_address: str,
+        discovery_channel: str,
+        discovery_key: str,
     ) -> None:
         """Initialize the button entity with data from the Nikobus system configuration."""
         super().__init__(coordinator)
@@ -67,6 +86,11 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         self._address = address
         self._operation_time = int(operation_time) if operation_time else None
         self.impacted_modules_info = impacted_modules_info
+        self.discovery_type = discovery_type
+        self.discovery_model = discovery_model
+        self.discovery_address = discovery_address
+        self.discovery_channel = discovery_channel
+        self.discovery_key = discovery_key
 
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
@@ -78,21 +102,29 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             "identifiers": {(DOMAIN, self._address)},
             "name": self._description,
             "manufacturer": BRAND,
-            "model": "Push Button",
+            "model": self.discovery_model or "Push Button",
         }
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
-        if not self.impacted_modules_info:
-            return None
+        # Create a base dictionary with the additional attributes.
+        attributes = {
+            "type": self.discovery_type,
+            "model": self.discovery_model,
+            "address": self.discovery_address,
+            "channel": self.discovery_channel,
+            "key": self.discovery_key,
+        }
 
-        return {
-            "impacted_modules": ", ".join(
+        # Optionally add the impacted modules if available.
+        if self.impacted_modules_info:
+            attributes["user_impacted_modules"] = ", ".join(
                 f"{module['address']}_{module['group']}"
                 for module in self.impacted_modules_info
             )
-        }
+    
+        return attributes
 
     async def async_press(self) -> None:
         """Handle button press event."""
@@ -108,16 +140,39 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             for module in self.impacted_modules_info:
                 module_address, module_group = module["address"], module["group"]
                 try:
-                    _LOGGER.debug("Refreshing module %s, group %s", module_address, module_group)
+                    _LOGGER.debug(
+                        "Refreshing module %s, group %s", module_address, module_group
+                    )
                     value = await self._coordinator.nikobus_command.get_output_state(
                         module_address, module_group
                     )
                     if value is not None:
-                        self._coordinator.set_bytearray_group_state(module_address, module_group, value)
-                        _LOGGER.debug("Updated state for module %s, group %s", module_address, module_group)
+                        self._coordinator.set_bytearray_group_state(
+                            module_address, module_group, value
+                        )
+                        _LOGGER.debug(
+                            "Updated state for module %s, group %s",
+                            module_address,
+                            module_group,
+                        )
                     else:
-                        _LOGGER.warning("No output state returned for module %s, group %s", module_address, module_group)
+                        _LOGGER.warning(
+                            "No output state returned for module %s, group %s",
+                            module_address,
+                            module_group,
+                        )
                 except Exception as inner_err:
-                    _LOGGER.error("Failed to refresh module %s, group %s: %s", module_address, module_group, inner_err, exc_info=True)
+                    _LOGGER.error(
+                        "Failed to refresh module %s, group %s: %s",
+                        module_address,
+                        module_group,
+                        inner_err,
+                        exc_info=True,
+                    )
         except Exception as err:
-            _LOGGER.error("Failed to handle button press for %s: %s", self._address, err, exc_info=True)
+            _LOGGER.error(
+                "Failed to handle button press for %s: %s",
+                self._address,
+                err,
+                exc_info=True,
+            )

@@ -27,7 +27,9 @@ async def async_setup_entry(
     entities: list[NikobusButtonSensor] = []
 
     if coordinator.dict_button_data:
-        for button_data in coordinator.dict_button_data.get("nikobus_button", {}).values():
+        for button_data in coordinator.dict_button_data.get(
+            "nikobus_button", {}
+        ).values():
             entity = NikobusButtonSensor(
                 hass=hass,
                 coordinator=coordinator,
@@ -60,7 +62,9 @@ def register_global_listener(
                 if sensor._address == address:
                     await sensor._handle_button_event(event)
         except Exception as e:
-            _LOGGER.error("Error handling nikobus_button_pressed event: %s", e, exc_info=True)
+            _LOGGER.error(
+                "Error handling nikobus_button_pressed event: %s", e, exc_info=True
+            )
 
     hass.bus.async_listen("nikobus_button_pressed", handle_event)
 

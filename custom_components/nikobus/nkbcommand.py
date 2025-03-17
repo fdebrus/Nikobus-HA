@@ -43,7 +43,7 @@ class NikobusCommandHandler:
     async def start(self) -> None:
         """Start the command processing loop."""
         self._running = True
-        loop = self._coordinator.hass.loop 
+        loop = self._coordinator.hass.loop
         self._command_task = loop.create_task(self.process_commands())
 
     async def stop(self) -> None:
@@ -75,10 +75,14 @@ class NikobusCommandHandler:
                 command = command_item["command"]
                 address = command_item.get("address")
                 future: asyncio.Future | None = command_item.get("future")
-                completion_handler: Callable[[], Awaitable[None]] | None = command_item.get("completion_handler")
+                completion_handler: Callable[[], Awaitable[None]] | None = (
+                    command_item.get("completion_handler")
+                )
 
                 _LOGGER.debug("Dequeued command: %s", command)
-                _LOGGER.debug("Processing command: %s with address: %s", command, address)
+                _LOGGER.debug(
+                    "Processing command: %s with address: %s", command, address
+                )
 
                 try:
                     if not address:
@@ -91,7 +95,9 @@ class NikobusCommandHandler:
                             _LOGGER.debug("Calling completion handler")
                             await completion_handler()
                 except Exception as err:
-                    _LOGGER.error("Error processing command %s: %s", command, err, exc_info=True)
+                    _LOGGER.error(
+                        "Error processing command %s: %s", command, err, exc_info=True
+                    )
                     if future and not future.done():
                         future.set_exception(err)
                 finally:
@@ -99,7 +105,9 @@ class NikobusCommandHandler:
 
                 await asyncio.sleep(COMMAND_EXECUTION_DELAY)
             except Exception as err:
-                _LOGGER.error("Error in command processing loop: %s", err, exc_info=True)
+                _LOGGER.error(
+                    "Error in command processing loop: %s", err, exc_info=True
+                )
 
     async def get_output_state(self, address: str, group: int) -> str:
         """Get the output state of a module."""
@@ -112,7 +120,9 @@ class NikobusCommandHandler:
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
         """Send a command and wait for an answer from the Nikobus system."""
-        _LOGGER.debug("Sending command %s to address %s, waiting for answer", command, address)
+        _LOGGER.debug(
+            "Sending command %s to address %s, waiting for answer", command, address
+        )
         wait_ack, wait_answer = self._prepare_ack_and_answer_signals(command, address)
         state = await self._wait_for_ack_and_answer(command, wait_ack, wait_answer)
         if state is None:
@@ -121,7 +131,9 @@ class NikobusCommandHandler:
             )
         return state
 
-    def _prepare_ack_and_answer_signals(self, command: str, address: str) -> tuple[str, str]:
+    def _prepare_ack_and_answer_signals(
+        self, command: str, address: str
+    ) -> tuple[str, str]:
         """
         Prepare the acknowledgment and answer signals based on the command prefix.
         For example, command "$1E..." produces ACK="$05XX" and answer signal using a mapped prefix.
@@ -147,7 +159,9 @@ class NikobusCommandHandler:
         )
         return ack_signal, answer_signal
 
-    async def _wait_for_ack_and_answer(self, command: str, wait_ack: str, wait_answer: str) -> str:
+    async def _wait_for_ack_and_answer(
+        self, command: str, wait_ack: str, wait_answer: str
+    ) -> str:
         """Wait for an acknowledgment and answer from the Nikobus system with retries."""
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
@@ -168,14 +182,18 @@ class NikobusCommandHandler:
                 if attempt == MAX_ATTEMPTS:
                     raise
             except Exception as err:
-                _LOGGER.error("Unhandled exception on attempt %d: %s", attempt, err, exc_info=True)
+                _LOGGER.error(
+                    "Unhandled exception on attempt %d: %s", attempt, err, exc_info=True
+                )
                 if attempt == MAX_ATTEMPTS:
                     raise NikobusError(f"Unhandled exception: {err}") from err
         raise NikobusTimeoutError(
             f"Failed to receive ACK and state for command '{command}' after {MAX_ATTEMPTS} attempts."
         )
 
-    async def _wait_for_ack_and_answer_state(self, wait_ack: str, wait_answer: str) -> str | None:
+    async def _wait_for_ack_and_answer_state(
+        self, wait_ack: str, wait_answer: str
+    ) -> str | None:
         """Wait for both acknowledgment and answer signals, then extract the state."""
         ack_received = False
         answer_received = False
@@ -202,7 +220,9 @@ class NikobusCommandHandler:
                 _LOGGER.debug("Timeout while waiting for ACK/Answer")
                 break
             except Exception as err:
-                _LOGGER.error("Error while waiting for messages: %s", err, exc_info=True)
+                _LOGGER.error(
+                    "Error while waiting for messages: %s", err, exc_info=True
+                )
                 raise NikobusError(f"Error while waiting for messages: {err}") from err
 
         return None
@@ -220,7 +240,12 @@ class NikobusCommandHandler:
         completion_handler: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Set the output state of a module."""
-        _LOGGER.debug("Setting output state - Address: %s, Channel: %d, Value: %d", address, channel, value)
+        _LOGGER.debug(
+            "Setting output state - Address: %s, Channel: %d, Value: %d",
+            address,
+            channel,
+            value,
+        )
         group = calculate_group_number(channel)
         command_code = 0x15 if int(group) == 1 else 0x16
 
@@ -228,12 +253,16 @@ class NikobusCommandHandler:
         values[(channel - 1) % 6] = value
 
         command = make_pc_link_command(command_code, address, values)
-        await self.queue_command(command, address, completion_handler=completion_handler)
+        await self.queue_command(
+            command, address, completion_handler=completion_handler
+        )
         _LOGGER.debug("Command successfully queued.")
 
     async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
         """Prepare the bytearray values for a command using the latest coordinator state."""
-        return self._coordinator.get_bytearray_group_state(address, group)[:6] + bytearray([0xFF])
+        return self._coordinator.get_bytearray_group_state(address, group)[
+            :6
+        ] + bytearray([0xFF])
 
     async def queue_command(
         self,
@@ -278,7 +307,9 @@ class NikobusCommandHandler:
 
         # If the module has more than 6 channels, send a second group command.
         if self._coordinator.get_module_channel_count(address) > 6:
-            channel_states = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
+            channel_states = self.nikobus_module_states[address][6:12] + bytearray(
+                [0xFF]
+            )
             await self.queue_command(
                 make_pc_link_command(0x16, address, channel_states),
                 address,

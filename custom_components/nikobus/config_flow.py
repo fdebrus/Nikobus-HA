@@ -60,7 +60,9 @@ async def async_validate_input(
     # Serial device validation
     serial_regex = r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$"
     if re.match(serial_regex, connection_string):
-        if os.path.exists(connection_string) and os.access(connection_string, os.R_OK | os.W_OK):
+        if os.path.exists(connection_string) and os.access(
+            connection_string, os.R_OK | os.W_OK
+        ):
             return {"title": f"Nikobus ({connection_string})"}
         _LOGGER.debug("Serial device %s not found or not accessible", connection_string)
         return {"error": "device_not_found_or_no_access"}
@@ -88,8 +90,13 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if "error" in validation:
                 errors["base"] = validation["error"]
             else:
-                _LOGGER.debug("User input validated successfully with title: %s", validation["title"])
-                return self.async_create_entry(title=validation["title"], data=user_input)
+                _LOGGER.debug(
+                    "User input validated successfully with title: %s",
+                    validation["title"],
+                )
+                return self.async_create_entry(
+                    title=validation["title"], data=user_input
+                )
 
         return self.async_show_form(
             step_id="user",
@@ -133,15 +140,15 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_CONNECTION_STRING: user_input.get(
                             CONF_CONNECTION_STRING,
-                            existing_entry.data.get(CONF_CONNECTION_STRING, "")
+                            existing_entry.data.get(CONF_CONNECTION_STRING, ""),
                         ),
                         CONF_HAS_FEEDBACK_MODULE: user_input.get(
                             CONF_HAS_FEEDBACK_MODULE,
-                            existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
+                            existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
                         ),
                         CONF_REFRESH_INTERVAL: user_input.get(
                             CONF_REFRESH_INTERVAL,
-                            existing_entry.data.get(CONF_REFRESH_INTERVAL, 120)
+                            existing_entry.data.get(CONF_REFRESH_INTERVAL, 120),
                         ),
                     },
                 )
@@ -160,7 +167,9 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
                     vol.Optional(
                         CONF_HAS_FEEDBACK_MODULE,
-                        default=existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
+                        default=existing_entry.data.get(
+                            CONF_HAS_FEEDBACK_MODULE, False
+                        ),
                     ): bool,
                 }
             ),

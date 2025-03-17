@@ -15,15 +15,17 @@ def calc_crc1(data: str) -> int:
             crc = (crc << 1) ^ 0x1021 if (crc >> 15) & 1 else crc << 1
     return crc & 0xFFFF
 
+
 def calc_crc1_ack(data: str) -> int:
     crc = 0x0000
     # Process every two hex digits (one byte)
     for j in range(len(data) // 2):
-        crc ^= int(data[j * 2:(j + 1) * 2], 16) << 8
+        crc ^= int(data[j * 2 : (j + 1) * 2], 16) << 8
         for _ in range(8):
             crc = ((crc << 1) ^ 0x1021) if (crc >> 15) & 1 else (crc << 1)
             crc &= 0xFFFF
     return crc
+
 
 def calc_crc2(data: str) -> int:
     """Calculate CRC-8 (CRC-8-ATM) for the given data."""

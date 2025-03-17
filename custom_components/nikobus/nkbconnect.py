@@ -70,12 +70,17 @@ class NikobusConnect:
     async def _connect_serial(self) -> None:
         """Establish a serial connection to the Nikobus system."""
         try:
-            self._nikobus_reader, self._nikobus_writer = await serial_asyncio.open_serial_connection(
+            (
+                self._nikobus_reader,
+                self._nikobus_writer,
+            ) = await serial_asyncio.open_serial_connection(
                 url=self._connection_string, baudrate=BAUD_RATE
             )
             _LOGGER.info("Connected to serial port %s", self._connection_string)
         except (OSError, serial_asyncio.SerialException) as err:
-            error_msg = f"Failed to connect to serial port {self._connection_string} - {err}"
+            error_msg = (
+                f"Failed to connect to serial port {self._connection_string} - {err}"
+            )
             _LOGGER.error(error_msg)
             self._nikobus_reader = None
             self._nikobus_writer = None
@@ -90,7 +95,9 @@ class NikobusConnect:
             return "IP"
         except ValueError:
             # Check for common serial port patterns.
-            if re.match(r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string):
+            if re.match(
+                r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string
+            ):
                 return "Serial"
         return "Unknown"
 
@@ -104,7 +111,7 @@ class NikobusConnect:
 
     async def _send_with_retry(self, command: str) -> bool:
         """Send a command and handle potential errors with retries.
-        
+
         Future improvement: Add configurable retry attempts with delays.
         """
         try:

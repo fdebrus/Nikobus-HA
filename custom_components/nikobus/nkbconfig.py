@@ -1,4 +1,5 @@
 """Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
+
 import json
 import logging
 from aiofiles import open as aio_open

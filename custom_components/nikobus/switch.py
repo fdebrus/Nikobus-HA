@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
@@ -32,7 +32,9 @@ async def async_setup_entry(
     entities: list[SwitchEntity] = []
 
     # Process standard switch_module entities
-    const_switch_modules: dict[str, Any] = coordinator.dict_module_data.get("switch_module", {})
+    const_switch_modules: dict[str, Any] = coordinator.dict_module_data.get(
+        "switch_module", {}
+    )
     for address, switch_module_data in const_switch_modules.items():
         module_desc = switch_module_data.get("description", f"Module {address}")
         model = switch_module_data.get("model", "Unknown Module Model")
@@ -45,7 +47,9 @@ async def async_setup_entry(
             module_model=model,
         )
 
-        for channel_index, channel_info in enumerate(switch_module_data.get("channels", []), start=1):
+        for channel_index, channel_info in enumerate(
+            switch_module_data.get("channels", []), start=1
+        ):
             if channel_info["description"].startswith("not_in_use"):
                 continue
 
@@ -140,7 +144,12 @@ class NikobusSwitchCoverEntity(SwitchEntity):
         try:
             await self.coordinator.api.open_cover(self.address, self.channel)
         except NikobusError as err:
-            _LOGGER.error("Failed to open cover for %s: %s", self.channel_description, err, exc_info=True)
+            _LOGGER.error(
+                "Failed to open cover for %s: %s",
+                self.channel_description,
+                err,
+                exc_info=True,
+            )
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Simulate turning off the switch (stopping cover)."""
@@ -150,7 +159,12 @@ class NikobusSwitchCoverEntity(SwitchEntity):
                 self.address, self.channel, direction="closing"
             )
         except NikobusError as err:
-            _LOGGER.error("Failed to stop cover for %s: %s", self.channel_description, err, exc_info=True)
+            _LOGGER.error(
+                "Failed to stop cover for %s: %s",
+                self.channel_description,
+                err,
+                exc_info=True,
+            )
 
 
 class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):

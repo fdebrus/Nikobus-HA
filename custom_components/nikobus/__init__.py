@@ -57,7 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_module_discovery(call: ServiceCall) -> None:
         """Manually trigger device discovery."""
         module_address = call.data.get("module_address", "")
-        _LOGGER.info("Starting manual Nikobus discovery with module_address: %s", module_address)
+        _LOGGER.info(
+            "Starting manual Nikobus discovery with module_address: %s", module_address
+        )
         await coordinator.discover_devices(module_address)
 
     hass.services.async_register(
