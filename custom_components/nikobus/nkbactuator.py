@@ -287,8 +287,8 @@ class NikobusActuator:
                     "impacted_module_group": impacted_group,
                 }
 
-                if button_data.get("led_on") or button_data.get("led_off"):
-                    event_data["virtual"] = True
+                # if button_data.get("led_on") or button_data.get("led_off"):
+                #     event_data["virtual"] = True
 
                 _LOGGER.debug(
                     "Firing event: nikobus_button_pressed with data: %s", event_data

@@ -369,8 +369,8 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
                     self._attr_name,
                     self._button_operation_time,
                 )
-            source = "ha" if event.data.get("virtual", False) else "nikobus"
-            await self._process_state_change(new_state, source=source)
+            # source = "ha" if event.data.get("virtual", True) else "nikobus"
+            await self._process_state_change(new_state, source="nikobus")
             self.async_write_ha_state()
         else:
             _LOGGER.debug("No state change for %s; ignoring event.", self._attr_name)
