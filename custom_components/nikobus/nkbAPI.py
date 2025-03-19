@@ -44,6 +44,8 @@ class NikobusAPI:
                 channel,
             )
             await self._coordinator.nikobus_command.queue_command(f"#N{command}\r#E1")
+            if completion_handler:
+                await completion_handler()
         else:
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, state, completion_handler=completion_handler
@@ -170,6 +172,8 @@ class NikobusAPI:
                 await self._coordinator.nikobus_command.queue_command(
                     f"#N{command}\r#E1"
                 )
+                if completion_handler:
+                    await completion_handler()
             else:
                 await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
