@@ -51,10 +51,9 @@ class PositionEstimator:
         )
 
     def start(self, direction: str, position: Optional[float] = None) -> None:
-        """Start the movement in the specified direction."""
         if self._is_moving:
-            _LOGGER.warning("Movement already started; ignoring redundant start call.")
-            return
+            _LOGGER.warning("Movement already started; stopping previous movement and restarting.")
+            self.stop()  # Reset previous movement
 
         self._direction_value = 1 if direction == "opening" else -1
         self._start_time = time.monotonic()
