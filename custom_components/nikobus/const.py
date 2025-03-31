@@ -338,6 +338,8 @@ DIMMER_MODE_MAPPING = {
     7: "M08 (Flashing)",
     8: "M11 (Preset on/off)",
     9: "M12 (Preset on)",
+    10: "M13 (Dim on/off (1key))",
+    11: "M14 (Dim on/off memory (1key))",
 }
 
 DIMMER_TIMER_MAPPING = {

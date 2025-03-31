@@ -682,14 +682,17 @@ class NikobusDiscovery:
             elif mode_raw in [1, 2]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
         elif self._module_type == "dimmer_module":
-            if mode_raw in [0, 1, 2]:
+            if mode_raw in [0, 1, 2, 10, 11]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[1]
-                t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
+                t2_val = timer_mapping.get(t2_raw, ["Unknown"])[2]
             elif mode_raw in [3]:
-                t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
+                t2_val = timer_mapping.get(t2_raw, ["Unknown"])[2]
             elif mode_raw in [4, 5, 6, 7, 8]:
                 t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
-                t2_val = timer_mapping.get(t1_raw, ["Unknown"])[2]
+                t2_val = timer_mapping.get(t2_raw, ["Unknown"])[2]
+            elif mode_raw in [9]:
+                t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
+                t2_val = timer_mapping.get(t2_raw, ["Unknown"])[2]
         elif self._module_type == "roller_module":
             t1_val = timer_mapping.get(t1_raw, ["Unknown"])[0]
 

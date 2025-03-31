@@ -40,7 +40,8 @@ class PositionEstimator:
         self._duration_in_seconds = duration_in_seconds
         self._start_time: Optional[float] = None
         self._direction_value: Optional[int] = None
-        self.position: Optional[float] = start_position
+        self._initial_position: Optional[float] = start_position
+        self._current_position: Optional[float] = start_position
         self._is_moving = False
 
         _LOGGER.debug(
@@ -58,16 +59,17 @@ class PositionEstimator:
         self._direction_value = 1 if direction == "opening" else -1
         self._start_time = time.monotonic()
         self._is_moving = True
-        self.position = (
-            position
-            if position is not None
-            else (100 if self._direction_value == 1 else 0)
+
+        # Capture the initial position once at the start.
+        self._initial_position = (
+            position if position is not None else (100 if self._direction_value == 1 else 0)
         )
+        self._current_position = self._initial_position
 
         _LOGGER.debug(
             "Movement started in direction: %s, initial position set to: %s",
             direction,
-            self.position,
+            self._initial_position,
         )
 
     def get_position(self) -> Optional[int]:
@@ -76,7 +78,7 @@ class PositionEstimator:
             not self._is_moving
             or self._start_time is None
             or self._direction_value is None
-            or self.position is None
+            or self._initial_position is None
         ):
             _LOGGER.debug(
                 "Position estimation unavailable; ensure start() is called correctly."
@@ -84,10 +86,10 @@ class PositionEstimator:
             return None
 
         elapsed_time = time.monotonic() - self._start_time
-        progress = (
-            (elapsed_time / self._duration_in_seconds) * 100 * self._direction_value
-        )
-        new_position = max(0, min(100, self.position + progress))
+        progress = (elapsed_time / self._duration_in_seconds) * 100 * self._direction_value
+        # Always compute based on the fixed starting position.
+        new_position = max(0, min(100, self._initial_position + progress))
+        self._current_position = new_position
         return int(new_position)
 
     def stop(self) -> None:
@@ -95,9 +97,9 @@ class PositionEstimator:
         if self._is_moving:
             final_position = self.get_position()
             if final_position is not None:
-                self.position = final_position
+                self._current_position = final_position
             _LOGGER.debug(
-                "Movement stopped. Final position estimated at: %s", self.position
+                "Movement stopped. Final position estimated at: %s", self._current_position
             )
         else:
             _LOGGER.warning("Stop called without active movement; ignoring.")
@@ -107,15 +109,16 @@ class PositionEstimator:
         self._is_moving = False
 
     @property
+    def current_position(self) -> Optional[int]:
+        return int(self._current_position) if self._current_position is not None else None
+
+    @property
     def duration_in_seconds(self) -> float:
-        """Expose the duration in seconds for external use."""
         return self._duration_in_seconds
 
     @property
     def is_active(self) -> bool:
-        """Return True if the estimator is actively tracking a movement."""
         return self._is_moving
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
