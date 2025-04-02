@@ -1,9 +1,9 @@
 """The Nikobus integration."""
-
 from __future__ import annotations
 
 import logging
 from typing import Final
+import datetime
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -18,6 +18,7 @@ from homeassistant.components import (
     button,
     scene,
 )
+from homeassistant.helpers.event import async_track_time_change
 
 from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
@@ -57,16 +58,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_module_discovery(call: ServiceCall) -> None:
         """Manually trigger device discovery."""
         module_address = call.data.get("module_address", "")
-        _LOGGER.info(
-            "Starting manual Nikobus discovery with module_address: %s", module_address
-        )
+        _LOGGER.info("Starting manual Nikobus discovery with module_address: %s", module_address)
         await coordinator.discover_devices(module_address)
 
     hass.services.async_register(
         DOMAIN, "query_module_inventory", handle_module_discovery, SCAN_MODULE_SCHEMA
     )
 
-    # Forward the setup to all configured platforms
+    # Schedule automated discovery every Sunday at 1:00 AM.
+    async def scheduled_discovery(now: datetime) -> None:
+        _LOGGER.info("Scheduled Nikobus discovery running at: %s", now)
+        await coordinator.discover_devices("")
+
+    # Schedule the callback to run daily at 1:00:00 AM.
+    remove_listener = async_track_time_change(
+        hass,
+        lambda now: hass.async_create_task(scheduled_discovery(now)),
+        hour=1,
+        minute=0,
+        second=0
+    )
+    # Store the remove_listener so that it can be cancelled when unloading the integration.
+    coordinator.remove_listener = remove_listener
+
+    # Forward the setup to all configured platforms.
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         _LOGGER.debug("Successfully forwarded setup to Nikobus platforms")
@@ -99,6 +114,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the single Nikobus integration entry."""
     _LOGGER.debug("Unloading Nikobus (single-instance)")
     coordinator = entry.runtime_data
+
+    # Cancel the scheduled discovery if it exists.
+    if hasattr(coordinator, "remove_listener"):
+        coordinator.remove_listener()
+
     if coordinator and hasattr(coordinator, "stop"):
         try:
             await coordinator.stop()

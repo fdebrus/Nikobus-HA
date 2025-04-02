@@ -182,14 +182,9 @@ class NikobusDiscovery:
                     "category": category,
                     "model": model,
                     "address": converted_address,
-                    "channels": channels,
                 }
                 if category == "Module":
-                    num_channels = int(channels)
-                    base_device["channels"] = [
-                        {"description": f"{name} Output {i + 1}"}
-                        for i in range(num_channels)
-                    ]
+                    base_device["channels"] = channels
                 self.discovered_devices[converted_address] = base_device
             _LOGGER.info(
                 "Discovered %s - %s, Model: %s, at Address: %s",
@@ -222,8 +217,6 @@ class NikobusDiscovery:
             elif "Dimmer Module" in description:
                 module_data["dimmer_module"][address] = device
             elif "Roller Shutter Module" in description:
-                for channel in device.get("channels", []):
-                    channel["operation_time"] = "40"
                 module_data["roller_module"][address] = device
             else:
                 module_data["other_module"][address] = device

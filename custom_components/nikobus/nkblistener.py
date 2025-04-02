@@ -155,9 +155,13 @@ class NikobusEventListener:
 
     async def dispatch_message(self, message: str) -> None:
         if not self._coordinator.discovery_running:
-            if message.startswith(BUTTON_COMMAND_PREFIX):
-                _LOGGER.debug("Button command received: %s", message)
-                await self._actuator.handle_button_press(message[2:8])
+            if BUTTON_COMMAND_PREFIX in message:
+                # Find the position where '#N' starts
+                index = message.find("#N")
+                # Extract the 6-character button address following "#N"
+                button_address = message[index + 2:index + 8]
+                _LOGGER.debug("Button command received: %s, extracted address: %s", message, button_address)
+                await self._actuator.handle_button_press(button_address)
                 return
 
             if message.startswith(IGNORE_ANSWER) or any(
