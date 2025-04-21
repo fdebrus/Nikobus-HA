@@ -5,6 +5,7 @@ import logging
 from typing import Final
 import datetime
 import voluptuous as vol
+import asyncio
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
@@ -65,21 +66,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         DOMAIN, "query_module_inventory", handle_module_discovery, SCAN_MODULE_SCHEMA
     )
 
-    # Schedule automated discovery every Sunday at 1:00 AM.
     async def scheduled_discovery(now: datetime) -> None:
         _LOGGER.info("Scheduled Nikobus discovery running at: %s", now)
         await coordinator.discover_devices("")
 
     # Schedule the callback to run daily at 1:00:00 AM.
-    remove_listener = async_track_time_change(
-        hass,
-        lambda now: hass.async_create_task(scheduled_discovery(now)),
-        hour=1,
-        minute=0,
-        second=0
-    )
+    # remove_listener = async_track_time_change(
+    #     hass,
+    #    lambda now: asyncio.run_coroutine_threadsafe(scheduled_discovery(now), hass.loop),
+    #     hour=10,
+    #     minute=0,
+    #     second=0
+    # )
     # Store the remove_listener so that it can be cancelled when unloading the integration.
-    coordinator.remove_listener = remove_listener
+    # coordinator.remove_listener = remove_listener
 
     # Forward the setup to all configured platforms.
     try:

@@ -245,7 +245,7 @@ class NikobusEventListener:
                     await self.nikobus_discovery.parse_inventory_response(message)
                 return
 
-            if message.startswith(DEVICE_ADDRESS_INVENTORY):
+            if DEVICE_ADDRESS_INVENTORY in message:
                 _LOGGER.debug("Device address inventory: %s", message)
                 if self._coordinator.discovery_running:
                     await self.nikobus_discovery.query_module_inventory(message[3:7])
