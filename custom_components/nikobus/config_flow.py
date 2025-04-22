@@ -18,6 +18,7 @@ from .const import (
     CONF_CONNECTION_STRING,
     CONF_REFRESH_INTERVAL,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_PRIOR_GEN3,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -107,6 +108,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         cv.positive_int, vol.Range(min=60, max=3600)
                     ),
                     vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=False): bool,
+                    vol.Optional(CONF_PRIOR_GEN3, default=False): bool,
                 }
             ),
             errors=errors,
@@ -150,6 +152,10 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_REFRESH_INTERVAL,
                             existing_entry.data.get(CONF_REFRESH_INTERVAL, 120),
                         ),
+                        CONF_PRIOR_GEN3: user_input.get(
+                            CONF_PRIOR_GEN3,
+                            existing_entry.data.get(CONF_PRIOR_GEN3, False),
+                        ),
                     },
                 )
 
@@ -169,6 +175,12 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_HAS_FEEDBACK_MODULE,
                         default=existing_entry.data.get(
                             CONF_HAS_FEEDBACK_MODULE, False
+                        ),
+                    ): bool,
+                    vol.Optional(
+                        CONF_PRIOR_GEN3,
+                        default=existing_entry.data.get(
+                            CONF_PRIOR_GEN3, False
                         ),
                     ): bool,
                 }

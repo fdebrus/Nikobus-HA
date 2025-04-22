@@ -20,6 +20,7 @@ from .const import (
     CONF_CONNECTION_STRING,
     CONF_REFRESH_INTERVAL,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_PRIOR_GEN3,
 )
 from .exceptions import NikobusConnectionError, NikobusDataError
 
@@ -40,11 +41,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._has_feedback_module = config_entry.data.get(
             CONF_HAS_FEEDBACK_MODULE, False
         )
+        self._prior_gen3 = config_entry.data.get(
+            CONF_PRIOR_GEN3, False
+        )
 
         # Set update_interval to None if feedback module is present, disabling periodic updates
         self._update_interval = (
             None
-            if self._has_feedback_module
+            if self._has_feedback_module or self._prior_gen3
             else timedelta(seconds=self._refresh_interval)
         )
 
@@ -352,10 +356,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
         self._refresh_interval = entry.data.get(CONF_REFRESH_INTERVAL, 120)
         self._has_feedback_module = entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
+        self._prior_gen3 = config_entry.data.get(CONF_PRIOR_GEN3, False)
 
         self._update_interval = (
             None
-            if self._has_feedback_module
+            if self._has_feedback_module or self._prior_gen3
             else timedelta(seconds=self._refresh_interval)
         )
 

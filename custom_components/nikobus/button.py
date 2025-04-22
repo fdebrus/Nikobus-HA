@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, BRAND
+from .const import DOMAIN, BRAND, CONF_PRIOR_GEN3
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,6 +95,10 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
 
+        self._prior_gen3: bool = config_entry.data.get(
+            CONF_PRIOR_GEN3, False
+        )
+
     @property
     def device_info(self) -> dict[str, Any]:
         """Return device information about this button."""
@@ -136,39 +140,40 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             _LOGGER.info("Processing Nikobus button press: %s", self._address)
             await self._coordinator.async_event_handler("ha_button_pressed", event_data)
 
-            # Refresh state of impacted modules
-            for module in self.impacted_modules_info:
-                module_address, module_group = module["address"], module["group"]
-                try:
-                    _LOGGER.debug(
-                        "Refreshing module %s, group %s", module_address, module_group
-                    )
-                    value = await self._coordinator.nikobus_command.get_output_state(
-                        module_address, module_group
-                    )
-                    if value is not None:
-                        self._coordinator.set_bytearray_group_state(
-                            module_address, module_group, value
-                        )
+            if not self._prior_gen3:
+                # Refresh state of impacted modules
+                for module in self.impacted_modules_info:
+                    module_address, module_group = module["address"], module["group"]
+                    try:
                         _LOGGER.debug(
-                            "Updated state for module %s, group %s",
+                            "Refreshing module %s, group %s", module_address, module_group
+                        )
+                        value = await self._coordinator.nikobus_command.get_output_state(
+                            module_address, module_group
+                        )
+                        if value is not None:
+                            self._coordinator.set_bytearray_group_state(
+                                module_address, module_group, value
+                            )
+                            _LOGGER.debug(
+                                "Updated state for module %s, group %s",
+                                module_address,
+                                module_group,
+                            )
+                        else:
+                            _LOGGER.warning(
+                                "No output state returned for module %s, group %s",
+                                module_address,
+                                module_group,
+                            )
+                    except Exception as inner_err:
+                        _LOGGER.error(
+                            "Failed to refresh module %s, group %s: %s",
                             module_address,
                             module_group,
+                            inner_err,
+                            exc_info=True,
                         )
-                    else:
-                        _LOGGER.warning(
-                            "No output state returned for module %s, group %s",
-                            module_address,
-                            module_group,
-                        )
-                except Exception as inner_err:
-                    _LOGGER.error(
-                        "Failed to refresh module %s, group %s: %s",
-                        module_address,
-                        module_group,
-                        inner_err,
-                        exc_info=True,
-                    )
         except Exception as err:
             _LOGGER.error(
                 "Failed to handle button press for %s: %s",

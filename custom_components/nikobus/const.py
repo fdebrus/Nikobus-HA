@@ -15,6 +15,7 @@ CONF_CONNECTION_STRING: Final[str] = "connection_string"
 CONF_REFRESH_INTERVAL: Final[str] = "refresh_interval"
 CONF_HAS_FEEDBACK_MODULE: Final[str] = "has_feedbackmodule"
 CONF_HAS_PC_LINK: Final[str] = "has_pclink"
+CONF_PRIOR_GEN3: Final[str] = "prior_gen3"
 
 # =============================================================================
 # Serial Connection

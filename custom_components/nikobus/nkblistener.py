@@ -12,6 +12,7 @@ from custom_components.nikobus.exceptions import NikobusDataError
 from .nkbprotocol import int_to_hex, calc_crc2
 from .const import (
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_PRIOR_GEN3,
     BUTTON_COMMAND_PREFIX,
     IGNORE_ANSWER,
     FEEDBACK_REFRESH_COMMAND,
@@ -47,6 +48,9 @@ class NikobusEventListener:
         self._feedback_callback = feedback_callback
         self._has_feedback_module: bool = config_entry.data.get(
             CONF_HAS_FEEDBACK_MODULE, False
+        )
+        self._prior_gen3: bool = config_entry.data.get(
+            CONF_PRIOR_GEN3, False
         )
         self._module_group = 1
         self._actuator = nikobus_actuator
