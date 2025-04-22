@@ -8,7 +8,8 @@
                 "data": {
                     "connection_string": "IP Address:Port or Serial Device",
                     "refresh_interval": "Refresh interval in seconds (60-3600)",
-                    "has_feedbackmodule": "Is a Feedback Module installed and connected over PC-Link?"
+                    "has_feedbackmodule": "Is a Feedback Module installed and connected over PC-Link?",
+                    "prior_gen3": "Nikobus prior GEN3 version ? (limited functionalities)"
                 }
             },
             "reconfigure": {
@@ -17,7 +18,8 @@
                 "data": {
                     "connection_string": "IP Address:Port or Serial Device",
                     "refresh_interval": "Refresh interval in seconds (60-3600)",
-                    "has_feedbackmodule": "Is a Feedback Module installed and connected over PC-Link?"
+                    "has_feedbackmodule": "Is a Feedback Module installed and connected over PC-Link?",
+                    "prior_gen3": "Nikobus prior GEN3 version ? (limited functionalities)"
                 }
             }
         },
