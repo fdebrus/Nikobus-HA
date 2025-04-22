@@ -37,14 +37,12 @@ async def async_setup_entry(
 
             # Extract the discovered info from the list if available.
             discovery_info = button_data.get("discovered_info", [])
-            if discovery_info:
-                discovery_info = discovery_info[0]
-            else:
-                discovery_info = {}
+            discovery_info = discovery_info[0] if discovery_info else {}
 
             entity = NikobusButtonEntity(
                 hass=hass,
                 coordinator=coordinator,
+                config_entry=entry,                        # ← NEW
                 description=button_data.get("description", "Unknown Button"),
                 address=button_data.get("address", "unknown"),
                 operation_time=button_data.get("operation_time"),
@@ -68,6 +66,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         self,
         hass: HomeAssistant,
         coordinator: NikobusDataCoordinator,
+        config_entry: ConfigEntry,                       # ← NEW
         description: str,
         address: str,
         operation_time: int | None,
@@ -95,9 +94,14 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
 
+        # Option set in the config entry
         self._prior_gen3: bool = config_entry.data.get(
             CONF_PRIOR_GEN3, False
         )
+
+    # ---------------------------------------------------------------------
+    # Home Assistant entity metadata
+    # ---------------------------------------------------------------------
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -112,7 +116,6 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
-        # Create a base dictionary with the additional attributes.
         attributes = {
             "type": self.discovery_type,
             "model": self.discovery_model,
@@ -121,14 +124,17 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             "key": self.discovery_key,
         }
 
-        # Optionally add the impacted modules if available.
         if self.impacted_modules_info:
             attributes["user_impacted_modules"] = ", ".join(
                 f"{module['address']}_{module['group']}"
                 for module in self.impacted_modules_info
             )
-    
+
         return attributes
+
+    # ---------------------------------------------------------------------
+    # Button behaviour
+    # ---------------------------------------------------------------------
 
     async def async_press(self) -> None:
         """Handle button press event."""
@@ -140,13 +146,15 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             _LOGGER.info("Processing Nikobus button press: %s", self._address)
             await self._coordinator.async_event_handler("ha_button_pressed", event_data)
 
+            # Skip the refresh for Gen3 installations if requested
             if not self._prior_gen3:
-                # Refresh state of impacted modules
                 for module in self.impacted_modules_info:
                     module_address, module_group = module["address"], module["group"]
                     try:
                         _LOGGER.debug(
-                            "Refreshing module %s, group %s", module_address, module_group
+                            "Refreshing module %s, group %s",
+                            module_address,
+                            module_group,
                         )
                         value = await self._coordinator.nikobus_command.get_output_state(
                             module_address, module_group
