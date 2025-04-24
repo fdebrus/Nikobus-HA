@@ -44,11 +44,6 @@ MEDIUM_PRESS: Final[int] = 2  # Medium press duration in seconds
 LONG_PRESS: Final[int] = 3  # Long press duration in seconds
 
 # =============================================================================
-# Covers
-# =============================================================================
-COVER_DELAY_BEFORE_STOP: Final[int] = 1  # Delay before stopping cover movement
-
-# =============================================================================
 # Listener
 # =============================================================================
 BUTTON_COMMAND_PREFIX: Final[str] = "#N"
