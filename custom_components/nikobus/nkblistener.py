@@ -240,14 +240,6 @@ class NikobusEventListener:
                 if not message.startswith(BUTTON_COMMAND_PREFIX):
                     await self.response_queue.put(message)
                 return
-        else:
-            if any(message.startswith(inventory) for inventory in DEVICE_INVENTORY):
-                _LOGGER.debug("Device inventory: %s", message)
-                if self._coordinator.discovery_module_address:
-                    await self.nikobus_discovery.parse_module_inventory_response(message)
-                else:
-                    await self.nikobus_discovery.parse_inventory_response(message)
-                return
 
             if DEVICE_ADDRESS_INVENTORY in message:
                 _LOGGER.debug("Device address inventory: %s", message)
@@ -255,6 +247,15 @@ class NikobusEventListener:
                     await self.nikobus_discovery.query_module_inventory(message[3:7])
                 else:
                     await self.nikobus_discovery.process_mode_button_press(message)
+                return
+
+        else:
+            if any(message.startswith(inventory) for inventory in DEVICE_INVENTORY):
+                _LOGGER.debug("Device inventory: %s", message)
+                if self._coordinator.discovery_module_address:
+                    await self.nikobus_discovery.parse_module_inventory_response(message)
+                else:
+                    await self.nikobus_discovery.parse_inventory_response(message)
                 return
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
