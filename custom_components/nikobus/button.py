@@ -143,7 +143,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
             "operation_time": self._operation_time,
         }
         try:
-            _LOGGER.info("Processing Nikobus button press: %s", self._address)
+            _LOGGER.info("Processing HA button press: %s", self._address)
             await self._coordinator.async_event_handler("ha_button_pressed", event_data)
 
             # Skip the refresh for Gen3 installations if requested
