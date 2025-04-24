@@ -39,6 +39,12 @@ This will scan your installation and generate inventory files for modules and bu
 - **Feedback Module**: `05-207`
   - Could be used to connect Nikobus to HomeAssistant, with a customizable refresh interval set within the integration configuration.
   - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **! ONLY IF PC-Link is present and used for connectivity !**. if not, use a user defined refresh interval in the integration configuration.
+    
+  ⚠️ **Special Consideration** for -01 Modules
+      If you are using Nikobus modules ending in -01 (e.g., 05-000-01, 05-007-01), please be aware of the following limitation: Only simulated button presses and button events are supported. These older generation modules do not support direct status feedback or state polling.
+  
+  ✅ **Important** When using -01 modules, also make sure to check the “prior GEN3” option in the integration setup. This setting optimizes how the integration handles communication with older-generation hardware.
+  
 - **Nikobus Buttons**: Physical switches, IR, Feedback, Remote
   - Button press events can be used as triggers in Home Assistant automations.
     
@@ -62,11 +68,6 @@ This will scan your installation and generate inventory files for modules and bu
    
   - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
-
-  ⚠️ **Special Consideration** for -01 Modules
-      If you are using Nikobus modules ending in -01 (e.g., 05-000-01, 05-007-01), please be aware of the following limitation: Only simulated button presses and button events are supported. These older generation modules do not support direct status feedback or state polling.
-  
-  ✅ **Important** When using -01 modules, also make sure to check the “prior GEN3” option in the integration setup. This setting optimizes how the integration handles communication with older-generation hardware.
 
 - **HomeAssistant Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
 
