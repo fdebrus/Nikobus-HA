@@ -346,7 +346,7 @@ For discussions/general requests, please refer to [this](https://community.home-
 During the integration setup, you will be asked to provide your connection string, which can be either an IP
 or a USB port. If your setup includes a Nikobus Feedback Module and you are connected to Nikobus over the PC-Link interface, check the box. In this case, the integration will refresh based on the Feedback Module's refresh cycle and feedback data instead of the custom refresh rate.
 
-![image](https://github.com/user-attachments/assets/e59e646a-39be-4c69-88db-c9b2ddec6e20)
+![image](https://github.com/user-attachments/assets/e072eb87-c824-4555-97ab-3d729b827504)
 
 You can always revisit these options after setup by selecting the "RECONFIGURE" option from the integration 3 dots menu.
 
