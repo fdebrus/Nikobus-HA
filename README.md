@@ -22,7 +22,7 @@ To start the discovery process, follow these steps:
 
 This will scan your installation and generate inventory files for modules and buttons, which can help in configuring the integration.
 
-💡 Tip: You can also initiate module discovery either by pressing the yellow "mode" button on a Nikobus module, or — if the module has no mode button — by pressing the "send address" button. This allows Home Assistant to detect and log the corresponding module address.
+💡 Tip: You can also initiate module discovery either by pressing the yellow "mode" button on a Nikobus module, or — if the module has no mode button — by using the "send address" function. This allows Home Assistant to detect and log the corresponding module address.
 
 ## Supported Modules
 
