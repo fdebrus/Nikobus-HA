@@ -352,5 +352,6 @@ You can always revisit these options after setup by selecting the "RECONFIGURE" 
 
 ![image](https://github.com/user-attachments/assets/22d881fd-0736-43d2-9430-0df657522bb3)
 
-![image](https://github.com/user-attachments/assets/c64e4b8a-fe0d-4510-83be-d7a320b9b499)
+![image](https://github.com/user-attachments/assets/865481e9-97c6-4112-997f-9181602330eb)
+
 
