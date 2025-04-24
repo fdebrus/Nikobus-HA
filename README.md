@@ -64,10 +64,15 @@ This will scan your installation and generate inventory files for modules and bu
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
 
   ⚠️ **Special Consideration** for -01 Modules
+  
       If you are using Nikobus modules ending in -01 (e.g., 05-000-01, 05-007-01), please be aware of the following limitation:
+  
   🛑 Only simulated button presses and button events are supported.
+  
       These older generation modules do not support direct status feedback or state polling.
+  
   ✅ **Important** When using -01 modules, be sure to check the “prior GEN3” option in the integration setup. This setting optimizes how the integration handles communication with older-generation hardware.
+  
 
 - **HomeAssistant Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
 
