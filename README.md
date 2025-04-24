@@ -26,9 +26,9 @@ This will scan your installation and generate inventory files for modules and bu
 
 ## Supported Modules
 
-- **Switch Module**: `05-000-02` and **Compact Switch Module** `05-002-02`
+- **Switch Module**: `05-000-02` or `05-000-01` and **Compact Switch Module** `05-002-02`
   - Commands: Operate switches on/off.
-- **Dimmer Module**: `05-007-02`
+- **Dimmer Module**: `05-007-02` or `05-007-01`
   - Commands: Operate dimmers on/off and set brightness.
 - **Shutter Module**: `05-001-02`
   - Commands: Operate covers open/close and set position.
@@ -62,6 +62,12 @@ This will scan your installation and generate inventory files for modules and bu
    
   - A button with a feedback LED requires an additional argument to be added to each module output. You need to include the address of the button that turns the LED on and the address of the button that turns the LED off. These addresses can be the same, depending on how you configure your button action in Nikobus. The button address can be found in the nikobus_button_config.json file. After the first press of the button, the address will be discovered and added to the file.
   - Virtual buttons can be created within Home Assistant and mapped to Nikobus.
+
+  ⚠️ **Special Consideration** for -01 Modules
+      If you are using Nikobus modules ending in -01 (e.g., 05-000-01, 05-007-01), please be aware of the following limitation:
+  🛑 Only simulated button presses and button events are supported.
+      These older generation modules do not support direct status feedback or state polling.
+  ✅ **Important** When using -01 modules, be sure to check the “prior GEN3” option in the integration setup. This setting optimizes how the integration handles communication with older-generation hardware.
 
 - **HomeAssistant Scenes**: This integration supports HomeAssistant Scenes, which allow you to trigger multiple changes across different modules (switch, dimmer, and shutter) using one command.
 
