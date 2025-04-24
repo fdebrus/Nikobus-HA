@@ -158,6 +158,15 @@ class NikobusEventListener:
                 break
 
     async def dispatch_message(self, message: str) -> None:
+
+        if DEVICE_ADDRESS_INVENTORY in message:
+            _LOGGER.debug("Device address inventory: %s", message)
+            if self._coordinator.discovery_running:
+                await self.nikobus_discovery.query_module_inventory(message[3:7])
+            else:
+                await self.nikobus_discovery.process_mode_button_press(message)
+            return
+
         if not self._coordinator.discovery_running:
             if BUTTON_COMMAND_PREFIX in message:
                 # Find the position where '#N' starts
@@ -241,15 +250,8 @@ class NikobusEventListener:
                     await self.response_queue.put(message)
                 return
 
-            if DEVICE_ADDRESS_INVENTORY in message:
-                _LOGGER.debug("Device address inventory: %s", message)
-                if self._coordinator.discovery_running:
-                    await self.nikobus_discovery.query_module_inventory(message[3:7])
-                else:
-                    await self.nikobus_discovery.process_mode_button_press(message)
-                return
-
         else:
+
             if any(message.startswith(inventory) for inventory in DEVICE_INVENTORY):
                 _LOGGER.debug("Device inventory: %s", message)
                 if self._coordinator.discovery_module_address:
