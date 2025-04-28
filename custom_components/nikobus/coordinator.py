@@ -356,7 +356,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
         self._refresh_interval = entry.data.get(CONF_REFRESH_INTERVAL, 120)
         self._has_feedback_module = entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
-        self._prior_gen3 = config_entry.data.get(CONF_PRIOR_GEN3, False)
+        self._prior_gen3 = entry.data.get(CONF_PRIOR_GEN3, False)
 
         self._update_interval = (
             None

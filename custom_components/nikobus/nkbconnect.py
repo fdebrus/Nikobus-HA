@@ -51,6 +51,11 @@ class NikobusConnect:
 
         _LOGGER.info("Nikobus handshake successful.")
 
+    async def ping(self) -> None:
+        """Open the port briefly and close it again – used to ‘wake’ the PC-Link."""
+        await self.connect()
+        await self.disconnect()
+
     async def _connect_ip(self) -> None:
         """Establish an IP connection to the Nikobus system."""
         try:

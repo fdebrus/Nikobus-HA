@@ -20,8 +20,10 @@ from homeassistant.components import (
     scene,
 )
 from homeassistant.helpers.event import async_track_time_change
+from .nkbconnect import NikobusConnect
+from .exceptions import NikobusConnectionError 
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_CONNECTION_STRING
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +44,13 @@ HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration from a config entry (single-instance)."""
     _LOGGER.debug("Starting setup of Nikobus (single-instance)")
+
+    try:
+        connection = NikobusConnect(entry.data[CONF_CONNECTION_STRING])
+        await connection.ping()
+    except NikobusConnectionError as err:
+        _LOGGER.warning("Nikobus interface not ready: %s", err)
+        raise ConfigEntryNotReady from err   
 
     # Create and store the coordinator (which may start the event listener)
     coordinator = NikobusDataCoordinator(hass, entry)
