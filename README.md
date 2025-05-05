@@ -153,7 +153,7 @@ or over the network using an IP address and port, for example, **192.168.2.50:99
 
 Network connectivity can be achieved by adding a bridge. This could come handy is your Nikobus installation is distant from your HA server.
 
-## Recommended HF2211 **Buffer Settings** for a Nikobus bus
+## Recommended HF2211 **Buffer Settings** for a Nikobus
 
 | Setting     | Why it matters for Nikobus                                                                                                                            | **Value to use** |
 |-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|------------------|
