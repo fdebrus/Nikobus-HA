@@ -153,13 +153,22 @@ or over the network using an IP address and port, for example, **192.168.2.50:99
 
 Network connectivity can be achieved by adding a bridge. This could come handy is your Nikobus installation is distant from your HA server.
 
+## Recommended HF2211 **Buffer Settings** for a Nikobus bus
+
+| Setting     | Why it matters for Nikobus                                                                                                                            | **Value to use** |
+|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|------------------|
+| **Buffer Size** | The HF2211 holds incoming UART bytes until either the buffer is full *or* the gap‑timer fires. A Nikobus telegram is only 8 bytes, so we want the gateway to flush after one‑to‑four frames—not wait for hundreds. | **32 bytes** – the lowest value the web UI accepts (range 32 – 8192) |
+| **Gap Time** | Idle‑time threshold: if the serial line is silent for this many milliseconds and fewer than **Buffer Size** bytes are queued, the gateway forwards whatever it has. A shorter gap means less “dead air” inserted between bursts. | **10 ms** – the minimum allowed (range 10 – 1000 ms) |
+
+> With **32 / 10 ms** the HF2211 forwards each Nikobus telegram almost immediately.
+
 <div style="display: flex; justify-content: space-between;">
     <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1" alt="TCP Server" style="width: 48%;">  
 </div>
 
 <div style="display: flex; justify-content: space-between;">
-    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8" alt="TCP Server" style="width: 48%;">    
-    <img src="https://github.com/fdebrus/Nikobus-HA/assets/33791533/498e5a0f-ab75-4d29-9988-884015fbf05a" alt="TCP Server" style="width: 48%;">
+    <img src="https://github.com/user-attachments/assets/70b8f8e7-a96d-461f-bd28-0348b9371785" alt="TCP Server" style="width: 48%;">    
+    <img src="https://github.com/user-attachments/assets/689697dc-98c6-422c-a447-53c369311257" alt="TCP Server" style="width: 48%;">
 </div>
 
 ## Automation Example
