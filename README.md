@@ -2,7 +2,28 @@
 
 # Nikobus Integration for Home Assistant
 
-This integration enables the control of Nikobus systems via Home Assistant, allowing you to manage various Nikobus modules directly from your Home Assistant platform.
+This integration enables the control of Nikobus systems via Home Assistant.
+
+## Supported Modules
+
+- **Switch Module**: `05-000-02` or `05-000-01` and **Compact Switch Module** `05-002-02`
+  - Commands: Operate switches on/off.
+- **Dimmer Module**: `05-007-02` or `05-007-01` and **Compact Dimmer Module** `05-008-02`
+  - Commands: Operate dimmers on/off and set brightness.
+- **Shutter Module**: `05-001-02`
+  - Commands: Operate covers open/close and set position.
+- **Modules with Digital Interfaces**  PC-Logic: `05-201` - Audio Distribution: `05-205` - Digital Interface: `05-206`
+  - All digital entries will be detected as button (when triggered the first time) and corresponding entities (button and sensor) will be created in HA after restart.
+- **PC-Link Module**: `05-200`
+  - Preferred solution to connect Nikobus to HomeAssistant, with a customizable refresh interval set within the integration configuration.
+- **Feedback Module**: `05-207`
+  - Could be used to connect Nikobus to HomeAssistant, with a customizable refresh interval set within the integration configuration.
+  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **! ONLY IF PC-Link is present and used for connectivity !**. if not, use a user defined refresh interval in the integration configuration.
+    
+  ⚠️ **Special Consideration** for -01 Modules
+      If you are using Nikobus modules ending in -01 (e.g., 05-000-01, 05-007-01), please be aware of the following limitation: Only simulated button presses and button events are supported. These older generation modules do not support setting direct outputs status nor state polling.
+  
+  ✅ **Important** When using -01 modules, also make sure to check the “prior GEN3” option in the integration setup. This setting optimizes how the integration handles communication with older-generation hardware.
 
 ## Discovery Process
 
@@ -11,7 +32,7 @@ The discovery process can be used when connected to a PC-Link module to automati
 `nikobus_module_discovered.json`
 `nikobus_button_discovered.json`
 
-These files are not used by the integration itself; their sole purpose is to assist users in setting up the integration as described in the sections below.
+  ⚠️ These files are not used by the integration itself; their sole purpose is to assist users in setting up the integration as described in the sections below.
 
 To start the discovery process, follow these steps:
 
@@ -24,26 +45,10 @@ This will scan your installation and generate inventory files for modules and bu
 
 💡 Tip: You can also initiate module discovery either by pressing the yellow "mode" button on a Nikobus module, or if the module has no "mode" button by using the "Send ID" function. This allows Home Assistant to detect and log the corresponding module address.
 
-## Supported Modules
 
-- **Switch Module**: `05-000-02` or `05-000-01` and **Compact Switch Module** `05-002-02`
-  - Commands: Operate switches on/off.
-- **Dimmer Module**: `05-007-02` or `05-007-01`
-  - Commands: Operate dimmers on/off and set brightness.
-- **Shutter Module**: `05-001-02`
-  - Commands: Operate covers open/close and set position.
-- **Modules with Digital Interfaces**  PC-Logic: `05-201` - Audio Distribution: `05-205` - Digital Interface: `05-206`
-  - All digital entries will be detected as button (when triggered the first time) and corresponding entities (button and sensor) will be created in HA after restart.
-- **PC-Link Module**: `05-200`
-  - Could be used to connect Nikobus to HomeAssistant, with a customizable refresh interval set within the integration configuration.
-- **Feedback Module**: `05-207`
-  - Could be used to connect Nikobus to HomeAssistant, with a customizable refresh interval set within the integration configuration.
-  - The Feedback module's internal refresh mechanism can be utilized for integration modules status updates instead of relying on user-defined periodic polling by the Nikobus integration. **! ONLY IF PC-Link is present and used for connectivity !**. if not, use a user defined refresh interval in the integration configuration.
-    
-  ⚠️ **Special Consideration** for -01 Modules
-      If you are using Nikobus modules ending in -01 (e.g., 05-000-01, 05-007-01), please be aware of the following limitation: Only simulated button presses and button events are supported. These older generation modules do not support direct status feedback or state polling.
-  
-  ✅ **Important** When using -01 modules, also make sure to check the “prior GEN3” option in the integration setup. This setting optimizes how the integration handles communication with older-generation hardware.
+
+
+
   
 - **Nikobus Buttons**: Physical switches, IR, Feedback, Remote
   - Button press events can be used as triggers in Home Assistant automations.
