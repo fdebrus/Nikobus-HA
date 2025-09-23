@@ -417,3 +417,10 @@ You can always revisit these options after setup by selecting the "CONFIGURE" op
 ![image](https://github.com/fdebrus/Nikobus-HA/assets/33791533/062ac6ea-27c6-433b-ab48-be0c562c5cff)
 
 <a href="https://buymeacoffee.com/fdebrus" target="_blank"><img src="https://www.buymeacoffee.com/assets/img/custom_images/black_img.png" alt="Buy Me A Coffee" style="height: auto !important;width: auto !important;" ></a><br>
+
+## License
+
+This project is licensed under a Non-Commercial License – see the [LICENSE](LICENSE) file for details.
+
+**Disclaimer:**  
+This project is not affiliated with, endorsed by, or sponsored by Niko NV or any of its affiliates. “Nikobus” is a registered trademark of its respective owner. Any mention of “Nikobus” is for compatibility or descriptive purposes only.
