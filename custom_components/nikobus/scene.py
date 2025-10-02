@@ -73,16 +73,13 @@ async def async_setup_entry(
 
 
 def _normalize_feedback_leds(value: Optional[Union[str, List[str]]]) -> List[str]:
+    """Accept a single string or list of strings; keep any non-empty trimmed string."""
     if value is None:
         return []
     if isinstance(value, str):
-        return [value.strip()]
+        v = value.strip()
+        return [v] if v else []
     return [v.strip() for v in value if isinstance(v, str) and v.strip()]
-
-
-def _valid_button_address(addr: str) -> bool:
-    # Accept 1–6 digit decimal strings (matches your events like "295682")
-    return addr.isdigit() and 1 <= len(addr) <= 6
 
 
 class NikobusSceneEntity(CoordinatorEntity, Scene):
@@ -104,14 +101,10 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         self._scene_id = scene_id
         self._impacted_modules_info = impacted_modules_info
 
-        # Store validated feedback LED addresses
-        self._feedback_leds: List[str] = [a for a in (feedback_leds or []) if _valid_button_address(a)]
-        invalid = [a for a in (feedback_leds or []) if not _valid_button_address(a)]
-        if invalid:
-            _LOGGER.warning(
-                "Scene %s has invalid feedback_led address(es) ignored: %s",
-                scene_id, invalid
-            )
+        # Store feedback LED addresses as-is (any non-empty string is accepted)
+        self._feedback_leds: List[str] = feedback_leds or []
+        if feedback_leds is None:
+            _LOGGER.debug("Scene %s: no feedback_led defined.", scene_id)
 
     @property
     def unique_id(self) -> str:
@@ -137,9 +130,11 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         """Send each feedback LED/button address once (toggle) BEFORE enforcing final states."""
         if not self._feedback_leds:
             return
-        if not hasattr(self.coordinator, "nikobus_command"):
+
+        nikobus_cmd = getattr(self.coordinator, "nikobus_command", None)
+        if nikobus_cmd is None or not hasattr(nikobus_cmd, "queue_command"):
             _LOGGER.error(
-                "Scene %s: coordinator has no 'nikobus_command' to queue LED commands.",
+                "Scene %s: coordinator has no 'nikobus_command.queue_command' to queue LED commands.",
                 self._scene_id,
             )
             return
@@ -147,12 +142,19 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         for addr in self._feedback_leds:
             cmd = f"#N{addr}\r#E1"
             try:
-                _LOGGER.debug("Scene %s: queuing feedback LED/button address first: %s", self._scene_id, cmd)
-                await self.coordinator.nikobus_command.queue_command(cmd)
+                _LOGGER.debug(
+                    "Scene %s: queuing feedback LED/button address first: %s",
+                    self._scene_id,
+                    cmd,
+                )
+                await nikobus_cmd.queue_command(cmd)
             except Exception as e:
                 _LOGGER.error(
                     "Scene %s: failed to send feedback LED %s: %s",
-                    self._scene_id, addr, e, exc_info=True
+                    self._scene_id,
+                    addr,
+                    e,
+                    exc_info=True,
                 )
 
     async def async_activate(self) -> None:
@@ -179,8 +181,9 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             }
 
             if module_type in module_state_map and isinstance(state, str):
-                if state in module_state_map[module_type]:
-                    return module_state_map[module_type][state]
+                mapped = module_state_map[module_type].get(state)
+                if mapped is not None:
+                    return mapped
                 _LOGGER.error("Invalid state for %s: %s", module_type, state)
                 return None
 
@@ -244,12 +247,16 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             # channels are 1-based in your JSON
             idx = channel - 1
             if idx < 0:
-                _LOGGER.error("Invalid channel index for module %s: %s", module_id, channel)
+                _LOGGER.error(
+                    "Invalid channel index for module %s: %s", module_id, channel
+                )
                 continue
             try:
                 module_changes[module_id][idx] = value
             except IndexError:
-                _LOGGER.error("Channel %s out of range for module %s", channel, module_id)
+                _LOGGER.error(
+                    "Channel %s out of range for module %s", channel, module_id
+                )
                 continue
 
         # 3) Push module group updates to enforce final state
