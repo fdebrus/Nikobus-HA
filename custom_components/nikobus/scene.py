@@ -1,7 +1,7 @@
 """Scene platform for the Nikobus integration."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
@@ -45,21 +45,44 @@ async def async_setup_entry(
             for channel in scene.get("channels", [])
         ]
 
+        # Optional: feedback LED(s) that must be sent first (toggle behavior on bus)
+        feedback_led_raw: Optional[Union[str, List[str]]] = scene.get("feedback_led")
+        feedback_leds: List[str] = _normalize_feedback_leds(feedback_led_raw)
+
         _LOGGER.debug(
-            "Processing scene: %s (ID: %s) | Channels: %s",
+            "Processing scene: %s (ID: %s) | Channels: %s | FeedbackLEDs=%s",
             description,
             scene_id,
             impacted_modules_info,
+            feedback_leds,
         )
 
         entities.append(
             NikobusSceneEntity(
-                hass, coordinator, description, scene_id, impacted_modules_info
+                hass=hass,
+                coordinator=coordinator,
+                description=description,
+                scene_id=scene_id,
+                impacted_modules_info=impacted_modules_info,
+                feedback_leds=feedback_leds,
             )
         )
 
     _LOGGER.debug("Adding %d Nikobus scene entities.", len(entities))
     async_add_entities(entities)
+
+
+def _normalize_feedback_leds(value: Optional[Union[str, List[str]]]) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()]
+    return [v.strip() for v in value if isinstance(v, str) and v.strip()]
+
+
+def _valid_button_address(addr: str) -> bool:
+    # Accept 1–6 digit decimal strings (matches your events like "295682")
+    return addr.isdigit() and 1 <= len(addr) <= 6
 
 
 class NikobusSceneEntity(CoordinatorEntity, Scene):
@@ -72,6 +95,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         description: str,
         scene_id: str,
         impacted_modules_info: List[Dict[str, Any]],
+        feedback_leds: Optional[List[str]] = None,
     ) -> None:
         """Initialize the scene entity with data from the Nikobus system configuration."""
         super().__init__(coordinator)
@@ -79,6 +103,15 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         self._description = description
         self._scene_id = scene_id
         self._impacted_modules_info = impacted_modules_info
+
+        # Store validated feedback LED addresses
+        self._feedback_leds: List[str] = [a for a in (feedback_leds or []) if _valid_button_address(a)]
+        invalid = [a for a in (feedback_leds or []) if not _valid_button_address(a)]
+        if invalid:
+            _LOGGER.warning(
+                "Scene %s has invalid feedback_led address(es) ignored: %s",
+                scene_id, invalid
+            )
 
     @property
     def unique_id(self) -> str:
@@ -100,13 +133,40 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         """Return the name of the scene."""
         return self._description
 
+    async def _send_feedback_leds_first(self) -> None:
+        """Send each feedback LED/button address once (toggle) BEFORE enforcing final states."""
+        if not self._feedback_leds:
+            return
+        if not hasattr(self.coordinator, "nikobus_command"):
+            _LOGGER.error(
+                "Scene %s: coordinator has no 'nikobus_command' to queue LED commands.",
+                self._scene_id,
+            )
+            return
+
+        for addr in self._feedback_leds:
+            cmd = f"#N{addr}\r#E1"
+            try:
+                _LOGGER.debug("Scene %s: queuing feedback LED/button address first: %s", self._scene_id, cmd)
+                await self.coordinator.nikobus_command.queue_command(cmd)
+            except Exception as e:
+                _LOGGER.error(
+                    "Scene %s: failed to send feedback LED %s: %s",
+                    self._scene_id, addr, e, exc_info=True
+                )
+
     async def async_activate(self) -> None:
-        """Activate the scene by updating only the specified channels while keeping others unchanged."""
+        """Activate the scene by updating only the specified channels while keeping others unchanged.
+        Order: send feedback LED/button address first (might toggle a real load), then enforce final state.
+        """
         _LOGGER.debug(
             "Activating scene: %s (ID: %s)", self._description, self._scene_id
         )
 
-        module_changes = {}
+        # 1) Send feedback LED/button address FIRST
+        await self._send_feedback_leds_first()
+
+        module_changes: Dict[str, bytearray] = {}
 
         def get_value(module_type: str, state: Any) -> Optional[int]:
             """Convert a scene state value into the correct integer representation."""
@@ -127,14 +187,14 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             if module_type == "dimmer_module":
                 try:
                     return max(0, min(int(state), 255))  # Ensure valid brightness range
-                except ValueError:
+                except (ValueError, TypeError):
                     _LOGGER.error("Invalid state for dimmer: %s", state)
                     return None
 
             _LOGGER.error("Unknown module type: %s", module_type)
             return None
 
-        # Process each module specified in the scene.
+        # 2) Build desired channel states
         for module in self._impacted_modules_info:
             module_id = module.get("module_id")
             channel = module.get("channel")
@@ -148,7 +208,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
             try:
                 channel = int(channel)
-            except ValueError:
+            except (ValueError, TypeError):
                 _LOGGER.error(
                     "Invalid channel number for module %s: %s", module_id, channel
                 )
@@ -181,66 +241,85 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                     module_changes[module_id].hex(),
                 )
 
-            module_changes[module_id][channel - 1] = value
+            # channels are 1-based in your JSON
+            idx = channel - 1
+            if idx < 0:
+                _LOGGER.error("Invalid channel index for module %s: %s", module_id, channel)
+                continue
+            try:
+                module_changes[module_id][idx] = value
+            except IndexError:
+                _LOGGER.error("Channel %s out of range for module %s", channel, module_id)
+                continue
 
-        # Send the updated states per module.
+        # 3) Push module group updates to enforce final state
         for module_id, channel_states in module_changes.items():
-            # Use coordinator function to get the actual number of channels.
-            num_channels = self.coordinator.get_module_channel_count(module_id)
-            current_state = self.coordinator.nikobus_module_states.get(
-                module_id, bytearray(12)
-            )
-
-            # Update group 1: first 6 channels (or fewer, if module has fewer channels)
-            group1_channels = min(6, num_channels)
-            if any(
-                channel_states[i] != current_state[i] for i in range(group1_channels)
-            ):
-                hex_value = channel_states[:group1_channels].hex()
-                _LOGGER.debug(
-                    "Updating group 1 for module %s with values: %s",
-                    module_id,
-                    hex_value,
-                )
-                self.coordinator.set_bytearray_group_state(
-                    module_id, group=1, value=hex_value
-                )
-
-            # Update group 2: if there are channels beyond the first group
-            if num_channels > 6 and any(
-                channel_states[i] != current_state[i] for i in range(6, num_channels)
-            ):
-                hex_value = channel_states[6:num_channels].hex()
-                _LOGGER.debug(
-                    "Updating group 2 for module %s with values: %s",
-                    module_id,
-                    hex_value,
-                )
-                self.coordinator.set_bytearray_group_state(
-                    module_id, group=2, value=hex_value
-                )
-
-            _LOGGER.debug(
-                "Sending updated state to module %s: %s", module_id, channel_states
-            )
             try:
-                await self.coordinator.api.set_output_states_for_module(
-                    address=module_id
+                # Use coordinator function to get the actual number of channels.
+                num_channels = self.coordinator.get_module_channel_count(module_id)
+                current_state = self.coordinator.nikobus_module_states.get(
+                    module_id, bytearray(12)
                 )
+
+                # Update group 1: first 6 channels (or fewer, if module has fewer channels)
+                group1_channels = min(6, num_channels)
+                if any(
+                    channel_states[i] != current_state[i] for i in range(group1_channels)
+                ):
+                    hex_value = channel_states[:group1_channels].hex()
+                    _LOGGER.debug(
+                        "Updating group 1 for module %s with values: %s",
+                        module_id,
+                        hex_value,
+                    )
+                    self.coordinator.set_bytearray_group_state(
+                        module_id, group=1, value=hex_value
+                    )
+
+                # Update group 2: if there are channels beyond the first group
+                if num_channels > 6 and any(
+                    channel_states[i] != current_state[i] for i in range(6, num_channels)
+                ):
+                    hex_value = channel_states[6:num_channels].hex()
+                    _LOGGER.debug(
+                        "Updating group 2 for module %s with values: %s",
+                        module_id,
+                        hex_value,
+                    )
+                    self.coordinator.set_bytearray_group_state(
+                        module_id, group=2, value=hex_value
+                    )
+
+                _LOGGER.debug(
+                    "Sending updated state to module %s: %s", module_id, channel_states
+                )
+                try:
+                    await self.coordinator.api.set_output_states_for_module(
+                        address=module_id
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        "Failed to set output state for module %s: %s",
+                        module_id,
+                        e,
+                        exc_info=True,
+                    )
+
+                try:
+                    await self.coordinator.async_event_handler(
+                        "nikobus_refreshed", {"impacted_module_address": module_id}
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        "Failed to handle event for module %s: %s",
+                        module_id,
+                        e,
+                        exc_info=True,
+                    )
             except Exception as e:
                 _LOGGER.error(
-                    "Failed to set output state for module %s: %s",
-                    module_id,
-                    e,
-                    exc_info=True,
-                )
-            try:
-                await self.coordinator.async_event_handler(
-                    "nikobus_refreshed", {"impacted_module_address": module_id}
-                )
-            except Exception as e:
-                _LOGGER.error(
-                    "Failed to handle event for module %s: %s",
+                    "Scene %s: fatal error while applying module %s: %s",
+                    self._scene_id,
                     module_id,
                     e,
                     exc_info=True,
