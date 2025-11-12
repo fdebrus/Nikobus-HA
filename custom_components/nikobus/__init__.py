@@ -9,7 +9,7 @@ import asyncio
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.components import (
     switch,
@@ -65,6 +65,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _register_hub_device(hass, entry)
 
+    async def async_cleanup_orphan_entities(hass, entry, coordinator):
+        """Remove entities that no longer exist in current Nikobus config."""
+        ent_reg = er.async_get(hass)
+        valid = coordinator.get_known_entity_unique_ids()
+        _LOGGER.debug("Valid Nikobus entity IDs: %s", valid)
+
+        for entity in list(ent_reg.entities.values()):
+            if entity.config_entry_id != entry.entry_id:
+                continue
+            if entity.platform != DOMAIN:
+                continue
+
+            if entity.unique_id not in valid:
+                _LOGGER.warning(
+                    "Removing orphan Nikobus entity: %s (unique_id=%s)",
+                    entity.entity_id,
+                    entity.unique_id,
+                )
+                ent_reg.async_remove(entity.entity_id)
+
     async def handle_module_discovery(call: ServiceCall) -> None:
         """Manually trigger device discovery."""
         module_address = call.data.get("module_address", "")
@@ -98,9 +118,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Error forwarding setup to Nikobus platforms: %s", err)
         return False
 
+    await async_cleanup_orphan_entities(hass, entry, coordinator)
+
     _LOGGER.info("Nikobus (single-instance) setup complete.")
     return True
-
 
 def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register the Nikobus bridge (hub) as a device in Home Assistant."""

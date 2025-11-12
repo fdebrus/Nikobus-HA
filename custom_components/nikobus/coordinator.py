@@ -21,6 +21,7 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRIOR_GEN3,
+    DOMAIN,
 )
 from .exceptions import NikobusConnectionError, NikobusDataError
 
@@ -460,3 +461,62 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             ),
             None,
         )
+
+    def get_known_entity_unique_ids(self) -> set[str]:
+        """Return the set of valid unique_ids for all Nikobus entities
+        based on current JSON configuration."""
+
+        known: set[str] = set()
+
+        # -----------------------
+        # 1) MODULE-BASED ENTITIES
+        # (lights, standard switches, covers)
+        # using: nikobus_{address}_{channel}
+        # -----------------------
+        for module_type, modules in self.dict_module_data.items():
+            for address, module_data in modules.items():
+                for index, ch_info in enumerate(module_data.get("channels", []), start=1):
+                    desc = ch_info.get("description", "")
+                    if desc.startswith("not_in_use"):
+                        continue
+                    known.add(f"{DOMAIN}_{address}_{index}")
+
+        # -----------------------
+        # 2) ROLLER use_as_switch entities
+        # using: nikobus_switch_{address}_{channel}
+        # -----------------------
+        roller_modules = self.dict_module_data.get("roller_module", {})
+        for address, module_data in roller_modules.items():
+            for index, ch_info in enumerate(module_data.get("channels", []), start=1):
+                if ch_info.get("use_as_switch", False):
+                    known.add(f"{DOMAIN}_switch_{address}_{index}")
+
+        # -----------------------
+        # 3) Button sensors
+        # using: nikobus_button_sensor_{address}
+        # -----------------------
+        for button in self.dict_button_data.get("nikobus_button", {}).values():
+            addr = button.get("address")
+            if addr:
+                known.add(f"{DOMAIN}_button_sensor_{addr}")
+
+        # -----------------------
+        # 4) Push buttons
+        # using: nikobus_push_button_{address}
+        # -----------------------
+        for button in self.dict_button_data.get("nikobus_button", {}).values():
+            addr = button.get("address")
+            if addr:
+                known.add(f"{DOMAIN}_push_button_{addr}")
+
+        # -----------------------
+        # 5) Scenes
+        # using: nikobus_scene_{scene_id}
+        # -----------------------
+        scene_list = self.dict_scene_data.get("scene", [])
+        for scene in scene_list:
+            sid = scene.get("id")
+            if sid:
+                known.add(f"{DOMAIN}_scene_{sid}")
+
+        return known
