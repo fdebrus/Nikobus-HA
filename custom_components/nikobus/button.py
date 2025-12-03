@@ -9,10 +9,10 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND, CONF_PRIOR_GEN3
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -35,14 +35,13 @@ async def async_setup_entry(
                 for module in button_data.get("impacted_module", [])
             ]
 
-            # Extract the discovered info from the list if available.
             discovery_info = button_data.get("discovered_info", [])
             discovery_info = discovery_info[0] if discovery_info else {}
 
             entity = NikobusButtonEntity(
                 hass=hass,
                 coordinator=coordinator,
-                config_entry=entry,                        # ← NEW
+                config_entry=entry,
                 description=button_data.get("description", "Unknown Button"),
                 address=button_data.get("address", "unknown"),
                 operation_time=button_data.get("operation_time"),
@@ -59,14 +58,14 @@ async def async_setup_entry(
     _LOGGER.debug("Added %d Nikobus button entities.", len(entities))
 
 
-class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
+class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     """Represents a Nikobus button entity within Home Assistant."""
 
     def __init__(
         self,
         hass: HomeAssistant,
         coordinator: NikobusDataCoordinator,
-        config_entry: ConfigEntry,                       # ← NEW
+        config_entry: ConfigEntry,
         description: str,
         address: str,
         operation_time: int | None,
@@ -78,9 +77,12 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         discovery_key: str,
     ) -> None:
         """Initialize the button entity with data from the Nikobus system configuration."""
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            module_address=address,
+            name=f"Nikobus Push Button {address}",
+        )
         self._hass = hass
-        self._coordinator = coordinator
         self._description = description
         self._address = address
         self._operation_time = int(operation_time) if operation_time else None
@@ -91,17 +93,12 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         self.discovery_channel = discovery_channel
         self.discovery_key = discovery_key
 
+        # Original unique_id
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
 
         # Option set in the config entry
-        self._prior_gen3: bool = config_entry.data.get(
-            CONF_PRIOR_GEN3, False
-        )
-
-    # ---------------------------------------------------------------------
-    # Home Assistant entity metadata
-    # ---------------------------------------------------------------------
+        self._prior_gen3: bool = config_entry.data.get(CONF_PRIOR_GEN3, False)
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -132,10 +129,6 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
 
         return attributes
 
-    # ---------------------------------------------------------------------
-    # Button behaviour
-    # ---------------------------------------------------------------------
-
     async def async_press(self) -> None:
         """Handle button press event."""
         event_data = {
@@ -144,7 +137,7 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         }
         try:
             _LOGGER.info("Processing HA button press: %s", self._address)
-            await self._coordinator.async_event_handler("ha_button_pressed", event_data)
+            await self.coordinator.async_event_handler("ha_button_pressed", event_data)
 
             # Skip the refresh for Gen3 installations if requested
             if not self._prior_gen3:
@@ -156,11 +149,11 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
                             module_address,
                             module_group,
                         )
-                        value = await self._coordinator.nikobus_command.get_output_state(
+                        value = await self.coordinator.nikobus_command.get_output_state(
                             module_address, module_group
                         )
                         if value is not None:
-                            self._coordinator.set_bytearray_group_state(
+                            self.coordinator.set_bytearray_group_state(
                                 module_address, module_group, value
                             )
                             _LOGGER.debug(

@@ -9,12 +9,12 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
 from .exceptions import NikobusError
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +31,6 @@ async def async_setup_entry(
     device_registry = dr.async_get(hass)
     entities: list[SwitchEntity] = []
 
-    # Process standard switch_module entities
     const_switch_modules: dict[str, Any] = coordinator.dict_module_data.get(
         "switch_module", {}
     )
@@ -64,7 +63,6 @@ async def async_setup_entry(
                 )
             )
 
-    # Process roller_module channels marked with use_as_switch
     roller_switch_data = hass.data.setdefault(DOMAIN, {}).get("switch_entities", [])
     for switch_data in roller_switch_data:
         entities.append(
@@ -167,7 +165,7 @@ class NikobusSwitchCoverEntity(SwitchEntity):
             )
 
 
-class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
+class NikobusSwitchEntity(NikobusEntity, SwitchEntity):
     """A switch entity representing one channel on a Nikobus module."""
 
     def __init__(
@@ -180,7 +178,12 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         module_model: str,
     ) -> None:
         """Initialize the switch entity."""
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            module_address=address,
+            channel=channel,
+            name=channel_description,
+        )
         self._address = address
         self._channel = channel
         self._channel_description = channel_description

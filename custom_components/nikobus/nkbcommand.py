@@ -86,14 +86,40 @@ class NikobusCommandHandler:
 
                 try:
                     if not address:
+                        # LED-only or generic command without address
                         await self.send_command(command)
+                        if completion_handler and callable(completion_handler):
+                            _LOGGER.debug(
+                                "Calling completion handler (no-address command)"
+                            )
+                            try:
+                                await completion_handler()
+                            except Exception as err:
+                                _LOGGER.error(
+                                    "Error in completion handler "
+                                    "(no-address command): %s",
+                                    err,
+                                    exc_info=True,
+                                )
                     else:
+                        # Command that expects ACK/ANSWER from a specific address
                         result = await self.send_command_get_answer(command, address)
                         if future and not future.done():
                             future.set_result(result)
                         if completion_handler and callable(completion_handler):
-                            _LOGGER.debug("Calling completion handler")
-                            await completion_handler()
+                            _LOGGER.debug(
+                                "Calling completion handler (addressed command)"
+                            )
+                            try:
+                                await completion_handler()
+                            except Exception as err:
+                                _LOGGER.error(
+                                    "Error in completion handler "
+                                    "(addressed command): %s",
+                                    err,
+                                    exc_info=True,
+                                )
+
                 except Exception as err:
                     _LOGGER.error(
                         "Error processing command %s: %s", command, err, exc_info=True
@@ -298,20 +324,30 @@ class NikobusCommandHandler:
     ) -> None:
         """Prepare and queue the output states for a module."""
         _LOGGER.debug("Preparing to set output states for module %s", address)
-        channel_states = self.nikobus_module_states[address][:6] + bytearray([0xFF])
-        await self.queue_command(
-            make_pc_link_command(0x15, address, channel_states),
-            address,
-            completion_handler=completion_handler,
-        )
 
-        # If the module has more than 6 channels, send a second group command.
-        if self._coordinator.get_module_channel_count(address) > 6:
-            channel_states = self.nikobus_module_states[address][6:12] + bytearray(
-                [0xFF]
+        # First group (channels 1–6)
+        channel_states = self.nikobus_module_states[address][:6] + bytearray([0xFF])
+        module_channels = self._coordinator.get_module_channel_count(address)
+
+        if module_channels > 6:
+            # Multi-group module: first command without completion handler
+            await self.queue_command(
+                make_pc_link_command(0x15, address, channel_states),
+                address,
+                completion_handler=None,
             )
+
+            # Second group (channels 7–12) – this one gets the completion handler
+            channel_states = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
             await self.queue_command(
                 make_pc_link_command(0x16, address, channel_states),
+                address,
+                completion_handler=completion_handler,
+            )
+        else:
+            # Single-group module: only one command, so it gets the completion handler
+            await self.queue_command(
+                make_pc_link_command(0x15, address, channel_states),
                 address,
                 completion_handler=completion_handler,
             )

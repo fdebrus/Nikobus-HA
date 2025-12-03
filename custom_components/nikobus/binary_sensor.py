@@ -9,10 +9,10 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,10 +66,12 @@ def register_global_listener(
                 "Error handling nikobus_button_pressed event: %s", e, exc_info=True
             )
 
-    hass.bus.async_listen("nikobus_button_pressed", handle_event)
+    remove = hass.bus.async_listen("nikobus_button_pressed", handle_event)
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    domain_data["button_sensor_remove"] = remove
 
 
-class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
+class NikobusButtonSensor(NikobusEntity, SensorEntity):
     """Represents a Nikobus button sensor entity within Home Assistant."""
 
     def __init__(
@@ -80,12 +82,16 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
         address: str,
     ) -> None:
         """Initialize the button sensor entity with data from the Nikobus system configuration."""
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            module_address=address,
+            name=f"Nikobus Button Sensor {address}",
+        )
         self._hass = hass
-        self._coordinator = coordinator
         self._description = description
         self._address = address
 
+        # Keep original unique_id
         self._attr_name = f"Nikobus Button Sensor {address}"
         self._attr_unique_id = f"{DOMAIN}_button_sensor_{address}"
         self._state: str | None = "idle"
@@ -125,4 +131,5 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the coordinator if needed."""
-        pass  # Since the state is event-driven, no coordinator updates are required.
+        # Since the state is event-driven, no coordinator updates are required.
+        pass

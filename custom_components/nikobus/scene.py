@@ -2,13 +2,14 @@
 
 import logging
 from typing import Any, Dict, List, Optional, Union
+
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,7 +46,6 @@ async def async_setup_entry(
             for channel in scene.get("channels", [])
         ]
 
-        # Optional: feedback LED(s) that must be sent first (toggle behavior on bus)
         feedback_led_raw: Optional[Union[str, List[str]]] = scene.get("feedback_led")
         feedback_leds: List[str] = _normalize_feedback_leds(feedback_led_raw)
 
@@ -82,7 +82,7 @@ def _normalize_feedback_leds(value: Optional[Union[str, List[str]]]) -> List[str
     return [v.strip() for v in value if isinstance(v, str) and v.strip()]
 
 
-class NikobusSceneEntity(CoordinatorEntity, Scene):
+class NikobusSceneEntity(NikobusEntity, Scene):
     """Represents a Nikobus scene entity within Home Assistant."""
 
     def __init__(
@@ -95,20 +95,22 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         feedback_leds: Optional[List[str]] = None,
     ) -> None:
         """Initialize the scene entity with data from the Nikobus system configuration."""
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            module_address=None,
+            name=description,
+        )
         self._hass = hass
         self._description = description
         self._scene_id = scene_id
         self._impacted_modules_info = impacted_modules_info
-
-        # Store feedback LED addresses as-is (any non-empty string is accepted)
         self._feedback_leds: List[str] = feedback_leds or []
+
         if feedback_leds is None:
             _LOGGER.debug("Scene %s: no feedback_led defined.", scene_id)
 
     @property
     def unique_id(self) -> str:
-        """Return a unique ID for this scene."""
         return f"{DOMAIN}_scene_{self._scene_id}"
 
     @property
@@ -123,11 +125,9 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
     @property
     def name(self) -> str:
-        """Return the name of the scene."""
         return self._description
 
     async def _send_feedback_leds_first(self) -> None:
-        """Send each feedback LED/button address once (toggle) BEFORE enforcing final states."""
         if not self._feedback_leds:
             return
 
@@ -158,20 +158,15 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 )
 
     async def async_activate(self) -> None:
-        """Activate the scene by updating only the specified channels while keeping others unchanged.
-        Order: send feedback LED/button address first (might toggle a real load), then enforce final state.
-        """
         _LOGGER.debug(
             "Activating scene: %s (ID: %s)", self._description, self._scene_id
         )
 
-        # 1) Send feedback LED/button address FIRST
         await self._send_feedback_leds_first()
 
         module_changes: Dict[str, bytearray] = {}
 
         def get_value(module_type: str, state: Any) -> Optional[int]:
-            """Convert a scene state value into the correct integer representation."""
             if isinstance(state, str):
                 state = state.lower()
 
@@ -189,7 +184,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
             if module_type == "dimmer_module":
                 try:
-                    return max(0, min(int(state), 255))  # Ensure valid brightness range
+                    return max(0, min(int(state), 255))
                 except (ValueError, TypeError):
                     _LOGGER.error("Invalid state for dimmer: %s", state)
                     return None
@@ -197,7 +192,6 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             _LOGGER.error("Unknown module type: %s", module_type)
             return None
 
-        # 2) Build desired channel states
         for module in self._impacted_modules_info:
             module_id = module.get("module_id")
             channel = module.get("channel")
@@ -232,7 +226,6 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
             if value is None:
                 continue
 
-            # Retrieve current state and update specific channel value.
             if module_id not in module_changes:
                 current_state = self.coordinator.nikobus_module_states.get(
                     module_id, bytearray(12)
@@ -244,7 +237,6 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                     module_changes[module_id].hex(),
                 )
 
-            # channels are 1-based in your JSON
             idx = channel - 1
             if idx < 0:
                 _LOGGER.error(
@@ -259,16 +251,13 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 )
                 continue
 
-        # 3) Push module group updates to enforce final state
         for module_id, channel_states in module_changes.items():
             try:
-                # Use coordinator function to get the actual number of channels.
                 num_channels = self.coordinator.get_module_channel_count(module_id)
                 current_state = self.coordinator.nikobus_module_states.get(
                     module_id, bytearray(12)
                 )
 
-                # Update group 1: first 6 channels (or fewer, if module has fewer channels)
                 group1_channels = min(6, num_channels)
                 if any(
                     channel_states[i] != current_state[i] for i in range(group1_channels)
@@ -283,7 +272,6 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                         module_id, group=1, value=hex_value
                     )
 
-                # Update group 2: if there are channels beyond the first group
                 if num_channels > 6 and any(
                     channel_states[i] != current_state[i] for i in range(6, num_channels)
                 ):

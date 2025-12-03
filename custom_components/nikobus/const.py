@@ -21,6 +21,7 @@ CONF_PRIOR_GEN3: Final[str] = "prior_gen3"
 # Serial Connection
 # =============================================================================
 BAUD_RATE: Final[int] = 9600
+
 COMMANDS_HANDSHAKE: Final[list[str]] = [
     "++++",
     "ATH0",
@@ -31,6 +32,7 @@ COMMANDS_HANDSHAKE: Final[list[str]] = [
     "#L0",
     "#E1",
 ]
+
 EXPECTED_HANDSHAKE_RESPONSE: Final[str] = "$0511"
 HANDSHAKE_TIMEOUT: Final[int] = 60  # Timeout for handshake in seconds
 
@@ -38,20 +40,24 @@ HANDSHAKE_TIMEOUT: Final[int] = 60  # Timeout for handshake in seconds
 # Buttons
 # =============================================================================
 REFRESH_DELAY: Final[float] = 0.5  # Delay before retrieving status after button press
-DIMMER_DELAY: Final[int] = 1  # Delay before retrieving dimmer status
-SHORT_PRESS: Final[int] = 1  # Short press duration in seconds
-MEDIUM_PRESS: Final[int] = 2  # Medium press duration in seconds
-LONG_PRESS: Final[int] = 3  # Long press duration in seconds
+DIMMER_DELAY: Final[int] = 1       # Delay before retrieving dimmer status
+
+SHORT_PRESS: Final[int] = 1        # Short press duration in seconds
+MEDIUM_PRESS: Final[int] = 2       # Medium press duration in seconds
+LONG_PRESS: Final[int] = 3         # Long press duration in seconds
 
 # =============================================================================
 # Listener
 # =============================================================================
 BUTTON_COMMAND_PREFIX: Final[str] = "#N"
-IGNORE_ANSWER: Final[str] = "$0E"  # Unknown response
+IGNORE_ANSWER: Final[str] = "$0E"   # Unknown response
+
 FEEDBACK_REFRESH_COMMAND: Final[tuple[str, str]] = ("$1012", "$1017")
 FEEDBACK_MODULE_ANSWER: Final[str] = "$1C"
+
 MANUAL_REFRESH_COMMAND: Final[tuple[str, str]] = ("$0512", "$0517")
 COMMAND_PROCESSED: Final[tuple[str, str]] = ("$0515", "$0516")
+
 DEVICE_ADDRESS_INVENTORY: Final[str] = "$18"
 DEVICE_INVENTORY: Final[tuple[str, str]] = ("$0510$2E", "$0522$1E")
 
@@ -59,22 +65,21 @@ DEVICE_INVENTORY: Final[tuple[str, str]] = ("$0510$2E", "$0522$1E")
 # Command Execution
 # =============================================================================
 COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
-COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15  # Timeout for command ACK
-COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = (
-    5  # Timeout for each loop waiting for an answer
-)
-MAX_ATTEMPTS: Final[int] = 3  # Maximum retry attempts
+COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15    # Timeout for command ACK
+
+COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5  # Timeout for each loop waiting for an answer
+MAX_ATTEMPTS: Final[int] = 3                 # Maximum retry attempts
 
 # =============================================================================
 # Discovery
 # =============================================================================
 DEVICE_TYPES = {
-     "01": {
-         "Category": "Module",
-         "Model": "05-000-02",
-         "Channels": 12,
-         "Name": "Switch Module",
-     },
+    "01": {
+        "Category": "Module",
+        "Model": "05-000-02",
+        "Channels": 12,
+        "Name": "Switch Module",
+    },
     "02": {
         "Category": "Module",
         "Model": "05-001-02",
@@ -100,9 +105,9 @@ DEVICE_TYPES = {
         "Name": "Button with 4 Operation Points",
     },
     "08": {
-        "Category": "Module", 
-        "Model": "05-201", 
-        "Name": "PC Logic"
+        "Category": "Module",
+        "Model": "05-201",
+        "Name": "PC Logic",
     },
     "09": {
         "Category": "Module",
@@ -111,9 +116,9 @@ DEVICE_TYPES = {
         "Name": "Compact Switch Module",
     },
     "0A": {
-        "Category": "Module", 
-        "Model": "05-200", 
-        "Name": "PC Link"
+        "Category": "Module",
+        "Model": "05-200",
+        "Name": "PC Link",
     },
     "0C": {
         "Category": "Button",
@@ -194,15 +199,15 @@ DEVICE_TYPES = {
         "Name": "Feedback Button with 8 Operation Points",
     },
     "42": {
-        "Category": "Module", 
-        "Model": "05-207", 
-        "Name": "Feedback Module"
+        "Category": "Module",
+        "Model": "05-207",
+        "Name": "Feedback Module",
     },
     "43": {
         "Category": "Button",
         "Model": "05-058",
         "Channels": 4,
-        "Name": "Universal interface",
+        "Name": "Universal Interface",
     },
     "44": {
         "Category": "Button",

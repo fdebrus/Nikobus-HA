@@ -155,7 +155,9 @@ class NikobusEventListener:
                 _LOGGER.error(
                     "Unexpected error in event listener: %s", err, exc_info=True
                 )
-                break
+                if not self._running:
+                    break
+                await asyncio.sleep(0.1)
 
     async def dispatch_message(self, message: str) -> None:
 

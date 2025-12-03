@@ -43,11 +43,12 @@ class NikobusAPI:
                 address,
                 channel,
             )
-            await self._coordinator.nikobus_command.queue_command(f"#N{command}\r#E1")
-            if completion_handler:
-                await completion_handler()
+            await self._coordinator.nikobus_command.queue_command(
+                f"#N{command}\r#E1",
+                completion_handler=completion_handler,
+            )
         else:
-            await self._coordinator.nikobus_command.set_output_state(
+                await self._coordinator.nikobus_command.set_output_state(
                 address, channel, state, completion_handler=completion_handler
             )
         self._coordinator.set_bytearray_state(address, channel, state)
@@ -104,7 +105,8 @@ class NikobusAPI:
                     channel,
                 )
                 await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_on}\r#E1"
+                    f"#N{led_on}\r#E1",
+                    completion_handler=completion_handler,
                 )
 
             await self._coordinator.nikobus_command.set_output_state(
@@ -170,15 +172,13 @@ class NikobusAPI:
                     direction,
                 )
                 await self._coordinator.nikobus_command.queue_command(
-                    f"#N{command}\r#E1"
+                    f"#N{command}\r#E1",
+                    completion_handler=completion_handler,
                 )
-                if completion_handler:
-                    await completion_handler()
             else:
                 await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
                 )
-
             self._coordinator.set_bytearray_state(address, channel, 0x00)
         except NikobusError as e:
             _LOGGER.error(
