@@ -77,6 +77,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_module = None
         self.discovery_module_address = None
 
+        self._connected = False
+
     @property
     def discovery_running(self) -> bool:
         return self._discovery_running
@@ -95,6 +97,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def connect(self) -> None:
         """Connect to the Nikobus system."""
+        if self._connected:
+            _LOGGER.debug("Nikobus already connected; restarting connection.")
+
+        await self.stop()
+
         try:
             await self.nikobus_connection.connect()
         except NikobusConnectionError as e:
@@ -102,57 +109,64 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             raise
         else:
             try:
-                # Load JSON configuration for modules, buttons, and scenes
-                self.dict_module_data = await self.nikobus_config.load_json_data(
-                    "nikobus_module_config.json", "module"
-                )
-                self.dict_button_data = await self.nikobus_config.load_json_data(
-                    "nikobus_button_config.json", "button"
-                ) or {"nikobus_button": {}}
-                self.dict_scene_data = await self.nikobus_config.load_json_data(
-                    "nikobus_scene_config.json", "scene"
-                )
-
-                # Initialize module state tracking dynamically based on channels
-                for modules in self.dict_module_data.values():
-                    for address, module_info in modules.items():
-                        channels = module_info.get("channels", [])
-                        self.nikobus_module_states[address] = bytearray(len(channels))
-
-                # Instantiate main Nikobus components
-                self.nikobus_actuator = NikobusActuator(
-                    self.hass, self, self.dict_button_data, self.dict_module_data
-                )
-                self.nikobus_discovery = NikobusDiscovery(self.hass, self)
-                self.nikobus_listener = NikobusEventListener(
-                    self.hass,
-                    self.config_entry,
-                    self,
-                    self.nikobus_actuator,
-                    self.nikobus_connection,
-                    self.nikobus_discovery,
-                    self.process_feedback_data,
-                )
-                self.nikobus_command = NikobusCommandHandler(
-                    self.hass,
-                    self,
-                    self.nikobus_connection,
-                    self.nikobus_listener,
-                    self.nikobus_module_states,
-                )
-
-                # Expose API to Home Assistant
-                self.api = NikobusAPI(self.hass, self)
-
-                # Start event listener and command handler
-                await self.nikobus_command.start()
-                await self.nikobus_listener.start()
-
-                # Perform an initial data refresh
-                await self.async_refresh()
+                await self._initialize_components()
+                self._connected = True
             except HomeAssistantError as e:
                 _LOGGER.error("Failed to initialize Nikobus components: %s", e)
                 raise
+
+    async def _initialize_components(self) -> None:
+        """Load configuration and start Nikobus helper tasks."""
+
+        # Load JSON configuration for modules, buttons, and scenes
+        self.dict_module_data = await self.nikobus_config.load_json_data(
+            "nikobus_module_config.json", "module"
+        )
+        self.dict_button_data = await self.nikobus_config.load_json_data(
+            "nikobus_button_config.json", "button"
+        ) or {"nikobus_button": {}}
+        self.dict_scene_data = await self.nikobus_config.load_json_data(
+            "nikobus_scene_config.json", "scene"
+        )
+
+        # Initialize module state tracking dynamically based on channels
+        self.nikobus_module_states = {}
+        for modules in self.dict_module_data.values():
+            for address, module_info in modules.items():
+                channels = module_info.get("channels", [])
+                self.nikobus_module_states[address] = bytearray(len(channels))
+
+        # Instantiate main Nikobus components
+        self.nikobus_actuator = NikobusActuator(
+            self.hass, self, self.dict_button_data, self.dict_module_data
+        )
+        self.nikobus_discovery = NikobusDiscovery(self.hass, self)
+        self.nikobus_listener = NikobusEventListener(
+            self.hass,
+            self.config_entry,
+            self,
+            self.nikobus_actuator,
+            self.nikobus_connection,
+            self.nikobus_discovery,
+            self.process_feedback_data,
+        )
+        self.nikobus_command = NikobusCommandHandler(
+            self.hass,
+            self,
+            self.nikobus_connection,
+            self.nikobus_listener,
+            self.nikobus_module_states,
+        )
+
+        # Expose API to Home Assistant
+        self.api = NikobusAPI(self.hass, self)
+
+        # Start event listener and command handler
+        await self.nikobus_command.start()
+        await self.nikobus_listener.start()
+
+        # Perform an initial data refresh
+        await self.async_refresh()
 
     async def discover_devices(self, module_address) -> None:
         """Discover available module / button."""
@@ -365,6 +379,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             else timedelta(seconds=self._refresh_interval)
         )
 
+        await self.stop()
+
+        self.nikobus_connection = NikobusConnect(self.connection_string)
+        self.update_interval = self._update_interval
+        self._connected = False
+
         await self.connect()
         await self.async_refresh()
 
@@ -428,6 +448,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Error stopping Nikobus listener: %s", e)
         if self.nikobus_command:
             try:
+                await self.nikobus_command.clear_command_queue()
                 await self.nikobus_command.stop()
                 _LOGGER.debug("Nikobus command handler stopped.")
             except Exception as e:
@@ -438,6 +459,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Nikobus connection disconnected.")
             except Exception as e:
                 _LOGGER.error("Error disconnecting Nikobus connection: %s", e)
+
+        self._connected = False
 
     # DISCOVERY SPECIFICS
 
