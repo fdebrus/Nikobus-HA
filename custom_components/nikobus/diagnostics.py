@@ -35,17 +35,15 @@ async def async_get_config_entry_diagnostics(
         config_entry.entry_id,
     )
 
-    device_registry: DeviceRegistry = async_get_device_registry(hass)
+    device_registry: DeviceRegistry = await async_get_device_registry(hass)
 
     # Gather all Nikobus devices that belong to this config entry
     nikobus_devices: list[DeviceEntry] = [
         device
-        for device in device_registry.devices.values()
-        if config_entry.entry_id in device.config_entries
-        and any(
-            identifier[0] == DOMAIN
-            for identifier in device.identifiers
+        for device in device_registry.async_entries_for_config_entry(
+            config_entry.entry_id
         )
+        if any(identifier[0] == DOMAIN for identifier in device.identifiers)
     ]
 
     _LOGGER.debug(
