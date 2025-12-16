@@ -1,72 +1,120 @@
+"""Scene platform for the Nikobus integration."""
+
 import logging
+from typing import Any, Dict, List, Optional, Union
+
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN, BRAND
+from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
-_LOGGER = logging.getLogger(__name__)  # Initialize logger
+_LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> bool:
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: Any
+) -> None:
+    """Set up Nikobus scenes from a config entry."""
     _LOGGER.debug("Setting up Nikobus scenes.")
 
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+    coordinator: NikobusDataCoordinator = entry.runtime_data
+    entities: List[NikobusSceneEntity] = []
 
-    entities = []
+    scene_data = (
+        coordinator.dict_scene_data.get("scene", [])
+        if coordinator.dict_scene_data
+        else []
+    )
 
-    if dataservice.api.dict_scene_data:
-        for scene in dataservice.api.dict_scene_data.get("scene", []):
-            _LOGGER.debug(
-                f"Processing scene: {scene.get('description')} (ID: {scene.get('id')})"
+    for scene in scene_data:
+        scene_id = scene.get("id")
+        description = scene.get("description", f"Unnamed Scene {scene_id}")
+
+        if not scene_id:
+            _LOGGER.warning("Skipping scene with missing ID: %s", scene)
+            continue
+
+        impacted_modules_info = [
+            {
+                "module_id": channel.get("module_id", "unknown"),
+                "channel": channel.get("channel", -1),
+                "state": channel.get("state", 0),
+            }
+            for channel in scene.get("channels", [])
+        ]
+
+        feedback_led_raw: Optional[Union[str, List[str]]] = scene.get("feedback_led")
+        feedback_leds: List[str] = _normalize_feedback_leds(feedback_led_raw)
+
+        _LOGGER.debug(
+            "Processing scene: %s (ID: %s) | Channels: %s | FeedbackLEDs=%s",
+            description,
+            scene_id,
+            impacted_modules_info,
+            feedback_leds,
+        )
+
+        entities.append(
+            NikobusSceneEntity(
+                hass=hass,
+                coordinator=coordinator,
+                description=description,
+                scene_id=scene_id,
+                impacted_modules_info=impacted_modules_info,
+                feedback_leds=feedback_leds,
             )
-            impacted_modules_info = [
-                {
-                    "module_id": channel.get("module_id"),
-                    "channel": channel.get("channel"),
-                    "state": channel.get("state"),
-                }
-                for channel in scene.get("channels", [])
-            ]
-            _LOGGER.debug(f"Scene channels: {impacted_modules_info}")
+        )
 
-            entity = NikobusSceneEntity(
-                hass,
-                dataservice,
-                scene.get("description"),
-                scene.get("id"),
-                impacted_modules_info,
-            )
-
-            entities.append(entity)
-
-        _LOGGER.debug(f"Adding {len(entities)} Nikobus scene entities.")
-        async_add_entities(entities)
+    _LOGGER.debug("Adding %d Nikobus scene entities.", len(entities))
+    async_add_entities(entities)
 
 
-class NikobusSceneEntity(CoordinatorEntity, Scene):
+def _normalize_feedback_leds(value: Optional[Union[str, List[str]]]) -> List[str]:
+    """Accept a single string or list of strings; keep any non-empty trimmed string."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        v = value.strip()
+        return [v] if v else []
+    return [v.strip() for v in value if isinstance(v, str) and v.strip()]
+
+
+class NikobusSceneEntity(NikobusEntity, Scene):
+    """Represents a Nikobus scene entity within Home Assistant."""
+
     def __init__(
         self,
         hass: HomeAssistant,
-        dataservice,
-        description,
-        scene_id,
-        impacted_modules_info,
+        coordinator: NikobusDataCoordinator,
+        description: str,
+        scene_id: str,
+        impacted_modules_info: List[Dict[str, Any]],
+        feedback_leds: Optional[List[str]] = None,
     ) -> None:
-        super().__init__(dataservice)
+        """Initialize the scene entity with data from the Nikobus system configuration."""
+        super().__init__(
+            coordinator=coordinator,
+            module_address=None,
+            name=description,
+        )
         self._hass = hass
-        self._dataservice = dataservice
         self._description = description
         self._scene_id = scene_id
         self._impacted_modules_info = impacted_modules_info
+        self._feedback_leds: List[str] = feedback_leds or []
+
+        if feedback_leds is None:
+            _LOGGER.debug("Scene %s: no feedback_led defined.", scene_id)
 
     @property
     def unique_id(self) -> str:
-        """Return a unique ID for this scene."""
-        return f"nikobus_scene_{self._scene_id}"
+        return f"{DOMAIN}_scene_{self._scene_id}"
 
     @property
-    def device_info(self):
+    def device_info(self) -> Dict[str, Any]:
         """Return device information to link this scene to the Nikobus integration."""
         return {
             "identifiers": {(DOMAIN, self._scene_id)},
@@ -77,117 +125,197 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
 
     @property
     def name(self) -> str:
-        """Return the name of the scene."""
         return self._description
 
-    async def async_activate(self) -> None:
-        """Activate the scene by updating only the specified channels and keeping other channels unchanged."""
-        _LOGGER.debug(f"Activating scene: {self._description} (ID: {self._scene_id})")
-        module_changes = {}
+    async def _send_feedback_leds_first(self) -> None:
+        if not self._feedback_leds:
+            return
 
-        def get_value(module_type, state):
-            state = state.lower()
+        nikobus_cmd = getattr(self.coordinator, "nikobus_command", None)
+        if nikobus_cmd is None or not hasattr(nikobus_cmd, "queue_command"):
+            _LOGGER.error(
+                "Scene %s: coordinator has no 'nikobus_command.queue_command' to queue LED commands.",
+                self._scene_id,
+            )
+            return
+
+        for addr in self._feedback_leds:
+            cmd = f"#N{addr}\r#E1"
+            try:
+                _LOGGER.debug(
+                    "Scene %s: queuing feedback LED/button address first: %s",
+                    self._scene_id,
+                    cmd,
+                )
+                await nikobus_cmd.queue_command(cmd)
+            except Exception as e:
+                _LOGGER.error(
+                    "Scene %s: failed to send feedback LED %s: %s",
+                    self._scene_id,
+                    addr,
+                    e,
+                    exc_info=True,
+                )
+
+    async def async_activate(self) -> None:
+        _LOGGER.debug(
+            "Activating scene: %s (ID: %s)", self._description, self._scene_id
+        )
+
+        await self._send_feedback_leds_first()
+
+        module_changes: Dict[str, bytearray] = {}
+
+        def get_value(module_type: str, state: Any) -> Optional[int]:
+            if isinstance(state, str):
+                state = state.lower()
+
             module_state_map = {
-                "switch": {"on": 255, "off": 0},
-                "cover": {"open": 1, "close": 2},
+                "switch_module": {"on": 255, "off": 0},
+                "roller_module": {"open": 1, "close": 2},
             }
-            if module_type in module_state_map:
-                if state in module_state_map[module_type]:
-                    return module_state_map[module_type][state]
-                else:
-                    _LOGGER.error(f"Invalid state for {module_type}: {state}")
-                    return None
-            elif module_type == "dimmer":
-                if state.isdigit():
-                    return min(int(state), 255)  # Cap value for dimmers at 255
-                else:
-                    _LOGGER.error(f"Invalid state for dimmer: {state}")
-                    return None
-            else:
-                _LOGGER.error(f"Unknown module type: {module_type}")
+
+            if module_type in module_state_map and isinstance(state, str):
+                mapped = module_state_map[module_type].get(state)
+                if mapped is not None:
+                    return mapped
+                _LOGGER.error("Invalid state for %s: %s", module_type, state)
                 return None
 
-        # Simplified completion handler
-        async def completion_handler(module_id, group):
-            hex_value = module_changes[module_id][(group - 1) * 6 : group * 6].hex()
-            self._dataservice.api.set_bytearray_group_state(
-                module_id, group=group, value=hex_value
-            )
-            _LOGGER.debug(f"Group {group} update successful for module {module_id}.")
+            if module_type == "dimmer_module":
+                try:
+                    return max(0, min(int(state), 255))
+                except (ValueError, TypeError):
+                    _LOGGER.error("Invalid state for dimmer: %s", state)
+                    return None
 
-        # Group changes by module
+            _LOGGER.error("Unknown module type: %s", module_type)
+            return None
+
         for module in self._impacted_modules_info:
             module_id = module.get("module_id")
-            channel = int(module.get("channel"))
+            channel = module.get("channel")
             state = module.get("state")
 
-            _LOGGER.debug(
-                f"Processing module: {module_id}, channel: {channel}, state: {state}"
-            )
+            if not module_id or channel is None:
+                _LOGGER.warning(
+                    "Skipping module with missing ID or channel: %s", module
+                )
+                continue
 
-            # Get the module type and determine the value
-            module_type = self._dataservice.api.get_module_type(module_id)
-            _LOGGER.debug(f"Detected module type for module {module_id}: {module_type}")
+            try:
+                channel = int(channel)
+            except (ValueError, TypeError):
+                _LOGGER.error(
+                    "Invalid channel number for module %s: %s", module_id, channel
+                )
+                continue
+
+            _LOGGER.debug(
+                "Processing module: %s, channel: %s, state: %s",
+                module_id,
+                channel,
+                state,
+            )
+            module_type = self.coordinator.get_module_type(module_id) or "unknown"
+            _LOGGER.debug(
+                "Detected module type for module %s: %s", module_id, module_type
+            )
 
             value = get_value(module_type, state)
             if value is None:
                 continue
 
-            # Initialize module changes if not yet fetched
             if module_id not in module_changes:
-                module_changes[module_id] = bytearray(
-                    self._dataservice.api._nikobus_module_states.get(
-                        module_id, bytearray(12)
-                    )
+                current_state = self.coordinator.nikobus_module_states.get(
+                    module_id, bytearray(12)
                 )
+                module_changes[module_id] = bytearray(current_state)
                 _LOGGER.debug(
-                    f"Fetched current state for module {module_id}: {module_changes[module_id].hex()}"
-                )
-
-            # Update the specific channel with the new value
-            module_changes[module_id][channel - 1] = int(value)
-
-        # Send the combined command for each module after updating only the specified channels
-        for module_id, channel_states in module_changes.items():
-            current_state = self._dataservice.api._nikobus_module_states.get(
-                module_id, bytearray(12)
-            )
-
-            # Check if any channel in group 1 (channels 1-6) was updated
-            group1_updated = any(
-                module_changes[module_id][i] != current_state[i] for i in range(6)
-            )
-            if group1_updated:
-                hex_value = module_changes[module_id][:6].hex()
-                _LOGGER.debug(
-                    f"Updating group 1 for module {module_id} with values: {hex_value}"
-                )
-                await self._dataservice.api.set_output_states_for_module(
+                    "Fetched current state for module %s: %s",
                     module_id,
-                    group=1,
-                    channel_states=module_changes[module_id],
-                    completion_handler=lambda: completion_handler(module_id, 1),
+                    module_changes[module_id].hex(),
                 )
 
-            if module_type != "cover":
-                # Check if any channel in group 2 (channels 7-12) was updated
-                group2_updated = any(
-                    module_changes[module_id][i] != current_state[i]
-                    for i in range(6, 12)
+            idx = channel - 1
+            if idx < 0:
+                _LOGGER.error(
+                    "Invalid channel index for module %s: %s", module_id, channel
                 )
-                if group2_updated:
-                    hex_value = module_changes[module_id][6:12].hex()
+                continue
+            try:
+                module_changes[module_id][idx] = value
+            except IndexError:
+                _LOGGER.error(
+                    "Channel %s out of range for module %s", channel, module_id
+                )
+                continue
+
+        for module_id, channel_states in module_changes.items():
+            try:
+                num_channels = self.coordinator.get_module_channel_count(module_id)
+                current_state = self.coordinator.nikobus_module_states.get(
+                    module_id, bytearray(12)
+                )
+
+                group1_channels = min(6, num_channels)
+                if any(
+                    channel_states[i] != current_state[i] for i in range(group1_channels)
+                ):
+                    hex_value = channel_states[:group1_channels].hex()
                     _LOGGER.debug(
-                        f"Updating group 2 for module {module_id} with values: {hex_value}"
-                    )
-                    await self._dataservice.api.set_output_states_for_module(
+                        "Updating group 1 for module %s with values: %s",
                         module_id,
-                        group=2,
-                        channel_states=module_changes[module_id],
-                        completion_handler=lambda: completion_handler(module_id, 2),
+                        hex_value,
+                    )
+                    self.coordinator.set_bytearray_group_state(
+                        module_id, group=1, value=hex_value
                     )
 
-            # Trigger the refresh event for the impacted module
-            await self._dataservice.api._async_event_handler(
-                "nikobus_refreshed", {"impacted_module_address": module_id}
-            )
+                if num_channels > 6 and any(
+                    channel_states[i] != current_state[i] for i in range(6, num_channels)
+                ):
+                    hex_value = channel_states[6:num_channels].hex()
+                    _LOGGER.debug(
+                        "Updating group 2 for module %s with values: %s",
+                        module_id,
+                        hex_value,
+                    )
+                    self.coordinator.set_bytearray_group_state(
+                        module_id, group=2, value=hex_value
+                    )
+
+                _LOGGER.debug(
+                    "Sending updated state to module %s: %s", module_id, channel_states
+                )
+                try:
+                    await self.coordinator.api.set_output_states_for_module(
+                        address=module_id
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        "Failed to set output state for module %s: %s",
+                        module_id,
+                        e,
+                        exc_info=True,
+                    )
+
+                try:
+                    await self.coordinator.async_event_handler(
+                        "nikobus_refreshed", {"impacted_module_address": module_id}
+                    )
+                except Exception as e:
+                    _LOGGER.error(
+                        "Failed to handle event for module %s: %s",
+                        module_id,
+                        e,
+                        exc_info=True,
+                    )
+            except Exception as e:
+                _LOGGER.error(
+                    "Scene %s: fatal error while applying module %s: %s",
+                    self._scene_id,
+                    module_id,
+                    e,
+                    exc_info=True,
+                )

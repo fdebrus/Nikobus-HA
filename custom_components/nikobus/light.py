@@ -1,165 +1,202 @@
+"""Light platform for the Nikobus integration."""
+
+from __future__ import annotations
+
 import logging
-from homeassistant.components.light import LightEntity
+from typing import Any
+
+from homeassistant.components.light import (
+    LightEntity,
+    ATTR_BRIGHTNESS,
+    ColorMode,
+)
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers import device_registry as dr
+
 from .const import DOMAIN, BRAND
+from .coordinator import NikobusDataCoordinator
+from .exceptions import NikobusError
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_BRIGHTNESS = 255
+HUB_IDENTIFIER = "nikobus_hub"
 
 
-async def async_setup_entry(hass, entry, async_add_entities) -> bool:
-    dataservice = hass.data[DOMAIN].get(entry.entry_id)
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+) -> None:
+    """Set up Nikobus light entities (modules)."""
+    _LOGGER.debug("Setting up Nikobus light entities (modules).")
 
-    dimmer_modules = dataservice.api.dict_module_data.get("dimmer_module", {})
+    coordinator: NikobusDataCoordinator = entry.runtime_data
+    dimmer_modules: dict[str, Any] = coordinator.dict_module_data.get(
+        "dimmer_module", {}
+    )
 
-    entities = [
-        NikobusLightEntity(
-            hass,
-            dataservice,
-            dimmer_module_data.get("description"),
-            dimmer_module_data.get("model"),
-            address,
-            i,
-            channel["description"],
+    device_registry = dr.async_get(hass)
+    entities: list[NikobusLightEntity] = []
+
+    for address, dimmer_module_data in dimmer_modules.items():
+        module_desc = dimmer_module_data.get("description", f"Dimmer Module {address}")
+        module_model = dimmer_module_data.get("model", "Unknown Dimmer Model")
+
+        _register_nikobus_dimmer_device(
+            device_registry=device_registry,
+            entry=entry,
+            module_address=address,
+            module_name=module_desc,
+            module_model=module_model,
         )
-        for address, dimmer_module_data in dimmer_modules.items()
-        for i, channel in enumerate(dimmer_module_data.get("channels", []), start=1)
-        if not channel["description"].startswith("not_in_use")
-    ]
+
+        for channel_index, channel_info in enumerate(
+            dimmer_module_data.get("channels", []), start=1
+        ):
+            if channel_info["description"].startswith("not_in_use"):
+                continue
+
+            entities.append(
+                NikobusLightEntity(
+                    coordinator=coordinator,
+                    address=address,
+                    channel=channel_index,
+                    channel_description=channel_info["description"],
+                    module_name=module_desc,
+                    module_model=module_model,
+                )
+            )
 
     async_add_entities(entities)
+    _LOGGER.debug("Added %d Nikobus light (dimmer) entities.", len(entities))
 
 
-class NikobusLightEntity(CoordinatorEntity, LightEntity):
-    """Represents a Nikobus light entity within Home Assistant."""
+def _register_nikobus_dimmer_device(
+    device_registry: dr.DeviceRegistry,
+    entry: ConfigEntry,
+    module_address: str,
+    module_name: str,
+    module_model: str,
+) -> None:
+    """Register a Nikobus dimmer module in the device registry."""
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, module_address)},
+        manufacturer=BRAND,
+        name=module_name,
+        model=module_model,
+        via_device=(DOMAIN, HUB_IDENTIFIER),
+    )
+
+
+class NikobusLightEntity(NikobusEntity, LightEntity):
+    """Represents a Nikobus dimmer light entity within Home Assistant."""
 
     def __init__(
         self,
-        hass: HomeAssistant,
-        dataservice,
-        description,
-        model,
-        address,
-        channel,
-        channel_description,
+        coordinator: NikobusDataCoordinator,
+        address: str,
+        channel: int,
+        channel_description: str,
+        module_name: str,
+        module_model: str,
     ) -> None:
-        """Initialize the light entity with data from the Nikobus system configuration."""
-        super().__init__(dataservice)
-        self._dataservice = dataservice
-        self._state = None
-        self._brightness = None
-        self._description = description
-        self._model = model
+        """Initialize the light entity from the Nikobus system configuration."""
+        super().__init__(
+            coordinator=coordinator,
+            module_address=address,
+            channel=channel,
+            name=channel_description,
+        )
         self._address = address
         self._channel = channel
+        self._channel_description = channel_description
+        self._module_name = module_name
+        self._module_model = module_model
 
-        self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
+        self._attr_name = channel_description
+
+        self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+        self._attr_color_mode = ColorMode.BRIGHTNESS
+
+        self._is_on: bool | None = None
+        self._brightness: int | None = None
 
     @property
-    def device_info(self):
+    def device_info(self) -> dict[str, Any]:
         """Return device information about this light."""
         return {
             "identifiers": {(DOMAIN, self._address)},
-            "name": self._description,
             "manufacturer": BRAND,
-            "model": self._model,
+            "name": self._module_name,
+            "model": self._module_model,
         }
 
     @property
-    def brightness(self):
-        """Return the brightness of the light."""
-        return self._brightness
+    def is_on(self) -> bool:
+        """Return True if the light is on (non-zero brightness)."""
+        return self._is_on if self._is_on is not None else self.brightness > 0
 
     @property
-    def color_mode(self):
-        """Return the color mode of the light."""
-        return "brightness"
-
-    @property
-    def supported_color_modes(self):
-        """Return the supported color modes."""
-        return {"brightness"}
-
-    @property
-    def is_on(self):
-        """Return True if the light is on."""
-        return self._state is True
+    def brightness(self) -> int:
+        """Return the brightness of the light (0..255)."""
+        if self._brightness is not None:
+            return self._brightness
+        try:
+            return self.coordinator.get_light_brightness(self._address, self._channel)
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
+            return 0
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        self._state = bool(
-            self._dataservice.api.get_light_state(self._address, self._channel)
-        )
-        self._brightness = self._dataservice.api.get_light_brightness(
-            self._address, self._channel
-        )
+        self._is_on = None
+        self._brightness = None
         self.async_write_ha_state()
 
-    async def async_turn_on(self, **kwargs):
-        """Turn on the light."""
-        # Get the desired brightness
-        self._brightness = kwargs.get("brightness", DEFAULT_BRIGHTNESS)
-
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the light on, optionally with a specified brightness."""
+        brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
+        self._is_on = True
+        self._brightness = brightness
+        self.async_write_ha_state()
         try:
-            # Send the turn on command without updating the state optimistically
-            await self._dataservice.api.turn_on_light(
+            await self.coordinator.api.turn_on_light(
+                self._address, self._channel, brightness
+            )
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to turn on Nikobus light (addr=%s, channel=%d): %s",
                 self._address,
                 self._channel,
-                self._brightness,
-                completion_handler=self._on_light_turned_on,
+                err,
             )
-        except Exception as e:
-            _LOGGER.error(
-                f"Failed to send turn on command for light at address {self._address}, channel {self._channel}: {e}"
-            )
+            self._is_on = None
+            self._brightness = None
+            self.async_write_ha_state()
 
-    async def async_turn_off(self, **kwargs):
-        """Turn off the light."""
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the light off (brightness=0)."""
+        self._is_on = False
+        self._brightness = 0
+        self.async_write_ha_state()
         try:
-            # Send the turn off command without updating the state optimistically
-            await self._dataservice.api.turn_off_light(
+            await self.coordinator.api.turn_off_light(self._address, self._channel)
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to turn off Nikobus light (addr=%s, channel=%d): %s",
                 self._address,
                 self._channel,
-                completion_handler=self._on_light_turned_off,
+                err,
             )
-        except Exception as e:
-            _LOGGER.error(
-                f"Failed to send turn off command for light at address {self._address}, channel {self._channel}: {e}"
-            )
-
-    async def _on_light_turned_on(self, success):
-        """Handler called when the light has been processed."""
-        if success:
-            # Update the state and brightness
-            await self._dataservice.api.set_bytearray_state(self._address, self._channel, self._brightness)
-            self._state = True
-            _LOGGER.debug(
-                f"Successfully turned on light at {self._address}, channel {self._channel}, brightness {self._brightness}"
-            )
-            # Update the UI
+            self._is_on = None
+            self._brightness = None
             self.async_write_ha_state()
-        else:
-            _LOGGER.error(
-                f"Turn on command failed for light at {self._address}, channel {self._channel}, brightness {self._brightness}"
-            )
-
-    async def _on_light_turned_off(self, success):
-        """Handler called when the light has been processed."""
-        if success:
-            # Update the state and brightness
-            await self._dataservice.api.set_bytearray_state(self._address, self._channel, 0x00)
-            self._state = False
-            self._brightness = 0
-            _LOGGER.debug(
-                f"Successfully turned off light at {self._address}, channel {self._channel}, brightness {self._brightness}"
-            )
-            # Update the UI
-            self.async_write_ha_state()
-        else:
-            _LOGGER.error(
-                f"Turn off command failed for light at {self._address}, channel {self._channel}, brightness {self._brightness}"
-            )

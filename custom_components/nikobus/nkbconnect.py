@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
-import random
-import re
 import socket
 from typing import Literal, Optional
 
@@ -21,41 +19,6 @@ from .exceptions import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Re-use one of your harmless handshake commands if you later enable app heartbeats.
-_COMMAND_WITH_ACK = COMMANDS_HANDSHAKE[3]
-
-
-def _configure_tcp_socket(sock: socket.socket) -> None:
-    """Harden a TCP socket for long-lived links to HF2211/USR gateways."""
-    # Flush small Nikobus telegrams immediately
-    try:
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    except OSError:
-        pass
-
-    # OS-level keepalives to detect half-open sessions (e.g., idle NATs / HF2211 drops)
-    try:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    except OSError:
-        pass
-
-    # Platform-specific tunables (best-effort; silently ignore if not supported)
-    # Linux constants: TCP_KEEPIDLE=4, TCP_KEEPINTVL=5, TCP_KEEPCNT=6
-    # macOS/BSD use different names; on some platforms these are unsupported.
-    for (level, optname, value) in (
-        (socket.IPPROTO_TCP, getattr(socket, "TCP_KEEPIDLE", 4), 30),  # seconds idle
-        (socket.IPPROTO_TCP, getattr(socket, "TCP_KEEPINTVL", 5), 10),  # probe interval
-        (socket.IPPROTO_TCP, getattr(socket, "TCP_KEEPCNT", 6), 3),  # probe count
-    ):
-        try:
-            sock.setsockopt(level, optname, value)
-        except OSError:
-            # Not supported on this OS; that's fine—baseline SO_KEEPALIVE still helps.
-            pass
-
-    # Non-blocking; asyncio will attach transports/streams
-    sock.setblocking(False)
-
 
 class NikobusConnect:
     """Manages connection to a Nikobus system via IP or Serial."""
@@ -66,57 +29,33 @@ class NikobusConnect:
         self._connection_type: Literal["IP", "Serial", "Unknown"] = (
             self._validate_connection_string()
         )
-        self._nikobus_reader: asyncio.StreamReader | None = None
-        self._nikobus_writer: asyncio.StreamWriter | None = None
-
-        # Reconnect/backoff control
-        self._connect_lock = asyncio.Lock()
-        self._is_connecting = False
+        self._nikobus_reader: Optional[asyncio.StreamReader] = None
+        self._nikobus_writer: Optional[asyncio.StreamWriter] = None
 
     # -------------------------
     # Public API
     # -------------------------
     async def connect(self) -> None:
-        """Connect and perform handshake (idempotent)."""
-        async with self._connect_lock:
-            if self._nikobus_writer is not None and not self._nikobus_writer.is_closing():
-                return  # already connected
+        """Connect to the Nikobus system using the connection string and perform handshake."""
+        if self._connection_type == "IP":
+            await self._connect_ip()
+        elif self._connection_type == "Serial":
+            await self._connect_serial()
+        else:
+            msg = f"Invalid connection string: {self._connection_string}"
+            _LOGGER.error(msg)
+            raise NikobusConnectionError(msg)
 
-            self._is_connecting = True
-            try:
-                if self._connection_type == "IP":
-                    await self._connect_ip()
-                elif self._connection_type == "Serial":
-                    await self._connect_serial()
-                else:
-                    msg = f"Invalid connection string: {self._connection_string}"
-                    _LOGGER.error(msg)
-                    raise NikobusConnectionError(msg)
+        # Small settle right after transport is up
+        await asyncio.sleep(0.10)
 
-                if not await self._perform_handshake():
-                    msg = "Handshake failed"
-                    _LOGGER.error(msg)
-                    # Force close before raising, so next attempt starts clean
-                    await self._safe_close()
-                    raise NikobusConnectionError(msg)
+        if not await self._perform_handshake():
+            msg = "Handshake failed"
+            _LOGGER.error(msg)
+            await self.disconnect()
+            raise NikobusConnectionError(msg)
 
-                _LOGGER.info("Nikobus handshake successful.")
-            finally:
-                self._is_connecting = False
-
-    async def ensure_connected(self) -> None:
-        """Ensure the link is up; try to reconnect with jittered backoff if needed."""
-        backoff = 1.0
-        while True:
-            try:
-                await self.connect()
-                return
-            except NikobusConnectionError as err:
-                _LOGGER.warning("Nikobus reconnect failed: %s", err)
-                # Jitter avoids stampedes if multiple tasks trigger reconnect
-                sleep_for = backoff + random.uniform(0, 0.5)
-                await asyncio.sleep(sleep_for)
-                backoff = min(backoff * 2, 30.0)
+        _LOGGER.info("Nikobus handshake successful.")
 
     async def ping(self) -> None:
         """Open the port briefly and close it again – used to ‘wake’ the PC-Link."""
@@ -124,10 +63,7 @@ class NikobusConnect:
         await self.disconnect()
 
     async def read(self, timeout: Optional[float] = 35.0) -> bytes:
-        """Read one CR-terminated frame from the Nikobus system.
-
-        A timeout guards against half-open sockets that never deliver EOF.
-        """
+        """Read one CR-terminated frame from the Nikobus system."""
         if not self._nikobus_reader:
             msg = "Reader is not available for reading data."
             _LOGGER.error(msg)
@@ -141,16 +77,15 @@ class NikobusConnect:
                     self._nikobus_reader.readuntil(b"\r"), timeout=timeout
                 )
             return data
-        except (asyncio.TimeoutError,) as err:
-            # Treat as dead session -> drop and let caller trigger reconnect.
-            await self._mark_broken("read timeout")
+        except asyncio.TimeoutError as err:
+            await self._safe_close()
             raise NikobusReadError(f"Read timeout after {timeout}s") from err
         except Exception as err:
-            await self._mark_broken(f"read error: {err}")
+            await self._safe_close()
             raise NikobusReadError(f"Failed to read data: {err}") from err
 
     async def send(self, command: str, timeout: Optional[float] = 3.0) -> None:
-        """Send a command to the Nikobus system with an optional drain timeout."""
+        """Send a CR-terminated command to the Nikobus system."""
         if not self._nikobus_writer:
             msg = "Writer is not available for sending commands."
             _LOGGER.error(msg)
@@ -162,13 +97,13 @@ class NikobusConnect:
                 await self._nikobus_writer.drain()
             else:
                 await asyncio.wait_for(self._nikobus_writer.drain(), timeout=timeout)
-        except (asyncio.TimeoutError,) as err:
-            await self._mark_broken("send drain timeout")
+        except asyncio.TimeoutError as err:
+            await self._safe_close()
             raise NikobusSendError(
                 f"Timeout while sending command '{command}'"
             ) from err
         except Exception as err:
-            await self._mark_broken(f"send error: {err}")
+            await self._safe_close()
             raise NikobusSendError(
                 f"Failed to send command '{command}': {err}"
             ) from err
@@ -182,16 +117,28 @@ class NikobusConnect:
     # Internals
     # -------------------------
     async def _connect_ip(self) -> None:
-        """Establish an IP connection to the Nikobus system with socket hardening."""
+        """Establish an IP connection (precreate + connect the socket correctly)."""
         try:
             host, port_str = self._connection_string.split(":", 1)
             port = int(port_str)
 
-            # Build a pre-configured socket so we can set keepalives/TCP_NODELAY
+            # Precreate socket to apply options, then explicitly connect it
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            _configure_tcp_socket(sock)
+            sock.setblocking(False)
+            try:
+                # Flush small telegrams immediately
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError:
+                pass
+            try:
+                # Keepalives to detect half-open sessions
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            except OSError:
+                pass
 
-            # Use asyncio streams over our prepared socket
+            loop = asyncio.get_running_loop()
+            await loop.sock_connect(sock, (host, port))  # <-- crucial: actually connect
+
             reader, writer = await asyncio.open_connection(sock=sock)
             self._nikobus_reader = reader
             self._nikobus_writer = writer
@@ -226,7 +173,9 @@ class NikobusConnect:
             ipaddress.ip_address(ip_candidate)
             return "IP"
         except ValueError:
-            # Check for common serial port patterns.
+            # Common serial device patterns
+            import re
+
             if re.match(
                 r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string
             ):
@@ -234,15 +183,20 @@ class NikobusConnect:
         return "Unknown"
 
     async def _perform_handshake(self) -> bool:
-        """Perform a handshake with the Nikobus system to verify the connection."""
+        """Perform a handshake with the Nikobus system to verify the connection.
+
+        Uses COMMANDS_HANDSHAKE exactly as provided by your integration.
+        """
         for command in COMMANDS_HANDSHAKE:
             _LOGGER.debug("Handshake: %s", command)
             if not await self._send_with_retry(command):
                 return False
+            # tiny pacing avoids packet coalescing quirks
+            await asyncio.sleep(0.05)
         return True
 
     async def _send_with_retry(self, command: str) -> bool:
-        """Send a command and handle potential errors with retries."""
+        """Send a command once; return True on success, False on failure."""
         try:
             await self.send(command)
             return True
@@ -256,11 +210,6 @@ class NikobusConnect:
             _LOGGER.exception("Unhandled exception during send command: %s", err)
             return False
 
-    async def _mark_broken(self, reason: str) -> None:
-        """Mark the current streams as broken so the caller can reconnect quickly."""
-        _LOGGER.warning("Nikobus link marked broken: %s", reason)
-        await self._safe_close()
-
     async def _safe_close(self) -> None:
         """Close streams safely (idempotent)."""
         writer = self._nikobus_writer
@@ -269,10 +218,11 @@ class NikobusConnect:
 
         if writer is None:
             return
+
         try:
             writer.close()
             try:
-                await asyncio.wait_for(writer.wait_closed(), timeout=1.5)
+                await writer.wait_closed()
             except Exception:
                 pass
         except Exception:
