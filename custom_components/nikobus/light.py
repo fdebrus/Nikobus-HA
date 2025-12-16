@@ -124,6 +124,8 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
         self._is_on: bool | None = None
         self._brightness: int | None = None
 
+        self._refresh_cached_state()
+
     @property
     def device_info(self) -> dict[str, Any]:
         """Return device information about this light."""
@@ -137,15 +139,27 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
     @property
     def is_on(self) -> bool:
         """Return True if the light is on (non-zero brightness)."""
-        return self._is_on if self._is_on is not None else self.brightness > 0
+        self._ensure_cached_state()
+        return bool(self._is_on)
 
     @property
     def brightness(self) -> int:
         """Return the brightness of the light (0..255)."""
-        if self._brightness is not None:
-            return self._brightness
+        self._ensure_cached_state()
+        return self._brightness or 0
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._refresh_cached_state()
+        self.async_write_ha_state()
+
+    def _refresh_cached_state(self) -> None:
+        """Refresh cached brightness/state from the coordinator."""
         try:
-            return self.coordinator.get_light_brightness(self._address, self._channel)
+            brightness = self.coordinator.get_light_brightness(
+                self._address, self._channel
+            )
         except NikobusError as err:
             _LOGGER.error(
                 "Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s",
@@ -153,14 +167,17 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
                 self._channel,
                 err,
             )
-            return 0
+            self._is_on = False
+            self._brightness = 0
+            return
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self._is_on = None
-        self._brightness = None
-        self.async_write_ha_state()
+        self._brightness = brightness
+        self._is_on = brightness > 0
+
+    def _ensure_cached_state(self) -> None:
+        """Ensure cached state is populated before returning values."""
+        if self._brightness is None or self._is_on is None:
+            self._refresh_cached_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on, optionally with a specified brightness."""
