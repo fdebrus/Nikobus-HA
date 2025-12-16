@@ -342,7 +342,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         return changed
 
-    def _publish_state_if_needed(self, force: bool = False) -> None:
+    def _publish_state_if_needed(
+        self, *, force: bool = False, position_changed: bool = False
+    ) -> None:
         now = time.monotonic()
         if force:
             self._last_state_report = now
@@ -356,7 +358,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         position_changed = (
             self._last_reported_position is None
             or abs(self._position - self._last_reported_position) >= 1
-        )
+        ) or position_changed
         time_elapsed = now - self._last_state_report >= 5
 
         if position_changed or time_elapsed:
@@ -618,8 +620,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     return
 
                 estimated_position = self._position_estimator.get_position()
+                position_changed = False
                 if estimated_position is not None:
-                    self._set_position(estimated_position)
+                    position_changed = self._set_position(estimated_position)
                 else:
                     _LOGGER.warning(
                         "Position estimator returned None in _update_position for %s",
@@ -675,7 +678,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                         await self._finalize_movement()
                     return
 
-                self._publish_state_if_needed()
+                self._publish_state_if_needed(position_changed=position_changed)
                 await asyncio.sleep(0.5)
 
         except asyncio.CancelledError:
