@@ -512,6 +512,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._state = new_state
             self._position_estimator.start(self._direction, self._position)
             self._movement_task = self.hass.async_create_task(self._update_position())
+            self.async_write_ha_state()
         elif new_state == STATE_STOPPED:
             if self._in_motion:
                 await self._finalize_movement()
@@ -533,6 +534,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._direction = direction
         self._in_motion = True
         self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
+        self._previous_state = self._state
         self._position_estimator.start(self._direction, self._position)
         await self._start_position_estimation(target_position=target_position)
         self.async_write_ha_state()
