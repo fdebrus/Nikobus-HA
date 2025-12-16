@@ -569,14 +569,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def _start_position_estimation(
         self, target_position: Optional[int] = None
     ) -> None:
-        if self._movement_task and not self._movement_task.done():
-            self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug(
-                    "Cancelled existing movement task for %s", self._attr_name
-                )
+        await self._cancel_movement_task()
         self._movement_task = self.hass.async_create_task(
             self._update_position(target_position)
         )
@@ -670,6 +663,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def _finalize_movement(self) -> None:
         _LOGGER.debug("Finalizing movement for %s", self._attr_name)
 
+        await self._cancel_movement_task()
+
         final_pos = self._position_estimator.current_position
         if final_pos is not None:
             self._set_position(final_pos)
@@ -686,6 +681,17 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._channel,
             STATE_STOPPED,
         )
+
+    async def _cancel_movement_task(self) -> None:
+        if self._movement_task and not self._movement_task.done():
+            self._movement_task.cancel()
+            try:
+                await self._movement_task
+            except asyncio.CancelledError:
+                _LOGGER.debug(
+                    "Cancelled existing movement task for %s", self._attr_name
+                )
+        self._movement_task = None
 
     async def _handle_nikobus_button_event(self, event: Any) -> None:
         if event.data.get("impacted_module_address") != self._address:
