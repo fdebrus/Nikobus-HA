@@ -113,7 +113,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
-        attributes = {
+        attributes: dict[str, Any] = {
             "type": self.discovery_type,
             "model": self.discovery_model,
             "address": self.discovery_address,
@@ -123,8 +123,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
 
         if self.impacted_modules_info:
             attributes["user_impacted_modules"] = ", ".join(
-                f"{module['address']}_{module['group']}"
-                for module in self.impacted_modules_info
+                f"{module['address']}_{module['group']}" for module in self.impacted_modules_info
             )
 
         return attributes
@@ -139,42 +138,8 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             _LOGGER.info("Processing HA button press: %s", self._address)
             await self.coordinator.async_event_handler("ha_button_pressed", event_data)
 
-            # Skip the refresh for Gen3 installations if requested
             if not self._prior_gen3:
-                for module in self.impacted_modules_info:
-                    module_address, module_group = module["address"], module["group"]
-                    try:
-                        _LOGGER.debug(
-                            "Refreshing module %s, group %s",
-                            module_address,
-                            module_group,
-                        )
-                        value = await self.coordinator.nikobus_command.get_output_state(
-                            module_address, module_group
-                        )
-                        if value is not None:
-                            self.coordinator.set_bytearray_group_state(
-                                module_address, module_group, value
-                            )
-                            _LOGGER.debug(
-                                "Updated state for module %s, group %s",
-                                module_address,
-                                module_group,
-                            )
-                        else:
-                            _LOGGER.warning(
-                                "No output state returned for module %s, group %s",
-                                module_address,
-                                module_group,
-                            )
-                    except Exception as inner_err:
-                        _LOGGER.error(
-                            "Failed to refresh module %s, group %s: %s",
-                            module_address,
-                            module_group,
-                            inner_err,
-                            exc_info=True,
-                        )
+                await self._refresh_impacted_modules()
         except Exception as err:
             _LOGGER.error(
                 "Failed to handle button press for %s: %s",
@@ -182,3 +147,42 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
                 err,
                 exc_info=True,
             )
+
+    async def _refresh_impacted_modules(self) -> None:
+        """Refresh states for modules affected by the button press."""
+        if not self.impacted_modules_info:
+            return
+
+        for module in self.impacted_modules_info:
+            module_address, module_group = module["address"], module["group"]
+            try:
+                _LOGGER.debug(
+                    "Refreshing module %s, group %s", module_address, module_group
+                )
+                value = await self.coordinator.nikobus_command.get_output_state(
+                    module_address, module_group
+                )
+                if value is None:
+                    _LOGGER.warning(
+                        "No output state returned for module %s, group %s",
+                        module_address,
+                        module_group,
+                    )
+                    continue
+
+                self.coordinator.set_bytearray_group_state(
+                    module_address, module_group, value
+                )
+                _LOGGER.debug(
+                    "Updated state for module %s, group %s",
+                    module_address,
+                    module_group,
+                )
+            except Exception as inner_err:
+                _LOGGER.error(
+                    "Failed to refresh module %s, group %s: %s",
+                    module_address,
+                    module_group,
+                    inner_err,
+                    exc_info=True,
+                )
