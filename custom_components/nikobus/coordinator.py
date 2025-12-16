@@ -76,6 +76,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = False
         self._discovery_module = None
         self.discovery_module_address = None
+        self._module_lookup: dict[str, tuple[str, dict]] = {}
 
     @property
     def discovery_running(self) -> bool:
@@ -119,6 +120,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     "nikobus_scene_config.json", "scene"
                 )
 
+                self._build_module_lookup()
+
                 # Initialize module state tracking dynamically based on channels
                 for modules in self.dict_module_data.values():
                     for address, module_info in modules.items():
@@ -159,6 +162,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             except HomeAssistantError as e:
                 _LOGGER.error("Failed to initialize Nikobus components: %s", e)
                 raise
+
+    def _build_module_lookup(self) -> None:
+        """Create a fast lookup table for module metadata."""
+        self._module_lookup = {}
+        for module_type, modules in self.dict_module_data.items():
+            for module_id, module_data in modules.items():
+                self._module_lookup[module_id] = (module_type, module_data)
 
     async def discover_devices(self, module_address) -> None:
         """Discover available module / button."""
@@ -401,17 +411,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     def get_module_type(self, module_id: str) -> str:
         """Determine the module type based on the module ID."""
-        for module_type, modules in self.dict_module_data.items():
-            if module_id in modules:
-                return module_type
+        if module_id in self._module_lookup:
+            return self._module_lookup[module_id][0]
         _LOGGER.error(f"Module ID {module_id} not found in known module types")
         return "unknown"
 
     def get_module_channel_count(self, module_id: str) -> int:
-        for modules in self.dict_module_data.values():
-            if module_id in modules:
-                module_data = modules[module_id]
-                return len(module_data.get("channels", []))
+        if module_id in self._module_lookup:
+            module_data = self._module_lookup[module_id][1]
+            return len(module_data.get("channels", []))
         _LOGGER.error(f"Module ID {module_id} not found in module configuration")
         return 0
 
