@@ -1,5 +1,11 @@
 query_module_inventory:
-  description: "Trigger a Nikobus module inventory."
+  name: Query module inventory
+  description: Trigger a Nikobus module inventory.
   fields:
     module_address:
-      description: "Module address"
+      name: Module address
+      description: "Module address to query. Leave empty to scan all modules."
+      example: "05FA"
+      required: false
+      selector:
+        text:
