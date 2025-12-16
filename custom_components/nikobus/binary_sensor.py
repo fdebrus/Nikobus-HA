@@ -50,21 +50,22 @@ def register_global_listener(
 ) -> None:
     """Register a single global event listener for all Nikobus sensors."""
 
+    if not sensors:
+        return
+
+    address_map = {sensor._address: sensor for sensor in sensors}
+
     @callback
     async def handle_event(event: Any) -> None:
         """Process button press events for registered sensors."""
-        try:
-            address = event.data.get("address")
-            if not address:
-                _LOGGER.warning("Received event without address: %s", event.data)
-                return
-            for sensor in sensors:
-                if sensor._address == address:
-                    await sensor._handle_button_event(event)
-        except Exception as e:
-            _LOGGER.error(
-                "Error handling nikobus_button_pressed event: %s", e, exc_info=True
-            )
+
+        address = event.data.get("address")
+        if not address:
+            _LOGGER.warning("Received event without address: %s", event.data)
+            return
+
+        if sensor := address_map.get(address):
+            await sensor._handle_button_event(event)
 
     remove = hass.bus.async_listen("nikobus_button_pressed", handle_event)
     domain_data = hass.data.setdefault(DOMAIN, {})
