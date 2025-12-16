@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import socket
-from typing import Any
+from typing import Any, Mapping
 
 import voluptuous as vol
 from homeassistant import config_entries, core
@@ -21,7 +21,12 @@ from .const import (
     CONF_PRIOR_GEN3,
 )
 
+
+class ConnectionUnreachableError(Exception):
+    """Raised when a TCP connection cannot be established."""
+
 _LOGGER = logging.getLogger(__name__)
+_SERIAL_REGEX = re.compile(r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$")
 
 
 async def async_validate_input(
@@ -47,20 +52,19 @@ async def async_validate_input(
                         pass
                 except (socket.timeout, ConnectionRefusedError) as exc:
                     _LOGGER.debug("Connection test failed: %s", exc)
-                    raise ValueError("connection_unreachable")
+                    raise ConnectionUnreachableError from exc
 
             await hass.async_add_executor_job(test_connection)
             return {"title": f"Nikobus ({connection_string})"}
 
+        except ConnectionUnreachableError:
+            return {"error": "connection_unreachable"}
         except ValueError as exc:
             _LOGGER.debug("ValueError during IP validation: %s", exc)
-            if str(exc) == "connection_unreachable":
-                return {"error": "connection_unreachable"}
             return {"error": "invalid_connection"}
 
     # Serial device validation
-    serial_regex = r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$"
-    if re.match(serial_regex, connection_string):
+    if _SERIAL_REGEX.match(connection_string):
         if os.path.exists(connection_string) and os.access(
             connection_string, os.R_OK | os.W_OK
         ):
@@ -101,16 +105,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_CONNECTION_STRING): str,
-                    vol.Optional(CONF_REFRESH_INTERVAL, default=120): vol.All(
-                        cv.positive_int, vol.Range(min=60, max=3600)
-                    ),
-                    vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=False): bool,
-                    vol.Optional(CONF_PRIOR_GEN3, default=False): bool,
-                }
-            ),
+            data_schema=self._build_data_schema(),
             errors=errors,
         )
 
@@ -139,52 +134,12 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_update_reload_and_abort(
                     existing_entry,
                     title=validation["title"],
-                    data={
-                        CONF_CONNECTION_STRING: user_input.get(
-                            CONF_CONNECTION_STRING,
-                            existing_entry.data.get(CONF_CONNECTION_STRING, ""),
-                        ),
-                        CONF_HAS_FEEDBACK_MODULE: user_input.get(
-                            CONF_HAS_FEEDBACK_MODULE,
-                            existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
-                        ),
-                        CONF_REFRESH_INTERVAL: user_input.get(
-                            CONF_REFRESH_INTERVAL,
-                            existing_entry.data.get(CONF_REFRESH_INTERVAL, 120),
-                        ),
-                        CONF_PRIOR_GEN3: user_input.get(
-                            CONF_PRIOR_GEN3,
-                            existing_entry.data.get(CONF_PRIOR_GEN3, False),
-                        ),
-                    },
+                    data=self._prepare_entry_data(existing_entry, user_input),
                 )
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_CONNECTION_STRING,
-                        default=existing_entry.data.get(CONF_CONNECTION_STRING, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_REFRESH_INTERVAL,
-                        default=existing_entry.data.get(CONF_REFRESH_INTERVAL, 120),
-                    ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
-                    vol.Optional(
-                        CONF_HAS_FEEDBACK_MODULE,
-                        default=existing_entry.data.get(
-                            CONF_HAS_FEEDBACK_MODULE, False
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        CONF_PRIOR_GEN3,
-                        default=existing_entry.data.get(
-                            CONF_PRIOR_GEN3, False
-                        ),
-                    ): bool,
-                }
-            ),
+            data_schema=self._build_data_schema(existing_entry.data),
             errors=errors,
         )
 
@@ -192,3 +147,46 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Get the existing Nikobus config entry if present."""
         entries = self.hass.config_entries.async_entries(DOMAIN)
         return entries[0] if entries else None
+
+    def _build_data_schema(
+        self, existing_data: Mapping[str, Any] | None = None
+    ) -> vol.Schema:
+        """Create the configuration schema with appropriate defaults."""
+
+        def _default(key: str, fallback: Any) -> Any:
+            if existing_data is None:
+                return fallback
+            return existing_data.get(key, fallback)
+
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_CONNECTION_STRING, default=_default(CONF_CONNECTION_STRING, "")
+                ): str,
+                vol.Optional(
+                    CONF_REFRESH_INTERVAL, default=_default(CONF_REFRESH_INTERVAL, 120)
+                ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+                vol.Optional(
+                    CONF_HAS_FEEDBACK_MODULE,
+                    default=_default(CONF_HAS_FEEDBACK_MODULE, False),
+                ): bool,
+                vol.Optional(
+                    CONF_PRIOR_GEN3, default=_default(CONF_PRIOR_GEN3, False)
+                ): bool,
+            }
+        )
+
+    def _prepare_entry_data(
+        self, existing_entry: config_entries.ConfigEntry, user_input: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Merge user input with existing entry data applying defaults."""
+
+        def _value(key: str, fallback: Any) -> Any:
+            return user_input.get(key, existing_entry.data.get(key, fallback))
+
+        return {
+            CONF_CONNECTION_STRING: _value(CONF_CONNECTION_STRING, ""),
+            CONF_HAS_FEEDBACK_MODULE: _value(CONF_HAS_FEEDBACK_MODULE, False),
+            CONF_REFRESH_INTERVAL: _value(CONF_REFRESH_INTERVAL, 120),
+            CONF_PRIOR_GEN3: _value(CONF_PRIOR_GEN3, False),
+        }
