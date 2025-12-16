@@ -97,8 +97,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         devices_with_entities: set[str] = {
             entity.device_id
-            for entity in ent_reg.async_entries_for_config_entry(entry.entry_id)
-            if entity.platform == DOMAIN and entity.device_id
+            for entity in _iter_relevant_entities()
+            if entity.device_id
         }
 
         for device in list(dev_reg.devices.values()):
