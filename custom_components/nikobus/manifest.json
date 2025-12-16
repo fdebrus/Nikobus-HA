@@ -6,9 +6,8 @@
   "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
   "codeowners": ["@fdebrus"],
   "config_flow": true,
-  "dependencies": [],
+  "integration_type": "hub",
   "requirements": ["aiofiles>=23.2.0"],
   "iot_class": "local_polling",
-  "loggers": ["custom_components.nikobus"],
-  "after_dependencies": ["device_registry"]
+  "loggers": ["custom_components.nikobus"]
 }
