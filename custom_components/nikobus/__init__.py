@@ -75,35 +75,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         valid_entity_ids = coordinator.get_known_entity_unique_ids()
         _LOGGER.debug("Valid Nikobus entity IDs: %s", valid_entity_ids)
 
+        def _iter_relevant_entities():
+            for entity in ent_reg.entities.values():
+                if entity.config_entry_id == entry.entry_id and entity.platform == DOMAIN:
+                    yield entity
+
         # 1) Clean up entities
-        for entity in list(ent_reg.entities.values()):
-            if entity.config_entry_id != entry.entry_id:
-                continue
-            if entity.platform != DOMAIN:
+        for entity in list(_iter_relevant_entities()):
+            if entity.unique_id in valid_entity_ids:
                 continue
 
-            if entity.unique_id not in valid_entity_ids:
-                _LOGGER.info(
-                    "Removing orphan Nikobus entity: %s (unique_id=%s)",
-                    entity.entity_id,
-                    entity.unique_id,
-                )
-                ent_reg.async_remove(entity.entity_id)
+            _LOGGER.info(
+                "Removing orphan Nikobus entity: %s (unique_id=%s)",
+                entity.entity_id,
+                entity.unique_id,
+            )
+            ent_reg.async_remove(entity.entity_id)
 
         # 2) Clean up devices that have no remaining entities (but keep the hub device)
         hub_identifier = (DOMAIN, HUB_IDENTIFIER)
 
-        # Rebuild after entity removals
-        ent_reg = er.async_get(hass)
-
-        devices_with_entities: set[str] = set()
-        for entity in ent_reg.entities.values():
-            if entity.config_entry_id != entry.entry_id:
-                continue
-            if entity.platform != DOMAIN:
-                continue
-            if entity.device_id:
-                devices_with_entities.add(entity.device_id)
+        devices_with_entities: set[str] = {
+            entity.device_id
+            for entity in ent_reg.async_entries_for_config_entry(entry.entry_id)
+            if entity.platform == DOMAIN and entity.device_id
+        }
 
         for device in list(dev_reg.devices.values()):
             if entry.entry_id not in device.config_entries:
