@@ -95,6 +95,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def connect(self) -> None:
         """Connect to the Nikobus system."""
+        # Ensure we start from a clean state when reconnecting
+        self.nikobus_module_states = {}
+        self.dict_module_data = {}
+        self.dict_button_data = {}
+        self.dict_scene_data = {}
+
         try:
             await self.nikobus_connection.connect()
         except NikobusConnectionError as e:
@@ -354,6 +360,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle configuration changes via reconfigure."""
         _LOGGER.info("Reconfiguring Nikobus integration.")
 
+        # Stop current connections and tasks before applying new settings
+        await self.stop()
+
         self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
         self._refresh_interval = entry.data.get(CONF_REFRESH_INTERVAL, 120)
         self._has_feedback_module = entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
@@ -364,6 +373,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             if self._has_feedback_module or self._prior_gen3
             else timedelta(seconds=self._refresh_interval)
         )
+
+        self.update_interval = self._update_interval
+
+        # Rebuild connection with the updated connection string
+        self.nikobus_connection = NikobusConnect(self.connection_string)
 
         await self.connect()
         await self.async_refresh()
