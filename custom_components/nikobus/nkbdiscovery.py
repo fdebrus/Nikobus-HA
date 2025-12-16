@@ -367,6 +367,12 @@ class NikobusDiscovery:
 
         expected_chunk_length = chunk_lengths.get(self._module_type)
 
+        if expected_chunk_length is None:
+            _LOGGER.error(
+                "Cannot determine chunk length for module type: %s", self._module_type
+            )
+            return
+
         while len(self._payload_buffer) >= expected_chunk_length:
             candidate_chunk = self._payload_buffer[:expected_chunk_length]
 
@@ -640,12 +646,20 @@ class NikobusDiscovery:
         # Get the physical button address
         button_address_hex = payload_hex[6:]
         button_address = self.get_button_address(button_address_hex)
+        if button_address is None:
+            _LOGGER.error("Failed to convert button address from payload: %s", payload_hex)
+            return None
         _LOGGER.debug(f"Converted button address : {button_address}")
 
         # Get the push button address
         push_button_address, button_address = self.get_push_button_address(
             key_raw, button_address
         )
+        if push_button_address is None:
+            _LOGGER.error(
+                "Failed to determine push button address for button %s", button_address
+            )
+            return None
 
         channel_label = CHANNEL_MAPPING.get(
             channel_raw, f"Unknown Channel ({channel_raw})"
