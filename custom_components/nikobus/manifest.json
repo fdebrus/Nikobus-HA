@@ -7,7 +7,7 @@
   "codeowners": ["@fdebrus"],
   "config_flow": true,
   "integration_type": "hub",
-  "requirements": ["aiofiles>=23.2.0"],
+  "requirements": ["aiofiles>=23.2.0", "pyserial-asyncio-fast"],
   "iot_class": "local_polling",
   "loggers": ["custom_components.nikobus"]
 }
