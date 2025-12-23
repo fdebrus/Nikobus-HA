@@ -60,21 +60,19 @@ DEVICE_INVENTORY: Final[tuple[str, str]] = ("$0510$2E", "$0522$1E")
 # =============================================================================
 COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
 COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15  # Timeout for command ACK
-COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = (
-    5  # Timeout for each loop waiting for an answer
-)
+COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5  # Timeout for each loop waiting for an answer
 MAX_ATTEMPTS: Final[int] = 3  # Maximum retry attempts
 
 # =============================================================================
 # Discovery
 # =============================================================================
-DEVICE_TYPES = {
-     "01": {
-         "Category": "Module",
-         "Model": "05-000-02",
-         "Channels": 12,
-         "Name": "Switch Module",
-     },
+DEVICE_TYPES: Final[dict[str, dict[str, str | int]]] = {
+    "01": {
+        "Category": "Module",
+        "Model": "05-000-02",
+        "Channels": 12,
+        "Name": "Switch Module",
+    },
     "02": {
         "Category": "Module",
         "Model": "05-001-02",
@@ -100,9 +98,9 @@ DEVICE_TYPES = {
         "Name": "Button with 4 Operation Points",
     },
     "08": {
-        "Category": "Module", 
-        "Model": "05-201", 
-        "Name": "PC Logic"
+        "Category": "Module",
+        "Model": "05-201",
+        "Name": "PC Logic",
     },
     "09": {
         "Category": "Module",
@@ -111,9 +109,9 @@ DEVICE_TYPES = {
         "Name": "Compact Switch Module",
     },
     "0A": {
-        "Category": "Module", 
-        "Model": "05-200", 
-        "Name": "PC Link"
+        "Category": "Module",
+        "Model": "05-200",
+        "Name": "PC Link",
     },
     "0C": {
         "Category": "Button",
@@ -194,9 +192,9 @@ DEVICE_TYPES = {
         "Name": "Feedback Button with 8 Operation Points",
     },
     "42": {
-        "Category": "Module", 
-        "Model": "05-207", 
-        "Name": "Feedback Module"
+        "Category": "Module",
+        "Model": "05-207",
+        "Name": "Feedback Module",
     },
     "43": {
         "Category": "Button",
@@ -212,7 +210,7 @@ DEVICE_TYPES = {
     },
 }
 
-CHANNEL_MAPPING = {
+CHANNEL_MAPPING: Final[dict[int, str]] = {
     0: "Channel 1",
     1: "Channel 2",
     2: "Channel 3",
@@ -227,7 +225,7 @@ CHANNEL_MAPPING = {
     11: "Channel 12",
 }
 
-KEY_MAPPING = {
+KEY_MAPPING: Final[dict[int, dict[str, str]]] = {
     1: {"1A": "8"},
     2: {"1A": "8", "1B": "C"},
     4: {"1A": "8", "1B": "C", "1C": "0", "1D": "4"},
@@ -243,7 +241,7 @@ KEY_MAPPING = {
     },
 }
 
-KEY_MAPPING_MODULE = {
+KEY_MAPPING_MODULE: Final[dict[int, dict[int, str]]] = {
     1: {1: "8"},
     2: {1: "8", 3: "C"},
     4: {0: "0", 1: "8", 2: "4", 3: "C"},
@@ -253,7 +251,7 @@ KEY_MAPPING_MODULE = {
 # =============================================================================
 # Switch
 # =============================================================================
-SWITCH_MODE_MAPPING = {
+SWITCH_MODE_MAPPING: Final[dict[int, str]] = {
     0: "M01 (On / off)",
     1: "M02 (On, with operating time)",
     2: "M03 (Off, with operation time)",
@@ -268,7 +266,7 @@ SWITCH_MODE_MAPPING = {
     11: "M15 (Light scene on / off)",
 }
 
-SWITCH_TIMER_MAPPING = {
+SWITCH_TIMER_MAPPING: Final[dict[int, list[str | None]]] = {
     0: ["10s", "0.5s", "0s"],
     1: ["1m", "1s", "1s"],
     2: ["2m", "2s", "2s"],
@@ -290,7 +288,7 @@ SWITCH_TIMER_MAPPING = {
 # =============================================================================
 # Roller
 # =============================================================================
-ROLLER_MODE_MAPPING = {
+ROLLER_MODE_MAPPING: Final[dict[int, str]] = {
     0: "M01 (Open - stop - close)",
     1: "M02 (Open)",
     2: "M03 (Close)",
@@ -300,7 +298,7 @@ ROLLER_MODE_MAPPING = {
     6: "M07 (Close with operating time)",
 }
 
-ROLLER_TIMER_MAPPING = {
+ROLLER_TIMER_MAPPING: Final[dict[int, list[str | None]]] = {
     0: ["Turned off", None, None],
     1: ["0,4 s (impuls)", None, None],
     2: ["6 s", None, None],
@@ -323,7 +321,7 @@ ROLLER_TIMER_MAPPING = {
 # =============================================================================
 # Dimmer
 # =============================================================================
-DIMMER_MODE_MAPPING = {
+DIMMER_MODE_MAPPING: Final[dict[int, str]] = {
     0: "M01 (Dim on/off (2 buttons))",
     1: "M02 (Dim on/off (4 buttons))",
     2: "M03 (Light scene on/off)",
@@ -338,7 +336,7 @@ DIMMER_MODE_MAPPING = {
     11: "M14 (Dim on/off memory (1key))",
 }
 
-DIMMER_TIMER_MAPPING = {
+DIMMER_TIMER_MAPPING: Final[dict[int, list[str | None]]] = {
     0: ["1,0 V", "T2=Dimming time on; Dimming time off=1s", "1 s"],
     1: ["1,5 V", "T2=Dimming time off; Dimming time on=1s", "2 s"],
     2: ["2,0 V", "T2=Dimming time off; Dimming time on", "4 s"],
