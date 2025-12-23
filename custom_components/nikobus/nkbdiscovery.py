@@ -3,8 +3,6 @@ import logging
 import os
 import json
 import aiofiles
-
-
 from .nkbprotocol import make_pc_link_inventory_command
 from .const import (
     DEVICE_INVENTORY,
@@ -21,6 +19,13 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_CHANNEL_KEYS = {
+    1: ["1A"],
+    2: ["1A", "1B"],
+    4: ["1A", "1B", "1C", "1D"],
+    8: ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"],
+}
 
 
 class NikobusDiscovery:
@@ -68,7 +73,7 @@ class NikobusDiscovery:
             },
         )
 
-    def _convert_nikobus_address(self, address_string: str) -> dict[str, any]:
+    def _convert_nikobus_address(self, address_string: str) -> dict[str, str] | None:
         try:
             # Convert input hexadecimal string to an integer.
             address = int(address_string, 16)
@@ -88,7 +93,8 @@ class NikobusDiscovery:
             # Return the final Nikobus address as a 6-digit hex string.
             return {"nikobus_address": f"{final_address:06X}"}
         except ValueError:
-            return f"[{address_string}]"
+            _LOGGER.error("Invalid address provided: %s", address_string)
+            return None
 
     async def query_module_inventory(self, device_address):
         if device_address == "ALL":
@@ -253,15 +259,8 @@ class NikobusDiscovery:
             description = device.get("description", "")
             model = device.get("model", "")
             num_channels = device.get("channels", 0)
-            if num_channels == 1:
-                keys = ["1A"]
-            elif num_channels == 2:
-                keys = ["1A", "1B"]
-            elif num_channels == 4:
-                keys = ["1A", "1B", "1C", "1D"]
-            elif num_channels == 8:
-                keys = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"]
-            else:
+            keys = _CHANNEL_KEYS.get(num_channels)
+            if not keys:
                 _LOGGER.error(
                     f"Unexpected number of channels: {num_channels} for device {device_address}"
                 )
@@ -269,6 +268,8 @@ class NikobusDiscovery:
             mapping = KEY_MAPPING.get(num_channels, {})
             channels_data = {}
             converted_result = self._convert_nikobus_address(device_address)
+            if not converted_result:
+                continue
             converted_address = converted_result["nikobus_address"]
             original_nibble = int(converted_address[0], 16)
             for idx, key in enumerate(keys, start=1):
@@ -366,6 +367,12 @@ class NikobusDiscovery:
         }
 
         expected_chunk_length = chunk_lengths.get(self._module_type)
+        if not expected_chunk_length:
+            _LOGGER.error(
+                "Unknown module type %s while parsing inventory response.",
+                self._module_type,
+            )
+            return
 
         while len(self._payload_buffer) >= expected_chunk_length:
             candidate_chunk = self._payload_buffer[:expected_chunk_length]
@@ -583,6 +590,8 @@ class NikobusDiscovery:
 
         # Compute the full 6-digit address using your bit-reversal/shifting algorithm.
         converted_result = self._convert_nikobus_address(button_address)
+        if not converted_result:
+            return None, button_address
         push_button_address = converted_result["nikobus_address"]
 
         # Retrieve the mapping for this number of channels from your KEY_MAPPING_MODULE.
@@ -615,8 +624,6 @@ class NikobusDiscovery:
         if not isinstance(payload_hex, str):
             payload_hex = payload_hex.hex().upper()
         payload_hex = payload_hex.upper()
-
-        payload_hex[:6]  # Extract first 6 characters to process
 
         try:
             t2_raw = int(payload_hex[1], 16)  # Extract second character (T2)
