@@ -158,24 +158,30 @@ class NikobusEventListener:
                 break
 
     async def dispatch_message(self, message: str) -> None:
-
+        discovery_running = self._coordinator.discovery_running
         if DEVICE_ADDRESS_INVENTORY in message:
             _LOGGER.debug("Device address inventory: %s", message)
-            if self._coordinator.discovery_running:
+            if discovery_running:
                 await self.nikobus_discovery.query_module_inventory(message[3:7])
             else:
                 await self.nikobus_discovery.process_mode_button_press(message)
             return
 
-        if not self._coordinator.discovery_running:
+        if not discovery_running:
             if BUTTON_COMMAND_PREFIX in message:
                 # Find the position where '#N' starts
                 index = message.find("#N")
-                # Extract the 6-character button address following "#N"
-                button_address = message[index + 2:index + 8]
-                _LOGGER.debug("Button command received: %s, extracted address: %s", message, button_address)
-                await self._actuator.handle_button_press(button_address)
-                return
+                if index != -1:
+                    # Extract the 6-character button address following "#N"
+                    button_address = message[index + 2:index + 8]
+                    _LOGGER.debug(
+                        "Button command received: %s, extracted address: %s",
+                        message,
+                        button_address,
+                    )
+                    await self._actuator.handle_button_press(button_address)
+                    return
+                _LOGGER.debug("Button command without '#N' prefix: %s", message)
 
             if message.startswith(IGNORE_ANSWER) or any(
                 message.startswith(refresh + BUTTON_COMMAND_PREFIX)
@@ -190,11 +196,7 @@ class NikobusEventListener:
                     return
 
                 # Use the inner message for error checking only
-                if message.count("$") > 1:
-                    second_dollar = message.find("$", 1)
-                    inner_msg = message[second_dollar:]
-                else:
-                    inner_msg = message
+                inner_msg = self._extract_inner_message(message)
 
                 if len(inner_msg) >= 11:
                     error_field = inner_msg[3:5]
@@ -262,6 +264,14 @@ class NikobusEventListener:
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
         await self.response_queue.put(message)
+
+    @staticmethod
+    def _extract_inner_message(message: str) -> str:
+        """Return the inner message if a nested payload exists."""
+        if message.count("$") > 1:
+            second_dollar = message.find("$", 1)
+            return message[second_dollar:]
+        return message
 
     def _handle_feedback_refresh(self, message: str) -> None:
         """Handle feedback refresh commands using a mapping for module group identifiers."""
