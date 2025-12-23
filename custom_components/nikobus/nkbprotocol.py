@@ -3,7 +3,7 @@
 
 def int_to_hex(value: int, digits: int) -> str:
     """Convert an integer to a hexadecimal string with a specified number of digits."""
-    return ("00000000" + format(value, "x").upper())[-digits:]
+    return f"{value:0{digits}X}"
 
 
 def calc_crc1(data: str) -> int:
@@ -65,7 +65,7 @@ def calculate_group_number(channel: int) -> int:
     return (channel + 5) // 6
 
 
-def make_pc_link_inventory_command(payload):
+def make_pc_link_inventory_command(payload: str) -> str:
     # Calculate CRC-16/ANSI
     crc1_result = calc_crc1(payload)
 
@@ -74,6 +74,15 @@ def make_pc_link_inventory_command(payload):
     crc2_result = calc_crc2(intermediate_string)
 
     return f"$14{payload}{crc1_result:04X}{crc2_result:02X}"
+
+
+def _reverse_bits(value: int, width: int) -> int:
+    """Reverse the lowest `width` bits of a number."""
+    reversed_value = 0
+    for _ in range(width):
+        reversed_value = (reversed_value << 1) | (value & 1)
+        value >>= 1
+    return reversed_value
 
 
 def reverse_24bit_to_hex(n: int) -> str:
@@ -91,11 +100,10 @@ def reverse_24bit_to_hex(n: int) -> str:
     reversed_int = int(reversed_bin, 2)
 
     # 4) Format as 6-digit hex (uppercase)
-    reversed_hex = format(reversed_int, "06X")
-    return reversed_hex
+    return format(reversed_int, "06X")
 
 
-def nikobus_to_button_address(hex_address, button="1A"):
+def nikobus_to_button_address(hex_address: str, button: str = "1A") -> str:
     """
     Convert a 24-bit Nikobus module 'hex_address' (e.g. '123456')
     into the special '#Nxxxxxx' form for the given 'button' (1A..2D).
@@ -128,20 +136,13 @@ def nikobus_to_button_address(hex_address, button="1A"):
     combined_24 = (btn_3bits << 21) | (shifted_22 & 0x1FFFFF)
 
     # 4) Reverse all 24 bits. (bit 0 <-> bit 23, etc.)
-    def reverse_24bits(x):
-        r = 0
-        for i in range(24):
-            r <<= 1
-            r |= (x >> i) & 1
-        return r
-
-    reversed_24 = reverse_24bits(combined_24)
+    reversed_24 = _reverse_bits(combined_24, 24)
 
     # 5) Format as hex, uppercase, zero-padded to 6 digits, then prepend '#N'
     return "#N" + f"{reversed_24:06X}"
 
 
-def nikobus_button_to_module(button_hex):
+def nikobus_button_to_module(button_hex: str) -> tuple[str, str]:
     """
     Given a Nikobus 'button address' of the form '#Nxxxxxx',
     reverse-engineer the original 6-hex-digit module address
@@ -155,14 +156,7 @@ def nikobus_button_to_module(button_hex):
     reversed_24 = int(reversed_hex, 16)  # parse as 24-bit hex
 
     # 2) Reverse all 24 bits to get 'combined_24'
-    def reverse_24bits(x):
-        r = 0
-        for i in range(24):
-            r <<= 1
-            r |= (x >> i) & 1
-        return r
-
-    combined_24 = reverse_24bits(reversed_24)
+    combined_24 = _reverse_bits(reversed_24, 24)
 
     # 3) Extract the top 3 bits => the "button code"
     button_code = (combined_24 >> 21) & 0b111  # bits 23..21
