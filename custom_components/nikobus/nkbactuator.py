@@ -17,6 +17,7 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+TIMER_DURATIONS = (1, 2, 3)
 
 
 class NikobusActuator:
@@ -71,9 +72,9 @@ class NikobusActuator:
         for task in self._timer_tasks:
             task.cancel()
         self._timer_tasks.clear()
-        self._fired_timers = {1: False, 2: False, 3: False}
+        self._fired_timers = {duration: False for duration in TIMER_DURATIONS}
 
-        for duration in [1, 2, 3]:
+        for duration in TIMER_DURATIONS:
             task = self._hass.async_create_task(
                 self._fire_event_after_duration(address, duration)
             )
@@ -95,10 +96,19 @@ class NikobusActuator:
         """Wait for button release and process the press duration."""
         try:
             start_time = self._last_press_time
+            if start_time is None:
+                _LOGGER.debug(
+                    "Ignoring wait_for_release because press time is missing for %s",
+                    address,
+                )
+                return
             while True:
                 await asyncio.sleep(0.05)
                 current_time = time.monotonic()
-                time_diff = (current_time - self._last_press_time) * 1000
+                last_press_time = self._last_press_time
+                if last_press_time is None:
+                    break
+                time_diff = (current_time - last_press_time) * 1000
                 if time_diff >= self._debounce_time_ms:
                     press_duration = current_time - start_time
                     _LOGGER.debug(
@@ -127,7 +137,7 @@ class NikobusActuator:
 
     def _cancel_unneeded_timers(self, press_duration: float) -> None:
         """Cancel timer tasks that exceed the actual press duration."""
-        for task, duration in zip(self._timer_tasks, [1, 2, 3]):
+        for task, duration in zip(self._timer_tasks, TIMER_DURATIONS):
             if duration > press_duration or self._fired_timers.get(duration, False):
                 task.cancel()
         self._timer_tasks.clear()
@@ -222,8 +232,7 @@ class NikobusActuator:
         impacted_modules = button_data.get("impacted_module", [])
         # Check if any impacted_module entry is missing address or group.
         incomplete = any(
-            not mod.get("address") or not mod.get("group")
-            for mod in impacted_modules
+            not mod.get("address") or not mod.get("group") for mod in impacted_modules
         )
         if impacted_modules and not incomplete:
             modules_to_process.extend(impacted_modules)
@@ -244,7 +253,9 @@ class NikobusActuator:
                     continue
 
                 fallback_group = "1" if channel_number <= 6 else "2"
-                modules_to_process.append({"address": module_addr, "group": fallback_group})
+                modules_to_process.append(
+                    {"address": module_addr, "group": fallback_group}
+                )
 
         for module_info in modules_to_process:
             impacted_module_address = module_info.get("address")
