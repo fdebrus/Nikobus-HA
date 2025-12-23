@@ -69,9 +69,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.info("Starting manual Nikobus discovery with module_address: %s", module_address)
         await coordinator.discover_devices(module_address)
 
-    hass.services.async_register(
-        DOMAIN, "query_module_inventory", handle_module_discovery, SCAN_MODULE_SCHEMA
-    )
+    if not hass.services.has_service(DOMAIN, "query_module_inventory"):
+        hass.services.async_register(
+            DOMAIN,
+            "query_module_inventory",
+            handle_module_discovery,
+            SCAN_MODULE_SCHEMA,
+        )
 
     # Forward the setup to all configured platforms.
     try:
@@ -173,6 +177,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not unload_ok:
         _LOGGER.error("Failed to unload Nikobus platforms.")
         return False
+
+    if hass.services.has_service(DOMAIN, "query_module_inventory"):
+        hass.services.async_remove(DOMAIN, "query_module_inventory")
 
     _LOGGER.info("Nikobus integration fully unloaded.")
     return True
