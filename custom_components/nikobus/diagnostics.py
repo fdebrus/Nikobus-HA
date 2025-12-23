@@ -6,7 +6,6 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import (
-    DeviceEntry,
     DeviceRegistry,
     async_get as async_get_device_registry,
 )
@@ -17,6 +16,7 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     CONF_HAS_FEEDBACK_MODULE,
 )
+from .entity import device_entry_diagnostics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,11 +32,13 @@ async def async_get_config_entry_diagnostics(
     # Retrieve the device registry
     device_registry: DeviceRegistry = async_get_device_registry(hass)
 
-    # Gather all Nikobus devices
-    nikobus_devices: list[DeviceEntry] = [
+    # Gather all Nikobus devices tied to this config entry
+    nikobus_devices = [
         device
-        for device in device_registry.devices.values()
-        if any(ident for ident in device.identifiers if DOMAIN in ident)
+        for device in device_registry.async_entries_for_config_entry(
+            config_entry.entry_id
+        )
+        if any(ident for ident in device.identifiers if ident[0] == DOMAIN)
     ]
 
     _LOGGER.debug(
@@ -47,14 +49,7 @@ async def async_get_config_entry_diagnostics(
 
     # Build device info list
     devices_info: list[dict[str, Any]] = [
-        {
-            "id": dev.id,
-            "name": dev.name,
-            "model": dev.model,
-            "manufacturer": dev.manufacturer,
-            "sw_version": dev.sw_version,
-        }
-        for dev in nikobus_devices
+        device_entry_diagnostics(dev) for dev in nikobus_devices
     ]
 
     # Build config entry diagnostics
