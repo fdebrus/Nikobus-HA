@@ -17,11 +17,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -206,7 +206,7 @@ def _register_nikobus_roller_device(
     )
 
 
-class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
+class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     """Optimized representation of a Nikobus cover entity with improved task management and state consistency."""
 
     def __init__(
@@ -220,7 +220,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         module_model: str,
         operation_time: str,
     ) -> None:
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            address=address,
+            name=module_desc,
+            model=module_model,
+        )
         self.hass = hass
         self._address = address
         self._channel = channel
@@ -253,15 +258,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             channel,
             self._operation_time,
         )
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self._address)},
-            "manufacturer": BRAND,
-            "name": self._description,
-            "model": self._model,
-        }
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -644,31 +640,3 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self.coordinator.set_bytearray_state(
             self._address, self._channel, STATE_STOPPED
         )
-
-    async def _handle_nikobus_button_event(self, event: Any) -> None:
-        """Handle the `nikobus_button_pressed` event and update the cover state."""
-        if event.data.get("impacted_module_address") != self._address:
-            _LOGGER.debug("Skipping event for %s (not impacted).", self._attr_name)
-            return
-
-        new_state = self.coordinator.get_cover_state(self._address, self._channel)
-        if new_state != self._previous_state:
-            _LOGGER.debug(
-                "State changed for %s: %s -> %s",
-                self._attr_name,
-                self._previous_state,
-                new_state,
-            )
-            if event.data.get("button_operation_time") is not None:
-                self._button_operation_time = float(
-                    event.data.get("button_operation_time")
-                )
-                _LOGGER.debug(
-                    "Received button operation time for %s: %s",
-                    self._attr_name,
-                    self._button_operation_time,
-                )
-            await self._process_state_change(new_state, source="nikobus")
-            self.async_write_ha_state()
-        else:
-            _LOGGER.debug("No state change for %s; ignoring event.", self._attr_name)
