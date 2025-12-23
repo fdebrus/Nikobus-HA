@@ -6,7 +6,7 @@
   "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
   "codeowners": ["@fdebrus"],
   "config_flow": true,
-  "requirements": ["aiofiles>=23.2.0"],
+  "requirements": ["aiofiles>=23.2.0", "pyserial-asyncio-fast>=0.13"],
   "iot_class": "local_polling",
   "loggers": ["nikobus"],
   "after_dependencies": ["device_registry"]

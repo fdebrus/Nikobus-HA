@@ -9,7 +9,7 @@ import re
 import socket
 from typing import Literal, Optional
 
-import serial_asyncio
+import serial_asyncio_fast as serial_asyncio
 
 from .const import BAUD_RATE, COMMANDS_HANDSHAKE
 from .exceptions import (
