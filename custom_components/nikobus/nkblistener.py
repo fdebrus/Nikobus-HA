@@ -155,23 +155,103 @@ class NikobusEventListener:
                 _LOGGER.error(
                     "Unexpected error in event listener: %s", err, exc_info=True
                 )
-                if not self._running:
-                    break
-                await asyncio.sleep(0.1)
+                break
 
     async def dispatch_message(self, message: str) -> None:
 
-        discovery_running = self._coordinator.discovery_running
-
         if DEVICE_ADDRESS_INVENTORY in message:
             _LOGGER.debug("Device address inventory: %s", message)
-            if discovery_running:
+            if self._coordinator.discovery_running:
                 await self.nikobus_discovery.query_module_inventory(message[3:7])
             else:
                 await self.nikobus_discovery.process_mode_button_press(message)
             return
 
-        if discovery_running:
+        if not self._coordinator.discovery_running:
+            if BUTTON_COMMAND_PREFIX in message:
+                # Find the position where '#N' starts
+                index = message.find("#N")
+                # Extract the 6-character button address following "#N"
+                button_address = message[index + 2:index + 8]
+                _LOGGER.debug("Button command received: %s, extracted address: %s", message, button_address)
+                await self._actuator.handle_button_press(button_address)
+                return
+
+            if message.startswith(IGNORE_ANSWER) or any(
+                message.startswith(refresh + BUTTON_COMMAND_PREFIX)
+                for refresh in MANUAL_REFRESH_COMMAND
+            ):
+                _LOGGER.debug("Ignored message: %s", message)
+                return
+
+            if any(message.startswith(command) for command in COMMAND_PROCESSED):
+                # Example message: "$0515$0EFF6C0E0060"
+                if not self.validate_crc(message):
+                    return
+
+                # Use the inner message for error checking only
+                if message.count("$") > 1:
+                    second_dollar = message.find("$", 1)
+                    inner_msg = message[second_dollar:]
+                else:
+                    inner_msg = message
+
+                if len(inner_msg) >= 11:
+                    error_field = inner_msg[3:5]
+                    module_address = inner_msg[5:9]
+                    status_field = inner_msg[9:11]
+                    if (error_field, status_field) in [("FF", "01"), ("FE", "00")]:
+                        _LOGGER.error(
+                            "Command failed with error codes: %s %s",
+                            error_field,
+                            status_field,
+                        )
+                        raise NikobusDataError(
+                            f"Command failed with error codes: {error_field} {status_field}"
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "Command acknowledged with module address: %s",
+                            module_address,
+                        )
+                        # Queue the full message, not just the inner message
+                        await self.response_queue.put(message)
+                        return
+                else:
+                    _LOGGER.debug("Command acknowledged: %s", message)
+                    await self.response_queue.put(message)
+                    return
+
+            if any(message.startswith(refresh) for refresh in FEEDBACK_REFRESH_COMMAND):
+                if not self.validate_crc(message):
+                    return
+                if self._has_feedback_module:
+                    _LOGGER.debug("Feedback module refresh command: %s", message)
+                    self._handle_feedback_refresh(message)
+                else:
+                    _LOGGER.debug("Dropping Feedback refresh command: %s", message)
+                return
+
+            if message.startswith(FEEDBACK_MODULE_ANSWER):
+                if not self.validate_crc(message):
+                    return
+                if self._has_feedback_module:
+                    _LOGGER.debug("Feedback module answer: %s", message)
+                    await self._feedback_callback(self._module_group, message)
+                else:
+                    _LOGGER.debug("Dropping Feedback module answer: %s", message)
+                return
+
+            if any(message.startswith(refresh) for refresh in MANUAL_REFRESH_COMMAND):
+                _LOGGER.debug("Manual refresh command answer: %s", message)
+                if not self.validate_crc(message):
+                    return
+                if not message.startswith(BUTTON_COMMAND_PREFIX):
+                    await self.response_queue.put(message)
+                return
+
+        else:
+
             if any(message.startswith(inventory) for inventory in DEVICE_INVENTORY):
                 _LOGGER.debug("Device inventory: %s", message)
                 if self._coordinator.discovery_module_address:
@@ -179,90 +259,6 @@ class NikobusEventListener:
                 else:
                     await self.nikobus_discovery.parse_inventory_response(message)
                 return
-
-        if BUTTON_COMMAND_PREFIX in message:
-            index = message.find("#N")
-            if index == -1 or len(message) < index + 8:
-                _LOGGER.warning("Malformed button command received: %s", message)
-                return
-            button_address = message[index + 2 : index + 8]
-            _LOGGER.debug(
-                "Button command received: %s, extracted address: %s",
-                message,
-                button_address,
-            )
-            await self._actuator.handle_button_press(button_address)
-            return
-
-        if message.startswith(IGNORE_ANSWER) or any(
-            message.startswith(refresh + BUTTON_COMMAND_PREFIX)
-            for refresh in MANUAL_REFRESH_COMMAND
-        ):
-            _LOGGER.debug("Ignored message: %s", message)
-            return
-
-        if any(message.startswith(command) for command in COMMAND_PROCESSED):
-            # Example message: "$0515$0EFF6C0E0060"
-            if not self.validate_crc(message):
-                return
-
-            # Use the inner message for error checking only
-            if message.count("$") > 1:
-                second_dollar = message.find("$", 1)
-                inner_msg = message[second_dollar:]
-            else:
-                inner_msg = message
-
-            if len(inner_msg) >= 11:
-                error_field = inner_msg[3:5]
-                module_address = inner_msg[5:9]
-                status_field = inner_msg[9:11]
-                if (error_field, status_field) in [("FF", "01"), ("FE", "00")]:
-                    _LOGGER.error(
-                        "Command failed with error codes: %s %s",
-                        error_field,
-                        status_field,
-                    )
-                    raise NikobusDataError(
-                        f"Command failed with error codes: {error_field} {status_field}"
-                    )
-                _LOGGER.debug(
-                    "Command acknowledged with module address: %s", module_address
-                )
-                # Queue the full message, not just the inner message
-                await self.response_queue.put(message)
-                return
-            _LOGGER.debug("Command acknowledged: %s", message)
-            await self.response_queue.put(message)
-            return
-
-        if any(message.startswith(refresh) for refresh in FEEDBACK_REFRESH_COMMAND):
-            if not self.validate_crc(message):
-                return
-            if self._has_feedback_module:
-                _LOGGER.debug("Feedback module refresh command: %s", message)
-                self._handle_feedback_refresh(message)
-            else:
-                _LOGGER.debug("Dropping Feedback refresh command: %s", message)
-            return
-
-        if message.startswith(FEEDBACK_MODULE_ANSWER):
-            if not self.validate_crc(message):
-                return
-            if self._has_feedback_module:
-                _LOGGER.debug("Feedback module answer: %s", message)
-                await self._feedback_callback(self._module_group, message)
-            else:
-                _LOGGER.debug("Dropping Feedback module answer: %s", message)
-            return
-
-        if any(message.startswith(refresh) for refresh in MANUAL_REFRESH_COMMAND):
-            _LOGGER.debug("Manual refresh command answer: %s", message)
-            if not self.validate_crc(message):
-                return
-            if not message.startswith(BUTTON_COMMAND_PREFIX):
-                await self.response_queue.put(message)
-            return
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
         await self.response_queue.put(message)

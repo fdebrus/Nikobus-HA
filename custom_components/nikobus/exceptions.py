@@ -1,46 +1,25 @@
 """Custom exceptions for the Nikobus integration."""
 
-__all__ = [
-    "NikobusError",
-    "NikobusConnectionError",
-    "NikobusDataError",
-    "NikobusReadError",
-    "NikobusSendError",
-    "NikobusTimeoutError",
-]
-
 
 class NikobusError(Exception):
-    """Base exception for all Nikobus integration errors."""
-
-    __slots__ = ()
+    """Base exception class for Nikobus errors."""
 
 
 class NikobusConnectionError(NikobusError):
-    """Raised when the integration cannot connect to the Nikobus gateway."""
-
-    __slots__ = ()
+    """Exception for connection-related errors."""
 
 
 class NikobusSendError(NikobusError):
-    """Raised when sending a command to the gateway fails."""
-
-    __slots__ = ()
+    """Exception for errors when sending commands."""
 
 
 class NikobusTimeoutError(NikobusError):
-    """Raised when an operation times out waiting for the gateway."""
-
-    __slots__ = ()
+    """Exception for timeout errors."""
 
 
 class NikobusDataError(NikobusError):
-    """Raised when invalid or unexpected data is encountered."""
-
-    __slots__ = ()
+    """Exception for data-related errors."""
 
 
 class NikobusReadError(NikobusError):
-    """Raised when reading data from the gateway fails."""
-
-    __slots__ = ()
+    """Exception for errors when reading data."""

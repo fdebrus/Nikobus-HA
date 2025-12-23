@@ -3,7 +3,7 @@
 import asyncio
 import time
 import logging
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
 from homeassistant.core import HomeAssistant
 from custom_components.nikobus.exceptions import NikobusTimeoutError
@@ -17,8 +17,6 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-TIMER_DURATIONS: tuple[int, ...] = (1, 2, 3)
 
 
 class NikobusActuator:
@@ -73,9 +71,9 @@ class NikobusActuator:
         for task in self._timer_tasks:
             task.cancel()
         self._timer_tasks.clear()
-        self._fired_timers = dict.fromkeys(TIMER_DURATIONS, False)
+        self._fired_timers = {1: False, 2: False, 3: False}
 
-        for duration in TIMER_DURATIONS:
+        for duration in [1, 2, 3]:
             task = self._hass.async_create_task(
                 self._fire_event_after_duration(address, duration)
             )
@@ -129,7 +127,7 @@ class NikobusActuator:
 
     def _cancel_unneeded_timers(self, press_duration: float) -> None:
         """Cancel timer tasks that exceed the actual press duration."""
-        for task, duration in zip(self._timer_tasks, TIMER_DURATIONS):
+        for task, duration in zip(self._timer_tasks, [1, 2, 3]):
             if duration > press_duration or self._fired_timers.get(duration, False):
                 task.cancel()
         self._timer_tasks.clear()
@@ -199,8 +197,16 @@ class NikobusActuator:
         self, button_data: Dict[str, Optional[str]], button_address: str
     ) -> None:
         """Process actions for each module impacted by the button press."""
-        button_operation_time = self._parse_operation_time(button_data, button_address)
-        modules_to_process = self._collect_modules_to_process(button_data)
+        try:
+            button_operation_time = float(button_data.get("operation_time", 0))
+        except ValueError as e:
+            _LOGGER.error(
+                "Invalid operation time for button %s: %s",
+                button_address,
+                e,
+                exc_info=True,
+            )
+            button_operation_time = 0.0
 
         button_description = button_data.get("description", "Unknown Button")
         _LOGGER.debug(
@@ -210,6 +216,35 @@ class NikobusActuator:
         )
 
         event_fired = False
+
+        # Build a list of modules to process.
+        modules_to_process = []
+        impacted_modules = button_data.get("impacted_module", [])
+        # Check if any impacted_module entry is missing address or group.
+        incomplete = any(
+            not mod.get("address") or not mod.get("group")
+            for mod in impacted_modules
+        )
+        if impacted_modules and not incomplete:
+            modules_to_process.extend(impacted_modules)
+        else:
+            _LOGGER.debug(
+                "impacted_module is incomplete; falling back to discovered_link data."
+            )
+            # Use discovered_link entries as fallback.
+            for link in button_data.get("discovered_link", []):
+                module_addr = link.get("module_address")
+                channel_str = link.get("channel", "")
+                # Attempt to extract the channel number from a string like "Channel 1"
+                try:
+                    # Assume the number is the last token
+                    channel_number = int(channel_str.split()[-1])
+                except (ValueError, IndexError, AttributeError):
+                    _LOGGER.debug("Unable to parse channel number from %s", channel_str)
+                    continue
+
+                fallback_group = "1" if channel_number <= 6 else "2"
+                modules_to_process.append({"address": module_addr, "group": fallback_group})
 
         for module_info in modules_to_process:
             impacted_module_address = module_info.get("address")
@@ -252,7 +287,13 @@ class NikobusActuator:
                     "impacted_module_group": impacted_group,
                 }
 
-                self._fire_bus_event("nikobus_button_pressed", event_data)
+                # if button_data.get("led_on") or button_data.get("led_off"):
+                #     event_data["virtual"] = True
+
+                _LOGGER.debug(
+                    "Firing event: nikobus_button_pressed with data: %s", event_data
+                )
+                self._hass.bus.async_fire("nikobus_button_pressed", event_data)
                 event_fired = True
 
             except Exception as e:
@@ -265,61 +306,10 @@ class NikobusActuator:
 
         if not event_fired:
             minimal_event_data = {"address": button_address}
-            self._fire_bus_event("nikobus_button_pressed", minimal_event_data)
+            _LOGGER.debug(
+                "Firing minimal event: nikobus_button_pressed with data: %s",
+                minimal_event_data,
+            )
+            self._hass.bus.async_fire("nikobus_button_pressed", minimal_event_data)
 
         self._coordinator.async_update_listeners()
-
-    def _parse_operation_time(
-        self, button_data: Dict[str, Optional[str]], button_address: str
-    ) -> float:
-        """Parse the operation time value safely."""
-        try:
-            return float(button_data.get("operation_time", 0))
-        except ValueError as error:
-            _LOGGER.error(
-                "Invalid operation time for button %s: %s",
-                button_address,
-                error,
-                exc_info=True,
-            )
-            return 0.0
-
-    def _collect_modules_to_process(
-        self, button_data: Dict[str, Optional[str]]
-    ) -> List[Dict[str, Optional[str]]]:
-        """Collect impacted modules, falling back to discovered links when needed."""
-        impacted_modules = button_data.get("impacted_module", [])
-        if impacted_modules and self._modules_complete(impacted_modules):
-            return list(impacted_modules)
-
-        _LOGGER.debug(
-            "impacted_module is incomplete; falling back to discovered_link data."
-        )
-        return list(self._modules_from_discovered_links(button_data))
-
-    @staticmethod
-    def _modules_complete(modules: Iterable[Dict[str, Optional[str]]]) -> bool:
-        """Return True if all modules contain address and group."""
-        return all(mod.get("address") and mod.get("group") for mod in modules)
-
-    @staticmethod
-    def _modules_from_discovered_links(
-        button_data: Dict[str, Optional[str]]
-    ) -> Iterable[Dict[str, Optional[str]]]:
-        """Generate module definitions from discovered link data."""
-        for link in button_data.get("discovered_link", []):
-            module_addr = link.get("module_address")
-            channel_str = link.get("channel", "")
-            try:
-                channel_number = int(channel_str.split()[-1])
-            except (ValueError, IndexError, AttributeError):
-                _LOGGER.debug("Unable to parse channel number from %s", channel_str)
-                continue
-
-            fallback_group = "1" if channel_number <= 6 else "2"
-            yield {"address": module_addr, "group": fallback_group}
-
-    def _fire_bus_event(self, event_type: str, event_data: Dict[str, Optional[str]]) -> None:
-        """Fire an event on the Home Assistant bus with debug logging."""
-        _LOGGER.debug("Firing event: %s with data: %s", event_type, event_data)
-        self._hass.bus.async_fire(event_type, event_data)

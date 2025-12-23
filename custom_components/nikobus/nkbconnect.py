@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
-import re
 import socket
 from typing import Literal, Optional
 
@@ -26,9 +25,7 @@ class NikobusConnect:
 
     def __init__(self, connection_string: str) -> None:
         """Initialize the connection handler with the given connection string."""
-        self._connection_string = connection_string.strip()
-        self._host: Optional[str] = None
-        self._port: Optional[int] = None
+        self._connection_string = connection_string
         self._connection_type: Literal["IP", "Serial", "Unknown"] = (
             self._validate_connection_string()
         )
@@ -121,12 +118,10 @@ class NikobusConnect:
     # -------------------------
     async def _connect_ip(self) -> None:
         """Establish an IP connection (precreate + connect the socket correctly)."""
-        if self._host is None or self._port is None:
-            msg = f"Invalid IP connection string: {self._connection_string}"
-            _LOGGER.error(msg)
-            raise NikobusConnectionError(msg)
-
         try:
+            host, port_str = self._connection_string.split(":", 1)
+            port = int(port_str)
+
             # Precreate socket to apply options, then explicitly connect it
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.setblocking(False)
@@ -142,15 +137,13 @@ class NikobusConnect:
                 pass
 
             loop = asyncio.get_running_loop()
-            await loop.sock_connect(
-                sock, (self._host, self._port)
-            )  # <-- crucial: actually connect
+            await loop.sock_connect(sock, (host, port))  # <-- crucial: actually connect
 
             reader, writer = await asyncio.open_connection(sock=sock)
             self._nikobus_reader = reader
             self._nikobus_writer = writer
 
-            _LOGGER.info("Connected to bridge %s:%d", self._host, self._port)
+            _LOGGER.info("Connected to bridge %s:%d", host, port)
         except (OSError, ValueError) as err:
             await self._safe_close()
             msg = f"Failed to connect to bridge {self._connection_string} - {err}"
@@ -176,23 +169,17 @@ class NikobusConnect:
         """Validate the connection string to determine the type (IP or Serial)."""
         parts = self._connection_string.split(":", 1)
         ip_candidate = parts[0]
-        if len(parts) == 2:
-            try:
-                ipaddress.ip_address(ip_candidate)
-                port = int(parts[1])
-            except ValueError:
-                pass
-            else:
-                if 0 < port <= 65535:
-                    self._host = ip_candidate
-                    self._port = port
-                    return "IP"
+        try:
+            ipaddress.ip_address(ip_candidate)
+            return "IP"
+        except ValueError:
+            # Common serial device patterns
+            import re
 
-        if re.match(
-            r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string
-        ):
-            return "Serial"
-
+            if re.match(
+                r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string
+            ):
+                return "Serial"
         return "Unknown"
 
     async def _perform_handshake(self) -> bool:

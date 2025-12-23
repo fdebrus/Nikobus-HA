@@ -12,18 +12,16 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
     CoverDeviceClass,
     ATTR_POSITION,
-    ATTR_CURRENT_POSITION,
 )
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
-from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,16 +52,17 @@ class PositionEstimator:
 
     def start(self, direction: str, position: Optional[float] = None) -> None:
         if self._is_moving:
-            _LOGGER.warning(
-                "Movement already started; stopping previous movement and restarting."
-            )
-            self.stop()
+            _LOGGER.warning("Movement already started; stopping previous movement and restarting.")
+            self.stop()  # Reset previous movement
 
         self._direction_value = 1 if direction == "opening" else -1
         self._start_time = time.monotonic()
         self._is_moving = True
 
-        self._initial_position = position if position is not None else self._current_position
+        # Capture the initial position once at the start.
+        self._initial_position = (
+            position if position is not None else (100 if self._direction_value == 1 else 0)
+        )
         self._current_position = self._initial_position
 
         _LOGGER.debug(
@@ -87,6 +86,7 @@ class PositionEstimator:
 
         elapsed_time = time.monotonic() - self._start_time
         progress = (elapsed_time / self._duration_in_seconds) * 100 * self._direction_value
+        # Always compute based on the fixed starting position.
         new_position = max(0, min(100, self._initial_position + progress))
         self._current_position = new_position
         return int(new_position)
@@ -98,8 +98,7 @@ class PositionEstimator:
             if final_position is not None:
                 self._current_position = final_position
             _LOGGER.debug(
-                "Movement stopped. Final position estimated at: %s",
-                self._current_position,
+                "Movement stopped. Final position estimated at: %s", self._current_position
             )
         else:
             _LOGGER.warning("Stop called without active movement; ignoring.")
@@ -120,7 +119,6 @@ class PositionEstimator:
     def is_active(self) -> bool:
         return self._is_moving
 
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -135,7 +133,7 @@ async def async_setup_entry(
 
     device_registry = dr.async_get(hass)
     cover_entities: list[NikobusCoverEntity] = []
-    switch_entities: list[Dict[str, Any]] = []
+    switch_entities: list[Dict[str, Any]] = []  # Store switch info for switch.py
 
     for address, cover_module_data in roller_modules.items():
         module_desc = cover_module_data.get("description", f"Roller Module {address}")
@@ -157,10 +155,7 @@ async def async_setup_entry(
 
             use_as_switch = channel_info.get("use_as_switch", False)
             _LOGGER.debug(
-                "Processing %s channel %d: use_as_switch=%s",
-                module_desc,
-                channel_idx,
-                use_as_switch,
+                f"Processing {module_desc} channel {channel_idx}: use_as_switch={use_as_switch}"
             )
 
             if use_as_switch:
@@ -211,7 +206,7 @@ def _register_nikobus_roller_device(
     )
 
 
-class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
+class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
     """Optimized representation of a Nikobus cover entity with improved task management and state consistency."""
 
     def __init__(
@@ -225,22 +220,17 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         module_model: str,
         operation_time: str,
     ) -> None:
-        super().__init__(
-            coordinator=coordinator,
-            module_address=address,
-            channel=channel,
-            name=channel_description,
-        )
+        super().__init__(coordinator)
         self.hass = hass
         self._address = address
         self._channel = channel
         self._description = module_desc
         self._model = module_model
         self._state = STATE_STOPPED
-        self._position = 100
+        self._position = 100  # Default to fully open
         self._previous_state: Optional[int] = None
         self._movement_source = "ha"
-        self._direction: Optional[str] = None
+        self._direction: Optional[str] = None  # "opening" or "closing"
 
         self._operation_time = float(operation_time)
         self._position_estimator = PositionEstimator(
@@ -251,9 +241,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._movement_task: Optional[asyncio.Task] = None
         self._last_position_change_time = time.monotonic()
         self._button_operation_time: Optional[float] = None
-
-        self._last_reported_position = self._position
-        self._last_state_report = time.monotonic()
 
         self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
@@ -279,42 +266,28 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         attrs = super().extra_state_attributes or {}
-        attrs["nikobus_state"] = self._state
+        attrs.update({"position": self._position, "state": self._state})
         return attrs
 
     @property
-    def current_cover_position(self) -> int | None:
-        if self._position is None:
-            return None
-        return int(round(self._position))
+    def current_cover_position(self) -> Optional[int]:
+        return self._position
 
     @property
-    def is_closed(self) -> bool | None:
-        if self._position is None:
-            return None
-        if self._state in (STATE_OPENING, STATE_CLOSING):
-            return False
-        return self._position <= 0.5
+    def is_open(self) -> bool:
+        return self._position == 100
 
     @property
-    def is_open(self) -> bool | None:
-        if self._position is None:
-            return None
-        if self._state in (STATE_OPENING, STATE_CLOSING):
-            return False
-        return self._position >= 99.5
-
-    @property
-    def is_closing(self) -> bool:
-        return self._state == STATE_CLOSING
+    def is_closed(self) -> bool:
+        return self._position == 0
 
     @property
     def is_opening(self) -> bool:
         return self._state == STATE_OPENING
 
     @property
-    def force_update(self) -> bool:
-        return True
+    def is_closing(self) -> bool:
+        return self._state == STATE_CLOSING
 
     @property
     def available(self) -> bool:
@@ -329,109 +302,80 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             | CoverEntityFeature.SET_POSITION
         )
 
-    def _set_position(self, position: float | int | None) -> bool:
-        if position is None:
-            return False
-
-        value = max(0.0, min(100.0, float(position)))
-        changed = self._position is None or abs(self._position - value) >= 0.5
-        self._position = value
-
-        if changed:
-            self._last_position_change_time = time.monotonic()
-
-        return changed
-
-    def _publish_state_if_needed(self, force: bool = False) -> None:
-        now = time.monotonic()
-        if force:
-            self._last_state_report = now
-            self._last_reported_position = self._position
-            self.async_write_ha_state()
-            return
-
-        if self._position is None:
-            return
-
-        position_changed = (
-            self._last_reported_position is None
-            or abs(self._position - self._last_reported_position) >= 1
-        )
-        time_elapsed = now - self._last_state_report >= 5
-
-        if position_changed or time_elapsed:
-            self._last_reported_position = self._position
-            self._last_state_report = now
-            self.async_write_ha_state()
-
     async def async_added_to_hass(self) -> None:
-        """Handle entity being added to Home Assistant.
-
-        Restore the last known position so covers survive restarts with a
-        realistic state instead of always defaulting to fully open.
-        """
+        """Register callbacks and restore state when added to Home Assistant."""
         await super().async_added_to_hass()
 
         last_state = await self.async_get_last_state()
-
         if last_state:
-            _LOGGER.debug(
-                "Restoring last known state for '%s': %s",
-                self._attr_name,
-                last_state,
-            )
-
-            # Be careful: position 0 is a valid value but is falsy in Python.
-            # We therefore must NOT use "or" between the two lookups.
-            last_position = last_state.attributes.get(ATTR_CURRENT_POSITION)
-            if last_position is None:
-                last_position = last_state.attributes.get(ATTR_POSITION)
-
+            last_position = last_state.attributes.get(ATTR_POSITION)
             if last_position is not None:
-                try:
-                    # Ensure we work with a numeric value
-                    self._set_position(float(last_position))
-                    _LOGGER.debug(
-                        "Restored position for '%s' to %s",
-                        self._attr_name,
-                        self._position,
-                    )
-                except (TypeError, ValueError):
-                    _LOGGER.warning(
-                        "Invalid stored position '%s' for '%s'. Falling back to 100.",
-                        last_position,
-                        self._attr_name,
-                    )
-                    self._set_position(100)
+                self._position = float(last_position)
+                _LOGGER.debug(
+                    "Restored position for '%s' to %s", self._attr_name, self._position
+                )
             else:
                 _LOGGER.warning(
-                    "No position attribute in last state for '%s'. Defaulting to 100.",
+                    "No valid position found in the last state for '%s', defaulting to 100.",
                     self._attr_name,
                 )
-                self._set_position(100)
+                self._position = 100
         else:
             _LOGGER.info(
-                "No last state available for '%s'. Initializing position to default (100).",
+                "No last state available for '%s', initializing position to default (100).",
                 self._attr_name,
             )
-            self._set_position(100)
+            self._position = 100
 
-        # Make sure Home Assistant (and bridges like HomeKit) see the restored state
-        self._publish_state_if_needed(force=True)
-
-        # Listen for Nikobus button events
-        remove = self.hass.bus.async_listen(
-            "nikobus_button_pressed",
-            self._handle_nikobus_button_event,
+        self._state = self.coordinator.get_cover_state(self._address, self._channel)
+        self._previous_state = self._state
+        _LOGGER.debug(
+            "Initialized state for '%s' to %s (channel=%d, address=%s).",
+            self._attr_name,
+            self._state,
+            self._channel,
+            self._address,
         )
-        self.async_on_remove(remove)
+
+        self.hass.bus.async_listen(
+            "nikobus_button_pressed", self._handle_nikobus_button_event
+        )
+        self.async_write_ha_state()
 
     @callback
     def _handle_coordinator_update(self) -> None:
         new_state = self.coordinator.get_cover_state(self._address, self._channel)
         if new_state != self._previous_state:
             self.hass.async_create_task(self._process_state_change(new_state))
-            self._publish_state_if_needed(force=True)
+            self.async_write_ha_state()
+
+    async def _handle_nikobus_button_event(self, event: Any) -> None:
+        """Handle the `nikobus_button_pressed` event and update the cover state."""
+        if event.data.get("impacted_module_address") != self._address:
+            return
+
+        new_state = self.coordinator.get_cover_state(self._address, self._channel)
+        if new_state != self._previous_state:
+            _LOGGER.debug(
+                "State changed for %s: %s -> %s",
+                self._attr_name,
+                self._previous_state,
+                new_state,
+            )
+            if event.data.get("button_operation_time") is not None:
+                self._button_operation_time = float(
+                    event.data.get("button_operation_time")
+                )
+                _LOGGER.debug(
+                    "Received button operation time for %s: %s",
+                    self._attr_name,
+                    self._button_operation_time,
+                )
+            # source = "ha" if event.data.get("virtual", True) else "nikobus"
+            await self._process_state_change(new_state, source="nikobus")
+            self.async_write_ha_state()
+        else:
+            _LOGGER.debug("No state change for %s; ignoring event.", self._attr_name)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         try:
@@ -450,20 +394,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             )
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        _LOGGER.debug("Stop requested for %s", self._attr_name)
-
-        if self._direction is None:
-            _LOGGER.debug(
-                "Direction is unknown for %s when stopping; finalizing movement locally.",
-                self._attr_name,
-            )
-            await self._finalize_movement()
-            return
-
-        async def completion_handler() -> None:
-            await self._finalize_movement()
-
         try:
+
+            async def completion_handler() -> None:
+                await self._finalize_movement()
+
             await self.coordinator.api.stop_cover(
                 self._address,
                 self._channel,
@@ -472,31 +407,29 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             )
         except Exception as exc:
             _LOGGER.error(
-                "Error while sending STOP command for %s: %s",
-                self._attr_name,
-                exc,
-                exc_info=True,
+                "Failed to stop cover %s: %s", self._attr_name, exc, exc_info=True
             )
-            await self._finalize_movement()
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         target_position = kwargs.get(ATTR_POSITION)
         if target_position is None:
             return
 
+        current_time = time.monotonic()
+        if current_time - self._last_position_change_time < 1:
+            _LOGGER.debug(
+                "Skipping position update for %s due to rapid commands.",
+                self._attr_name,
+            )
+            return
+
+        self._last_position_change_time = current_time
+
         if self._position == target_position:
             _LOGGER.debug("Cover %s is already at target position.", self._attr_name)
             return
 
         direction = "opening" if target_position > self._position else "closing"
-        _LOGGER.debug(
-            "Set cover position requested for %s: current=%s, target=%s, direction=%s",
-            self._attr_name,
-            self._position,
-            target_position,
-            direction,
-        )
-
         try:
             await self._start_movement(direction, target_position=target_position)
         except Exception as exc:
@@ -543,7 +476,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._state = new_state
             self._position_estimator.start(self._direction, self._position)
             self._movement_task = self.hass.async_create_task(self._update_position())
-            self._publish_state_if_needed(force=True)
         elif new_state == STATE_STOPPED:
             if self._in_motion:
                 await self._finalize_movement()
@@ -561,19 +493,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if self._in_motion:
             await self._finalize_movement()
 
-        self._movement_source = "ha"
-        self._direction = direction
-        self._in_motion = True
-        self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
-        self._previous_state = self._state
-        self._position_estimator.start(self._direction, self._position)
-        await self._start_position_estimation(target_position=target_position)
-        self._publish_state_if_needed(force=True)
-
         async def completion_handler() -> None:
-            _LOGGER.debug(
-                "Nikobus acknowledged %s command for %s", direction, self._attr_name
-            )
+            self._direction = direction
+            self._in_motion = True
+            self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
+            self._position_estimator.start(self._direction, self._position)
+            await self._start_position_estimation(target_position=target_position)
+            self.async_write_ha_state()
 
         await self._operate_cover(direction, completion_handler)
 
@@ -600,7 +526,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def _start_position_estimation(
         self, target_position: Optional[int] = None
     ) -> None:
-        await self._cancel_movement_task()
+        if self._movement_task and not self._movement_task.done():
+            self._movement_task.cancel()
+            try:
+                await self._movement_task
+            except asyncio.CancelledError:
+                _LOGGER.debug(
+                    "Cancelled existing movement task for %s", self._attr_name
+                )
         self._movement_task = self.hass.async_create_task(
             self._update_position(target_position)
         )
@@ -609,17 +542,16 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         start_time = time.monotonic()
         try:
             while self._in_motion:
-                if self._direction is None:
-                    _LOGGER.warning(
-                        "Cover %s is in motion but direction is None; finalizing.",
+                if self._position is None:
+                    _LOGGER.error(
+                        "Position is None in _update_position for %s; defaulting based on direction.",
                         self._attr_name,
                     )
-                    await self._finalize_movement()
-                    return
+                    self._position = 0 if self._direction == "closing" else 100
 
                 estimated_position = self._position_estimator.get_position()
                 if estimated_position is not None:
-                    self._set_position(estimated_position)
+                    self._position = estimated_position
                 else:
                     _LOGGER.warning(
                         "Position estimator returned None in _update_position for %s",
@@ -631,11 +563,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     self._button_operation_time
                     and elapsed >= self._button_operation_time
                 ):
-                    _LOGGER.debug(
-                        "Button operation time reached for %s (%.2fs); stopping cover.",
-                        self._attr_name,
-                        self._button_operation_time,
-                    )
                     await self.async_stop_cover()
                     return
 
@@ -654,8 +581,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                             target_position,
                             self._attr_name,
                         )
-                        self._set_position(target_position)
-                        await self.async_stop_cover()
+                        self._position = target_position
+                        self._in_motion = False
+                        self._direction = None
+                        self._state = STATE_STOPPED
+                        if self._movement_source == "ha":
+                            await self.async_stop_cover()
+                        else:
+                            await self._finalize_movement()
                         return
 
                 if (self._direction == "opening" and self._position >= 100) or (
@@ -664,10 +597,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     _LOGGER.debug(
                         "Cover %s fully %s.", self._attr_name, self._direction
                     )
-                    self._set_position(100 if self._direction == "opening" else 0)
+                    self._position = 100 if self._direction == "opening" else 0
+                    self._in_motion = False
+                    self._direction = None
                     self._state = STATE_STOPPED
-                    self._publish_state_if_needed(force=True)
-
+                    self.async_write_ha_state()
                     if self._movement_source == "ha":
                         await asyncio.sleep(self._operation_time)
                         await self.async_stop_cover()
@@ -675,9 +609,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                         await self._finalize_movement()
                     return
 
-                self._publish_state_if_needed()
+                self.async_write_ha_state()
                 await asyncio.sleep(0.5)
-
         except asyncio.CancelledError:
             _LOGGER.debug("Position update for %s was cancelled.", self._attr_name)
         except Exception as e:
@@ -692,39 +625,28 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._movement_task = None
 
     async def _finalize_movement(self) -> None:
+        """Finalize cover movement, stop the estimator, and reset state."""
         _LOGGER.debug("Finalizing movement for %s", self._attr_name)
-
-        await self._cancel_movement_task()
-
-        final_pos = self._position_estimator.current_position
-        if final_pos is not None:
-            self._set_position(final_pos)
-
         self._position_estimator.stop()
-        self._in_motion = False
-        self._direction = None
-        self._button_operation_time = None
-        self._state = STATE_STOPPED
 
-        self._publish_state_if_needed(force=True)
-        self.coordinator.set_bytearray_state(
-            self._address,
-            self._channel,
-            STATE_STOPPED,
-        )
-
-    async def _cancel_movement_task(self) -> None:
         if self._movement_task and not self._movement_task.done():
             self._movement_task.cancel()
             try:
                 await self._movement_task
             except asyncio.CancelledError:
-                _LOGGER.debug(
-                    "Cancelled existing movement task for %s", self._attr_name
-                )
-        self._movement_task = None
+                _LOGGER.debug("Cancelled movement task for %s.", self._attr_name)
+
+        self._in_motion = False
+        self._direction = None
+        self._button_operation_time = None
+        self._state = STATE_STOPPED
+        self.async_write_ha_state()
+        self.coordinator.set_bytearray_state(
+            self._address, self._channel, STATE_STOPPED
+        )
 
     async def _handle_nikobus_button_event(self, event: Any) -> None:
+        """Handle the `nikobus_button_pressed` event and update the cover state."""
         if event.data.get("impacted_module_address") != self._address:
             _LOGGER.debug("Skipping event for %s (not impacted).", self._attr_name)
             return
@@ -747,6 +669,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     self._button_operation_time,
                 )
             await self._process_state_change(new_state, source="nikobus")
-            self._publish_state_if_needed(force=True)
+            self.async_write_ha_state()
         else:
             _LOGGER.debug("No state change for %s; ignoring event.", self._attr_name)

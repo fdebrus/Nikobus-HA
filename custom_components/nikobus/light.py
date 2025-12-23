@@ -13,12 +13,12 @@ from homeassistant.components.light import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
 from .exceptions import NikobusError
-from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,7 +90,7 @@ def _register_nikobus_dimmer_device(
     )
 
 
-class NikobusLightEntity(NikobusEntity, LightEntity):
+class NikobusLightEntity(CoordinatorEntity, LightEntity):
     """Represents a Nikobus dimmer light entity within Home Assistant."""
 
     def __init__(
@@ -103,12 +103,7 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
         module_model: str,
     ) -> None:
         """Initialize the light entity from the Nikobus system configuration."""
-        super().__init__(
-            coordinator=coordinator,
-            module_address=address,
-            channel=channel,
-            name=channel_description,
-        )
+        super().__init__(coordinator)
         self._address = address
         self._channel = channel
         self._channel_description = channel_description
@@ -118,13 +113,13 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
         self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
         self._attr_name = channel_description
 
+        # Supported color modes: brightness
         self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
         self._attr_color_mode = ColorMode.BRIGHTNESS
 
+        # Internal state variables
         self._is_on: bool | None = None
         self._brightness: int | None = None
-
-        self._refresh_cached_state()
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -139,27 +134,15 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
     @property
     def is_on(self) -> bool:
         """Return True if the light is on (non-zero brightness)."""
-        self._ensure_cached_state()
-        return bool(self._is_on)
+        return self._is_on if self._is_on is not None else self.brightness > 0
 
     @property
     def brightness(self) -> int:
         """Return the brightness of the light (0..255)."""
-        self._ensure_cached_state()
-        return self._brightness or 0
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
-        self._refresh_cached_state()
-        self.async_write_ha_state()
-
-    def _refresh_cached_state(self) -> None:
-        """Refresh cached brightness/state from the coordinator."""
+        if self._brightness is not None:
+            return self._brightness
         try:
-            brightness = self.coordinator.get_light_brightness(
-                self._address, self._channel
-            )
+            return self.coordinator.get_light_brightness(self._address, self._channel)
         except NikobusError as err:
             _LOGGER.error(
                 "Failed to get brightness for Nikobus light (addr=%s, channel=%d): %s",
@@ -167,17 +150,14 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
                 self._channel,
                 err,
             )
-            self._is_on = False
-            self._brightness = 0
-            return
+            return 0
 
-        self._brightness = brightness
-        self._is_on = brightness > 0
-
-    def _ensure_cached_state(self) -> None:
-        """Ensure cached state is populated before returning values."""
-        if self._brightness is None or self._is_on is None:
-            self._refresh_cached_state()
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._is_on = None
+        self._brightness = None
+        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on, optionally with a specified brightness."""

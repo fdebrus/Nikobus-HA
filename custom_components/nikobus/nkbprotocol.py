@@ -3,20 +3,14 @@
 
 def int_to_hex(value: int, digits: int) -> str:
     """Convert an integer to a hexadecimal string with a specified number of digits."""
-    return f"{value:0{digits}X}"
-
-
-def _iter_hex_bytes(data: str):
-    """Yield integer bytes from a hex-encoded string."""
-    for idx in range(0, len(data), 2):
-        yield int(data[idx : idx + 2], 16)
+    return ("00000000" + format(value, "x").upper())[-digits:]
 
 
 def calc_crc1(data: str) -> int:
     """Calculate CRC-16/ANSI X3.28 (CRC-16-IBM) for the given data."""
     crc = 0xFFFF
-    for byte in _iter_hex_bytes(data):
-        crc ^= byte << 8
+    for j in range(len(data) // 2):
+        crc ^= int(data[j * 2 : (j + 1) * 2], 16) << 8
         for _ in range(8):
             crc = (crc << 1) ^ 0x1021 if (crc >> 15) & 1 else crc << 1
     return crc & 0xFFFF
@@ -25,8 +19,8 @@ def calc_crc1(data: str) -> int:
 def calc_crc1_ack(data: str) -> int:
     crc = 0x0000
     # Process every two hex digits (one byte)
-    for byte in _iter_hex_bytes(data):
-        crc ^= byte << 8
+    for j in range(len(data) // 2):
+        crc ^= int(data[j * 2 : (j + 1) * 2], 16) << 8
         for _ in range(8):
             crc = ((crc << 1) ^ 0x1021) if (crc >> 15) & 1 else (crc << 1)
             crc &= 0xFFFF
@@ -101,15 +95,6 @@ def reverse_24bit_to_hex(n: int) -> str:
     return reversed_hex
 
 
-def _reverse_24bits(value: int) -> int:
-    """Reverse (mirror) the bits of a 24-bit integer."""
-    reversed_bits = 0
-    for _ in range(24):
-        reversed_bits = (reversed_bits << 1) | (value & 1)
-        value >>= 1
-    return reversed_bits
-
-
 def nikobus_to_button_address(hex_address, button="1A"):
     """
     Convert a 24-bit Nikobus module 'hex_address' (e.g. '123456')
@@ -143,7 +128,14 @@ def nikobus_to_button_address(hex_address, button="1A"):
     combined_24 = (btn_3bits << 21) | (shifted_22 & 0x1FFFFF)
 
     # 4) Reverse all 24 bits. (bit 0 <-> bit 23, etc.)
-    reversed_24 = _reverse_24bits(combined_24)
+    def reverse_24bits(x):
+        r = 0
+        for i in range(24):
+            r <<= 1
+            r |= (x >> i) & 1
+        return r
+
+    reversed_24 = reverse_24bits(combined_24)
 
     # 5) Format as hex, uppercase, zero-padded to 6 digits, then prepend '#N'
     return "#N" + f"{reversed_24:06X}"
@@ -163,7 +155,14 @@ def nikobus_button_to_module(button_hex):
     reversed_24 = int(reversed_hex, 16)  # parse as 24-bit hex
 
     # 2) Reverse all 24 bits to get 'combined_24'
-    combined_24 = _reverse_24bits(reversed_24)
+    def reverse_24bits(x):
+        r = 0
+        for i in range(24):
+            r <<= 1
+            r |= (x >> i) & 1
+        return r
+
+    combined_24 = reverse_24bits(reversed_24)
 
     # 3) Extract the top 3 bits => the "button code"
     button_code = (combined_24 >> 21) & 0b111  # bits 23..21

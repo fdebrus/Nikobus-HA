@@ -76,7 +76,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = False
         self._discovery_module = None
         self.discovery_module_address = None
-        self._module_lookup: dict[str, tuple[str, dict]] = {}
 
     @property
     def discovery_running(self) -> bool:
@@ -96,12 +95,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def connect(self) -> None:
         """Connect to the Nikobus system."""
-        # Ensure we start from a clean state when reconnecting
-        self.nikobus_module_states = {}
-        self.dict_module_data = {}
-        self.dict_button_data = {}
-        self.dict_scene_data = {}
-
         try:
             await self.nikobus_connection.connect()
         except NikobusConnectionError as e:
@@ -119,8 +112,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.dict_scene_data = await self.nikobus_config.load_json_data(
                     "nikobus_scene_config.json", "scene"
                 )
-
-                self._build_module_lookup()
 
                 # Initialize module state tracking dynamically based on channels
                 for modules in self.dict_module_data.values():
@@ -162,13 +153,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             except HomeAssistantError as e:
                 _LOGGER.error("Failed to initialize Nikobus components: %s", e)
                 raise
-
-    def _build_module_lookup(self) -> None:
-        """Create a fast lookup table for module metadata."""
-        self._module_lookup = {}
-        for module_type, modules in self.dict_module_data.items():
-            for module_id, module_data in modules.items():
-                self._module_lookup[module_id] = (module_type, module_data)
 
     async def discover_devices(self, module_address) -> None:
         """Discover available module / button."""
@@ -370,9 +354,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Handle configuration changes via reconfigure."""
         _LOGGER.info("Reconfiguring Nikobus integration.")
 
-        # Stop current connections and tasks before applying new settings
-        await self.stop()
-
         self.connection_string = entry.data.get(CONF_CONNECTION_STRING)
         self._refresh_interval = entry.data.get(CONF_REFRESH_INTERVAL, 120)
         self._has_feedback_module = entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
@@ -383,11 +364,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             if self._has_feedback_module or self._prior_gen3
             else timedelta(seconds=self._refresh_interval)
         )
-
-        self.update_interval = self._update_interval
-
-        # Rebuild connection with the updated connection string
-        self.nikobus_connection = NikobusConnect(self.connection_string)
 
         await self.connect()
         await self.async_refresh()
@@ -411,15 +387,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     def get_module_type(self, module_id: str) -> str:
         """Determine the module type based on the module ID."""
-        if module_id in self._module_lookup:
-            return self._module_lookup[module_id][0]
+        for module_type, modules in self.dict_module_data.items():
+            if module_id in modules:
+                return module_type
         _LOGGER.error(f"Module ID {module_id} not found in known module types")
         return "unknown"
 
     def get_module_channel_count(self, module_id: str) -> int:
-        if module_id in self._module_lookup:
-            module_data = self._module_lookup[module_id][1]
-            return len(module_data.get("channels", []))
+        for modules in self.dict_module_data.values():
+            if module_id in modules:
+                module_data = modules[module_id]
+                return len(module_data.get("channels", []))
         _LOGGER.error(f"Module ID {module_id} not found in module configuration")
         return 0
 

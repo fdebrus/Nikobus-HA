@@ -9,10 +9,10 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
-from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,29 +50,26 @@ def register_global_listener(
 ) -> None:
     """Register a single global event listener for all Nikobus sensors."""
 
-    if not sensors:
-        return
-
-    address_map = {sensor._address: sensor for sensor in sensors}
-
     @callback
     async def handle_event(event: Any) -> None:
         """Process button press events for registered sensors."""
+        try:
+            address = event.data.get("address")
+            if not address:
+                _LOGGER.warning("Received event without address: %s", event.data)
+                return
+            for sensor in sensors:
+                if sensor._address == address:
+                    await sensor._handle_button_event(event)
+        except Exception as e:
+            _LOGGER.error(
+                "Error handling nikobus_button_pressed event: %s", e, exc_info=True
+            )
 
-        address = event.data.get("address")
-        if not address:
-            _LOGGER.warning("Received event without address: %s", event.data)
-            return
-
-        if sensor := address_map.get(address):
-            await sensor._handle_button_event(event)
-
-    remove = hass.bus.async_listen("nikobus_button_pressed", handle_event)
-    domain_data = hass.data.setdefault(DOMAIN, {})
-    domain_data["button_sensor_remove"] = remove
+    hass.bus.async_listen("nikobus_button_pressed", handle_event)
 
 
-class NikobusButtonSensor(NikobusEntity, SensorEntity):
+class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
     """Represents a Nikobus button sensor entity within Home Assistant."""
 
     def __init__(
@@ -83,16 +80,12 @@ class NikobusButtonSensor(NikobusEntity, SensorEntity):
         address: str,
     ) -> None:
         """Initialize the button sensor entity with data from the Nikobus system configuration."""
-        super().__init__(
-            coordinator=coordinator,
-            module_address=address,
-            name=f"Nikobus Button Sensor {address}",
-        )
+        super().__init__(coordinator)
         self._hass = hass
+        self._coordinator = coordinator
         self._description = description
         self._address = address
 
-        # Keep original unique_id
         self._attr_name = f"Nikobus Button Sensor {address}"
         self._attr_unique_id = f"{DOMAIN}_button_sensor_{address}"
         self._state: str | None = "idle"
@@ -132,5 +125,4 @@ class NikobusButtonSensor(NikobusEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the coordinator if needed."""
-        # Since the state is event-driven, no coordinator updates are required.
-        pass
+        pass  # Since the state is event-driven, no coordinator updates are required.

@@ -1,11 +1,8 @@
 """Diagnostics support for the Nikobus integration."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 
-from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import (
@@ -23,27 +20,23 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-TO_REDACT = {CONF_CONNECTION_STRING}
-
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, config_entry: ConfigEntry
 ) -> dict[str, Any]:
-    """Return diagnostics for a Nikobus config entry."""
     _LOGGER.debug(
-        "Generating diagnostics for Nikobus entry: %s",
+        "Generating diagnostics for single-instance Nikobus entry: %s",
         config_entry.entry_id,
     )
 
-    device_registry: DeviceRegistry = await async_get_device_registry(hass)
+    # Retrieve the device registry
+    device_registry: DeviceRegistry = async_get_device_registry(hass)
 
-    # Gather all Nikobus devices that belong to this config entry
+    # Gather all Nikobus devices
     nikobus_devices: list[DeviceEntry] = [
         device
-        for device in device_registry.async_entries_for_config_entry(
-            config_entry.entry_id
-        )
-        if any(identifier[0] == DOMAIN for identifier in device.identifiers)
+        for device in device_registry.devices.values()
+        if any(ident for ident in device.identifiers if DOMAIN in ident)
     ]
 
     _LOGGER.debug(
@@ -52,6 +45,7 @@ async def async_get_config_entry_diagnostics(
         config_entry.entry_id,
     )
 
+    # Build device info list
     devices_info: list[dict[str, Any]] = [
         {
             "id": dev.id,
@@ -63,11 +57,9 @@ async def async_get_config_entry_diagnostics(
         for dev in nikobus_devices
     ]
 
+    # Build config entry diagnostics
     diagnostics_data: dict[str, Any] = {
         "config_entry": {
-            "entry_id": config_entry.entry_id,
-            "title": config_entry.title,
-            "version": config_entry.version,
             "connection_string": config_entry.options.get(
                 CONF_CONNECTION_STRING,
                 config_entry.data.get(CONF_CONNECTION_STRING, "Unknown"),
@@ -81,14 +73,12 @@ async def async_get_config_entry_diagnostics(
                 config_entry.data.get(CONF_REFRESH_INTERVAL, "Unknown"),
             ),
         },
-        "devices_info": devices_info,
+        "devices_info": devices_info,  # Return a list of all Nikobus devices
     }
 
-    redacted = async_redact_data(diagnostics_data, TO_REDACT)
-
     _LOGGER.debug(
-        "Diagnostics generated for entry %s (devices: %d)",
+        "Diagnostics generated (single-instance) for entry %s: %s",
         config_entry.entry_id,
-        len(devices_info),
+        diagnostics_data,
     )
-    return redacted
+    return diagnostics_data
