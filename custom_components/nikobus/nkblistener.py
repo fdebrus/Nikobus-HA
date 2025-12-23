@@ -118,10 +118,7 @@ class NikobusEventListener:
                 crc8_str,
                 message,
             )
-            raise NikobusDataError(
-                "CRC8 mismatch: calculated %s, expected %s, message %s"
-                % (calc_crc8_val, crc8_str, message)
-            )
+            return False
         _LOGGER.debug(
             "CRC8 match: calculated %s, expected %s, message %s",
             calc_crc8_val,
