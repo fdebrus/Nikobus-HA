@@ -1,3 +1,48 @@
+<p align="left">
+
+  <img src="https://img.shields.io/badge/Nikobus-Integration-blue?style=for-the-badge">
+  &nbsp;
+
+  <a href="https://github.com/fdebrus/Nikobus-HA">
+    <img src="https://img.shields.io/badge/Maintainer-fdebrus-green?style=for-the-badge">
+  </a>
+  &nbsp;
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases">
+    <img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=for-the-badge">
+  </a>
+  &nbsp;
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases/latest">
+    <img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/latest/total?style=for-the-badge">
+  </a>
+  &nbsp;
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases">
+    <img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/total?style=for-the-badge">
+  </a>
+  &nbsp;
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/issues">
+    <img src="https://img.shields.io/github/issues/fdebrus/Nikobus-HA?style=for-the-badge">
+  </a>
+  &nbsp;
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/stargazers">
+    <img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=for-the-badge">
+  </a>
+  &nbsp;
+
+  <a href="https://www.buymeacoffee.com/fdebrus">
+    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-FFDD00?style=for-the-badge&logo=buymeacoffee">
+  </a>
+
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/home-assistant/assets/master/logo/logo-horizontal.png" alt="Home Assistant logo" width="320" />
+</p>
+
 # Nikobus Integration for Home Assistant
 
 This custom integration connects Home Assistant to your Nikobus installation so you can control switches, dimmers, shutters, and respond to button presses directly from Home Assistant.
@@ -169,6 +214,7 @@ After installation, an example file is available at `/config/custom_components/n
 - `channels`: Each channel can have a description; keep descriptions unique across modules to avoid duplicate entity names.
 - For buttons with feedback LEDs, set `led_on` and `led_off` addresses (case-sensitive, format like `8AA8FA`). Leave blank if unused.
 - For roller outputs, add `operation_time` (seconds to fully open/close) so the integration can simulate shutter positioning.
+- To expose a roller (cover) output as a standard switch, set `use_as_switch` to `true` for that channel; the integration will create a switch entity that opens on "on" and stops on "off".
 - Prefix an unused output description with `not_in_use` to skip creating entities for it.
 
 ### Switch Module Example
@@ -294,3 +340,15 @@ If a button controls a shutter, set `operation_time` (in seconds) on the button 
 ## Issues and Discussion
 
 For questions or general requests, please visit the [Home Assistant community thread](https://community.home-assistant.io/t/custom-component-nikobus/732832).
+
+## Trademark Notice
+
+Nikobus is a trademark of Niko NV. This project is an independent community effort and is not affiliated with, endorsed by, or sponsored by Niko NV.
+
+## License
+
+This project is provided for personal and other non-commercial use only. You may
+view, copy, modify, and share the code and documentation for non-commercial
+purposes. Commercial use of this software is not permitted without prior written
+permission from the maintainers. The software is provided "as is" without
+warranties of any kind.
