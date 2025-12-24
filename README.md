@@ -1,34 +1,27 @@
 <p align="left">
-  <img src="https://img.shields.io/badge/Nikobus-Integration-blue?style=flat">
-  &nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA">
-    <img src="https://img.shields.io/badge/Maintainer-fdebrus-green?style=flat">
+  <a href="https://www.buymeacoffee.com/fdebrus" style="text-decoration:none; margin-right:6px;">
+    <img src="https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-FFDD00?style=flat&logo=buymeacoffee">
   </a>
-  &nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases">
-    <img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=flat">
+
+  <img src="https://img.shields.io/badge/Nikobus-Integration-blue?style=flat" style="margin-right:6px;">
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases" style="text-decoration:none; margin-right:6px;">
+    <img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=flat&label=release">
   </a>
-  &nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases/latest">
-    <img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/latest/total?style=flat">
-  </a>
-  &nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases">
-    <img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/total?style=flat">
-  </a>
-  &nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/issues">
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/issues" style="text-decoration:none; margin-right:6px;">
     <img src="https://img.shields.io/github/issues/fdebrus/Nikobus-HA?style=flat">
   </a>
-  &nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/stargazers">
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/stargazers" style="text-decoration:none; margin-right:6px;">
     <img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat">
   </a>
-  &nbsp;
-  <a href="https://www.buymeacoffee.com/fdebrus">
-    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-FFDD00?style=flat&logo=buymeacoffee">
+
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases" style="text-decoration:none;">
+    <img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/total?style=flat">
   </a>
 </p>
+
 
 # Nikobus Integration for Home Assistant
 
