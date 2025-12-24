@@ -1,47 +1,4 @@
-<p align="left">
-
-  <img src="https://img.shields.io/badge/Nikobus-Integration-blue?style=for-the-badge">
-  &nbsp;
-
-  <a href="https://github.com/fdebrus/Nikobus-HA">
-    <img src="https://img.shields.io/badge/Maintainer-fdebrus-green?style=for-the-badge">
-  </a>
-  &nbsp;
-
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases">
-    <img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=for-the-badge">
-  </a>
-  &nbsp;
-
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases/latest">
-    <img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/latest/total?style=for-the-badge">
-  </a>
-  &nbsp;
-
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases">
-    <img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/total?style=for-the-badge">
-  </a>
-  &nbsp;
-
-  <a href="https://github.com/fdebrus/Nikobus-HA/issues">
-    <img src="https://img.shields.io/github/issues/fdebrus/Nikobus-HA?style=for-the-badge">
-  </a>
-  &nbsp;
-
-  <a href="https://github.com/fdebrus/Nikobus-HA/stargazers">
-    <img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=for-the-badge">
-  </a>
-  &nbsp;
-
-  <a href="https://www.buymeacoffee.com/fdebrus">
-    <img src="https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Donate-FFDD00?style=for-the-badge&logo=buymeacoffee">
-  </a>
-
-</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/home-assistant/assets/master/logo/logo-horizontal.png" alt="Home Assistant logo" width="320" />
-</p>
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-donate-yellow)](https://www.buymeacoffee.com/fdebrus)
 
 # Nikobus Integration for Home Assistant
 
