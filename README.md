@@ -8,7 +8,6 @@
   <a href="https://github.com/fdebrus/Nikobus-HA/releases"><img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=flat&label=Release" alt="Latest release"></a>
   <a href="https://github.com/fdebrus/Nikobus-HA/issues"><img src="https://img.shields.io/github/issues/fdebrus/Nikobus-HA?style=flat&label=Issues" alt="Open issues"></a>
   <a href="https://github.com/fdebrus/Nikobus-HA/stargazers"><img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat&label=Stars" alt="GitHub stars"></a>
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases"><img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/total?style=flat&label=Downloads" alt="Downloads"></a>
 </p>
 
 
