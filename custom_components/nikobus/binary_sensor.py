@@ -6,9 +6,9 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
@@ -88,7 +88,7 @@ def register_global_listener(hass: HomeAssistant) -> None:
     )
 
 
-class NikobusButtonSensor(NikobusEntity, BinarySensorEntity):
+class NikobusButtonSensor(NikobusEntity, SensorEntity):
     """Represents a Nikobus button sensor entity within Home Assistant."""
 
     def __init__(
@@ -109,7 +109,7 @@ class NikobusButtonSensor(NikobusEntity, BinarySensorEntity):
 
         self._attr_name = f"Nikobus Button Sensor {address}"
         self._attr_unique_id = f"{DOMAIN}_button_sensor_{address}"
-        self._attr_is_on = False
+        self._attr_native_value = "idle"
         self._reset_cancel: Any | None = None
 
     async def async_added_to_hass(self) -> None:
@@ -128,7 +128,7 @@ class NikobusButtonSensor(NikobusEntity, BinarySensorEntity):
         """Handle Nikobus button press events."""
         if event.data.get("address") == self._address:
             _LOGGER.debug("Button sensor %s detected a press event.", self._address)
-            self._attr_is_on = True
+            self._attr_native_value = "pressed"
             self.async_write_ha_state()
 
             # Reset the state after a short delay
@@ -141,7 +141,7 @@ class NikobusButtonSensor(NikobusEntity, BinarySensorEntity):
     def _async_reset_state(self, _: datetime) -> None:
         """Reset the sensor state to idle after a short delay."""
         self._reset_cancel = None
-        self._attr_is_on = False
+        self._attr_native_value = "idle"
         self.async_write_ha_state()
 
     @callback
