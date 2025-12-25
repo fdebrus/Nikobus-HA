@@ -260,7 +260,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._button_operation_time: Optional[float] = None
 
         self._attr_name = channel_description
-        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
+        self._attr_unique_id = f"{DOMAIN}_cover_{self._address}_{self._channel}"
         self._attr_device_class = CoverDeviceClass.SHUTTER
 
         _LOGGER.debug(

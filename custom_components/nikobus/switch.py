@@ -174,7 +174,7 @@ class NikobusSwitchEntity(NikobusEntity, SwitchEntity):
         self._channel = channel
         self._channel_description = channel_description
 
-        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
+        self._attr_unique_id = f"{DOMAIN}_switch_{self._address}_{self._channel}"
         self._attr_name = channel_description
         self._is_on: bool | None = None
 
