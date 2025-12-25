@@ -8,13 +8,7 @@ from typing import Dict, List, Optional
 from homeassistant.core import HomeAssistant
 from custom_components.nikobus.exceptions import NikobusTimeoutError
 
-from .const import (
-    REFRESH_DELAY,
-    DIMMER_DELAY,
-    SHORT_PRESS,
-    MEDIUM_PRESS,
-    LONG_PRESS,
-)
+from .const import REFRESH_DELAY, DIMMER_DELAY, SHORT_PRESS, LONG_PRESS
 
 _LOGGER = logging.getLogger(__name__)
 TIMER_DURATIONS = (1, 2, 3)
@@ -38,6 +32,7 @@ class NikobusActuator:
         self._debounce_time_ms = 150
         self._last_address: Optional[str] = None
         self._last_press_time: Optional[float] = None
+        self._last_release_time: Optional[float] = None
         self._press_task: Optional[asyncio.Task] = None
         self._press_task_active = False
         self._timer_tasks: List[asyncio.Task] = []
@@ -49,12 +44,44 @@ class NikobusActuator:
         current_time = time.monotonic()
 
         if self._last_address != address:
+            self._fire_press_interval_event(address, current_time)
             self._last_address = address
             self._last_press_time = current_time
             self._start_press_task(address)
             self._start_timer_tasks(address)
         else:
             self._last_press_time = current_time
+
+    def _fire_press_interval_event(self, address: str, current_time: float) -> None:
+        """Fire an event describing how long it has been since the last release."""
+
+        if self._last_release_time is None:
+            _LOGGER.debug(
+                "No previous release time recorded for address %s; skipping interval event",
+                address,
+            )
+            return
+
+        time_since_release = current_time - self._last_release_time
+        if time_since_release < 1:
+            event_type = "nikobus_button_pressed_0"
+        elif time_since_release < 2:
+            event_type = "nikobus_button_pressed_1"
+        elif time_since_release < 3:
+            event_type = "nikobus_button_pressed_2"
+        else:
+            event_type = "nikobus_button_pressed_3"
+
+        _LOGGER.debug(
+            "Firing press interval event %s for address %s (%.2fs since release)",
+            event_type,
+            address,
+            time_since_release,
+        )
+        self._hass.bus.async_fire(
+            event_type,
+            {"address": address, "time_since_last_release": time_since_release},
+        )
 
     def _start_press_task(self, address: str) -> None:
         """Start the Nikobus physical button handling."""
@@ -129,6 +156,7 @@ class NikobusActuator:
 
                     self._cancel_unneeded_timers(press_duration)
                     self._fire_duration_event(address, press_duration)
+                    self._last_release_time = current_time
                     break
         except asyncio.CancelledError:
             _LOGGER.warning("Press task for address %s was cancelled", address)
@@ -148,19 +176,7 @@ class NikobusActuator:
             event_type = "nikobus_short_button_pressed"
             _LOGGER.debug("Firing event %s for address: %s", event_type, address)
             self._hass.bus.async_fire(event_type, {"address": address})
-        elif press_duration <= MEDIUM_PRESS:
-            event_type = "nikobus_button_pressed_1"
-            _LOGGER.debug("Firing event %s for address: %s", event_type, address)
-            self._hass.bus.async_fire(event_type, {"address": address})
-        elif press_duration <= LONG_PRESS:
-            event_type = "nikobus_button_pressed_2"
-            _LOGGER.debug("Firing event %s for address: %s", event_type, address)
-            self._hass.bus.async_fire(event_type, {"address": address})
-        else:
-            _LOGGER.debug(
-                "Firing event nikobus_button_pressed_3 for address: %s", address
-            )
-            self._hass.bus.async_fire("nikobus_button_pressed_3", {"address": address})
+        elif press_duration >= LONG_PRESS:
             _LOGGER.debug(
                 "Firing event nikobus_long_button_pressed for address: %s", address
             )
