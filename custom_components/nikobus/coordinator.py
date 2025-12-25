@@ -159,6 +159,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def discover_devices(self, module_address) -> None:
         """Discover available module / button."""
+        module_address = module_address.upper() if isinstance(module_address, str) else ""
         await self.hass.services.async_call(
             "persistent_notification",
             "create",
@@ -173,7 +174,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = True
         _LOGGER.debug("Starting device discovery from Nikobus")
         try:
-            if module_address:
+            if module_address == "ALL":
+                self._discovery_module = False
+                await self.nikobus_discovery.query_module_inventory(module_address)
+            elif module_address:
                 self._discovery_module = True
                 self.discovery_module_address = module_address
                 await self.nikobus_discovery.query_module_inventory(module_address)
