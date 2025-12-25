@@ -137,16 +137,12 @@ class NikobusDiscovery:
             await self.update_module_data()
             return
         num_channels = int(device_info.get("Channels", 0))
-        channels = [
-            {"description": f"{device_info['Name']} Output {i + 1}"}
-            for i in range(num_channels)
-        ]
         self.discovered_devices[converted_address] = {
             "category": device_info["Category"],
             "description": device_info["Name"],
             "model": device_info["Model"],
             "address": converted_address,
-            "channels": channels,
+            "channels": num_channels,
         }
         _LOGGER.info(
             "Discovered device: %s %s at %s from message: %s",
@@ -168,7 +164,7 @@ class NikobusDiscovery:
             category = device_info.get("Category", "Unknown")
             name = device_info.get("Name", "Unknown")
             model = device_info.get("Model", "N/A")
-            channels = device_info.get("Channels", 0)
+            channels = int(device_info.get("Channels", 0))
             slice_end = 13 if category == "Module" else 14
             converted_address = payload_bytes[11:slice_end][::-1].hex().upper()
             if "FFFFFF" in converted_address or "FF" in device_type_hex:
@@ -189,8 +185,7 @@ class NikobusDiscovery:
                     "model": model,
                     "address": converted_address,
                 }
-                if category == "Module":
-                    base_device["channels"] = channels
+                base_device["channels"] = channels
                 self.discovered_devices[converted_address] = base_device
             _LOGGER.info(
                 "Discovered %s - %s, Model: %s, at Address: %s",
