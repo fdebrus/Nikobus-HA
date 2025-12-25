@@ -73,6 +73,7 @@ class NikobusDiscovery:
                 while self._coordinator.discovery_module:
                     await asyncio.sleep(0.5)
                 _LOGGER.info("Completed discovery for module: %s", addr)
+            self.reset_state()
             if hasattr(self, "on_discovery_finished") and self.on_discovery_finished:
                 await self.on_discovery_finished()
             return
