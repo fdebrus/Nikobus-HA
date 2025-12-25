@@ -69,6 +69,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = False
         self._discovery_module = None
         self.discovery_module_address = None
+        self._reload_task = None
 
     def _get_update_interval(self) -> timedelta | None:
         """Compute the update interval based on configuration."""
@@ -123,6 +124,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     self.hass, self, self.dict_button_data, self.dict_module_data
                 )
                 self.nikobus_discovery = NikobusDiscovery(self.hass, self)
+                self.nikobus_discovery.on_discovery_finished = (
+                    self._handle_discovery_finished
+                )
                 self.nikobus_listener = NikobusEventListener(
                     self.hass,
                     self.config_entry,
@@ -464,6 +468,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             for modules in self.dict_module_data.values()
             for address in modules.keys()
         ]
+
+    async def _handle_discovery_finished(self):
+        """Reload the config entry after discovery so new devices are applied."""
+        self._discovery_running = False
+        if self._reload_task and not self._reload_task.done():
+            _LOGGER.debug("Discovery reload already in progress; skipping new reload.")
+            return
+
+        async def _reload_entry():
+            try:
+                _LOGGER.info("Discovery finished; reloading Nikobus config entry.")
+                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            except Exception as err:  # pragma: no cover - safety net
+                _LOGGER.error(
+                    "Failed to reload Nikobus config entry after discovery: %s", err
+                )
+
+        self._reload_task = self.hass.async_create_task(_reload_entry())
 
     def get_button_channels(self, main_address: str):
         """Return the discovery channels for a given button discovered_info address."""
