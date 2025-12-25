@@ -14,7 +14,7 @@ from .nkbconfig import NikobusConfig
 from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
 from .nkbactuator import NikobusActuator
-from .nkbdiscovery import NikobusDiscovery
+from .discovery import NikobusDiscovery
 
 from .const import (
     CONF_CONNECTION_STRING,
