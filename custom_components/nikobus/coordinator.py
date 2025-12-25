@@ -486,8 +486,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
         # -----------------------
         # 1) MODULE-BASED ENTITIES
-        # (lights, standard switches, covers)
-        # using: nikobus_{address}_{channel}
+        #    - dimmer_module  -> nikobus_light_{address}_{channel}
+        #    - switch_module  -> nikobus_switch_{address}_{channel}
+        #    - roller_module  -> nikobus_cover_{address}_{channel} unless use_as_switch
         # -----------------------
         for module_type, modules in self.dict_module_data.items():
             for address, module_data in modules.items():
@@ -495,20 +496,21 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     desc = ch_info.get("description", "")
                     if desc.startswith("not_in_use"):
                         continue
-                    known.add(f"{DOMAIN}_{address}_{index}")
+
+                    if module_type == "dimmer_module":
+                        known.add(f"{DOMAIN}_light_{address}_{index}")
+                    elif module_type == "switch_module":
+                        known.add(f"{DOMAIN}_switch_{address}_{index}")
+                    elif module_type == "roller_module":
+                        if ch_info.get("use_as_switch", False):
+                            known.add(f"{DOMAIN}_switch_{address}_{index}")
+                        else:
+                            known.add(f"{DOMAIN}_cover_{address}_{index}")
+                    else:
+                        known.add(f"{DOMAIN}_{address}_{index}")
 
         # -----------------------
-        # 2) ROLLER use_as_switch entities
-        # using: nikobus_switch_{address}_{channel}
-        # -----------------------
-        roller_modules = self.dict_module_data.get("roller_module", {})
-        for address, module_data in roller_modules.items():
-            for index, ch_info in enumerate(module_data.get("channels", []), start=1):
-                if ch_info.get("use_as_switch", False):
-                    known.add(f"{DOMAIN}_switch_{address}_{index}")
-
-        # -----------------------
-        # 3) Button sensors
+        # 2) Button sensors
         # using: nikobus_button_sensor_{address}
         # -----------------------
         for button in self.dict_button_data.get("nikobus_button", {}).values():
@@ -516,13 +518,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             if addr:
                 known.add(f"{DOMAIN}_button_sensor_{addr}")
                 # -----------------------
-                # 4) Push buttons
+                # 3) Push buttons
                 # using: nikobus_push_button_{address}
                 # -----------------------
                 known.add(f"{DOMAIN}_push_button_{addr}")
 
         # -----------------------
-        # 5) Scenes
+        # 4) Scenes
         # using: nikobus_scene_{scene_id}
         # -----------------------
         scene_list = self.dict_scene_data.get("scene", [])
