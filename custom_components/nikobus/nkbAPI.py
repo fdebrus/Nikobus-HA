@@ -28,7 +28,12 @@ class NikobusAPI:
             return None
 
     async def _queue_led_command(
-        self, command: str, address: str, channel: int, action: str
+        self,
+        command: str,
+        address: str,
+        channel: int,
+        action: str,
+        completion_handler=None,
     ) -> None:
         """Queue a LED command with consistent logging."""
         _LOGGER.debug(
@@ -37,7 +42,9 @@ class NikobusAPI:
             address,
             channel,
         )
-        await self._coordinator.nikobus_command.queue_command(f"#N{command}\r#E1")
+        await self._coordinator.nikobus_command.queue_command(
+            f"#N{command}\r#E1", completion_handler=completion_handler
+        )
 
     async def _execute_command(
         self,
@@ -49,9 +56,9 @@ class NikobusAPI:
     ) -> None:
         """Execute a LED command if available; otherwise, set the output state."""
         if command:
-            await self._queue_led_command(command, address, channel, "command")
-            if completion_handler:
-                await completion_handler()
+            await self._queue_led_command(
+                command, address, channel, "command", completion_handler
+            )
         else:
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, state, completion_handler=completion_handler
@@ -156,10 +163,12 @@ class NikobusAPI:
         try:
             if command:
                 await self._queue_led_command(
-                    command, address, channel, f"STOP ({direction})"
+                    command,
+                    address,
+                    channel,
+                    f"STOP ({direction})",
+                    completion_handler,
                 )
-                if completion_handler:
-                    await completion_handler()
             else:
                 await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler
