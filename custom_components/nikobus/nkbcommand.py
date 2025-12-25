@@ -87,6 +87,9 @@ class NikobusCommandHandler:
                 try:
                     if not address:
                         await self.send_command(command)
+                        if completion_handler and callable(completion_handler):
+                            _LOGGER.debug("Calling completion handler for command without address")
+                            await completion_handler()
                     else:
                         result = await self.send_command_get_answer(command, address)
                         if future and not future.done():
