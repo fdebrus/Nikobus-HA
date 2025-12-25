@@ -10,8 +10,16 @@
   <a href="https://github.com/fdebrus/Nikobus-HA/stargazers"><img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat&label=Stars" alt="GitHub stars"></a>
 </p>
 
-
 This custom integration connects Home Assistant to your Nikobus installation so you can control switches, dimmers, shutters, and respond to button presses directly from Home Assistant.
+
+## Entity unique IDs and dashboard impact
+
+Recent releases standardized unique ID formats for module-based entities (lights, switches, and covers) to include the entity type (e.g., `nikobus_light_<address>_<channel>`). If you upgrade from an older version, Home Assistant will treat the updated IDs as new entities. That means:
+
+- Existing cards, automations, scripts, and voice routines that referenced the old entity IDs need to be updated to the new ones.
+- The integration will remove orphaned entities that no longer match the configuration to prevent duplicates.
+
+After upgrading, check **Settings → Devices & Services → Entities** for the new entities and adjust any Lovelace cards or automations that relied on the previous IDs.
 
 ## Prerequisites
 
