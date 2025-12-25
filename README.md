@@ -1,16 +1,16 @@
+# Nikobus Integration for Home Assistant
+
 <p align="left">
-  <a href="https://www.buymeacoffee.com/fdebrus"><img src="https://img.shields.io/badge/Donate-Buy%20Me%20A%20Coffee-FFDD00?style=flat&logo=buymeacoffee" alt="Donate"></a>&nbsp;
-  <img src="https://img.shields.io/badge/Nikobus-Integration-blue?style=flat" alt="Nikobus Integration">&nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA"><img src="https://img.shields.io/badge/Maintainer-fdebrus-green?style=flat" alt="Maintainer"></a>&nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases"><img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=flat&label=release" alt="Release"></a>&nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/issues"><img src="https://img.shields.io/github/issues/fdebrus/Nikobus-HA?style=flat" alt="Issues"></a>&nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/stargazers"><img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat" alt="Stars"></a>&nbsp;
-  <a href="https://github.com/fdebrus/Nikobus-HA/releases"><img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/total?style=flat" alt="Downloads"></a>
+  <a href="https://www.buymeacoffee.com/fdebrus"><img src="https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buymeacoffee" alt="Buy Me a Coffee"></a>
+  <img src="https://img.shields.io/badge/Home%20Assistant-Nikobus-blue?style=flat&logo=homeassistant" alt="Nikobus for Home Assistant">
+  <a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat" alt="HACS Custom"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA"><img src="https://img.shields.io/badge/Maintained%20by-fdebrus-green?style=flat" alt="Maintainer"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases"><img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=flat&label=Release" alt="Latest release"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA/issues"><img src="https://img.shields.io/github/issues/fdebrus/Nikobus-HA?style=flat&label=Issues" alt="Open issues"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA/stargazers"><img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat&label=Stars" alt="GitHub stars"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases"><img src="https://img.shields.io/github/downloads/fdebrus/Nikobus-HA/total?style=flat&label=Downloads" alt="Downloads"></a>
 </p>
 
-
-
-# Nikobus Integration for Home Assistant
 
 This custom integration connects Home Assistant to your Nikobus installation so you can control switches, dimmers, shutters, and respond to button presses directly from Home Assistant.
 
