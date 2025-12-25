@@ -37,6 +37,9 @@ class PositionEstimator:
     """Estimates the current position of the cover based on elapsed time and direction."""
 
     def __init__(self, duration_in_seconds: float, start_position: Optional[float]):
+        if duration_in_seconds <= 0:
+            raise ValueError("operation_time must be greater than zero")
+
         self._duration_in_seconds = duration_in_seconds
         self._start_time: Optional[float] = None
         self._direction_value: Optional[int] = None
@@ -55,14 +58,21 @@ class PositionEstimator:
             _LOGGER.warning("Movement already started; stopping previous movement and restarting.")
             self.stop()  # Reset previous movement
 
+        if direction not in ("opening", "closing"):
+            _LOGGER.error("Invalid direction '%s' provided to PositionEstimator", direction)
+            return
+
         self._direction_value = 1 if direction == "opening" else -1
         self._start_time = time.monotonic()
         self._is_moving = True
 
         # Capture the initial position once at the start.
-        self._initial_position = (
-            position if position is not None else (100 if self._direction_value == 1 else 0)
-        )
+        if position is not None:
+            self._initial_position = max(0.0, min(100.0, float(position)))
+        elif self._current_position is not None:
+            self._initial_position = self._current_position
+        else:
+            self._initial_position = 100.0 if self._direction_value == 1 else 0.0
         self._current_position = self._initial_position
 
         _LOGGER.debug(
@@ -71,7 +81,7 @@ class PositionEstimator:
             self._initial_position,
         )
 
-    def get_position(self) -> Optional[int]:
+    def get_position(self) -> Optional[float]:
         """Calculate and return the current position estimate."""
         if (
             not self._is_moving
@@ -87,9 +97,9 @@ class PositionEstimator:
         elapsed_time = time.monotonic() - self._start_time
         progress = (elapsed_time / self._duration_in_seconds) * 100 * self._direction_value
         # Always compute based on the fixed starting position.
-        new_position = max(0, min(100, self._initial_position + progress))
+        new_position = max(0.0, min(100.0, self._initial_position + progress))
         self._current_position = new_position
-        return int(new_position)
+        return new_position
 
     def stop(self) -> None:
         """Stop the movement and finalize the position estimate."""
@@ -109,7 +119,9 @@ class PositionEstimator:
 
     @property
     def current_position(self) -> Optional[int]:
-        return int(self._current_position) if self._current_position is not None else None
+        if self._current_position is None:
+            return None
+        return int(round(self._current_position))
 
     @property
     def duration_in_seconds(self) -> float:
