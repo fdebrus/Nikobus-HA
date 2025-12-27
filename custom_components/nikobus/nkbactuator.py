@@ -32,7 +32,7 @@ class NikobusActuator:
         self._debounce_time_ms = 150
         self._last_address: Optional[str] = None
         self._last_press_time: Optional[float] = None
-        self._last_release_time: Optional[float] = None
+        self._last_release_times: Dict[str, float] = {}
         self._press_task: Optional[asyncio.Task] = None
         self._press_task_active = False
         self._timer_tasks: List[asyncio.Task] = []
@@ -55,14 +55,16 @@ class NikobusActuator:
     def _fire_press_interval_event(self, address: str, current_time: float) -> None:
         """Fire an event describing how long it has been since the last release."""
 
-        if self._last_release_time is None:
+        last_release_time = self._last_release_times.get(address)
+
+        if last_release_time is None:
             _LOGGER.debug(
                 "No previous release time recorded for address %s; skipping interval event",
                 address,
             )
             return
 
-        time_since_release = current_time - self._last_release_time
+        time_since_release = current_time - last_release_time
         if time_since_release < 1:
             event_type = "nikobus_button_pressed_0"
         elif time_since_release < 2:
@@ -156,7 +158,7 @@ class NikobusActuator:
 
                     self._cancel_unneeded_timers(press_duration)
                     self._fire_duration_event(address, press_duration)
-                    self._last_release_time = current_time
+                    self._last_release_times[address] = current_time
                     break
         except asyncio.CancelledError:
             _LOGGER.warning("Press task for address %s was cancelled", address)
@@ -223,6 +225,10 @@ class NikobusActuator:
         self, button_data: Dict[str, Optional[str]], button_address: str
     ) -> None:
         """Process actions for each module impacted by the button press."""
+        last_release_time = self._last_release_times.get(button_address)
+        time_since_last_release: Optional[float] = None
+        if last_release_time is not None:
+            time_since_last_release = time.monotonic() - last_release_time
         try:
             button_operation_time = float(button_data.get("operation_time", 0))
         except ValueError as e:
@@ -312,6 +318,7 @@ class NikobusActuator:
                     "button_operation_time": button_operation_time,
                     "impacted_module_address": impacted_module_address,
                     "impacted_module_group": impacted_group,
+                    "time_since_last_release": time_since_last_release,
                 }
 
                 # if button_data.get("led_on") or button_data.get("led_off"):
@@ -332,7 +339,10 @@ class NikobusActuator:
                 )
 
         if not event_fired:
-            minimal_event_data = {"address": button_address}
+            minimal_event_data = {
+                "address": button_address,
+                "time_since_last_release": time_since_last_release,
+            }
             _LOGGER.debug(
                 "Firing minimal event: nikobus_button_pressed with data: %s",
                 minimal_event_data,
