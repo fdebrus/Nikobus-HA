@@ -225,6 +225,10 @@ class NikobusActuator:
         self, button_data: Dict[str, Optional[str]], button_address: str
     ) -> None:
         """Process actions for each module impacted by the button press."""
+        last_release_time = self._last_release_times.get(button_address)
+        time_since_last_release: Optional[float] = None
+        if last_release_time is not None:
+            time_since_last_release = time.monotonic() - last_release_time
         try:
             button_operation_time = float(button_data.get("operation_time", 0))
         except ValueError as e:
@@ -314,6 +318,7 @@ class NikobusActuator:
                     "button_operation_time": button_operation_time,
                     "impacted_module_address": impacted_module_address,
                     "impacted_module_group": impacted_group,
+                    "time_since_last_release": time_since_last_release,
                 }
 
                 # if button_data.get("led_on") or button_data.get("led_off"):
@@ -334,7 +339,10 @@ class NikobusActuator:
                 )
 
         if not event_fired:
-            minimal_event_data = {"address": button_address}
+            minimal_event_data = {
+                "address": button_address,
+                "time_since_last_release": time_since_last_release,
+            }
             _LOGGER.debug(
                 "Firing minimal event: nikobus_button_pressed with data: %s",
                 minimal_event_data,
