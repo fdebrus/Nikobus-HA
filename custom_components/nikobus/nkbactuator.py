@@ -113,11 +113,15 @@ class NikobusActuator:
         """Fire an event after the specified duration, ensuring it fires only once."""
         await asyncio.sleep(duration)
         if not self._fired_timers.get(duration, False):
+            event_type = f"nikobus_button_timer_{duration}"
             _LOGGER.debug(
-                "Firing timer event for %d seconds for address: %s", duration, address
+                "Firing event %s for %d seconds for address: %s",
+                event_type,
+                duration,
+                address,
             )
             self._hass.bus.async_fire(
-                f"nikobus_button_timer_{duration}", {"address": address}
+                event_type, {"address": address}
             )
             self._fired_timers[duration] = True
 
