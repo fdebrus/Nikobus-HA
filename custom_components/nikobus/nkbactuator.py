@@ -11,7 +11,7 @@ from typing import Dict, Optional, Tuple
 from homeassistant.core import HomeAssistant
 from custom_components.nikobus.exceptions import NikobusTimeoutError
 
-from .const import BUTTON_TIMER_THRESHOLDS, DIMMER_DELAY, LONG_PRESS, REFRESH_DELAY
+from .const import BUTTON_TIMER_THRESHOLDS, DIMMER_DELAY, REFRESH_DELAY, SHORT_PRESS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -170,15 +170,11 @@ class NikobusActuator:
 
         classification_event = (
             "nikobus_short_button_pressed"
-            if press_duration < LONG_PRESS
+            if press_duration < SHORT_PRESS
             else "nikobus_long_button_pressed"
         )
         _LOGGER.debug(
-            "Classification for %s (press_id=%s): %s (threshold=%.1fs)",
-            state.address,
-            state.press_id,
-            classification_event,
-            LONG_PRESS,
+            "Classification for %s (press_id=%s): %s", state.address, state.press_id, classification_event
         )
         self._fire_event(
             classification_event,
