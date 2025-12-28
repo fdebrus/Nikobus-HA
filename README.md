@@ -59,6 +59,7 @@ The integration emits structured Home Assistant bus events for every button pres
 - Classification: `nikobus_short_button_pressed` (press duration < 3s) and `nikobus_long_button_pressed` (press duration ≥ 3s). The 3-second threshold is defined as `LONG_PRESS` in `custom_components/nikobus/const.py`.
 - Release-duration buckets (rounded down): `nikobus_button_pressed_0` (< 1s), `nikobus_button_pressed_1` (1–<2s), `nikobus_button_pressed_2` (2–<3s), and `nikobus_button_pressed_3` (≥ 3s).
 - Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively.
+- Post-refresh notification: `nikobus_button_operation` when the integration refreshes impacted modules after the press, including metadata such as the impacted module address/group and configured operation time.
 
 All events share the same payload keys so automations can rely on a consistent schema:
 
