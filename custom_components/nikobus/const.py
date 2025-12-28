@@ -39,9 +39,10 @@ HANDSHAKE_TIMEOUT: Final[int] = 60  # Timeout for handshake in seconds
 # =============================================================================
 REFRESH_DELAY: Final[float] = 0.5  # Delay before retrieving status after button press
 DIMMER_DELAY: Final[int] = 1  # Delay before retrieving dimmer status
-SHORT_PRESS: Final[int] = 1  # Short press duration in seconds
+SHORT_PRESS: Final[float] = 1.0  # Short press duration in seconds
 MEDIUM_PRESS: Final[int] = 2  # Medium press duration in seconds
-LONG_PRESS: Final[int] = 3  # Long press duration in seconds
+LONG_PRESS: Final[float] = 3.0  # Long press duration threshold in seconds
+BUTTON_TIMER_THRESHOLDS: Final[tuple[int, int, int]] = (1, 2, 3)
 
 # =============================================================================
 # Listener
