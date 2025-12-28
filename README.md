@@ -53,24 +53,26 @@ Before installing:
 
 ## Events Fired by the Integration
 
-The integration emits the following Home Assistant bus events:
+The integration emits structured Home Assistant bus events for every button press lifecycle:
 
-- `nikobus_button_pressed`
-- `nikobus_button_released`
-- `nikobus_short_button_pressed`
-- `nikobus_long_button_pressed`
-- `nikobus_button_pressed_0` (press detected after release < 1s)
-- `nikobus_button_pressed_1` (press detected after release for 1s)
-- `nikobus_button_pressed_2` (press detected after release for 2s)
-- `nikobus_button_pressed_3` (press detected after release for 3s)
-- `nikobus_button_timer_1` (press held for 1s)
-- `nikobus_button_timer_2` (press held for 2s)
-- `nikobus_button_timer_3` (press held for 3s)
+- Base events: `nikobus_button_pressed` and `nikobus_button_released`.
+- Classification: `nikobus_short_button_pressed` (press duration < 3s) and `nikobus_long_button_pressed` (press duration ≥ 3s). The 3-second threshold is defined as `LONG_PRESS` in `custom_components/nikobus/const.py`.
+- Release-duration buckets (rounded down): `nikobus_button_pressed_0` (< 1s), `nikobus_button_pressed_1` (1–<2s), `nikobus_button_pressed_2` (2–<3s), and `nikobus_button_pressed_3` (≥ 3s).
+- Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively.
 
-Press duration above 500ms is treated as a long press. You can adjust the threshold in `custom_components/nikobus/const.py` and restart Home Assistant:
+All events share the same payload keys so automations can rely on a consistent schema:
 
-```python
-LONG_PRESS_THRESHOLD_MS = 500  # Time in ms to detect a long press
+```yaml
+address: "004E2C"        # Button address (uppercase hex without 0x)
+module_address: "9105"   # Module address if available, otherwise null
+channel: 1                # Channel number if known
+ts: "2024-05-01T12:00:00Z"  # UTC timestamp at emission time
+press_id: "004E2C-..."    # Unique identifier for this press cycle
+state: "pressed"|"released"|"timer"
+duration_s: 1.2           # Seconds between press and release (null for initial press)
+bucket: 1                 # 0/1/2/3 matching duration buckets, otherwise null
+threshold_s: 2            # Timer milestone that fired (1/2/3), otherwise null
+source: "nikobus"
 ```
 
 You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses are recorded in `nikobus_button_config.json`).
