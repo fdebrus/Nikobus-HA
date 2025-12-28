@@ -16,6 +16,9 @@ from .const import BUTTON_TIMER_THRESHOLDS, DIMMER_DELAY, REFRESH_DELAY, SHORT_P
 _LOGGER = logging.getLogger(__name__)
 
 
+BUTTON_OPERATION_EVENT = "nikobus_button_operation"
+
+
 @dataclass
 class PressState:
     """Track the state of an in-flight button press."""
@@ -449,7 +452,7 @@ class NikobusActuator:
                 }
 
                 self._fire_event(
-                    "nikobus_button_pressed",
+                    BUTTON_OPERATION_EVENT,
                     state,
                     state_value="released",
                     duration=duration_s,
@@ -481,7 +484,7 @@ class NikobusActuator:
                 press_id,
             )
             self._fire_event(
-                "nikobus_button_pressed",
+                BUTTON_OPERATION_EVENT,
                 state,
                 state_value="released",
                 duration=duration_s,
