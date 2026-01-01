@@ -414,7 +414,16 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 )
             await self._process_state_change(new_state, source="nikobus")
         else:
-            _LOGGER.debug("No state change for %s; ignoring event.", self._attr_name)
+            if self._in_motion and new_state in (STATE_OPENING, STATE_CLOSING):
+                _LOGGER.debug(
+                    "Button press for %s detected without state change; stopping motion.",
+                    self._attr_name,
+                )
+                await self._end_motion()
+            else:
+                _LOGGER.debug(
+                    "No state change for %s; ignoring event.", self._attr_name
+                )
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         await self._request_cover_motion("opening")
