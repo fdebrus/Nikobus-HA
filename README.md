@@ -18,8 +18,8 @@ Recent releases standardized **unique ID formats** for module-based entities (li
 
 ```yaml
 nikobus_light_<address><channel>
-nikobus_switch<address><channel>
-nikobus_cover<address>_<channel>
+nikobus_switch_<address><channel>
+nikobus_cover_<address>_<channel>
 ```
 
 
