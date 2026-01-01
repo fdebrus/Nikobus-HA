@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from typing import Any, Dict, Optional
@@ -131,6 +132,22 @@ class PositionEstimator:
     def is_active(self) -> bool:
         return self._is_moving
 
+
+def _clamp_position(value: Optional[float]) -> Optional[int]:
+    """Clamp a numeric position into the 0-100 range."""
+
+    if value is None:
+        return None
+    return int(max(0, min(100, round(value))))
+
+
+def _safe_cancel(task: Optional[asyncio.Task]) -> None:
+    """Cancel a task without raising if it is already done."""
+
+    if task is None or task.done() or task is asyncio.current_task():
+        return
+    task.cancel()
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -248,6 +265,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._previous_state: Optional[int] = None
         self._movement_source = "ha"
         self._direction: Optional[str] = None  # "opening" or "closing"
+        self._target_position: Optional[int] = None
+        self._button_operation_time: Optional[float] = None
 
         self._operation_time = float(operation_time)
         self._position_estimator = PositionEstimator(
@@ -255,9 +274,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         )
 
         self._in_motion = False
-        self._movement_task: Optional[asyncio.Task] = None
+        self._motion_task: Optional[asyncio.Task] = None
         self._last_position_change_time = time.monotonic()
-        self._button_operation_time: Optional[float] = None
+        self._unsub_button_event: Optional[Any] = None
 
         self._attr_name = channel_description
         self._attr_unique_id = f"{DOMAIN}_cover_{self._address}_{self._channel}"
@@ -345,17 +364,31 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._address,
         )
 
-        self.hass.bus.async_listen(
+        self._unsub_button_event = self.hass.bus.async_listen(
             "nikobus_button_pressed", self._handle_nikobus_button_event
         )
         self.async_write_ha_state()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Clean up listeners and running tasks when the entity is removed."""
+
+        if self._unsub_button_event:
+            self._unsub_button_event()
+            self._unsub_button_event = None
+
+        _safe_cancel(self._motion_task)
+        if self._motion_task:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._motion_task
+            self._motion_task = None
 
     @callback
     def _handle_coordinator_update(self) -> None:
         new_state = self.coordinator.get_cover_state(self._address, self._channel)
         if new_state != self._previous_state:
-            self.hass.async_create_task(self._process_state_change(new_state))
-            self.async_write_ha_state()
+            self.hass.async_create_task(
+                self._process_state_change(new_state, source="ha")
+            )
 
     async def _handle_nikobus_button_event(self, event: Any) -> None:
         """Handle the `nikobus_button_pressed` event and update the cover state."""
@@ -379,44 +412,27 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     self._attr_name,
                     self._button_operation_time,
                 )
-            # source = "ha" if event.data.get("virtual", True) else "nikobus"
             await self._process_state_change(new_state, source="nikobus")
-            self.async_write_ha_state()
         else:
-            _LOGGER.debug("No state change for %s; ignoring event.", self._attr_name)
+            if self._in_motion and new_state in (STATE_OPENING, STATE_CLOSING):
+                _LOGGER.debug(
+                    "Button press for %s detected without state change; stopping motion.",
+                    self._attr_name,
+                )
+                await self._end_motion()
+            else:
+                _LOGGER.debug(
+                    "No state change for %s; ignoring event.", self._attr_name
+                )
 
     async def async_open_cover(self, **kwargs: Any) -> None:
-        try:
-            await self._start_movement("opening")
-        except Exception as exc:
-            _LOGGER.error(
-                "Failed to open cover %s: %s", self._attr_name, exc, exc_info=True
-            )
+        await self._request_cover_motion("opening")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
-        try:
-            await self._start_movement("closing")
-        except Exception as exc:
-            _LOGGER.error(
-                "Failed to close cover %s: %s", self._attr_name, exc, exc_info=True
-            )
+        await self._request_cover_motion("closing")
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
-        try:
-
-            async def completion_handler() -> None:
-                await self._finalize_movement()
-
-            await self.coordinator.api.stop_cover(
-                self._address,
-                self._channel,
-                self._direction,
-                completion_handler=completion_handler,
-            )
-        except Exception as exc:
-            _LOGGER.error(
-                "Failed to stop cover %s: %s", self._attr_name, exc, exc_info=True
-            )
+        await self._end_motion(send_stop=True)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         target_position = kwargs.get(ATTR_POSITION)
@@ -438,15 +454,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             return
 
         direction = "opening" if target_position > self._position else "closing"
-        try:
-            await self._start_movement(direction, target_position=target_position)
-        except Exception as exc:
-            _LOGGER.error(
-                "Failed to set position for cover %s: %s",
-                self._attr_name,
-                exc,
-                exc_info=True,
-            )
+        await self._request_cover_motion(direction, target_position=target_position)
 
     async def _process_state_change(self, new_state: int, source: str = "ha") -> None:
         _LOGGER.debug(
@@ -473,41 +481,42 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._movement_source = source
 
         if new_state in (STATE_OPENING, STATE_CLOSING):
-            if self._in_motion and self._state == new_state:
-                return
-
-            if self._in_motion:
-                await self._finalize_movement()
-
-            self._direction = "opening" if new_state == STATE_OPENING else "closing"
-            self._in_motion = True
-            self._state = new_state
-            self._position_estimator.start(self._direction, self._position)
-            self._movement_task = self.hass.async_create_task(self._update_position())
+            direction = "opening" if new_state == STATE_OPENING else "closing"
+            if source == "nikobus":
+                self._target_position = None
+            await self._begin_motion(
+                direction,
+                source,
+                target_position=self._target_position,
+                button_limit=self._button_operation_time,
+            )
         elif new_state == STATE_STOPPED:
-            if self._in_motion:
-                await self._finalize_movement()
+            await self._end_motion()
         elif new_state == STATE_ERROR:
-            await self.async_stop_cover()
             _LOGGER.warning("Error state encountered for %s.", self._attr_name)
+            await self._end_motion(send_stop=True)
         else:
             _LOGGER.warning(
                 "Unknown state '%s' encountered for %s.", new_state, self._attr_name
             )
 
-    async def _start_movement(
+    async def _request_cover_motion(
         self, direction: str, target_position: Optional[int] = None
     ) -> None:
+        """Queue a cover command and start motion once executed."""
+
         if self._in_motion:
-            await self._finalize_movement()
+            await self._end_motion(send_stop=self._movement_source == "ha")
+
+        self._movement_source = "ha"
+        self._target_position = _clamp_position(target_position)
 
         async def completion_handler() -> None:
-            self._direction = direction
-            self._in_motion = True
-            self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
-            self._position_estimator.start(self._direction, self._position)
-            await self._start_position_estimation(target_position=target_position)
-            self.async_write_ha_state()
+            await self._begin_motion(
+                direction,
+                source="ha",
+                target_position=self._target_position,
+            )
 
         await self._operate_cover(direction, completion_handler)
 
@@ -531,124 +540,141 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 "Failed to operate cover %s: %s", self._attr_name, exc, exc_info=True
             )
 
-    async def _start_position_estimation(
-        self, target_position: Optional[int] = None
+    async def _begin_motion(
+        self,
+        direction: str,
+        source: str,
+        target_position: Optional[int] = None,
+        button_limit: Optional[float] = None,
     ) -> None:
-        if self._movement_task and not self._movement_task.done():
-            self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug(
-                    "Cancelled existing movement task for %s", self._attr_name
-                )
-        self._movement_task = self.hass.async_create_task(
-            self._update_position(target_position)
-        )
+        """Authoritative entrypoint for starting movement."""
 
-    async def _update_position(self, target_position: Optional[int] = None) -> None:
+        if self._in_motion:
+            await self._end_motion(send_stop=source == "ha")
+
+        self._direction = direction
+        self._in_motion = True
+        self._movement_source = source
+        self._button_operation_time = button_limit
+        self._target_position = _clamp_position(target_position)
+        self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
+
+        self._position_estimator.start(self._direction, self._position)
+
+        _safe_cancel(self._motion_task)
+        self._motion_task = self.hass.async_create_task(self._motion_loop())
+        self.async_write_ha_state()
+
+    async def _end_motion(
+        self,
+        final_position: Optional[int] = None,
+        send_stop: bool = False,
+    ) -> None:
+        """Authoritative entrypoint for ending movement."""
+
+        if not self._in_motion and not send_stop:
+            return
+
+        direction_for_stop = self._direction
+        self._in_motion = False
+
+        async def _finalize_state() -> None:
+            self._position_estimator.stop()
+            _safe_cancel(self._motion_task)
+            if self._motion_task:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._motion_task
+                self._motion_task = None
+
+            estimated_position = _clamp_position(
+                final_position if final_position is not None else self._position_estimator.current_position
+            )
+            if estimated_position is not None:
+                self._position = estimated_position
+
+            self._direction = None
+            self._target_position = None
+            self._button_operation_time = None
+            self._state = STATE_STOPPED
+            self._previous_state = STATE_STOPPED
+
+            self.coordinator.set_bytearray_state(
+                self._address, self._channel, STATE_STOPPED
+            )
+            self.async_write_ha_state()
+
+        if send_stop and direction_for_stop:
+            try:
+                await self.coordinator.api.stop_cover(
+                    self._address,
+                    self._channel,
+                    direction_for_stop,
+                    completion_handler=_finalize_state,
+                )
+            except Exception as exc:
+                _LOGGER.error(
+                    "Failed to stop cover %s: %s", self._attr_name, exc, exc_info=True
+                )
+                await _finalize_state()
+        else:
+            await _finalize_state()
+
+    async def _motion_loop(self) -> None:
+        """Single loop responsible for motion lifecycle and estimation."""
+
         start_time = time.monotonic()
         try:
-            while self._in_motion:
-                if self._position is None:
-                    _LOGGER.error(
-                        "Position is None in _update_position for %s; defaulting based on direction.",
-                        self._attr_name,
-                    )
-                    self._position = 0 if self._direction == "closing" else 100
-
+            while self._in_motion and self._direction:
                 estimated_position = self._position_estimator.get_position()
                 if estimated_position is not None:
-                    self._position = estimated_position
-                else:
-                    _LOGGER.warning(
-                        "Position estimator returned None in _update_position for %s",
-                        self._attr_name,
-                    )
+                    clamped_position = _clamp_position(estimated_position)
+                    if clamped_position is not None:
+                        self._position = clamped_position
 
                 elapsed = time.monotonic() - start_time
-                if (
-                    self._button_operation_time
-                    and elapsed >= self._button_operation_time
-                ):
-                    await self.async_stop_cover()
-                    return
+                if self._button_operation_time and elapsed >= self._button_operation_time:
+                    _LOGGER.debug(
+                        "Stopping %s due to button operation timeout.", self._attr_name
+                    )
+                    await self._end_motion(send_stop=self._movement_source == "ha")
+                    break
 
-                if target_position is not None:
+                if self._target_position is not None:
                     if (
                         self._direction == "opening"
-                        and self._position >= target_position
-                        and target_position < 100
+                        and self._position >= self._target_position
+                        and self._target_position < 100
                     ) or (
                         self._direction == "closing"
-                        and self._position <= target_position
-                        and target_position > 0
+                        and self._position <= self._target_position
+                        and self._target_position > 0
                     ):
-                        _LOGGER.debug(
-                            "Target position %d reached for %s",
-                            target_position,
-                            self._attr_name,
+                        await self._end_motion(
+                            final_position=self._target_position,
+                            send_stop=self._movement_source == "ha",
                         )
-                        self._position = target_position
-                        self._in_motion = False
-                        self._direction = None
-                        self._state = STATE_STOPPED
-                        if self._movement_source == "ha":
-                            await self.async_stop_cover()
-                        else:
-                            await self._finalize_movement()
-                        return
+                        break
 
                 if (self._direction == "opening" and self._position >= 100) or (
                     self._direction == "closing" and self._position <= 0
                 ):
-                    _LOGGER.debug(
-                        "Cover %s fully %s.", self._attr_name, self._direction
+                    await self._end_motion(
+                        final_position=100 if self._direction == "opening" else 0,
+                        send_stop=self._movement_source == "ha",
                     )
-                    self._position = 100 if self._direction == "opening" else 0
-                    self._in_motion = False
-                    self._direction = None
-                    self._state = STATE_STOPPED
-                    self.async_write_ha_state()
-                    if self._movement_source == "ha":
-                        await asyncio.sleep(self._operation_time)
-                        await self.async_stop_cover()
-                    else:
-                        await self._finalize_movement()
-                    return
+                    break
 
                 self.async_write_ha_state()
                 await asyncio.sleep(0.5)
         except asyncio.CancelledError:
-            _LOGGER.debug("Position update for %s was cancelled.", self._attr_name)
-        except Exception as e:
+            _LOGGER.debug("Motion loop for %s was cancelled.", self._attr_name)
+        except Exception as exc:
             _LOGGER.error(
-                "Unexpected error in _update_position for %s: %s",
+                "Unexpected error in motion loop for %s: %s",
                 self._attr_name,
-                e,
+                exc,
                 exc_info=True,
             )
-            await self._finalize_movement()
+            await self._end_motion()
         finally:
-            self._movement_task = None
-
-    async def _finalize_movement(self) -> None:
-        """Finalize cover movement, stop the estimator, and reset state."""
-        _LOGGER.debug("Finalizing movement for %s", self._attr_name)
-        self._position_estimator.stop()
-
-        if self._movement_task and not self._movement_task.done():
-            self._movement_task.cancel()
-            try:
-                await self._movement_task
-            except asyncio.CancelledError:
-                _LOGGER.debug("Cancelled movement task for %s.", self._attr_name)
-
-        self._in_motion = False
-        self._direction = None
-        self._button_operation_time = None
-        self._state = STATE_STOPPED
-        self.async_write_ha_state()
-        self.coordinator.set_bytearray_state(
-            self._address, self._channel, STATE_STOPPED
-        )
+            self._motion_task = None
