@@ -627,7 +627,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             while self._in_motion and self._direction:
                 estimated_position = self._position_estimator.get_position()
                 if estimated_position is not None:
-                    self._position = _clamp_position(estimated_position) or self._position
+                    clamped_position = _clamp_position(estimated_position)
+                    if clamped_position is not None:
+                        self._position = clamped_position
 
                 elapsed = time.monotonic() - start_time
                 if self._button_operation_time and elapsed >= self._button_operation_time:
