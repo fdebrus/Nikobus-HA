@@ -9,11 +9,11 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 from .exceptions import NikobusError
 
 _LOGGER = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ def _register_nikobus_module_device(
     )
 
 
-class NikobusSwitchCoverEntity(SwitchEntity):
+class NikobusSwitchCoverEntity(NikobusEntity, SwitchEntity):
     """A switch entity for roller modules using `use_as_switch`."""
 
     def __init__(
@@ -113,25 +113,14 @@ class NikobusSwitchCoverEntity(SwitchEntity):
         module_model: str,
     ) -> None:
         """Initialize the switch entity for a roller module."""
-        super().__init__()
+        super().__init__(coordinator, address, module_desc, module_model)
         self.coordinator = coordinator
         self.address = address
         self.channel = channel
         self.channel_description = channel_description
-        self.module_desc = module_desc
-        self.module_model = module_model
 
         self._attr_name = f"{module_desc} - {channel_description}"
         self._attr_unique_id = f"{DOMAIN}_switch_{self.address}_{self.channel}"
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self.address)},
-            "manufacturer": BRAND,
-            "name": self.module_desc,
-            "model": self.module_model,
-        }
 
     @property
     def is_on(self) -> bool:
@@ -167,7 +156,7 @@ class NikobusSwitchCoverEntity(SwitchEntity):
             )
 
 
-class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
+class NikobusSwitchEntity(NikobusEntity, SwitchEntity):
     """A switch entity representing one channel on a Nikobus module."""
 
     def __init__(
@@ -180,26 +169,14 @@ class NikobusSwitchEntity(CoordinatorEntity, SwitchEntity):
         module_model: str,
     ) -> None:
         """Initialize the switch entity."""
-        super().__init__(coordinator)
+        super().__init__(coordinator, address, module_name, module_model)
         self._address = address
         self._channel = channel
         self._channel_description = channel_description
-        self._module_name = module_name
-        self._module_model = module_model
 
-        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
+        self._attr_unique_id = f"{DOMAIN}_switch_{self._address}_{self._channel}"
         self._attr_name = channel_description
         self._is_on: bool | None = None
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device info referencing the module."""
-        return {
-            "identifiers": {(DOMAIN, self._address)},
-            "manufacturer": BRAND,
-            "name": self._module_name,
-            "model": self._module_model,
-        }
 
     @property
     def is_on(self) -> bool:

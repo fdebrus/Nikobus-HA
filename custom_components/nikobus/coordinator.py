@@ -14,7 +14,7 @@ from .nkbconfig import NikobusConfig
 from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
 from .nkbactuator import NikobusActuator
-from .nkbdiscovery import NikobusDiscovery
+from .discovery import NikobusDiscovery
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -26,6 +26,7 @@ from .const import (
 from .exceptions import NikobusConnectionError, NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
+_MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
 
 
 class NikobusDataCoordinator(DataUpdateCoordinator):
@@ -42,16 +43,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._has_feedback_module = config_entry.data.get(
             CONF_HAS_FEEDBACK_MODULE, False
         )
-        self._prior_gen3 = config_entry.data.get(
-            CONF_PRIOR_GEN3, False
-        )
-
-        # Set update_interval to None if feedback module is present, disabling periodic updates
-        self._update_interval = (
-            None
-            if self._has_feedback_module or self._prior_gen3
-            else timedelta(seconds=self._refresh_interval)
-        )
+        self._prior_gen3 = config_entry.data.get(CONF_PRIOR_GEN3, False)
+        self._update_interval = self._get_update_interval()
 
         super().__init__(
             self.hass,
@@ -76,6 +69,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = False
         self._discovery_module = None
         self.discovery_module_address = None
+        self._reload_task = None
+
+    def _get_update_interval(self) -> timedelta | None:
+        """Compute the update interval based on configuration."""
+        if self._has_feedback_module or self._prior_gen3:
+            return None
+        return timedelta(seconds=self._refresh_interval)
 
     @property
     def discovery_running(self) -> bool:
@@ -98,7 +98,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         try:
             await self.nikobus_connection.connect()
         except NikobusConnectionError as e:
-            _LOGGER.error(f"Failed to connect to Nikobus: {e}")
+            _LOGGER.error("Failed to connect to Nikobus: %s", e)
             raise
         else:
             try:
@@ -124,6 +124,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     self.hass, self, self.dict_button_data, self.dict_module_data
                 )
                 self.nikobus_discovery = NikobusDiscovery(self.hass, self)
+                self.nikobus_discovery.on_discovery_finished = (
+                    self._handle_discovery_finished
+                )
                 self.nikobus_listener = NikobusEventListener(
                     self.hass,
                     self.config_entry,
@@ -151,11 +154,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 # Perform an initial data refresh
                 await self.async_refresh()
             except HomeAssistantError as e:
-                _LOGGER.error("Failed to initialize Nikobus components: %s", e)
+                _LOGGER.exception("Failed to initialize Nikobus components: %s", e)
                 raise
 
     async def discover_devices(self, module_address) -> None:
         """Discover available module / button."""
+        module_address = module_address.upper() if isinstance(module_address, str) else ""
         await self.hass.services.async_call(
             "persistent_notification",
             "create",
@@ -170,7 +174,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = True
         _LOGGER.debug("Starting device discovery from Nikobus")
         try:
-            if module_address:
+            if module_address == "ALL":
+                self._discovery_module = False
+                await self.nikobus_discovery.query_module_inventory(module_address)
+            elif module_address:
                 self._discovery_module = True
                 self.discovery_module_address = module_address
                 await self.nikobus_discovery.query_module_inventory(module_address)
@@ -178,7 +185,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self._discovery_module = False
                 await self.nikobus_command.queue_command("#A")
         except Exception as e:
-            _LOGGER.error("Error during discovery: %s", e)
+            _LOGGER.exception("Error during discovery: %s", e)
             raise
         finally:
             await self.hass.services.async_call(
@@ -200,7 +207,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def _refresh_nikobus_data(self) -> bool:
         """Refresh data from all Nikobus modules."""
-        for module_type in ["switch_module", "dimmer_module", "roller_module"]:
+        for module_type in _MODULE_TYPES:
             if module_type in self.dict_module_data:
                 await self._refresh_module_type(self.dict_module_data[module_type])
         return True
@@ -208,10 +215,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
     async def _refresh_module_type(self, modules_dict) -> None:
         """Refresh data for a specific type of module."""
         for address, module_data in modules_dict.items():
-            _LOGGER.debug(f"Refreshing data for module address: {address}")
+            _LOGGER.debug("Refreshing data for module address: %s", address)
             channels = module_data.get("channels", [])
             expected_channels = len(channels)
-            groups_to_query = [1] if expected_channels <= 6 else [1, 2]
+            groups_to_query = (1,) if expected_channels <= 6 else (1, 2)
             group_states = []
             for group in groups_to_query:
                 try:
@@ -220,26 +227,37 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                         or ""
                     )
                     _LOGGER.debug(
-                        f"State for group {group}: {group_state} (Address: {address})"
+                        "State for group %s: %s (Address: %s)",
+                        group,
+                        group_state,
+                        address,
                     )
                     group_states.append(group_state)
                 except Exception as e:
                     _LOGGER.error(
-                        f"Error retrieving state for address {address}, group {group}: {e}"
+                        "Error retrieving state for address %s, group %s: %s",
+                        address,
+                        group,
+                        e,
                     )
             state_hex = "".join(group_states)
             expected_hex_length = expected_channels * 2
             if len(state_hex) < expected_hex_length:
                 state_hex = state_hex.ljust(expected_hex_length, "0")
-                _LOGGER.debug(f"Padded state_hex for module {address} to: {state_hex}")
+                _LOGGER.debug(
+                    "Padded state_hex for module %s to: %s", address, state_hex
+                )
             try:
                 self.nikobus_module_states[address] = bytearray.fromhex(state_hex)
                 _LOGGER.debug(
-                    f"Updated module state for {address}: {self.nikobus_module_states[address].hex()}"
+                    "Updated module state for %s: %s",
+                    address,
+                    self.nikobus_module_states[address].hex(),
                 )
             except ValueError:
                 _LOGGER.error(
-                    f"Invalid hex state received for {address}, setting default state."
+                    "Invalid hex state received for %s, setting default state.",
+                    address,
                 )
                 self.nikobus_module_states[address] = bytearray(expected_channels)
 
@@ -252,8 +270,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             module_state_raw = data[9:21]
 
             _LOGGER.debug(
-                f"Processing feedback data: module_type={module_type}, module_address={module_address}, "
-                f"group={module_group}, module_state={module_state_raw}"
+                "Processing feedback data: module_type=%s, module_address=%s, "
+                "group=%s, module_state=%s",
+                module_type,
+                module_address,
+                module_group,
+                module_state_raw,
             )
 
             if module_address not in self.nikobus_module_states:
@@ -268,7 +290,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     module_state_raw
                 )
             else:
-                raise ValueError(f"Invalid module group: {module_group}")
+                raise ValueError("Invalid module group: %s" % module_group)
 
             await self.async_event_handler(
                 "nikobus_refreshed",
@@ -279,7 +301,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             )
 
         except Exception as e:
-            _LOGGER.error(f"Error processing feedback data: {e}", exc_info=True)
+            _LOGGER.exception("Error processing feedback data: %s", e)
 
     def get_bytearray_state(self, address: str, channel: int) -> int:
         """Get the state of a specific channel, ensuring defaults if missing."""
@@ -303,7 +325,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 if int(group) == 1
                 else self.nikobus_module_states[address][6:12]
             )
-        _LOGGER.error(f"Module address {address} not found, returning empty bytearray.")
+        _LOGGER.error(
+            "Module address %s not found, returning empty bytearray.", address
+        )
         return bytearray(6)
 
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
@@ -311,7 +335,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         if address in self.nikobus_module_states:
             self.nikobus_module_states[address][channel - 1] = value
         else:
-            _LOGGER.warning(f"Module {address} not found, creating new state array.")
+            _LOGGER.warning("Module %s not found, creating new state array.", address)
             self.nikobus_module_states[address] = bytearray(12)
             self.nikobus_module_states[address][channel - 1] = value
 
@@ -343,7 +367,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def async_event_handler(self, event, data) -> None:
         """Handle events with improved logging."""
-        _LOGGER.debug(f"Handling event: {event} with data: {data}")
+        _LOGGER.debug("Handling event: %s with data: %s", event, data)
         if event == "ha_button_pressed":
             await self._handle_ha_button_pressed(data)
         elif event == "nikobus_refreshed":
@@ -358,12 +382,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._refresh_interval = entry.data.get(CONF_REFRESH_INTERVAL, 120)
         self._has_feedback_module = entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
         self._prior_gen3 = entry.data.get(CONF_PRIOR_GEN3, False)
-
-        self._update_interval = (
-            None
-            if self._has_feedback_module or self._prior_gen3
-            else timedelta(seconds=self._refresh_interval)
-        )
+        self._update_interval = self._get_update_interval()
+        self.update_interval = self._update_interval
 
         await self.connect()
         await self.async_refresh()
@@ -373,7 +393,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         address = data.get("address")
         operation_time = data.get("operation_time")
         _LOGGER.debug(
-            f"HA Button {address} pressed with operation_time: {operation_time}"
+            "HA Button %s pressed with operation_time: %s",
+            address,
+            operation_time,
         )
         await self.nikobus_command.queue_command(f"#N{address}\r#E1")
 
@@ -382,7 +404,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         impacted_module_address = data.get("impacted_module_address")
         impacted_module_group = data.get("impacted_module_group")
         _LOGGER.debug(
-            f"Nikobus refreshed for module {impacted_module_address} group {impacted_module_group}"
+            "Nikobus refreshed for module %s group %s",
+            impacted_module_address,
+            impacted_module_group,
         )
 
     def get_module_type(self, module_id: str) -> str:
@@ -390,7 +414,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         for module_type, modules in self.dict_module_data.items():
             if module_id in modules:
                 return module_type
-        _LOGGER.error(f"Module ID {module_id} not found in known module types")
+        _LOGGER.error("Module ID %s not found in known module types", module_id)
         return "unknown"
 
     def get_module_channel_count(self, module_id: str) -> int:
@@ -398,7 +422,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             if module_id in modules:
                 module_data = modules[module_id]
                 return len(module_data.get("channels", []))
-        _LOGGER.error(f"Module ID {module_id} not found in module configuration")
+        _LOGGER.error("Module ID %s not found in module configuration", module_id)
         return 0
 
     def get_light_state(self, address: str, channel: int) -> bool:
@@ -449,6 +473,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             for address in modules.keys()
         ]
 
+    async def _handle_discovery_finished(self):
+        """Reload the config entry after discovery so new devices are applied."""
+        self._discovery_running = False
+        if self._reload_task and not self._reload_task.done():
+            _LOGGER.debug("Discovery reload already in progress; skipping new reload.")
+            return
+
+        async def _reload_entry():
+            try:
+                _LOGGER.info("Discovery finished; reloading Nikobus config entry.")
+                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            except Exception as err:  # pragma: no cover - safety net
+                _LOGGER.error(
+                    "Failed to reload Nikobus config entry after discovery: %s", err
+                )
+
+        self._reload_task = self.hass.async_create_task(_reload_entry())
+
     def get_button_channels(self, main_address: str):
         """Return the discovery channels for a given button discovered_info address."""
         buttons = self.dict_button_data.get("nikobus_button", {})
@@ -470,8 +512,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
         # -----------------------
         # 1) MODULE-BASED ENTITIES
-        # (lights, standard switches, covers)
-        # using: nikobus_{address}_{channel}
+        #    - dimmer_module  -> nikobus_light_{address}_{channel}
+        #    - switch_module  -> nikobus_switch_{address}_{channel}
+        #    - roller_module  -> nikobus_cover_{address}_{channel} unless use_as_switch
         # -----------------------
         for module_type, modules in self.dict_module_data.items():
             for address, module_data in modules.items():
@@ -479,38 +522,35 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     desc = ch_info.get("description", "")
                     if desc.startswith("not_in_use"):
                         continue
-                    known.add(f"{DOMAIN}_{address}_{index}")
+
+                    if module_type == "dimmer_module":
+                        known.add(f"{DOMAIN}_light_{address}_{index}")
+                    elif module_type == "switch_module":
+                        known.add(f"{DOMAIN}_switch_{address}_{index}")
+                    elif module_type == "roller_module":
+                        if ch_info.get("use_as_switch", False):
+                            known.add(f"{DOMAIN}_switch_{address}_{index}")
+                        else:
+                            known.add(f"{DOMAIN}_cover_{address}_{index}")
+                    else:
+                        known.add(f"{DOMAIN}_{address}_{index}")
 
         # -----------------------
-        # 2) ROLLER use_as_switch entities
-        # using: nikobus_switch_{address}_{channel}
-        # -----------------------
-        roller_modules = self.dict_module_data.get("roller_module", {})
-        for address, module_data in roller_modules.items():
-            for index, ch_info in enumerate(module_data.get("channels", []), start=1):
-                if ch_info.get("use_as_switch", False):
-                    known.add(f"{DOMAIN}_switch_{address}_{index}")
-
-        # -----------------------
-        # 3) Button sensors
+        # 2) Button sensors
         # using: nikobus_button_sensor_{address}
         # -----------------------
         for button in self.dict_button_data.get("nikobus_button", {}).values():
             addr = button.get("address")
             if addr:
                 known.add(f"{DOMAIN}_button_sensor_{addr}")
-
-        # -----------------------
-        # 4) Push buttons
-        # using: nikobus_push_button_{address}
-        # -----------------------
-        for button in self.dict_button_data.get("nikobus_button", {}).values():
-            addr = button.get("address")
-            if addr:
+                # -----------------------
+                # 3) Push buttons
+                # using: nikobus_push_button_{address}
+                # -----------------------
                 known.add(f"{DOMAIN}_push_button_{addr}")
 
         # -----------------------
-        # 5) Scenes
+        # 4) Scenes
         # using: nikobus_scene_{scene_id}
         # -----------------------
         scene_list = self.dict_scene_data.get("scene", [])

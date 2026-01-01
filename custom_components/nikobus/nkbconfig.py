@@ -2,12 +2,20 @@
 
 import json
 import logging
-from aiofiles import open as aio_open
 from typing import Any, Callable, Dict, Optional
+
+from aiofiles import open as aio_open
 
 from .exceptions import NikobusDataError  # Updated import
 
 _LOGGER = logging.getLogger(__name__)
+_LOAD_TRANSFORMS: Dict[str, str] = {
+    "button": "_transform_button_data",
+    "module": "_transform_module_data",
+}
+_WRITE_TRANSFORMS: Dict[str, str] = {
+    "button": "_transform_button_data_for_writing",
+}
 
 
 class NikobusConfig:
@@ -20,7 +28,7 @@ class NikobusConfig:
     async def load_json_data(self, file_name: str, data_type: str) -> Optional[dict]:
         """Load JSON data from a file and transform it based on the data type."""
         file_path = self._hass.config.path(file_name)
-        _LOGGER.info(f"Loading {data_type} data from {file_path}")
+        _LOGGER.info("Loading %s data from %s", data_type, file_path)
 
         try:
             async with aio_open(file_path, mode="r") as file:
@@ -32,25 +40,24 @@ class NikobusConfig:
 
         except json.JSONDecodeError as err:
             _LOGGER.error(
-                f"Failed to decode JSON in {data_type} file: {err}", exc_info=True
+                "Failed to decode JSON in %s file: %s", data_type, err, exc_info=True
             )
             raise NikobusDataError(
                 f"Failed to decode JSON in {data_type} file: {err}"
             ) from err
 
         except Exception as err:
-            _LOGGER.error(f"Failed to load {data_type} data: {err}", exc_info=True)
+            _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
 
         return None
 
     def _transform_loaded_data(self, data: dict, data_type: str) -> dict:
         """Transform the loaded JSON data based on the data type."""
-        transform_map: Dict[str, Callable[[dict], dict]] = {
-            "button": self._transform_button_data,
-            "module": self._transform_module_data,
-        }
-        return transform_map.get(data_type, lambda d: d)(data)
+        transform_name = _LOAD_TRANSFORMS.get(data_type)
+        if not transform_name:
+            return data
+        return getattr(self, transform_name)(data)
 
     def _transform_button_data(self, data: dict) -> dict:
         """Transform button data from a list to a dictionary."""
@@ -73,7 +80,8 @@ class NikobusConfig:
         """Handle the case where the configuration file is not found."""
         if data_type == "button":
             _LOGGER.info(
-                f"Button configuration file not found: {file_path}. A new file will be created upon discovering the first button."
+                "Button configuration file not found: %s. A new file will be created upon discovering the first button.",
+                file_path,
             )
         else:
             raise NikobusDataError(
@@ -92,7 +100,10 @@ class NikobusConfig:
 
         except IOError as err:
             _LOGGER.error(
-                f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}",
+                "Failed to write %s data to file %s: %s",
+                data_type.capitalize(),
+                file_name,
+                err,
                 exc_info=True,
             )
             raise NikobusDataError(
@@ -101,7 +112,10 @@ class NikobusConfig:
 
         except TypeError as err:
             _LOGGER.error(
-                f"Failed to serialize {data_type} data to JSON: {err}", exc_info=True
+                "Failed to serialize %s data to JSON: %s",
+                data_type,
+                err,
+                exc_info=True,
             )
             raise NikobusDataError(
                 f"Failed to serialize {data_type} data to JSON: {err}"
@@ -109,7 +123,10 @@ class NikobusConfig:
 
         except Exception as err:
             _LOGGER.error(
-                f"Unexpected error writing {data_type} data to file {file_name}: {err}",
+                "Unexpected error writing %s data to file %s: %s",
+                data_type,
+                file_name,
+                err,
                 exc_info=True,
             )
             raise NikobusDataError(
@@ -118,10 +135,10 @@ class NikobusConfig:
 
     def _transform_data_for_writing(self, data_type: str, data: dict) -> dict:
         """Transform the data for writing based on the data type."""
-        transform_map: Dict[str, Callable[[dict], dict]] = {
-            "button": self._transform_button_data_for_writing
-        }
-        return transform_map.get(data_type, lambda d: d)(data)
+        transform_name = _WRITE_TRANSFORMS.get(data_type)
+        if not transform_name:
+            return data
+        return getattr(self, transform_name)(data)
 
     def _transform_button_data_for_writing(self, data: dict) -> dict:
         """Transform button data from a dictionary back to a list for saving."""

@@ -27,6 +27,25 @@ class NikobusAPI:
             )
             return None
 
+    async def _queue_led_command(
+        self,
+        command: str,
+        address: str,
+        channel: int,
+        action: str,
+        completion_handler=None,
+    ) -> None:
+        """Queue a LED command with consistent logging."""
+        _LOGGER.debug(
+            "Sending LED %s command for %s at channel %d",
+            action,
+            address,
+            channel,
+        )
+        await self._coordinator.nikobus_command.queue_command(
+            f"#N{command}\r#E1", completion_handler=completion_handler
+        )
+
     async def _execute_command(
         self,
         address: str,
@@ -37,15 +56,9 @@ class NikobusAPI:
     ) -> None:
         """Execute a LED command if available; otherwise, set the output state."""
         if command:
-            _LOGGER.debug(
-                "Sending LED command '%s' for %s at channel %d",
-                command.strip(),
-                address,
-                channel,
+            await self._queue_led_command(
+                command, address, channel, "command", completion_handler
             )
-            await self._coordinator.nikobus_command.queue_command(f"#N{command}\r#E1")
-            if completion_handler:
-                await completion_handler()
         else:
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, state, completion_handler=completion_handler
@@ -98,14 +111,7 @@ class NikobusAPI:
 
         try:
             if current_brightness == 0 and led_on:
-                _LOGGER.debug(
-                    "Sending LED ON command for dimmer at %s, channel %d",
-                    address,
-                    channel,
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_on}\r#E1"
-                )
+                await self._queue_led_command(led_on, address, channel, "ON")
 
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, brightness, completion_handler=completion_handler
@@ -127,14 +133,7 @@ class NikobusAPI:
 
         try:
             if current_brightness != 0 and led_off:
-                _LOGGER.debug(
-                    "Sending LED OFF command for dimmer at %s, channel %d",
-                    address,
-                    channel,
-                )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{led_off}\r#E1"
-                )
+                await self._queue_led_command(led_off, address, channel, "OFF")
 
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, 0x00, completion_handler=completion_handler
@@ -163,17 +162,13 @@ class NikobusAPI:
 
         try:
             if command:
-                _LOGGER.debug(
-                    "Sending STOP command for cover at %s, channel %d, direction %s",
+                await self._queue_led_command(
+                    command,
                     address,
                     channel,
-                    direction,
+                    f"STOP ({direction})",
+                    completion_handler,
                 )
-                await self._coordinator.nikobus_command.queue_command(
-                    f"#N{command}\r#E1"
-                )
-                if completion_handler:
-                    await completion_handler()
             else:
                 await self._coordinator.nikobus_command.set_output_state(
                     address, channel, 0x00, completion_handler=completion_handler

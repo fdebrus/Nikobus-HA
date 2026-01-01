@@ -1,14 +1,16 @@
 """Scene platform for the Nikobus integration."""
 
-import logging
-from typing import Any, Dict, List, Optional, Union
-from homeassistant.components.scene import Scene
-from homeassistant.core import HomeAssistant
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from __future__ import annotations
 
-from .const import DOMAIN, BRAND
+import logging
+from typing import Any
+
+from homeassistant.components.scene import Scene
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up Nikobus scenes.")
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    entities: List[NikobusSceneEntity] = []
+    entities: list[NikobusSceneEntity] = []
 
     scene_data = (
         coordinator.dict_scene_data.get("scene", [])
@@ -46,8 +48,8 @@ async def async_setup_entry(
         ]
 
         # Optional: feedback LED(s) that must be sent first (toggle behavior on bus)
-        feedback_led_raw: Optional[Union[str, List[str]]] = scene.get("feedback_led")
-        feedback_leds: List[str] = _normalize_feedback_leds(feedback_led_raw)
+        feedback_led_raw: str | list[str] | None = scene.get("feedback_led")
+        feedback_leds: list[str] = _normalize_feedback_leds(feedback_led_raw)
 
         _LOGGER.debug(
             "Processing scene: %s (ID: %s) | Channels: %s | FeedbackLEDs=%s",
@@ -59,7 +61,6 @@ async def async_setup_entry(
 
         entities.append(
             NikobusSceneEntity(
-                hass=hass,
                 coordinator=coordinator,
                 description=description,
                 scene_id=scene_id,
@@ -72,7 +73,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-def _normalize_feedback_leds(value: Optional[Union[str, List[str]]]) -> List[str]:
+def _normalize_feedback_leds(value: str | list[str] | None) -> list[str]:
     """Accept a single string or list of strings; keep any non-empty trimmed string."""
     if value is None:
         return []
@@ -82,44 +83,65 @@ def _normalize_feedback_leds(value: Optional[Union[str, List[str]]]) -> List[str
     return [v.strip() for v in value if isinstance(v, str) and v.strip()]
 
 
-class NikobusSceneEntity(CoordinatorEntity, Scene):
+def _scene_value_to_byte(module_type: str, state: Any) -> int | None:
+    """Convert a scene state value into the correct integer representation."""
+    if isinstance(state, str):
+        state = state.lower()
+
+    module_state_map = {
+        "switch_module": {"on": 255, "off": 0},
+        "roller_module": {"open": 1, "close": 2},
+    }
+
+    if module_type in module_state_map and isinstance(state, str):
+        mapped = module_state_map[module_type].get(state)
+        if mapped is not None:
+            return mapped
+        _LOGGER.error("Invalid state for %s: %s", module_type, state)
+        return None
+
+    if module_type == "dimmer_module":
+        try:
+            return max(0, min(int(state), 255))  # Ensure valid brightness range
+        except (ValueError, TypeError):
+            _LOGGER.error("Invalid state for dimmer: %s", state)
+            return None
+
+    _LOGGER.error("Unknown module type: %s", module_type)
+    return None
+
+
+class NikobusSceneEntity(NikobusEntity, Scene):
     """Represents a Nikobus scene entity within Home Assistant."""
 
     def __init__(
         self,
-        hass: HomeAssistant,
         coordinator: NikobusDataCoordinator,
         description: str,
         scene_id: str,
-        impacted_modules_info: List[Dict[str, Any]],
-        feedback_leds: Optional[List[str]] = None,
+        impacted_modules_info: list[dict[str, Any]],
+        feedback_leds: list[str] | None = None,
     ) -> None:
         """Initialize the scene entity with data from the Nikobus system configuration."""
-        super().__init__(coordinator)
-        self._hass = hass
+        super().__init__(
+            coordinator=coordinator,
+            address=scene_id,
+            name=description,
+            model="Scene",
+        )
         self._description = description
         self._scene_id = scene_id
         self._impacted_modules_info = impacted_modules_info
 
         # Store feedback LED addresses as-is (any non-empty string is accepted)
-        self._feedback_leds: List[str] = feedback_leds or []
+        self._feedback_leds: list[str] = feedback_leds or []
         if feedback_leds is None:
             _LOGGER.debug("Scene %s: no feedback_led defined.", scene_id)
 
     @property
     def unique_id(self) -> str:
         """Return a unique ID for this scene."""
-        return f"{DOMAIN}_scene_{self._scene_id}"
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        """Return device information to link this scene to the Nikobus integration."""
-        return {
-            "identifiers": {(DOMAIN, self._scene_id)},
-            "name": self._description,
-            "manufacturer": BRAND,
-            "model": "Scene",
-        }
+        return f"nikobus_scene_{self._scene_id}"
 
     @property
     def name(self) -> str:
@@ -168,34 +190,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
         # 1) Send feedback LED/button address FIRST
         await self._send_feedback_leds_first()
 
-        module_changes: Dict[str, bytearray] = {}
-
-        def get_value(module_type: str, state: Any) -> Optional[int]:
-            """Convert a scene state value into the correct integer representation."""
-            if isinstance(state, str):
-                state = state.lower()
-
-            module_state_map = {
-                "switch_module": {"on": 255, "off": 0},
-                "roller_module": {"open": 1, "close": 2},
-            }
-
-            if module_type in module_state_map and isinstance(state, str):
-                mapped = module_state_map[module_type].get(state)
-                if mapped is not None:
-                    return mapped
-                _LOGGER.error("Invalid state for %s: %s", module_type, state)
-                return None
-
-            if module_type == "dimmer_module":
-                try:
-                    return max(0, min(int(state), 255))  # Ensure valid brightness range
-                except (ValueError, TypeError):
-                    _LOGGER.error("Invalid state for dimmer: %s", state)
-                    return None
-
-            _LOGGER.error("Unknown module type: %s", module_type)
-            return None
+        module_changes: dict[str, bytearray] = {}
 
         # 2) Build desired channel states
         for module in self._impacted_modules_info:
@@ -228,7 +223,7 @@ class NikobusSceneEntity(CoordinatorEntity, Scene):
                 "Detected module type for module %s: %s", module_id, module_type
             )
 
-            value = get_value(module_type, state)
+            value = _scene_value_to_byte(module_type, state)
             if value is None:
                 continue
 

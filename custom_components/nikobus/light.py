@@ -13,11 +13,11 @@ from homeassistant.components.light import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 from .exceptions import NikobusError
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def _register_nikobus_dimmer_device(
     )
 
 
-class NikobusLightEntity(CoordinatorEntity, LightEntity):
+class NikobusLightEntity(NikobusEntity, LightEntity):
     """Represents a Nikobus dimmer light entity within Home Assistant."""
 
     def __init__(
@@ -103,14 +103,17 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         module_model: str,
     ) -> None:
         """Initialize the light entity from the Nikobus system configuration."""
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            address=address,
+            name=module_name,
+            model=module_model,
+        )
         self._address = address
         self._channel = channel
         self._channel_description = channel_description
-        self._module_name = module_name
-        self._module_model = module_model
 
-        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
+        self._attr_unique_id = f"{DOMAIN}_light_{self._address}_{self._channel}"
         self._attr_name = channel_description
 
         # Supported color modes: brightness
@@ -120,16 +123,6 @@ class NikobusLightEntity(CoordinatorEntity, LightEntity):
         # Internal state variables
         self._is_on: bool | None = None
         self._brightness: int | None = None
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device information about this light."""
-        return {
-            "identifiers": {(DOMAIN, self._address)},
-            "manufacturer": BRAND,
-            "name": self._module_name,
-            "model": self._module_model,
-        }
 
     @property
     def is_on(self) -> bool:

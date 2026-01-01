@@ -17,11 +17,11 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +37,9 @@ class PositionEstimator:
     """Estimates the current position of the cover based on elapsed time and direction."""
 
     def __init__(self, duration_in_seconds: float, start_position: Optional[float]):
+        if duration_in_seconds <= 0:
+            raise ValueError("operation_time must be greater than zero")
+
         self._duration_in_seconds = duration_in_seconds
         self._start_time: Optional[float] = None
         self._direction_value: Optional[int] = None
@@ -55,14 +58,21 @@ class PositionEstimator:
             _LOGGER.warning("Movement already started; stopping previous movement and restarting.")
             self.stop()  # Reset previous movement
 
+        if direction not in ("opening", "closing"):
+            _LOGGER.error("Invalid direction '%s' provided to PositionEstimator", direction)
+            return
+
         self._direction_value = 1 if direction == "opening" else -1
         self._start_time = time.monotonic()
         self._is_moving = True
 
         # Capture the initial position once at the start.
-        self._initial_position = (
-            position if position is not None else (100 if self._direction_value == 1 else 0)
-        )
+        if position is not None:
+            self._initial_position = max(0.0, min(100.0, float(position)))
+        elif self._current_position is not None:
+            self._initial_position = self._current_position
+        else:
+            self._initial_position = 100.0 if self._direction_value == 1 else 0.0
         self._current_position = self._initial_position
 
         _LOGGER.debug(
@@ -71,7 +81,7 @@ class PositionEstimator:
             self._initial_position,
         )
 
-    def get_position(self) -> Optional[int]:
+    def get_position(self) -> Optional[float]:
         """Calculate and return the current position estimate."""
         if (
             not self._is_moving
@@ -87,9 +97,9 @@ class PositionEstimator:
         elapsed_time = time.monotonic() - self._start_time
         progress = (elapsed_time / self._duration_in_seconds) * 100 * self._direction_value
         # Always compute based on the fixed starting position.
-        new_position = max(0, min(100, self._initial_position + progress))
+        new_position = max(0.0, min(100.0, self._initial_position + progress))
         self._current_position = new_position
-        return int(new_position)
+        return new_position
 
     def stop(self) -> None:
         """Stop the movement and finalize the position estimate."""
@@ -109,7 +119,9 @@ class PositionEstimator:
 
     @property
     def current_position(self) -> Optional[int]:
-        return int(self._current_position) if self._current_position is not None else None
+        if self._current_position is None:
+            return None
+        return int(round(self._current_position))
 
     @property
     def duration_in_seconds(self) -> float:
@@ -206,7 +218,7 @@ def _register_nikobus_roller_device(
     )
 
 
-class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
+class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     """Optimized representation of a Nikobus cover entity with improved task management and state consistency."""
 
     def __init__(
@@ -220,7 +232,12 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         module_model: str,
         operation_time: str,
     ) -> None:
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            address=address,
+            name=module_desc,
+            model=module_model,
+        )
         self.hass = hass
         self._address = address
         self._channel = channel
@@ -243,7 +260,7 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self._button_operation_time: Optional[float] = None
 
         self._attr_name = channel_description
-        self._attr_unique_id = f"{DOMAIN}_{self._address}_{self._channel}"
+        self._attr_unique_id = f"{DOMAIN}_cover_{self._address}_{self._channel}"
         self._attr_device_class = CoverDeviceClass.SHUTTER
 
         _LOGGER.debug(
@@ -253,15 +270,6 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
             channel,
             self._operation_time,
         )
-
-    @property
-    def device_info(self) -> Dict[str, Any]:
-        return {
-            "identifiers": {(DOMAIN, self._address)},
-            "manufacturer": BRAND,
-            "name": self._description,
-            "model": self._model,
-        }
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
@@ -644,31 +652,3 @@ class NikobusCoverEntity(CoordinatorEntity, CoverEntity, RestoreEntity):
         self.coordinator.set_bytearray_state(
             self._address, self._channel, STATE_STOPPED
         )
-
-    async def _handle_nikobus_button_event(self, event: Any) -> None:
-        """Handle the `nikobus_button_pressed` event and update the cover state."""
-        if event.data.get("impacted_module_address") != self._address:
-            _LOGGER.debug("Skipping event for %s (not impacted).", self._attr_name)
-            return
-
-        new_state = self.coordinator.get_cover_state(self._address, self._channel)
-        if new_state != self._previous_state:
-            _LOGGER.debug(
-                "State changed for %s: %s -> %s",
-                self._attr_name,
-                self._previous_state,
-                new_state,
-            )
-            if event.data.get("button_operation_time") is not None:
-                self._button_operation_time = float(
-                    event.data.get("button_operation_time")
-                )
-                _LOGGER.debug(
-                    "Received button operation time for %s: %s",
-                    self._attr_name,
-                    self._button_operation_time,
-                )
-            await self._process_state_change(new_state, source="nikobus")
-            self.async_write_ha_state()
-        else:
-            _LOGGER.debug("No state change for %s; ignoring event.", self._attr_name)

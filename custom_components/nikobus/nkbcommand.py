@@ -59,7 +59,7 @@ class NikobusCommandHandler:
 
     async def clear_command_queue(self) -> None:
         """Clear all pending commands in the queue."""
-        while not self._command_queue.empty():
+        while True:
             try:
                 self._command_queue.get_nowait()
                 self._command_queue.task_done()
@@ -87,6 +87,9 @@ class NikobusCommandHandler:
                 try:
                     if not address:
                         await self.send_command(command)
+                        if completion_handler and callable(completion_handler):
+                            _LOGGER.debug("Calling completion handler for command without address")
+                            await completion_handler()
                     else:
                         result = await self.send_command_get_answer(command, address)
                         if future and not future.done():
@@ -111,7 +114,7 @@ class NikobusCommandHandler:
 
     async def get_output_state(self, address: str, group: int) -> str:
         """Get the output state of a module."""
-        _LOGGER.debug(f"Getting output state - Address: {address}, Group: {group}")
+        _LOGGER.debug("Getting output state - Address: %s, Group: %s", address, group)
         command_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(command_code, address)
         future = self._coordinator.hass.loop.create_future()
@@ -198,13 +201,15 @@ class NikobusCommandHandler:
         ack_received = False
         answer_received = False
         state: str | None = None
-        end_time = self._coordinator.hass.loop.time() + COMMAND_ACK_WAIT_TIMEOUT
+        loop = self._coordinator.hass.loop
+        end_time = loop.time() + COMMAND_ACK_WAIT_TIMEOUT
 
-        while self._coordinator.hass.loop.time() < end_time:
+        while loop.time() < end_time:
             try:
+                remaining = end_time - loop.time()
                 message = await asyncio.wait_for(
                     self.nikobus_listener.response_queue.get(),
-                    timeout=COMMAND_ANSWER_WAIT_TIMEOUT,
+                    timeout=min(COMMAND_ANSWER_WAIT_TIMEOUT, remaining),
                 )
                 _LOGGER.debug("Message received: %s", message)
                 if wait_ack in message:

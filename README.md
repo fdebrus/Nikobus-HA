@@ -1,6 +1,53 @@
 # Nikobus Integration for Home Assistant
 
+<p align="left">
+  <a href="https://www.buymeacoffee.com/fdebrus"><img src="https://img.shields.io/badge/Support-Buy%20Me%20a%20Coffee-FFDD00?style=flat&logo=buymeacoffee" alt="Buy Me a Coffee"></a>
+  <img src="https://img.shields.io/badge/Home%20Assistant-Nikobus-blue?style=flat&logo=homeassistant" alt="Nikobus for Home Assistant">
+  <a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-Custom-orange?style=flat" alt="HACS Custom"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA"><img src="https://img.shields.io/badge/Maintained%20by-fdebrus-green?style=flat" alt="Maintainer"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA/releases"><img src="https://img.shields.io/github/v/release/fdebrus/Nikobus-HA?style=flat&label=Release" alt="Latest release"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA/issues"><img src="https://img.shields.io/github/issues/fdebrus/Nikobus-HA?style=flat&label=Issues" alt="Open issues"></a>
+  <a href="https://github.com/fdebrus/Nikobus-HA/stargazers"><img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat&label=Stars" alt="GitHub stars"></a>
+</p>
+
 This custom integration connects Home Assistant to your Nikobus installation so you can control switches, dimmers, shutters, and respond to button presses directly from Home Assistant.
+
+## Entity unique IDs and dashboard impact
+
+Recent releases standardized **unique ID formats** for module-based entities (lights, switches, and covers) to explicitly include the entity type, for example:
+
+```yaml
+nikobus_light_<address><channel>
+nikobus_switch_<address><channel>
+nikobus_cover_<address>_<channel>
+```
+
+
+### Impact when upgrading
+
+If you are upgrading from an older version of the integration, Home Assistant will detect these updated unique IDs as **new entities**. As a result:
+
+- Existing Lovelace cards, automations, scripts, and voice assistants referencing the old entity IDs may no longer work.
+- The integration will automatically clean up orphaned entities that no longer match the current configuration, preventing duplicates.
+
+### Recommended recovery approach
+
+Rather than manually fixing each reference, Home Assistant provides a built-in way to remap entity IDs:
+
+1. Go to **Settings → Devices & Services → Integrations**
+2. Open **Nikobus**
+3. Click **Entities**
+4. Use **Recreate entity IDs**
+
+This will regenerate entity IDs using the new standardized format while preserving history and minimizing dashboard disruption where possible.
+
+### After upgrade checklist
+
+- Review **Settings → Devices & Services → Entities** to confirm the new entity IDs.
+- Verify and update any remaining automations, scripts, or dashboards that explicitly reference old entity IDs.
+- If you rely on voice assistants (HomeKit, Google Assistant, Alexa), re-sync entities if required.
+
+This change ensures consistent, predictable entity identification across all module types going forward.
 
 ## Prerequisites
 
@@ -34,24 +81,27 @@ Before installing:
 
 ## Events Fired by the Integration
 
-The integration emits the following Home Assistant bus events:
+The integration emits structured Home Assistant bus events for every button press lifecycle:
 
-- `nikobus_button_pressed`
-- `nikobus_button_released`
-- `nikobus_short_button_pressed`
-- `nikobus_long_button_pressed`
-- `nikobus_button_pressed_0` (press detected after release < 1s)
-- `nikobus_button_pressed_1` (press detected after release for 1s)
-- `nikobus_button_pressed_2` (press detected after release for 2s)
-- `nikobus_button_pressed_3` (press detected after release for 3s)
-- `nikobus_button_timer_1` (press held for 1s)
-- `nikobus_button_timer_2` (press held for 2s)
-- `nikobus_button_timer_3` (press held for 3s)
+- Base events: `nikobus_button_pressed` and `nikobus_button_released`.
+- Classification: `nikobus_short_button_pressed` (press duration < 3s) and `nikobus_long_button_pressed` (press duration ≥ 3s). The 3-second threshold is defined as `LONG_PRESS` in `custom_components/nikobus/const.py`.
+- Release-duration buckets (rounded down): `nikobus_button_pressed_0` (< 1s), `nikobus_button_pressed_1` (1–<2s), `nikobus_button_pressed_2` (2–<3s), and `nikobus_button_pressed_3` (≥ 3s).
+- Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively.
+- Post-refresh notification: `nikobus_button_operation` when the integration refreshes impacted modules after the press, including metadata such as the impacted module address/group and configured operation time.
 
-Press duration above 500ms is treated as a long press. You can adjust the threshold in `custom_components/nikobus/const.py` and restart Home Assistant:
+All events share the same payload keys so automations can rely on a consistent schema:
 
-```python
-LONG_PRESS_THRESHOLD_MS = 500  # Time in ms to detect a long press
+```yaml
+address: "004E2C"        # Button address (uppercase hex without 0x)
+module_address: "9105"   # Module address if available, otherwise null
+channel: 1                # Channel number if known
+ts: "2024-05-01T12:00:00Z"  # UTC timestamp at emission time
+press_id: "004E2C-..."    # Unique identifier for this press cycle
+state: "pressed"|"released"|"timer"
+duration_s: 1.2           # Seconds between press and release (null for initial press)
+bucket: 1                 # 0/1/2/3 matching duration buckets, otherwise null
+threshold_s: 2            # Timer milestone that fired (1/2/3), otherwise null
+source: "nikobus"
 ```
 
 You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses are recorded in `nikobus_button_config.json`).
@@ -169,6 +219,7 @@ After installation, an example file is available at `/config/custom_components/n
 - `channels`: Each channel can have a description; keep descriptions unique across modules to avoid duplicate entity names.
 - For buttons with feedback LEDs, set `led_on` and `led_off` addresses (case-sensitive, format like `8AA8FA`). Leave blank if unused.
 - For roller outputs, add `operation_time` (seconds to fully open/close) so the integration can simulate shutter positioning.
+- To expose a roller (cover) output as a standard switch, set `use_as_switch` to `true` for that channel; the integration will create a switch entity that opens on "on" and stops on "off".
 - Prefix an unused output description with `not_in_use` to skip creating entities for it.
 
 ### Switch Module Example
@@ -294,3 +345,15 @@ If a button controls a shutter, set `operation_time` (in seconds) on the button 
 ## Issues and Discussion
 
 For questions or general requests, please visit the [Home Assistant community thread](https://community.home-assistant.io/t/custom-component-nikobus/732832).
+
+## Trademark Notice
+
+Nikobus is a trademark of Niko NV. This project is an independent community effort and is not affiliated with, endorsed by, or sponsored by Niko NV.
+
+## License
+
+This project is provided for personal and other non-commercial use only. You may
+view, copy, modify, and share the code and documentation for non-commercial
+purposes. Commercial use of this software is not permitted without prior written
+permission from the maintainers. The software is provided "as is" without
+warranties of any kind.

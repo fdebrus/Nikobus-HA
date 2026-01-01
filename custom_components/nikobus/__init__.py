@@ -3,9 +3,8 @@ from __future__ import annotations
 
 import logging
 from typing import Final
-import datetime
+
 import voluptuous as vol
-import asyncio
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
@@ -19,9 +18,8 @@ from homeassistant.components import (
     button,
     scene,
 )
-from homeassistant.helpers.event import async_track_time_change
 from .nkbconnect import NikobusConnect
-from .exceptions import NikobusConnectionError 
+from .exceptions import NikobusConnectionError
 
 from .const import DOMAIN, CONF_CONNECTION_STRING
 from .coordinator import NikobusDataCoordinator
@@ -65,89 +63,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     _register_hub_device(hass, entry)
 
-    async def async_cleanup_orphan_entities(hass, entry, coordinator):
-        """Remove entities & devices that no longer exist in current Nikobus config."""
-        ent_reg = er.async_get(hass)
-        dev_reg = dr.async_get(hass)
-
-        valid_entity_ids = coordinator.get_known_entity_unique_ids()
-        _LOGGER.debug("Valid Nikobus entity IDs: %s", valid_entity_ids)
-
-        # 1) Clean up entities
-        for entity in list(ent_reg.entities.values()):
-            if entity.config_entry_id != entry.entry_id:
-                continue
-            if entity.platform != DOMAIN:
-                continue
-
-            if entity.unique_id not in valid_entity_ids:
-                _LOGGER.warning(
-                    "Removing orphan Nikobus entity: %s (unique_id=%s)",
-                    entity.entity_id,
-                    entity.unique_id,
-                )
-                ent_reg.async_remove(entity.entity_id)
-
-        # 2) Clean up devices that have no remaining entities
-        #    (but keep the hub device)
-        hub_identifier = (DOMAIN, HUB_IDENTIFIER)
-
-        # Rebuild after entity removals
-        ent_reg = er.async_get(hass)
-
-        # Build a set of device_ids that still have at least one entity
-        devices_with_entities: set[str] = set()
-        for entity in ent_reg.entities.values():
-            if entity.config_entry_id != entry.entry_id:
-                continue
-            if entity.platform != DOMAIN:
-                continue
-            if entity.device_id:
-                devices_with_entities.add(entity.device_id)
-
-        # Now iterate over devices for this config entry
-        for device in list(dev_reg.devices.values()):
-            if entry.entry_id not in device.config_entries:
-                continue
-
-            # Skip the Nikobus hub device
-            if hub_identifier in device.identifiers:
-                continue
-
-            # If this device has no entities attached anymore → delete it
-            if device.id not in devices_with_entities:
-                _LOGGER.warning(
-                    "Removing orphan Nikobus device: %s (id=%s, identifiers=%s)",
-                    device.name,
-                    device.id,
-                    device.identifiers,
-                )
-                dev_reg.async_remove_device(device.id)
-
     async def handle_module_discovery(call: ServiceCall) -> None:
         """Manually trigger device discovery."""
-        module_address = call.data.get("module_address", "")
-        _LOGGER.info("Starting manual Nikobus discovery with module_address: %s", module_address)
+        module_address = (call.data.get("module_address", "") or "").strip().upper()
+        _LOGGER.info(
+            "Starting manual Nikobus discovery with module_address: %s", module_address
+        )
         await coordinator.discover_devices(module_address)
 
-    hass.services.async_register(
-        DOMAIN, "query_module_inventory", handle_module_discovery, SCAN_MODULE_SCHEMA
-    )
-
-    async def scheduled_discovery(now: datetime) -> None:
-        _LOGGER.info("Scheduled Nikobus discovery running at: %s", now)
-        await coordinator.discover_devices("")
-
-    # Schedule the callback to run daily at 1:00:00 AM.
-    # remove_listener = async_track_time_change(
-    #     hass,
-    #    lambda now: asyncio.run_coroutine_threadsafe(scheduled_discovery(now), hass.loop),
-    #     hour=10,
-    #     minute=0,
-    #     second=0
-    # )
-    # Store the remove_listener so that it can be cancelled when unloading the integration.
-    # coordinator.remove_listener = remove_listener
+    if not hass.services.has_service(DOMAIN, "query_module_inventory"):
+        hass.services.async_register(
+            DOMAIN,
+            "query_module_inventory",
+            handle_module_discovery,
+            SCAN_MODULE_SCHEMA,
+        )
 
     # Forward the setup to all configured platforms.
     try:
@@ -157,7 +87,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Error forwarding setup to Nikobus platforms: %s", err)
         return False
 
-    await async_cleanup_orphan_entities(hass, entry, coordinator)
+    await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
     _LOGGER.info("Nikobus (single-instance) setup complete.")
     return True
@@ -177,6 +107,57 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
         model="PC-Link Bridge",
     )
     _LOGGER.debug("Nikobus hub registered in Home Assistant device registry.")
+
+async def _async_cleanup_orphan_entities(
+    hass: HomeAssistant, entry: ConfigEntry, coordinator: NikobusDataCoordinator
+) -> None:
+    """Remove entities & devices that no longer exist in current Nikobus config."""
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+
+    valid_entity_ids = coordinator.get_known_entity_unique_ids()
+    _LOGGER.debug("Valid Nikobus entity IDs: %s", valid_entity_ids)
+
+    entities = [
+        entity
+        for entity in ent_reg.entities.values()
+        if entity.config_entry_id == entry.entry_id and entity.platform == DOMAIN
+    ]
+
+    for entity in entities:
+        if entity.unique_id not in valid_entity_ids:
+            _LOGGER.warning(
+                "Removing orphan Nikobus entity: %s (unique_id=%s)",
+                entity.entity_id,
+                entity.unique_id,
+            )
+            ent_reg.async_remove(entity.entity_id)
+
+    # Rebuild after entity removals
+    ent_reg = er.async_get(hass)
+    hub_identifier = (DOMAIN, HUB_IDENTIFIER)
+
+    devices_with_entities = {
+        entity.device_id
+        for entity in ent_reg.entities.values()
+        if entity.config_entry_id == entry.entry_id
+        and entity.platform == DOMAIN
+        and entity.device_id
+    }
+
+    for device in dev_reg.devices.values():
+        if entry.entry_id not in device.config_entries:
+            continue
+        if hub_identifier in device.identifiers:
+            continue
+        if device.id not in devices_with_entities:
+            _LOGGER.warning(
+                "Removing orphan Nikobus device: %s (id=%s, identifiers=%s)",
+                device.name,
+                device.id,
+                device.identifiers,
+            )
+            dev_reg.async_remove_device(device.id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -198,6 +179,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not unload_ok:
         _LOGGER.error("Failed to unload Nikobus platforms.")
         return False
+
+    if hass.services.has_service(DOMAIN, "query_module_inventory"):
+        hass.services.async_remove(DOMAIN, "query_module_inventory")
 
     _LOGGER.info("Nikobus integration fully unloaded.")
     return True

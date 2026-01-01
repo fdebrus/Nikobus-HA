@@ -9,10 +9,10 @@ from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, BRAND, CONF_PRIOR_GEN3
+from .const import DOMAIN, CONF_PRIOR_GEN3
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -40,9 +40,8 @@ async def async_setup_entry(
             discovery_info = discovery_info[0] if discovery_info else {}
 
             entity = NikobusButtonEntity(
-                hass=hass,
                 coordinator=coordinator,
-                config_entry=entry,                        # ← NEW
+                config_entry=entry,
                 description=button_data.get("description", "Unknown Button"),
                 address=button_data.get("address", "unknown"),
                 operation_time=button_data.get("operation_time"),
@@ -59,14 +58,13 @@ async def async_setup_entry(
     _LOGGER.debug("Added %d Nikobus button entities.", len(entities))
 
 
-class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
+class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     """Represents a Nikobus button entity within Home Assistant."""
 
     def __init__(
         self,
-        hass: HomeAssistant,
         coordinator: NikobusDataCoordinator,
-        config_entry: ConfigEntry,                       # ← NEW
+        config_entry: ConfigEntry,
         description: str,
         address: str,
         operation_time: int | None,
@@ -78,11 +76,13 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
         discovery_key: str,
     ) -> None:
         """Initialize the button entity with data from the Nikobus system configuration."""
-        super().__init__(coordinator)
-        self._hass = hass
+        super().__init__(
+            coordinator=coordinator,
+            address=address,
+            name=description,
+            model=discovery_model or "Push Button",
+        )
         self._coordinator = coordinator
-        self._description = description
-        self._address = address
         self._operation_time = int(operation_time) if operation_time else None
         self.impacted_modules_info = impacted_modules_info
         self.discovery_type = discovery_type
@@ -102,16 +102,6 @@ class NikobusButtonEntity(CoordinatorEntity, ButtonEntity):
     # ---------------------------------------------------------------------
     # Home Assistant entity metadata
     # ---------------------------------------------------------------------
-
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device information about this button."""
-        return {
-            "identifiers": {(DOMAIN, self._address)},
-            "name": self._description,
-            "manufacturer": BRAND,
-            "model": self.discovery_model or "Push Button",
-        }
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:

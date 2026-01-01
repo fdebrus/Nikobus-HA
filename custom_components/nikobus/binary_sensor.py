@@ -1,20 +1,24 @@
-"""Sensor platform for the Nikobus integration."""
+"""Binary sensor platform for the Nikobus integration."""
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN, BRAND
+from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
+from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
+_BUTTON_REGISTRY_KEY = "button_sensor_registry"
+_BUTTON_LISTENER_KEY = "button_sensor_listener"
 
 
 async def async_setup_entry(
@@ -39,16 +43,23 @@ async def async_setup_entry(
             entities.append(entity)
 
     # Register a single global event listener for all sensors
-    register_global_listener(hass, entities)
+    register_global_listener(hass)
 
     async_add_entities(entities)
     _LOGGER.debug("Added %d Nikobus button sensor entities.", len(entities))
 
 
-def register_global_listener(
-    hass: HomeAssistant, sensors: list[NikobusButtonSensor]
-) -> None:
+def _get_button_registry(hass: HomeAssistant) -> dict[str, NikobusButtonSensor]:
+    """Return the shared button sensor registry."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    return domain_data.setdefault(_BUTTON_REGISTRY_KEY, {})
+
+
+def register_global_listener(hass: HomeAssistant) -> None:
     """Register a single global event listener for all Nikobus sensors."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if domain_data.get(_BUTTON_LISTENER_KEY):
+        return
 
     @callback
     async def handle_event(event: Any) -> None:
@@ -58,18 +69,26 @@ def register_global_listener(
             if not address:
                 _LOGGER.warning("Received event without address: %s", event.data)
                 return
-            for sensor in sensors:
-                if sensor._address == address:
-                    await sensor._handle_button_event(event)
+            sensor = _get_button_registry(hass).get(address)
+            if sensor is None:
+                _LOGGER.debug(
+                    "No registered button sensor for address %s (event=%s)",
+                    address,
+                    event.data,
+                )
+                return
+            await sensor.async_handle_button_event(event)
         except Exception as e:
             _LOGGER.error(
                 "Error handling nikobus_button_pressed event: %s", e, exc_info=True
             )
 
-    hass.bus.async_listen("nikobus_button_pressed", handle_event)
+    domain_data[_BUTTON_LISTENER_KEY] = hass.bus.async_listen(
+        "nikobus_button_pressed", handle_event
+    )
 
 
-class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
+class NikobusButtonSensor(NikobusEntity, SensorEntity):
     """Represents a Nikobus button sensor entity within Home Assistant."""
 
     def __init__(
@@ -80,49 +99,59 @@ class NikobusButtonSensor(CoordinatorEntity, SensorEntity):
         address: str,
     ) -> None:
         """Initialize the button sensor entity with data from the Nikobus system configuration."""
-        super().__init__(coordinator)
+        super().__init__(
+            coordinator=coordinator,
+            address=address,
+            name=description,
+            model="Button Sensor",
+        )
         self._hass = hass
-        self._coordinator = coordinator
-        self._description = description
-        self._address = address
 
         self._attr_name = f"Nikobus Button Sensor {address}"
         self._attr_unique_id = f"{DOMAIN}_button_sensor_{address}"
-        self._state: str | None = "idle"
+        self._attr_native_value = "idle"
+        self._reset_cancel: Any | None = None
 
-    @property
-    def device_info(self) -> dict[str, Any]:
-        """Return device information about this sensor."""
-        return {
-            "identifiers": {(DOMAIN, self._address)},
-            "name": self._description,
-            "manufacturer": BRAND,
-            "model": "Button Sensor",
-        }
+    async def async_added_to_hass(self) -> None:
+        """Register the sensor in the shared registry."""
+        await super().async_added_to_hass()
+        _get_button_registry(self.hass)[self._address] = self
 
-    @property
-    def state(self) -> str | None:
-        """Return the state of the sensor."""
-        return self._state
+    async def async_will_remove_from_hass(self) -> None:
+        """Remove the sensor from the shared registry."""
+        _get_button_registry(self.hass).pop(self._address, None)
+        self._cancel_reset()
+        await super().async_will_remove_from_hass()
 
     @callback
-    async def _handle_button_event(self, event: Any) -> None:
+    async def async_handle_button_event(self, event: Any) -> None:
         """Handle Nikobus button press events."""
         if event.data.get("address") == self._address:
             _LOGGER.debug("Button sensor %s detected a press event.", self._address)
-            self._state = "Pressed"
+            self._attr_native_value = "pressed"
             self.async_write_ha_state()
 
-            # Optionally reset the state after a short delay
-            self._hass.loop.call_later(1, self._reset_state)
+            # Reset the state after a short delay
+            self._cancel_reset()
+            self._reset_cancel = async_call_later(
+                self._hass, 1, self._async_reset_state
+            )
 
     @callback
-    def _reset_state(self) -> None:
+    def _async_reset_state(self, _: datetime) -> None:
         """Reset the sensor state to idle after a short delay."""
-        self._state = "idle"
+        self._reset_cancel = None
+        self._attr_native_value = "idle"
         self.async_write_ha_state()
 
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updates from the coordinator if needed."""
         pass  # Since the state is event-driven, no coordinator updates are required.
+
+    @callback
+    def _cancel_reset(self) -> None:
+        """Cancel any pending reset callback."""
+        if self._reset_cancel:
+            self._reset_cancel()
+            self._reset_cancel = None

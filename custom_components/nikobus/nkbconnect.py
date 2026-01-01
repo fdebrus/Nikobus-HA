@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import re
 import socket
 from typing import Literal, Optional
 
-import serial_asyncio
+import serial_asyncio_fast as serial_asyncio
 
 from .const import BAUD_RATE, COMMANDS_HANDSHAKE
 from .exceptions import (
@@ -18,6 +19,7 @@ from .exceptions import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_SERIAL_DEVICE_RE = re.compile(r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$")
 
 
 class NikobusConnect:
@@ -118,6 +120,7 @@ class NikobusConnect:
     # -------------------------
     async def _connect_ip(self) -> None:
         """Establish an IP connection (precreate + connect the socket correctly)."""
+        sock: Optional[socket.socket] = None
         try:
             host, port_str = self._connection_string.split(":", 1)
             port = int(port_str)
@@ -145,6 +148,8 @@ class NikobusConnect:
 
             _LOGGER.info("Connected to bridge %s:%d", host, port)
         except (OSError, ValueError) as err:
+            if sock is not None:
+                sock.close()
             await self._safe_close()
             msg = f"Failed to connect to bridge {self._connection_string} - {err}"
             _LOGGER.error(msg)
@@ -174,11 +179,7 @@ class NikobusConnect:
             return "IP"
         except ValueError:
             # Common serial device patterns
-            import re
-
-            if re.match(
-                r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$", self._connection_string
-            ):
+            if _SERIAL_DEVICE_RE.match(self._connection_string):
                 return "Serial"
         return "Unknown"
 

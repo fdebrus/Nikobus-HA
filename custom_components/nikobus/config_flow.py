@@ -22,6 +22,37 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+_SERIAL_REGEX = re.compile(r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$")
+
+
+def _build_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    """Build the config flow schema with optional defaults."""
+    defaults = defaults or {}
+    connection_key = (
+        vol.Required(
+            CONF_CONNECTION_STRING,
+            default=defaults.get(CONF_CONNECTION_STRING, ""),
+        )
+        if CONF_CONNECTION_STRING in defaults
+        else vol.Required(CONF_CONNECTION_STRING)
+    )
+    return vol.Schema(
+        {
+            connection_key: str,
+            vol.Optional(
+                CONF_REFRESH_INTERVAL,
+                default=defaults.get(CONF_REFRESH_INTERVAL, 120),
+            ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
+            vol.Optional(
+                CONF_HAS_FEEDBACK_MODULE,
+                default=defaults.get(CONF_HAS_FEEDBACK_MODULE, False),
+            ): bool,
+            vol.Optional(
+                CONF_PRIOR_GEN3,
+                default=defaults.get(CONF_PRIOR_GEN3, False),
+            ): bool,
+        }
+    )
 
 
 async def async_validate_input(
@@ -45,7 +76,7 @@ async def async_validate_input(
                 try:
                     with socket.create_connection((ip_str, port), timeout=5):
                         pass
-                except (socket.timeout, ConnectionRefusedError) as exc:
+                except (socket.timeout, ConnectionRefusedError, OSError) as exc:
                     _LOGGER.debug("Connection test failed: %s", exc)
                     raise ValueError("connection_unreachable")
 
@@ -59,11 +90,13 @@ async def async_validate_input(
             return {"error": "invalid_connection"}
 
     # Serial device validation
-    serial_regex = r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$"
-    if re.match(serial_regex, connection_string):
-        if os.path.exists(connection_string) and os.access(
-            connection_string, os.R_OK | os.W_OK
-        ):
+    if _SERIAL_REGEX.match(connection_string):
+        def test_device_access() -> bool:
+            return os.path.exists(connection_string) and os.access(
+                connection_string, os.R_OK | os.W_OK
+            )
+
+        if await hass.async_add_executor_job(test_device_access):
             return {"title": f"Nikobus ({connection_string})"}
         _LOGGER.debug("Serial device %s not found or not accessible", connection_string)
         return {"error": "device_not_found_or_no_access"}
@@ -101,16 +134,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_CONNECTION_STRING): str,
-                    vol.Optional(CONF_REFRESH_INTERVAL, default=120): vol.All(
-                        cv.positive_int, vol.Range(min=60, max=3600)
-                    ),
-                    vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=False): bool,
-                    vol.Optional(CONF_PRIOR_GEN3, default=False): bool,
-                }
-            ),
+            data_schema=_build_schema(),
             errors=errors,
         )
 
@@ -161,30 +185,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_CONNECTION_STRING,
-                        default=existing_entry.data.get(CONF_CONNECTION_STRING, ""),
-                    ): str,
-                    vol.Optional(
-                        CONF_REFRESH_INTERVAL,
-                        default=existing_entry.data.get(CONF_REFRESH_INTERVAL, 120),
-                    ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
-                    vol.Optional(
-                        CONF_HAS_FEEDBACK_MODULE,
-                        default=existing_entry.data.get(
-                            CONF_HAS_FEEDBACK_MODULE, False
-                        ),
-                    ): bool,
-                    vol.Optional(
-                        CONF_PRIOR_GEN3,
-                        default=existing_entry.data.get(
-                            CONF_PRIOR_GEN3, False
-                        ),
-                    ): bool,
-                }
-            ),
+            data_schema=_build_schema(existing_entry.data),
             errors=errors,
         )
 
