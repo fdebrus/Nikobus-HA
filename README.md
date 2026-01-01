@@ -17,8 +17,8 @@ This custom integration connects Home Assistant to your Nikobus installation so 
 Recent releases standardized **unique ID formats** for module-based entities (lights, switches, and covers) to explicitly include the entity type, for example:
 
 ```yaml
-nikobus_light_<address><channel>
-nikobus_switch_<address><channel>
+nikobus_light_<address>_<channel>
+nikobus_switch_<address>_<channel>
 nikobus_cover_<address>_<channel>
 ```
 
