@@ -14,12 +14,40 @@ This custom integration connects Home Assistant to your Nikobus installation so 
 
 ## Entity unique IDs and dashboard impact
 
-Recent releases standardized unique ID formats for module-based entities (lights, switches, and covers) to include the entity type (e.g., `nikobus_light_<address>_<channel>`). If you upgrade from an older version, Home Assistant will treat the updated IDs as new entities. That means:
+Recent releases standardized **unique ID formats** for module-based entities (lights, switches, and covers) to explicitly include the entity type, for example:
 
-- Existing cards, automations, scripts, and voice routines that referenced the old entity IDs need to be updated to the new ones.
-- The integration will remove orphaned entities that no longer match the configuration to prevent duplicates.
+```yaml
+nikobus_light_<address><channel>
+nikobus_switch<address><channel>
+nikobus_cover<address>_<channel>
+```
 
-After upgrading, check **Settings → Devices & Services → Entities** for the new entities and adjust any Lovelace cards or automations that relied on the previous IDs.
+
+### Impact when upgrading
+
+If you are upgrading from an older version of the integration, Home Assistant will detect these updated unique IDs as **new entities**. As a result:
+
+- Existing Lovelace cards, automations, scripts, and voice assistants referencing the old entity IDs may no longer work.
+- The integration will automatically clean up orphaned entities that no longer match the current configuration, preventing duplicates.
+
+### Recommended recovery approach
+
+Rather than manually fixing each reference, Home Assistant provides a built-in way to remap entity IDs:
+
+1. Go to **Settings → Devices & Services → Integrations**
+2. Open **Nikobus**
+3. Click **Entities**
+4. Use **Recreate entity IDs**
+
+This will regenerate entity IDs using the new standardized format while preserving history and minimizing dashboard disruption where possible.
+
+### After upgrade checklist
+
+- Review **Settings → Devices & Services → Entities** to confirm the new entity IDs.
+- Verify and update any remaining automations, scripts, or dashboards that explicitly reference old entity IDs.
+- If you rely on voice assistants (HomeKit, Google Assistant, Alexa), re-sync entities if required.
+
+This change ensures consistent, predictable entity identification across all module types going forward.
 
 ## Prerequisites
 
