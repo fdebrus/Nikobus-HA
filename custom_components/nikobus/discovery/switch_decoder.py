@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..mapping import CHANNEL_MAPPING, KEY_MAPPING_MODULE, SWITCH_MODE_MAPPING, SWITCH_TIMER_MAPPING
-from ..protocol import convert_nikobus_address, decode_command_payload, reverse_hex
 from .base import DecodedCommand
+from .mapping import CHANNEL_MAPPING, KEY_MAPPING_MODULE, SWITCH_MODE_MAPPING, SWITCH_TIMER_MAPPING
+from .protocol import convert_nikobus_address, decode_command_payload, reverse_hex
 
 _LOGGER = logging.getLogger(__name__)
 
