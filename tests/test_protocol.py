@@ -118,7 +118,7 @@ def test_command_mapping_supports_one_to_many_and_deduplication():
     )
 
     second = decode_command_payload(
-        "001100000001",
+        "001200000001",
         "switch_module",
         KEY_MAPPING_MODULE,
         CHANNEL_MAPPING,
@@ -129,6 +129,8 @@ def test_command_mapping_supports_one_to_many_and_deduplication():
     )
 
     mapping = {}
+    assert first is not None
+    assert second is not None
     add_to_command_mapping(mapping, first, "C9A5")
     add_to_command_mapping(mapping, second, "C9A5")
     add_to_command_mapping(mapping, first, "C9A5")
@@ -264,7 +266,7 @@ def test_non_dimmer_payload_unchanged_after_normalization():
 def test_validation_rejects_invalid_channel(caplog):
     caplog.set_level(logging.WARNING)
 
-    payload = "001900000001"
+    payload = "009909000001"
     decoded = decode_command_payload(
         payload,
         "switch_module",
@@ -279,3 +281,44 @@ def test_validation_rejects_invalid_channel(caplog):
     assert decoded is None
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
     assert warnings
+
+
+def test_raw_chunk_channel_bitmask_resolves_within_range():
+    payload = "080835987A74"
+
+    decoded = decode_command_payload(
+        payload,
+        "switch_module",
+        KEY_MAPPING_MODULE,
+        CHANNEL_MAPPING,
+        MODE_MAPPINGS,
+        TIMER_MAPPINGS,
+        _get_channels,
+        convert_nikobus_address,
+        reverse_before_decode=True,
+        raw_chunk_hex=payload,
+    )
+
+    assert decoded is not None
+    assert decoded["channel_raw"] in range(_get_channels(None))
+    assert decoded.get("channel_mask") is not None
+
+
+def test_raw_chunk_channel_bitmask_supports_eight_channel_modules():
+    payload = "080835987A74"
+
+    decoded = decode_command_payload(
+        payload,
+        "switch_module",
+        KEY_MAPPING_MODULE,
+        CHANNEL_MAPPING,
+        MODE_MAPPINGS,
+        TIMER_MAPPINGS,
+        _get_eight_channels,
+        convert_nikobus_address,
+        reverse_before_decode=True,
+        raw_chunk_hex=payload,
+    )
+
+    assert decoded is not None
+    assert decoded["channel_raw"] in range(_get_eight_channels(None))

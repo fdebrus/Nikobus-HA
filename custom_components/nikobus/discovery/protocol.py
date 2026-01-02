@@ -200,7 +200,9 @@ def _validate_decoded_result(
     channel_raw = decoded.get("channel_raw")
     mode_raw = decoded.get("mode_raw")
     button_address = decoded.get("button_address")
-    channel_count = coordinator_get_button_channels(button_address) if button_address else None
+    channel_count = decoded.get("channel_count")
+    if channel_count is None and button_address:
+        channel_count = coordinator_get_button_channels(button_address)
 
     known_keys = {k for mapping in key_mapping_module.values() for k in mapping}
     expected_keys = known_keys
@@ -209,7 +211,7 @@ def _validate_decoded_result(
 
     invalid = False
 
-    if expected_keys and key_raw not in expected_keys:
+    if expected_keys and key_raw not in expected_keys and key_raw not in known_keys:
         invalid = True
 
     if channel_count is not None:
@@ -231,6 +233,17 @@ def _validate_decoded_result(
         )
         return None
 
+    _LOGGER.debug(
+        "Validation passed | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_mask=%s channel_count=%s",
+        module_type,
+        raw_payload_hex,
+        normalized_payload_hex,
+        key_raw,
+        channel_raw,
+        decoded.get("channel_mask"),
+        channel_count,
+    )
+
     return decoded
 
 def _nibble_high(raw_bytes, idx):
@@ -245,6 +258,21 @@ def _nibble_low(raw_bytes, idx):
         return int(raw_bytes[idx][1], 16)
     except (IndexError, ValueError, TypeError):
         return None
+
+
+def _channel_index_from_mask(channel_raw: int | None, channel_mapping: dict[int, str]) -> tuple[int | None, int | None]:
+    """Normalize channel from possible bitmask to zero-based index."""
+
+    if channel_raw is None:
+        return None, None
+
+    if channel_raw > 0 and channel_raw & (channel_raw - 1) == 0:
+        return int(channel_raw.bit_length() - 1), channel_raw
+
+    if channel_raw in channel_mapping:
+        return channel_raw, channel_raw
+
+    return None, channel_raw
 
 
 def _calculate_timer_values(module_type, mode_raw, t1_raw, t2_raw, timer_mapping):
@@ -291,35 +319,28 @@ def _decode_switch_or_roller(
     #   bytes3-5 -> Button address
     t2_raw = _nibble_low(raw_bytes, 0)
     key_raw = _nibble_high(raw_bytes, 1)
-    channel_raw = _nibble_low(raw_bytes, 1)
+    channel_candidates = [
+        ("byte1_low", _nibble_low(raw_bytes, 1)),
+        ("byte2_low", _nibble_low(raw_bytes, 2)),
+    ]
     t1_raw = _nibble_high(raw_bytes, 2)
     mode_raw = _nibble_low(raw_bytes, 2)
 
-    if None in (t2_raw, key_raw, channel_raw, t1_raw, mode_raw):
+    if None in (t2_raw, key_raw, t1_raw, mode_raw):
         _LOGGER.error("Invalid command bytes: %s", raw_bytes)
         return None
 
-    if key_raw == 0xF or channel_raw == 0xF or mode_raw == 0xF:
+    channel_reserved = channel_candidates[0][1]
+
+    if key_raw == 0xF or channel_reserved == 0xF or mode_raw == 0xF:
         _LOGGER.debug(
             "Skipping filler payload due to reserved nibble: key=%s channel=%s mode=%s payload=%s",
             key_raw,
-            channel_raw,
+            channel_reserved,
             mode_raw,
             payload_hex,
         )
         return None
-
-    _LOGGER.debug(
-        "Nikobus DECODE | payload=%s | raw_bytes=%s | t2_raw=%d | key_raw=%d | channel_raw=%d | t1_raw=%d | mode_raw=%d | module_type=%s",
-        payload_hex,
-        raw_bytes,
-        t2_raw,
-        key_raw,
-        channel_raw,
-        t1_raw,
-        mode_raw,
-        module_type,
-    )
 
     button_address_hex = payload_hex[-6:]
     button_address = get_button_address(button_address_hex)
@@ -327,6 +348,25 @@ def _decode_switch_or_roller(
     push_button_address, button_address = get_push_button_address(
         key_raw, button_address, key_mapping_module, coordinator_get_button_channels, convert_func
     )
+
+    channel_count = coordinator_get_button_channels(button_address)
+
+    channel_raw = None
+    channel_mask = None
+    channel_source = None
+    for source, candidate in channel_candidates:
+        idx, mask = _channel_index_from_mask(candidate, channel_mapping)
+        if idx is None:
+            continue
+        if channel_count is None or idx < channel_count:
+            channel_raw = idx
+            channel_mask = mask
+            channel_source = source
+            break
+
+    if channel_raw is None:
+        channel_raw, channel_mask = _channel_index_from_mask(channel_candidates[0][1], channel_mapping)
+        channel_source = channel_candidates[0][0]
 
     channel_label = channel_mapping.get(channel_raw, f"Unknown Channel ({channel_raw})")
 
@@ -363,6 +403,16 @@ def _decode_switch_or_roller(
     )
 
     _LOGGER.debug(
+        "Channel extraction | raw_chunk=%s reversed_payload=%s candidates=%s selected=%s mask=%s channel_count=%s",
+        payload_hex,
+        raw_bytes,
+        channel_candidates,
+        channel_raw,
+        channel_mask,
+        channel_count,
+    )
+
+    _LOGGER.debug(
         "Decoded payload: K=%s, C=%s, T1=%s, T2=%s, M=%s, button_address=%s, push_button_address=%s",
         key_raw,
         channel_label,
@@ -379,6 +429,9 @@ def _decode_switch_or_roller(
         "push_button_address": push_button_address,
         "key_raw": key_raw,
         "channel_raw": channel_raw,
+        "channel_mask": channel_mask,
+        "channel_source": channel_source,
+        "channel_count": channel_count,
         "mode_raw": mode_raw,
         "t1_raw": t1_raw,
         "t2_raw": t2_raw,
@@ -602,11 +655,27 @@ def decode_command_payload(
     timer_mappings,
     coordinator_get_button_channels,
     convert_func=None,
+    *,
+    reverse_before_decode: bool = False,
+    raw_chunk_hex: str | None = None,
 ):
     """Decode the command payload into its fields with detailed debug logging."""
     if not isinstance(payload_hex, str):
         payload_hex = payload_hex.hex().upper()
     payload_hex = payload_hex.upper()
+    input_payload_hex = payload_hex
+
+    reversed_payload_hex = None
+    if reverse_before_decode:
+        reversed_payload_hex = reverse_hex(payload_hex)
+        payload_hex = reversed_payload_hex
+
+    _LOGGER.debug(
+        "Discovery decode input | module_type=%s raw_chunk=%s reversed_chunk=%s",
+        module_type,
+        (raw_chunk_hex or input_payload_hex),
+        reversed_payload_hex or input_payload_hex,
+    )
 
     normalized_bytes, original_bytes = normalize_payload(payload_hex, module_type)
     if normalized_bytes is None:
@@ -638,7 +707,7 @@ def decode_command_payload(
         _LOGGER.debug("Skipping payload with invalid button address: %s", payload_hex)
         return None
 
-    raw_payload_hex = original_bytes.hex().upper() if original_bytes else payload_hex
+    raw_payload_hex = (raw_chunk_hex or input_payload_hex).upper()
 
     decoded = None
     if module_type in {"switch_module", "roller_module"}:

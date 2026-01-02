@@ -213,6 +213,14 @@ class NikobusDiscovery:
                 }
                 self.discovered_devices[converted_address] = base_device
 
+            _LOGGER.debug(
+                "Inventory classification | module_address=%s device_type=%s model=%s channels=%s",
+                converted_address,
+                device_type_hex,
+                model,
+                channels,
+            )
+
             _LOGGER.info(
                 "Discovered %s - %s, Model: %s, at Address: %s",
                 category,
