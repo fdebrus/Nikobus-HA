@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 from custom_components.nikobus.discovery.fileio import (
     merge_discovered_links,
@@ -10,6 +11,19 @@ from custom_components.nikobus.discovery.fileio import (
 def test_merge_discovered_links_deduplicates_outputs(tmp_path):
     async def _run():
         file_path = tmp_path / "nikobus_button_config.json"
+
+        class DummyConfig:
+            def __init__(self, base_path: Path):
+                self._base_path = base_path
+
+            def path(self, *args):
+                return str(Path(self._base_path, *args))
+
+        class DummyHass:
+            def __init__(self, base_path: Path):
+                self.config = DummyConfig(base_path)
+
+        hass = DummyHass(tmp_path)
 
         initial_data = {
             "nikobus_button": [
@@ -81,7 +95,7 @@ def test_merge_discovered_links_deduplicates_outputs(tmp_path):
         }
 
         updated_buttons, links_added, outputs_added = await merge_discovered_links(
-            str(tmp_path), command_mapping
+            hass, command_mapping
         )
 
         assert updated_buttons == 1
