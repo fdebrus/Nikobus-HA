@@ -99,13 +99,13 @@ def get_push_button_address(
         "Debug: key_raw=%s, mapping keys=%s", key_raw, list(mapping.keys())
     )
 
-    effective_key = key_raw
+    effective_key = int(key_raw)
     if num_channels == 8 and second_part:
         effective_key = key_raw + 4
 
     if effective_key not in mapping:
-        _LOGGER.error(
-            "KeyError: effective_key '%s' not found in mapping. Available keys: %s",
+        _LOGGER.debug(
+            "Missing mapping for effective_key '%s'. Available keys: %s",
             effective_key,
             list(mapping.keys()),
         )
@@ -149,6 +149,14 @@ def decode_command_payload(
         _LOGGER.error("Payload too short for valid decode: %s", payload_hex)
         return None
 
+    if payload_hex == "FFFFFFFFFFFF":
+        _LOGGER.debug("Skipping terminator payload: %s", payload_hex)
+        return None
+
+    if payload_hex.endswith("FFFFFF"):
+        _LOGGER.debug("Skipping payload with invalid button address: %s", payload_hex)
+        return None
+
     try:
         t2_raw = int(payload_hex[1], 16)
         key_raw = int(payload_hex[2], 16)
@@ -157,6 +165,16 @@ def decode_command_payload(
         mode_raw = int(payload_hex[5], 16)
     except ValueError:
         _LOGGER.error("Invalid command hex: %s", payload_hex)
+        return None
+
+    if key_raw == 0xF or channel_raw == 0xF or mode_raw == 0xF:
+        _LOGGER.debug(
+            "Skipping filler payload due to reserved nibble: key=%s channel=%s mode=%s payload=%s",
+            key_raw,
+            channel_raw,
+            mode_raw,
+            payload_hex,
+        )
         return None
 
     # DEBUG: Show full payload bytes and all extracted fields
@@ -233,6 +251,11 @@ def decode_command_payload(
         "payload": payload_hex,
         "button_address": button_address,
         "push_button_address": push_button_address,
+        "key_raw": key_raw,
+        "channel_raw": channel_raw,
+        "mode_raw": mode_raw,
+        "t1_raw": t1_raw,
+        "t2_raw": t2_raw,
         "K": f"{key_raw}",
         "C": f"{channel_label}",
         "T1": f"{t1_val}",

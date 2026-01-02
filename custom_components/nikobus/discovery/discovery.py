@@ -25,6 +25,30 @@ from ..nkbprotocol import make_pc_link_inventory_command
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def add_to_command_mapping(command_mapping, decoded_command, module_address):
+    """Store decoded command information, allowing one-to-many button mappings."""
+    push_button_address = decoded_command.get("push_button_address")
+    key_raw = decoded_command.get("key_raw")
+    if push_button_address is None or key_raw is None:
+        return
+
+    mapping_key = (push_button_address, key_raw)
+    outputs = command_mapping.setdefault(mapping_key, [])
+    output_definition = {
+        "module_address": module_address,
+        "channel": decoded_command.get("channel_raw"),
+        "channel_label": decoded_command.get("C"),
+        "mode": decoded_command.get("M"),
+        "timers": {
+            "T1": decoded_command.get("T1"),
+            "T2": decoded_command.get("T2"),
+        },
+        "payload": decoded_command.get("payload"),
+    }
+    if output_definition not in outputs:
+        outputs.append(output_definition)
+
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):
         self.discovered_devices = {}
@@ -232,6 +256,7 @@ class NikobusDiscovery:
                 "Processing complete message with %d chunks.", len(chunks_to_process)
             )
             new_commands = []
+            command_mapping = {}
             for chunk in chunks_to_process:
                 _LOGGER.debug("Decoding chunk: %r", chunk)
                 reversed_chunk = reverse_hex(chunk)
@@ -255,13 +280,17 @@ class NikobusDiscovery:
                 )
                 if decoded is not None:
                     new_commands.append(decoded)
+                    add_to_command_mapping(
+                        command_mapping, decoded, self._module_address
+                    )
                     _LOGGER.debug("Decoded chunk: %r", reversed_chunk)
                 else:
-                    _LOGGER.error("Failed to decode chunk: %r", reversed_chunk)
+                    _LOGGER.debug("Skipped chunk during decode: %r", reversed_chunk)
 
             self._decoded_buffer = {
                 "module_address": self._module_address,
                 "commands": new_commands,
+                "command_mapping": command_mapping,
             }
 
             _LOGGER.info("Decoded Button Commands:")
@@ -281,7 +310,7 @@ class NikobusDiscovery:
                 )
 
             self._payload_buffer = ""
-            self._decoded_buffer = {"module_address": None, "commands": []}
+            self._decoded_buffer = {"module_address": None, "commands": [], "command_mapping": {}}
             self._module_address = None
             self._message_complete = False
 
