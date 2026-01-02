@@ -3,6 +3,9 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 
+_DIMMER_CANDIDATE_SUCCESS: dict[str, int] = {}
+
+
 def reverse_hex(hex_str):
     """Reverse the bytes in a hex string and return as upper-case hex."""
     b = bytes.fromhex(hex_str)
@@ -130,6 +133,361 @@ def get_timer_value(timer_list, idx, default="Unknown"):
         return timer_list[-1]
     return default
 
+def _nibble_high(raw_bytes, idx):
+    try:
+        return int(raw_bytes[idx][0], 16)
+    except (IndexError, ValueError, TypeError):
+        return None
+
+
+def _nibble_low(raw_bytes, idx):
+    try:
+        return int(raw_bytes[idx][1], 16)
+    except (IndexError, ValueError, TypeError):
+        return None
+
+
+def _calculate_timer_values(module_type, mode_raw, t1_raw, t2_raw, timer_mapping):
+    t1_val = None
+    t2_val = None
+
+    if module_type == "switch_module":
+        if mode_raw in [5, 6]:
+            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
+        elif mode_raw in [8, 9]:
+            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 1)
+        elif mode_raw in [1, 2]:
+            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 2)
+    elif module_type == "dimmer_module":
+        if mode_raw in [0, 1, 2, 10, 11]:
+            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 1)
+            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
+        elif mode_raw == 3:
+            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
+        elif mode_raw in [4, 5, 6, 7, 8, 9]:
+            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
+            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
+    elif module_type == "roller_module":
+        t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
+
+    return t1_val, t2_val
+
+
+def _decode_switch_or_roller(
+    payload_hex,
+    module_type,
+    key_mapping_module,
+    channel_mapping,
+    mode_mappings,
+    timer_mappings,
+    coordinator_get_button_channels,
+    convert_func,
+    raw_bytes,
+):
+    try:
+        t2_raw = int(payload_hex[1], 16)
+        key_raw = int(payload_hex[2], 16)
+        channel_raw = int(payload_hex[3], 16)
+        t1_raw = int(payload_hex[4], 16)
+        mode_raw = int(payload_hex[5], 16)
+    except ValueError:
+        _LOGGER.error("Invalid command hex: %s", payload_hex)
+        return None
+
+    if key_raw == 0xF or channel_raw == 0xF or mode_raw == 0xF:
+        _LOGGER.debug(
+            "Skipping filler payload due to reserved nibble: key=%s channel=%s mode=%s payload=%s",
+            key_raw,
+            channel_raw,
+            mode_raw,
+            payload_hex,
+        )
+        return None
+
+    _LOGGER.debug(
+        "Nikobus DECODE | payload=%s | raw_bytes=%s | t2_raw=%d | key_raw=%d | channel_raw=%d | t1_raw=%d | mode_raw=%d | module_type=%s",
+        payload_hex,
+        raw_bytes,
+        t2_raw,
+        key_raw,
+        channel_raw,
+        t1_raw,
+        mode_raw,
+        module_type,
+    )
+
+    button_address_hex = payload_hex[-6:]
+    button_address = get_button_address(button_address_hex)
+
+    push_button_address, button_address = get_push_button_address(
+        key_raw, button_address, key_mapping_module, coordinator_get_button_channels, convert_func
+    )
+
+    channel_label = channel_mapping.get(channel_raw, f"Unknown Channel ({channel_raw})")
+
+    if channel_label.startswith("Unknown Channel"):
+        _LOGGER.debug(
+            "Mapping fail: channel_raw=%s | channel_keys=%s | module_type=%s | payload=%s",
+            channel_raw,
+            list(channel_mapping.keys()),
+            module_type,
+            payload_hex,
+        )
+
+    try:
+        mode_mapping = mode_mappings[module_type]
+        timer_mapping = timer_mappings[module_type]
+    except KeyError:
+        _LOGGER.error(
+            "Unknown module_type '%s'. Available: %s", module_type, list(mode_mappings.keys())
+        )
+        return None
+
+    mode_label = mode_mapping.get(mode_raw, f"Unknown Mode ({mode_raw})")
+    if mode_label.startswith("Unknown Mode"):
+        _LOGGER.debug(
+            "Unknown mode: mode_raw=%d | mode_keys=%s | module_type=%s | payload=%s",
+            mode_raw,
+            list(mode_mapping.keys()),
+            module_type,
+            payload_hex,
+        )
+
+    t1_val, t2_val = _calculate_timer_values(
+        module_type, mode_raw, t1_raw, t2_raw, timer_mapping
+    )
+
+    _LOGGER.debug(
+        "Decoded payload: K=%s, C=%s, T1=%s, T2=%s, M=%s, button_address=%s, push_button_address=%s",
+        key_raw,
+        channel_label,
+        t1_val,
+        t2_val,
+        mode_label,
+        button_address,
+        push_button_address,
+    )
+
+    return {
+        "payload": payload_hex,
+        "button_address": button_address,
+        "push_button_address": push_button_address,
+        "key_raw": key_raw,
+        "channel_raw": channel_raw,
+        "mode_raw": mode_raw,
+        "t1_raw": t1_raw,
+        "t2_raw": t2_raw,
+        "K": f"{key_raw}",
+        "C": f"{channel_label}",
+        "T1": t1_val,
+        "T2": t2_val,
+        "M": f"{mode_label}",
+    }
+
+
+def _build_dimmer_candidates(
+    raw_bytes,
+    channel_mapping,
+    key_mapping_module,
+    mode_mapping,
+    num_channels,
+):
+    key_options = [
+        ("b3_hi", _nibble_high(raw_bytes, 3)),
+        ("b3_lo", _nibble_low(raw_bytes, 3)),
+        ("b2_hi", _nibble_high(raw_bytes, 2)),
+        ("b2_lo", _nibble_low(raw_bytes, 2)),
+    ]
+    channel_options = [
+        ("b3_lo", _nibble_low(raw_bytes, 3)),
+        ("b3_hi", _nibble_high(raw_bytes, 3)),
+        ("b2_lo", _nibble_low(raw_bytes, 2)),
+        ("b2_hi", _nibble_high(raw_bytes, 2)),
+    ]
+    mode_options = [
+        ("b4_lo", _nibble_low(raw_bytes, 4)),
+        ("b2_lo", _nibble_low(raw_bytes, 2)),
+        ("b3_lo", _nibble_low(raw_bytes, 3)),
+    ]
+    t2_options = [
+        ("b0_hi", _nibble_high(raw_bytes, 0)),
+        ("b2_hi", _nibble_high(raw_bytes, 2)),
+    ]
+
+    possible_keys = set()
+    if num_channels is not None:
+        possible_keys.update(key_mapping_module.get(num_channels, {}).keys())
+    else:
+        for mapping in key_mapping_module.values():
+            possible_keys.update(mapping.keys())
+
+    candidates = []
+    for key_label, key_val in key_options:
+        if key_val is None:
+            continue
+        for channel_label, channel_val in channel_options:
+            if channel_val is None:
+                continue
+            for mode_label, mode_val in mode_options:
+                if mode_val is None:
+                    continue
+                t1_val = None
+                if mode_label == "b4_lo":
+                    t1_val = _nibble_high(raw_bytes, 4)
+                elif mode_label == "b2_lo":
+                    t1_val = _nibble_high(raw_bytes, 2)
+                elif mode_label == "b3_lo":
+                    t1_val = _nibble_high(raw_bytes, 3)
+                for t2_label, t2_val in t2_options:
+                    if t2_val is None:
+                        continue
+                    candidate_id = f"k:{key_label}|c:{channel_label}|m:{mode_label}|t2:{t2_label}"
+                    valid_key = key_val in possible_keys
+                    valid_channel = channel_val in channel_mapping
+                    valid_mode = mode_val in mode_mapping
+                    candidates.append(
+                        {
+                            "id": candidate_id,
+                            "key_raw": key_val,
+                            "channel_raw": channel_val,
+                            "mode_raw": mode_val,
+                            "t1_raw": t1_val,
+                            "t2_raw": t2_val,
+                            "valid_key": valid_key,
+                            "valid_channel": valid_channel,
+                            "valid_mode": valid_mode,
+                            "valid_all": all([valid_key, valid_channel, valid_mode]),
+                            "count": _DIMMER_CANDIDATE_SUCCESS.get(candidate_id, 0),
+                        }
+                    )
+
+    return candidates
+
+
+def _decode_dimmer(
+    payload_hex,
+    key_mapping_module,
+    channel_mapping,
+    mode_mappings,
+    timer_mappings,
+    coordinator_get_button_channels,
+    convert_func,
+    raw_bytes,
+):
+    if len(raw_bytes) < 8:
+        _LOGGER.error("Dimmer payload has unexpected length: %s", payload_hex)
+        return None
+
+    button_address_hex = payload_hex[-6:]
+    button_address = get_button_address(button_address_hex)
+    num_channels = coordinator_get_button_channels(button_address)
+
+    try:
+        mode_mapping = mode_mappings["dimmer_module"]
+        timer_mapping = timer_mappings["dimmer_module"]
+    except KeyError:
+        _LOGGER.error(
+            "Unknown module_type 'dimmer_module'. Available: %s", list(mode_mappings.keys())
+        )
+        return None
+
+    opcode = raw_bytes[1] if len(raw_bytes) > 1 else None
+    candidates = _build_dimmer_candidates(
+        raw_bytes, channel_mapping, key_mapping_module, mode_mapping, num_channels
+    )
+
+    _LOGGER.debug(
+        "Dimmer decode candidates | payload=%s | raw_bytes=%s | opcode=%s | candidates=%s",
+        payload_hex,
+        raw_bytes,
+        opcode,
+        candidates,
+    )
+
+    passing = [c for c in candidates if c["valid_all"]]
+    if not passing:
+        passing = sorted(
+            candidates,
+            key=lambda c: (int(c["valid_key"]), int(c["valid_channel"]), int(c["valid_mode"])),
+            reverse=True,
+        )[:1]
+
+    if not passing:
+        _LOGGER.error("No valid candidate interpretations for dimmer payload: %s", payload_hex)
+        return None
+
+    selected = max(passing, key=lambda c: c.get("count", 0))
+    _DIMMER_CANDIDATE_SUCCESS[selected["id"]] = selected.get("count", 0) + 1
+
+    key_raw = selected["key_raw"]
+    channel_raw = selected["channel_raw"]
+    mode_raw = selected["mode_raw"]
+    t1_raw = selected["t1_raw"]
+    t2_raw = selected["t2_raw"]
+
+    if key_raw in (0xF, None) or channel_raw in (0xF, None) or mode_raw in (0xF, None):
+        _LOGGER.debug(
+            "Skipping dimmer payload due to invalid candidate values: key=%s channel=%s mode=%s payload=%s",
+            key_raw,
+            channel_raw,
+            mode_raw,
+            payload_hex,
+        )
+        return None
+
+    push_button_address, button_address = get_push_button_address(
+        key_raw, button_address, key_mapping_module, coordinator_get_button_channels, convert_func
+    )
+
+    channel_label = channel_mapping.get(channel_raw, f"Unknown Channel ({channel_raw})")
+    if channel_label.startswith("Unknown Channel"):
+        _LOGGER.debug(
+            "Mapping fail: channel_raw=%s | channel_keys=%s | module_type=dimmer_module | payload=%s",
+            channel_raw,
+            list(channel_mapping.keys()),
+            payload_hex,
+        )
+
+    mode_label = mode_mapping.get(mode_raw, f"Unknown Mode ({mode_raw})")
+    if mode_label.startswith("Unknown Mode"):
+        _LOGGER.debug(
+            "Unknown mode: mode_raw=%d | mode_keys=%s | module_type=dimmer_module | payload=%s",
+            mode_raw,
+            list(mode_mapping.keys()),
+            payload_hex,
+        )
+
+    t1_val, t2_val = _calculate_timer_values(
+        "dimmer_module", mode_raw, t1_raw, t2_raw, timer_mapping
+    )
+
+    _LOGGER.debug(
+        "Selected dimmer candidate %s | key=%s channel=%s mode=%s t1=%s t2=%s",
+        selected.get("id"),
+        key_raw,
+        channel_raw,
+        mode_raw,
+        t1_val,
+        t2_val,
+    )
+
+    return {
+        "payload": payload_hex,
+        "button_address": button_address,
+        "push_button_address": push_button_address,
+        "key_raw": key_raw,
+        "channel_raw": channel_raw,
+        "mode_raw": mode_raw,
+        "t1_raw": t1_raw,
+        "t2_raw": t2_raw,
+        "K": f"{key_raw}",
+        "C": f"{channel_label}",
+        "T1": t1_val,
+        "T2": t2_val,
+        "M": f"{mode_label}",
+    }
+
+
 def decode_command_payload(
     payload_hex,
     module_type,
@@ -166,107 +524,30 @@ def decode_command_payload(
         _LOGGER.debug("Skipping payload with invalid button address: %s", payload_hex)
         return None
 
-    try:
-        t2_raw = int(payload_hex[1], 16)
-        key_raw = int(payload_hex[2], 16)
-        channel_raw = int(payload_hex[3], 16)
-        t1_raw = int(payload_hex[4], 16)
-        mode_raw = int(payload_hex[5], 16)
-    except ValueError:
-        _LOGGER.error("Invalid command hex: %s", payload_hex)
-        return None
-
-    if key_raw == 0xF or channel_raw == 0xF or mode_raw == 0xF:
-        _LOGGER.debug(
-            "Skipping filler payload due to reserved nibble: key=%s channel=%s mode=%s payload=%s",
-            key_raw,
-            channel_raw,
-            mode_raw,
+    if module_type in {"switch_module", "roller_module"}:
+        return _decode_switch_or_roller(
             payload_hex,
-        )
-        return None
-
-    # DEBUG: Show full payload bytes and all extracted fields
-    _LOGGER.debug(
-        "Nikobus DECODE | payload=%s | raw_bytes=%s | t2_raw=%d | key_raw=%d | channel_raw=%d | t1_raw=%d | mode_raw=%d | module_type=%s",
-        payload_hex, raw_bytes, t2_raw, key_raw, channel_raw, t1_raw, mode_raw, module_type
-    )
-
-    # GET BUTTON ADDRESS
-    button_address_hex = payload_hex[-6:]
-    button_address = get_button_address(button_address_hex)
-
-    # GET PUSH BUTTON ADDRESS
-    push_button_address, button_address = get_push_button_address(
-        key_raw, button_address, key_mapping_module, coordinator_get_button_channels, convert_func
-    )
-
-    # GET CHANNEL LABEL
-    channel_label = channel_mapping.get(
-        channel_raw, f"Unknown Channel ({channel_raw})"
-    )
-
-    if channel_label.startswith("Unknown Channel"):
-        _LOGGER.debug(
-            "Mapping fail: channel_raw=%s | channel_keys=%s | module_type=%s | payload=%s",
-            channel_raw, list(channel_mapping.keys()), module_type, payload_hex
+            module_type,
+            key_mapping_module,
+            channel_mapping,
+            mode_mappings,
+            timer_mappings,
+            coordinator_get_button_channels,
+            convert_func,
+            raw_bytes,
         )
 
-    # GET MODE AND TIMING
-    try:
-        mode_mapping = mode_mappings[module_type]
-        timer_mapping = timer_mappings[module_type]
-    except KeyError:
-        _LOGGER.error("Unknown module_type '%s'. Available: %s", module_type, list(mode_mappings.keys()))
-        return None
-
-    mode_label = mode_mapping.get(mode_raw, f"Unknown Mode ({mode_raw})")
-    if mode_label.startswith("Unknown Mode"):
-        _LOGGER.debug(
-            "Unknown mode: mode_raw=%d | mode_keys=%s | module_type=%s | payload=%s",
-            mode_raw, list(mode_mapping.keys()), module_type, payload_hex
+    if module_type == "dimmer_module":
+        return _decode_dimmer(
+            payload_hex,
+            key_mapping_module,
+            channel_mapping,
+            mode_mappings,
+            timer_mappings,
+            coordinator_get_button_channels,
+            convert_func,
+            raw_bytes,
         )
 
-    t1_val = None
-    t2_val = None
-
-    if module_type == "switch_module":
-        if mode_raw in [5, 6]:
-            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
-        elif mode_raw in [8, 9]:
-            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 1)
-        elif mode_raw in [1, 2]:
-            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 2)
-    elif module_type == "dimmer_module":
-        if mode_raw in [0, 1, 2, 10, 11]:
-            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 1)
-            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
-        elif mode_raw == 3:
-            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
-        elif mode_raw in [4, 5, 6, 7, 8, 9]:
-            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
-            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
-    elif module_type == "roller_module":
-        t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
-
-    # Final debug log for full decoded output
-    _LOGGER.debug(
-        "Decoded payload: K=%s, C=%s, T1=%s, T2=%s, M=%s, button_address=%s, push_button_address=%s",
-        key_raw, channel_label, t1_val, t2_val, mode_label, button_address, push_button_address
-    )
-
-    return {
-        "payload": payload_hex,
-        "button_address": button_address,
-        "push_button_address": push_button_address,
-        "key_raw": key_raw,
-        "channel_raw": channel_raw,
-        "mode_raw": mode_raw,
-        "t1_raw": t1_raw,
-        "t2_raw": t2_raw,
-        "K": f"{key_raw}",
-        "C": f"{channel_label}",
-        "T1": t1_val,
-        "T2": t2_val,
-        "M": f"{mode_label}",
-    }
+    _LOGGER.error("Unknown module_type '%s'. Available: %s", module_type, list(mode_mappings.keys()))
+    return None

@@ -4,6 +4,8 @@ import pytest
 from custom_components.nikobus.discovery.discovery import add_to_command_mapping
 from custom_components.nikobus.discovery.mapping import (
     CHANNEL_MAPPING,
+    DIMMER_MODE_MAPPING,
+    DIMMER_TIMER_MAPPING,
     KEY_MAPPING_MODULE,
     SWITCH_MODE_MAPPING,
     SWITCH_TIMER_MAPPING,
@@ -11,20 +13,34 @@ from custom_components.nikobus.discovery.mapping import (
 from custom_components.nikobus.discovery.protocol import (
     convert_nikobus_address,
     decode_command_payload,
+    _DIMMER_CANDIDATE_SUCCESS,
 )
 
 
 MODE_MAPPINGS = {
     "switch_module": SWITCH_MODE_MAPPING,
+    "dimmer_module": DIMMER_MODE_MAPPING,
 }
 
 TIMER_MAPPINGS = {
     "switch_module": SWITCH_TIMER_MAPPING,
+    "dimmer_module": DIMMER_TIMER_MAPPING,
 }
 
 
 def _get_channels(_):
     return 4
+
+
+def _get_eight_channels(_):
+    return 8
+
+
+@pytest.fixture(autouse=True)
+def reset_candidate_success():
+    _DIMMER_CANDIDATE_SUCCESS.clear()
+    yield
+    _DIMMER_CANDIDATE_SUCCESS.clear()
 
 
 def test_decode_skips_terminator_and_filler_records():
@@ -185,3 +201,24 @@ def test_decode_handles_reversed_and_missing_mappings(caplog):
     assert decoded["push_button_address"] is None
     errors = [record for record in caplog.records if record.levelno >= logging.ERROR]
     assert errors == []
+
+
+def test_dimmer_decoder_uses_byte_based_candidates():
+    payload = "0BB4021305787234"
+
+    decoded = decode_command_payload(
+        payload,
+        "dimmer_module",
+        KEY_MAPPING_MODULE,
+        CHANNEL_MAPPING,
+        MODE_MAPPINGS,
+        TIMER_MAPPINGS,
+        _get_eight_channels,
+        convert_nikobus_address,
+    )
+
+    assert decoded is not None
+    assert decoded["key_raw"] in range(0, 8)
+    assert decoded["channel_raw"] in range(0, 12)
+    assert decoded["mode_raw"] in DIMMER_MODE_MAPPING
+    assert decoded["push_button_address"] is not None
