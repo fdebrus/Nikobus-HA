@@ -1,3 +1,4 @@
+import logging
 import pytest
 
 from custom_components.nikobus.discovery.discovery import add_to_command_mapping
@@ -121,3 +122,52 @@ def test_command_mapping_supports_one_to_many_and_deduplication():
     assert len(mapping[key]) == 2
     assert mapping[key][0]["channel"] == 0
     assert mapping[key][1]["channel"] == 1
+
+
+def test_decode_handles_reversed_and_missing_mappings(caplog):
+    caplog.set_level(logging.DEBUG)
+
+    assert (
+        decode_command_payload(
+            "FFFFFFFFFF08",
+            "switch_module",
+            KEY_MAPPING_MODULE,
+            CHANNEL_MAPPING,
+            MODE_MAPPINGS,
+            TIMER_MAPPINGS,
+            _get_channels,
+            convert_nikobus_address,
+        )
+        is None
+    )
+
+    assert (
+        decode_command_payload(
+            "00F000000001",
+            "switch_module",
+            KEY_MAPPING_MODULE,
+            CHANNEL_MAPPING,
+            MODE_MAPPINGS,
+            TIMER_MAPPINGS,
+            _get_channels,
+            convert_nikobus_address,
+        )
+        is None
+    )
+
+    caplog.clear()
+    decoded = decode_command_payload(
+        "00D000000001",
+        "switch_module",
+        KEY_MAPPING_MODULE,
+        CHANNEL_MAPPING,
+        MODE_MAPPINGS,
+        TIMER_MAPPINGS,
+        _get_channels,
+        convert_nikobus_address,
+    )
+
+    assert decoded is not None
+    assert decoded["push_button_address"] is None
+    errors = [record for record in caplog.records if record.levelno >= logging.ERROR]
+    assert errors == []

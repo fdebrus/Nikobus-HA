@@ -101,7 +101,7 @@ def get_push_button_address(
 
     effective_key = int(key_raw)
     if num_channels == 8 and second_part:
-        effective_key = key_raw + 4
+        effective_key = effective_key + 4
 
     if effective_key not in mapping:
         _LOGGER.debug(
@@ -153,6 +153,15 @@ def decode_command_payload(
         _LOGGER.debug("Skipping terminator payload: %s", payload_hex)
         return None
 
+    raw_bytes = [payload_hex[i:i+2] for i in range(0, len(payload_hex), 2)]
+    if raw_bytes[:5] == ["FF", "FF", "FF", "FF", "FF"]:
+        _LOGGER.debug(
+            "Skipping reversed terminator/filler payload: %s | raw_bytes=%s",
+            payload_hex,
+            raw_bytes,
+        )
+        return None
+
     if payload_hex.endswith("FFFFFF"):
         _LOGGER.debug("Skipping payload with invalid button address: %s", payload_hex)
         return None
@@ -178,7 +187,6 @@ def decode_command_payload(
         return None
 
     # DEBUG: Show full payload bytes and all extracted fields
-    raw_bytes = [payload_hex[i:i+2] for i in range(0, len(payload_hex), 2)]
     _LOGGER.debug(
         "Nikobus DECODE | payload=%s | raw_bytes=%s | t2_raw=%d | key_raw=%d | channel_raw=%d | t1_raw=%d | mode_raw=%d | module_type=%s",
         payload_hex, raw_bytes, t2_raw, key_raw, channel_raw, t1_raw, mode_raw, module_type

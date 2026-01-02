@@ -278,7 +278,7 @@ class NikobusDiscovery:
                     self._coordinator.get_button_channels,
                     convert_nikobus_address,
                 )
-                if decoded is not None:
+                if decoded is not None and decoded.get("push_button_address") is not None:
                     new_commands.append(decoded)
                     add_to_command_mapping(
                         command_mapping, decoded, self._module_address
