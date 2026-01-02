@@ -6,6 +6,54 @@ _LOGGER = logging.getLogger(__name__)
 _DIMMER_CANDIDATE_SUCCESS: dict[str, int] = {}
 
 
+def _looks_like_prefixed_dimmer_frame(raw_bytes: bytes) -> bool:
+    """Return True if the bytes match a known prefixed dimmer opcode layout."""
+
+    if len(raw_bytes) < 2:
+        return False
+
+    opcode = raw_bytes[1]
+    # Dimmer discovery/command frames have been observed with an extra leading
+    # prefix byte (often 0xFF) before the opcode. Known opcodes live in the
+    # lower ranges, so filter by that to avoid stripping for unrelated frames.
+    return opcode in {0x08, 0x0B, 0x0C, 0x0D}
+
+
+def normalize_payload(payload_hex: str, module_type: str) -> tuple[bytes | None, bytes | None]:
+    """Normalize payload alignment and strip protocol prefixes when needed.
+
+    The Nikobus dimmer frames may include a leading prefix byte (commonly 0xFF)
+    that is not part of the logical command, which would shift subsequent nibble
+    decoding and make fields like key/channel invalid. We normalize by working
+    on bytes first, optionally trimming those prefix bytes, and returning a
+    consistent payload layout for downstream parsing.
+    """
+
+    try:
+        original_bytes = bytes.fromhex(payload_hex)
+    except ValueError:
+        _LOGGER.error("Invalid payload hex: %s", payload_hex)
+        return None, None
+
+    normalized_bytes = original_bytes
+
+    if original_bytes and original_bytes[0] == 0xFF:
+        if module_type == "dimmer_module" or _looks_like_prefixed_dimmer_frame(original_bytes):
+            idx = 0
+            while idx < len(original_bytes) and original_bytes[idx] == 0xFF:
+                idx += 1
+            normalized_bytes = original_bytes[idx:]
+            _LOGGER.debug(
+                "Stripped %s prefix byte(s) from payload | raw=%s normalized=%s module_type=%s",
+                idx,
+                payload_hex,
+                normalized_bytes.hex().upper(),
+                module_type,
+            )
+
+    return normalized_bytes, original_bytes
+
+
 def reverse_hex(hex_str):
     """Reverse the bytes in a hex string and return as upper-case hex."""
     b = bytes.fromhex(hex_str)
@@ -133,6 +181,58 @@ def get_timer_value(timer_list, idx, default="Unknown"):
         return timer_list[-1]
     return default
 
+
+def _validate_decoded_result(
+    decoded,
+    module_type,
+    key_mapping_module,
+    channel_mapping,
+    coordinator_get_button_channels,
+    raw_payload_hex,
+    normalized_payload_hex,
+):
+    """Validate decoded payload fields before using them to update state."""
+
+    if decoded is None:
+        return None
+
+    key_raw = decoded.get("key_raw")
+    channel_raw = decoded.get("channel_raw")
+    mode_raw = decoded.get("mode_raw")
+    button_address = decoded.get("button_address")
+    channel_count = coordinator_get_button_channels(button_address) if button_address else None
+
+    known_keys = {k for mapping in key_mapping_module.values() for k in mapping}
+    expected_keys = known_keys
+    if channel_count is not None and channel_count in key_mapping_module:
+        expected_keys = set(key_mapping_module[channel_count].keys())
+
+    invalid = False
+
+    if expected_keys and key_raw not in expected_keys:
+        invalid = True
+
+    if channel_count is not None:
+        if channel_raw is None or channel_raw < 0 or channel_raw >= channel_count:
+            invalid = True
+    elif channel_mapping and channel_raw not in channel_mapping:
+        invalid = True
+
+    if invalid:
+        _LOGGER.warning(
+            "Skipping payload after validation failure | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_count=%s mode=%s",
+            module_type,
+            raw_payload_hex,
+            normalized_payload_hex,
+            key_raw,
+            channel_raw,
+            channel_count,
+            mode_raw,
+        )
+        return None
+
+    return decoded
+
 def _nibble_high(raw_bytes, idx):
     try:
         return int(raw_bytes[idx][0], 16)
@@ -184,14 +284,19 @@ def _decode_switch_or_roller(
     convert_func,
     raw_bytes,
 ):
-    try:
-        t2_raw = int(payload_hex[1], 16)
-        key_raw = int(payload_hex[2], 16)
-        channel_raw = int(payload_hex[3], 16)
-        t1_raw = int(payload_hex[4], 16)
-        mode_raw = int(payload_hex[5], 16)
-    except ValueError:
-        _LOGGER.error("Invalid command hex: %s", payload_hex)
+    # Normalized layout (nibbles):
+    #   byte0 -> [ignored_hi, T2]
+    #   byte1 -> [Key, Channel]
+    #   byte2 -> [T1, Mode]
+    #   bytes3-5 -> Button address
+    t2_raw = _nibble_low(raw_bytes, 0)
+    key_raw = _nibble_high(raw_bytes, 1)
+    channel_raw = _nibble_low(raw_bytes, 1)
+    t1_raw = _nibble_high(raw_bytes, 2)
+    mode_raw = _nibble_low(raw_bytes, 2)
+
+    if None in (t2_raw, key_raw, channel_raw, t1_raw, mode_raw):
+        _LOGGER.error("Invalid command bytes: %s", raw_bytes)
         return None
 
     if key_raw == 0xF or channel_raw == 0xF or mode_raw == 0xF:
@@ -374,7 +479,7 @@ def _decode_dimmer(
     convert_func,
     raw_bytes,
 ):
-    if len(raw_bytes) < 8:
+    if len(raw_bytes) < 5:
         _LOGGER.error("Dimmer payload has unexpected length: %s", payload_hex)
         return None
 
@@ -391,7 +496,7 @@ def _decode_dimmer(
         )
         return None
 
-    opcode = raw_bytes[1] if len(raw_bytes) > 1 else None
+    opcode = raw_bytes[0] if raw_bytes else None
     candidates = _build_dimmer_candidates(
         raw_bytes, channel_mapping, key_mapping_module, mode_mapping, num_channels
     )
@@ -503,15 +608,24 @@ def decode_command_payload(
         payload_hex = payload_hex.hex().upper()
     payload_hex = payload_hex.upper()
 
-    if len(payload_hex) < 12:
-        _LOGGER.error("Payload too short for valid decode: %s", payload_hex)
+    normalized_bytes, original_bytes = normalize_payload(payload_hex, module_type)
+    if normalized_bytes is None:
+        return None
+
+    payload_hex = normalized_bytes.hex().upper()
+    if len(payload_hex) < 10:
+        _LOGGER.error(
+            "Payload too short for valid decode after normalization: raw=%s normalized=%s",
+            original_bytes.hex().upper() if original_bytes else payload_hex,
+            payload_hex,
+        )
         return None
 
     if payload_hex == "FFFFFFFFFFFF":
         _LOGGER.debug("Skipping terminator payload: %s", payload_hex)
         return None
 
-    raw_bytes = [payload_hex[i:i+2] for i in range(0, len(payload_hex), 2)]
+    raw_bytes = [f"{b:02X}" for b in normalized_bytes]
     if raw_bytes[:5] == ["FF", "FF", "FF", "FF", "FF"]:
         _LOGGER.debug(
             "Skipping reversed terminator/filler payload: %s | raw_bytes=%s",
@@ -524,8 +638,11 @@ def decode_command_payload(
         _LOGGER.debug("Skipping payload with invalid button address: %s", payload_hex)
         return None
 
+    raw_payload_hex = original_bytes.hex().upper() if original_bytes else payload_hex
+
+    decoded = None
     if module_type in {"switch_module", "roller_module"}:
-        return _decode_switch_or_roller(
+        decoded = _decode_switch_or_roller(
             payload_hex,
             module_type,
             key_mapping_module,
@@ -537,8 +654,8 @@ def decode_command_payload(
             raw_bytes,
         )
 
-    if module_type == "dimmer_module":
-        return _decode_dimmer(
+    elif module_type == "dimmer_module":
+        decoded = _decode_dimmer(
             payload_hex,
             key_mapping_module,
             channel_mapping,
@@ -548,6 +665,18 @@ def decode_command_payload(
             convert_func,
             raw_bytes,
         )
+    else:
+        _LOGGER.error(
+            "Unknown module_type '%s'. Available: %s", module_type, list(mode_mappings.keys())
+        )
+        return None
 
-    _LOGGER.error("Unknown module_type '%s'. Available: %s", module_type, list(mode_mappings.keys()))
-    return None
+    return _validate_decoded_result(
+        decoded,
+        module_type,
+        key_mapping_module,
+        channel_mapping,
+        coordinator_get_button_channels,
+        raw_payload_hex,
+        payload_hex,
+    )
