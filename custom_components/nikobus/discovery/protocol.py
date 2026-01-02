@@ -199,15 +199,16 @@ def _validate_decoded_result(
     key_raw = decoded.get("key_raw")
     channel_raw = decoded.get("channel_raw")
     mode_raw = decoded.get("mode_raw")
-    button_address = decoded.get("button_address")
     channel_count = decoded.get("channel_count")
-    if channel_count is None and button_address:
-        channel_count = coordinator_get_button_channels(button_address)
+    button_channel_count = decoded.get("button_channel_count")
 
     known_keys = {k for mapping in key_mapping_module.values() for k in mapping}
     expected_keys = known_keys
-    if channel_count is not None and channel_count in key_mapping_module:
-        expected_keys = set(key_mapping_module[channel_count].keys())
+    if (
+        button_channel_count is not None
+        and button_channel_count in key_mapping_module
+    ):
+        expected_keys = set(key_mapping_module[button_channel_count].keys())
 
     invalid = False
 
@@ -222,19 +223,20 @@ def _validate_decoded_result(
 
     if invalid:
         _LOGGER.warning(
-            "Skipping payload after validation failure | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_count=%s mode=%s",
+            "Skipping payload after validation failure | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_count=%s button_channel_count=%s mode=%s",
             module_type,
             raw_payload_hex,
             normalized_payload_hex,
             key_raw,
             channel_raw,
             channel_count,
+            button_channel_count,
             mode_raw,
         )
         return None
 
     _LOGGER.debug(
-        "Validation passed | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_mask=%s channel_count=%s",
+        "Validation passed | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_mask=%s channel_count=%s button_channel_count=%s",
         module_type,
         raw_payload_hex,
         normalized_payload_hex,
@@ -242,6 +244,7 @@ def _validate_decoded_result(
         channel_raw,
         decoded.get("channel_mask"),
         channel_count,
+        button_channel_count,
     )
 
     return decoded
@@ -349,7 +352,15 @@ def _decode_switch_or_roller(
         key_raw, button_address, key_mapping_module, coordinator_get_button_channels, convert_func
     )
 
-    channel_count = coordinator_get_button_channels(button_address)
+    button_channel_count = coordinator_get_button_channels(button_address)
+    logical_channel_count = len(channel_mapping)
+    channel_count = logical_channel_count
+
+    _LOGGER.debug(
+        "Channel count comparison | logical_channel_count=%s button_channel_count=%s",
+        logical_channel_count,
+        button_channel_count,
+    )
 
     channel_raw = None
     channel_mask = None
@@ -403,13 +414,14 @@ def _decode_switch_or_roller(
     )
 
     _LOGGER.debug(
-        "Channel extraction | raw_chunk=%s reversed_payload=%s candidates=%s selected=%s mask=%s channel_count=%s",
+        "Channel extraction | raw_chunk=%s reversed_payload=%s candidates=%s selected=%s mask=%s channel_count=%s button_channel_count=%s",
         payload_hex,
         raw_bytes,
         channel_candidates,
         channel_raw,
         channel_mask,
         channel_count,
+        button_channel_count,
     )
 
     _LOGGER.debug(
@@ -432,6 +444,7 @@ def _decode_switch_or_roller(
         "channel_mask": channel_mask,
         "channel_source": channel_source,
         "channel_count": channel_count,
+        "button_channel_count": button_channel_count,
         "mode_raw": mode_raw,
         "t1_raw": t1_raw,
         "t2_raw": t2_raw,
