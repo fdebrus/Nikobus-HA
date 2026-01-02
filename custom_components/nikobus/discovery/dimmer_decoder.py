@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..mapping import CHANNEL_MAPPING, DIMMER_MODE_MAPPING, DIMMER_TIMER_MAPPING, KEY_MAPPING_MODULE
-from ..protocol import (
+from ..const import DEVICE_INVENTORY
+from .base import DecodedCommand
+from .mapping import CHANNEL_MAPPING, DIMMER_MODE_MAPPING, DIMMER_TIMER_MAPPING, KEY_MAPPING_MODULE
+from .protocol import (
     _build_dimmer_candidates,
     _calculate_timer_values,
     convert_nikobus_address,
@@ -12,7 +14,6 @@ from ..protocol import (
     get_push_button_address,
     reverse_hex,
 )
-from .base import DecodedCommand
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -89,8 +90,6 @@ class DimmerDecoder:
         }
 
     def _chunk_from_message(self, message: str) -> tuple[str | None, str | None, str | None]:
-        from ..const import DEVICE_INVENTORY
-
         matched_header = next((candidate for candidate in DEVICE_INVENTORY if message.startswith(candidate)), None)
         if matched_header is None:
             return None, None, None

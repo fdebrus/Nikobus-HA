@@ -1,7 +1,10 @@
 import asyncio
 import logging
 
-from .decoders import DecodedCommand, DimmerDecoder, ShutterDecoder, SwitchDecoder
+from .base import DecodedCommand
+from .dimmer_decoder import DimmerDecoder
+from .shutter_decoder import ShutterDecoder
+from .switch_decoder import SwitchDecoder
 from .mapping import DEVICE_TYPES, KEY_MAPPING, KEY_MAPPING_MODULE, CHANNEL_MAPPING
 from .protocol import classify_device_type, convert_nikobus_address
 from ..const import DEVICE_INVENTORY
