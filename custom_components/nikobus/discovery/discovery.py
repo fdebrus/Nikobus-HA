@@ -6,7 +6,7 @@ from .dimmer_decoder import DimmerDecoder
 from .shutter_decoder import ShutterDecoder
 from .switch_decoder import SwitchDecoder
 from .mapping import DEVICE_TYPES, KEY_MAPPING, KEY_MAPPING_MODULE, CHANNEL_MAPPING
-from .protocol import classify_device_type, convert_nikobus_address
+from .protocol import classify_device_type, convert_nikobus_address, reverse_hex
 from ..const import DEVICE_INVENTORY
 from .fileio import merge_discovered_links, update_button_data, update_module_data
 from ..nkbprotocol import make_pc_link_inventory_command
@@ -252,14 +252,14 @@ class NikobusDiscovery:
                 _LOGGER.error("Message does not start with expected header.")
                 return
 
-            header_suffix = matched_header.split("$")[-1]
             frame_body = message[len(matched_header) :]
 
             if len(frame_body) < 4:
                 _LOGGER.error("Frame body too short to contain address and payload.")
                 return
 
-            address = (header_suffix + frame_body[:4]).upper()
+            address_segment = frame_body[:4].upper()
+            address = reverse_hex(address_segment)
             payload_and_crc = frame_body[4:]
 
             if self._module_type is None:
