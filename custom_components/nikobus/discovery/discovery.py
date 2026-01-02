@@ -30,6 +30,30 @@ from ..nkbprotocol import make_pc_link_inventory_command
 _LOGGER = logging.getLogger(__name__)
 
 
+_CRC_CANDIDATES = (6, 8, 0)
+_CHUNK_SIZE_CANDIDATES = (12, 16, 20, 24)
+_SCORING_WEIGHTS = {
+    "decode_success": 10.0,
+    "decode_failure": 2.5,
+    "expected_length_bonus": 3.0,
+    "filler_penalty": 5.0,
+    "reserved_pattern_penalty": 2.0,
+    "key_plausible_bonus": 1.5,
+    "channel_plausible_bonus": 1.5,
+    "mode_present_bonus": 1.0,
+    "remainder_penalty": 1.2,
+    "crc_penalty": 0.5,
+}
+
+
+def _chunk_expected_lengths(module_type):
+    return {
+        "switch_module": 12,
+        "dimmer_module": 16,
+        "roller_module": 12,
+    }.get(module_type)
+
+
 def add_to_command_mapping(command_mapping, decoded_command, module_address):
     """Store decoded command information, allowing one-to-many button mappings."""
     push_button_address = decoded_command.get("push_button_address")
@@ -94,6 +118,186 @@ class NikobusDiscovery:
             self._coordinator.discovery_module = False
         if hasattr(self._coordinator, "discovery_module_address"):
             self._coordinator.discovery_module_address = None
+
+    def _score_chunk(self, chunk):
+        chunk = chunk.strip().upper()
+        reversed_chunk = reverse_hex(chunk)
+        score = 0.0
+        reasons = []
+
+        expected_len = _chunk_expected_lengths(self._module_type)
+        if expected_len and len(chunk) == expected_len:
+            score += _SCORING_WEIGHTS["expected_length_bonus"]
+            reasons.append(f"matches_expected_len({expected_len})")
+
+        bytes_pairs = [chunk[i : i + 2] for i in range(0, len(chunk), 2)]
+        filler_ratio = sum(1 for b in bytes_pairs if b in {"FF", "00"}) / max(
+            1, len(bytes_pairs)
+        )
+        if filler_ratio > 0.5:
+            score -= _SCORING_WEIGHTS["filler_penalty"]
+            reasons.append("filler_ratio")
+
+        decoded = None
+        try:
+            decoded = decode_command_payload(
+                reversed_chunk,
+                self._module_type,
+                KEY_MAPPING_MODULE,
+                CHANNEL_MAPPING,
+                {
+                    "switch_module": SWITCH_MODE_MAPPING,
+                    "dimmer_module": DIMMER_MODE_MAPPING,
+                    "roller_module": ROLLER_MODE_MAPPING,
+                },
+                {
+                    "switch_module": SWITCH_TIMER_MAPPING,
+                    "dimmer_module": DIMMER_TIMER_MAPPING,
+                    "roller_module": ROLLER_TIMER_MAPPING,
+                },
+                self._coordinator.get_button_channels,
+                convert_nikobus_address,
+            )
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.debug("Decode error while scoring chunk %s: %s", chunk, err)
+
+        if decoded:
+            score += _SCORING_WEIGHTS["decode_success"]
+            reasons.append("decoded")
+            key_raw = decoded.get("key_raw")
+            channel_raw = decoded.get("channel_raw")
+            mode_raw = decoded.get("mode_raw")
+            if isinstance(key_raw, int) and 0 <= key_raw <= 0x0F:
+                score += _SCORING_WEIGHTS["key_plausible_bonus"]
+                reasons.append("key_plausible")
+            if isinstance(channel_raw, int) and 0 <= channel_raw <= 0x0F:
+                score += _SCORING_WEIGHTS["channel_plausible_bonus"]
+                reasons.append("channel_plausible")
+            if mode_raw is not None:
+                score += _SCORING_WEIGHTS["mode_present_bonus"]
+        else:
+            score -= _SCORING_WEIGHTS["decode_failure"]
+            reasons.append("decode_failed")
+
+        if filler_ratio > 0.75:
+            score -= _SCORING_WEIGHTS["reserved_pattern_penalty"]
+            reasons.append("reserved_pattern")
+
+        return score, {
+            "chunk": chunk,
+            "reversed": reversed_chunk,
+            "decoded": decoded,
+            "score": score,
+            "reasons": reasons,
+        }
+
+    def _solve_chunk_alignment(self, payload_hex):
+        payload_hex = payload_hex.upper()
+        n = len(payload_hex)
+
+        from functools import lru_cache
+
+        @lru_cache(None)
+        def _best_from(idx):
+            if idx >= n:
+                return 0.0, [], []
+
+            best_score = -float("inf")
+            best_chunks = []
+            best_meta = []
+
+            remainder_penalty = -_SCORING_WEIGHTS["remainder_penalty"] * (
+                (n - idx) / 2
+            )
+            best_score = remainder_penalty
+
+            for size in _CHUNK_SIZE_CANDIDATES:
+                if idx + size > n:
+                    continue
+                chunk = payload_hex[idx : idx + size]
+                chunk_score, chunk_meta = self._score_chunk(chunk)
+                next_score, next_chunks, next_meta = _best_from(idx + size)
+                total = chunk_score + next_score
+                if total > best_score:
+                    best_score = total
+                    best_chunks = [chunk] + next_chunks
+                    best_meta = [chunk_meta] + next_meta
+
+            return best_score, best_chunks, best_meta
+
+        score, chunks, meta = _best_from(0)
+        consumed_length = sum(len(ch) for ch in chunks)
+        remainder = payload_hex[consumed_length:]
+
+        return {
+            "score": score,
+            "chunks": chunks,
+            "meta": meta,
+            "remainder": remainder,
+        }
+
+    def _analyze_frame_payload(self, address, payload_and_crc):
+        address = address.upper()
+        payload_and_crc = payload_and_crc.upper()
+        best = None
+        for crc_len in _CRC_CANDIDATES:
+            if crc_len < 0 or len(payload_and_crc) < crc_len:
+                continue
+
+            data_region = payload_and_crc[: len(payload_and_crc) - crc_len]
+            trailing_crc = payload_and_crc[len(payload_and_crc) - crc_len :]
+
+            combined_payload = (self._payload_buffer + data_region).upper()
+            alignment = self._solve_chunk_alignment(combined_payload)
+            total_score = alignment["score"]
+            if alignment["remainder"]:
+                total_score -= _SCORING_WEIGHTS["crc_penalty"]
+
+            candidate = {
+                "crc_len": crc_len,
+                "crc": trailing_crc,
+                "payload_region": data_region,
+                "chunks": alignment["chunks"],
+                "meta": alignment["meta"],
+                "remainder": alignment["remainder"],
+                "score": total_score,
+            }
+
+            _LOGGER.debug(
+                "CRC candidate evaluated | crc_len=%s crc=%s chunks=%s score=%.2f remainder=%s",
+                crc_len,
+                trailing_crc,
+                [len(ch) for ch in alignment["chunks"]],
+                total_score,
+                alignment["remainder"],
+            )
+
+            if best is None or candidate["score"] > best["score"]:
+                best = candidate
+
+        if best is None:
+            return None
+
+        chunk_sizes = [len(c) for c in best["chunks"]]
+        _LOGGER.debug(
+            "Frame segmented | address=%s crc_len=%s crc=%s chunk_sizes=%s score=%.2f remainder=%s",
+            address,
+            best.get("crc_len"),
+            best.get("crc"),
+            chunk_sizes,
+            best.get("score"),
+            best.get("remainder"),
+        )
+        for entry in best.get("meta", []):
+            _LOGGER.debug(
+                "Chunk score detail | chunk=%s reversed=%s score=%.2f reasons=%s",
+                entry.get("chunk"),
+                entry.get("reversed"),
+                entry.get("score"),
+                ",".join(entry.get("reasons", [])),
+            )
+
+        return best
 
     def _cancel_timeout(self):
         if self._timeout_task:
@@ -223,39 +427,36 @@ class NikobusDiscovery:
                 _LOGGER.error("Message does not start with expected header.")
                 return
 
-            data_with_crc = message[len(matched_header):]
-            data = data_with_crc[:-6]
-            payload_data = data[4:]
+            header_suffix = matched_header.split("$")[-1]
+            frame_body = message[len(matched_header) :]
 
-            self._payload_buffer += payload_data
+            if len(frame_body) < 4:
+                _LOGGER.error("Frame body too short to contain address and payload.")
+                return
+
+            address = (header_suffix + frame_body[:4]).upper()
+            payload_and_crc = frame_body[4:]
+
+            analysis = self._analyze_frame_payload(address, payload_and_crc)
+            if analysis is None:
+                _LOGGER.error("Unable to analyze frame payload for message: %s", message)
+                return
+
+            self._module_address = address
+            self._payload_buffer = analysis["remainder"]
+            self._chunks.extend(analysis["chunks"])
+
             self._cancel_timeout()
             self._timeout_task = asyncio.create_task(self._timeout_waiter())
 
-            chunk_lengths = {
-                "switch_module": 12,
-                "dimmer_module": 16,
-                "roller_module": 12,
-            }
-            expected_chunk_length = chunk_lengths.get(self._module_type)
-
-            _LOGGER.debug(
-                "Chunk length determined for module_type=%r: %r",
-                self._module_type,
-                expected_chunk_length
-            )
-
-            while expected_chunk_length and len(self._payload_buffer) >= expected_chunk_length:
-                candidate_chunk = self._payload_buffer[:expected_chunk_length]
-                if candidate_chunk.strip().upper() == "F" * expected_chunk_length:
+            for candidate_chunk in self._chunks:
+                if candidate_chunk.strip().upper() == "F" * len(candidate_chunk):
                     _LOGGER.debug("Termination chunk encountered: %r", candidate_chunk)
                     await self._coordinator.nikobus_command.clear_command_queue()
                     self._message_complete = True
                     self._cancel_timeout()
                     await self.process_complete_message()
                     return
-                self._chunks.append(candidate_chunk)
-                _LOGGER.debug("Extracted chunk: %r", candidate_chunk)
-                self._payload_buffer = self._payload_buffer[expected_chunk_length:]
 
         except Exception as e:
             _LOGGER.error("Failed to parse module inventory response: %s", e)
