@@ -1,57 +1,14 @@
 import asyncio
 import logging
 
-from .mapping import (
-    DEVICE_TYPES,
-    SWITCH_MODE_MAPPING,
-    DIMMER_MODE_MAPPING,
-    ROLLER_MODE_MAPPING,
-    SWITCH_TIMER_MAPPING,
-    DIMMER_TIMER_MAPPING,
-    ROLLER_TIMER_MAPPING,
-    KEY_MAPPING,
-    KEY_MAPPING_MODULE,
-    CHANNEL_MAPPING,
-)
-from .protocol import (
-    reverse_hex,
-    classify_device_type,
-    convert_nikobus_address,
-    decode_command_payload,
-)
+from .decoders import DecodedCommand, DimmerDecoder, ShutterDecoder, SwitchDecoder
+from .mapping import DEVICE_TYPES, KEY_MAPPING, KEY_MAPPING_MODULE, CHANNEL_MAPPING
+from .protocol import classify_device_type, convert_nikobus_address
 from ..const import DEVICE_INVENTORY
-from .fileio import (
-    merge_discovered_links,
-    update_button_data,
-    update_module_data,
-)
+from .fileio import merge_discovered_links, update_button_data, update_module_data
 from ..nkbprotocol import make_pc_link_inventory_command
 
 _LOGGER = logging.getLogger(__name__)
-
-
-_CRC_CANDIDATES = (6, 8, 0)
-_CHUNK_SIZE_CANDIDATES = (12, 16, 20, 24)
-_SCORING_WEIGHTS = {
-    "decode_success": 10.0,
-    "decode_failure": 2.5,
-    "expected_length_bonus": 3.0,
-    "filler_penalty": 5.0,
-    "reserved_pattern_penalty": 2.0,
-    "key_plausible_bonus": 1.5,
-    "channel_plausible_bonus": 1.5,
-    "mode_present_bonus": 1.0,
-    "remainder_penalty": 1.2,
-    "crc_penalty": 0.5,
-}
-
-
-def _chunk_expected_lengths(module_type):
-    return {
-        "switch_module": 12,
-        "dimmer_module": 16,
-        "roller_module": 12,
-    }.get(module_type)
 
 
 def add_to_command_mapping(command_mapping, decoded_command, module_address):
@@ -103,6 +60,11 @@ class NikobusDiscovery:
         self._coordinator = coordinator
         self._hass = hass
         self._timeout_seconds = 5.0
+        self._decoders = [
+            DimmerDecoder(coordinator),
+            SwitchDecoder(coordinator),
+            ShutterDecoder(coordinator),
+        ]
         self.reset_state()
 
     def reset_state(self):
@@ -119,185 +81,37 @@ class NikobusDiscovery:
         if hasattr(self._coordinator, "discovery_module_address"):
             self._coordinator.discovery_module_address = None
 
-    def _score_chunk(self, chunk):
-        chunk = chunk.strip().upper()
-        reversed_chunk = reverse_hex(chunk)
-        score = 0.0
-        reasons = []
-
-        expected_len = _chunk_expected_lengths(self._module_type)
-        if expected_len and len(chunk) == expected_len:
-            score += _SCORING_WEIGHTS["expected_length_bonus"]
-            reasons.append(f"matches_expected_len({expected_len})")
-
-        bytes_pairs = [chunk[i : i + 2] for i in range(0, len(chunk), 2)]
-        filler_ratio = sum(1 for b in bytes_pairs if b in {"FF", "00"}) / max(
-            1, len(bytes_pairs)
-        )
-        if filler_ratio > 0.5:
-            score -= _SCORING_WEIGHTS["filler_penalty"]
-            reasons.append("filler_ratio")
-
-        decoded = None
-        try:
-            decoded = decode_command_payload(
-                reversed_chunk,
-                self._module_type,
-                KEY_MAPPING_MODULE,
-                CHANNEL_MAPPING,
-                {
-                    "switch_module": SWITCH_MODE_MAPPING,
-                    "dimmer_module": DIMMER_MODE_MAPPING,
-                    "roller_module": ROLLER_MODE_MAPPING,
-                },
-                {
-                    "switch_module": SWITCH_TIMER_MAPPING,
-                    "dimmer_module": DIMMER_TIMER_MAPPING,
-                    "roller_module": ROLLER_TIMER_MAPPING,
-                },
-                self._coordinator.get_button_channels,
-                convert_nikobus_address,
-            )
-        except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.debug("Decode error while scoring chunk %s: %s", chunk, err)
-
-        if decoded:
-            score += _SCORING_WEIGHTS["decode_success"]
-            reasons.append("decoded")
-            key_raw = decoded.get("key_raw")
-            channel_raw = decoded.get("channel_raw")
-            mode_raw = decoded.get("mode_raw")
-            if isinstance(key_raw, int) and 0 <= key_raw <= 0x0F:
-                score += _SCORING_WEIGHTS["key_plausible_bonus"]
-                reasons.append("key_plausible")
-            if isinstance(channel_raw, int) and 0 <= channel_raw <= 0x0F:
-                score += _SCORING_WEIGHTS["channel_plausible_bonus"]
-                reasons.append("channel_plausible")
-            if mode_raw is not None:
-                score += _SCORING_WEIGHTS["mode_present_bonus"]
-        else:
-            score -= _SCORING_WEIGHTS["decode_failure"]
-            reasons.append("decode_failed")
-
-        if filler_ratio > 0.75:
-            score -= _SCORING_WEIGHTS["reserved_pattern_penalty"]
-            reasons.append("reserved_pattern")
-
-        return score, {
-            "chunk": chunk,
-            "reversed": reversed_chunk,
-            "decoded": decoded,
-            "score": score,
-            "reasons": reasons,
-        }
-
-    def _solve_chunk_alignment(self, payload_hex):
-        payload_hex = payload_hex.upper()
-        n = len(payload_hex)
-
-        from functools import lru_cache
-
-        @lru_cache(None)
-        def _best_from(idx):
-            if idx >= n:
-                return 0.0, [], []
-
-            best_score = -float("inf")
-            best_chunks = []
-            best_meta = []
-
-            remainder_penalty = -_SCORING_WEIGHTS["remainder_penalty"] * (
-                (n - idx) / 2
-            )
-            best_score = remainder_penalty
-
-            for size in _CHUNK_SIZE_CANDIDATES:
-                if idx + size > n:
-                    continue
-                chunk = payload_hex[idx : idx + size]
-                chunk_score, chunk_meta = self._score_chunk(chunk)
-                next_score, next_chunks, next_meta = _best_from(idx + size)
-                total = chunk_score + next_score
-                if total > best_score:
-                    best_score = total
-                    best_chunks = [chunk] + next_chunks
-                    best_meta = [chunk_meta] + next_meta
-
-            return best_score, best_chunks, best_meta
-
-        score, chunks, meta = _best_from(0)
-        consumed_length = sum(len(ch) for ch in chunks)
-        remainder = payload_hex[consumed_length:]
-
-        return {
-            "score": score,
-            "chunks": chunks,
-            "meta": meta,
-            "remainder": remainder,
-        }
+    def _get_decoder(self):
+        for decoder in getattr(self, "_decoders", []):
+            if decoder.can_handle(self._module_type):
+                return decoder
+        return None
 
     def _analyze_frame_payload(self, address, payload_and_crc):
-        address = address.upper()
-        payload_and_crc = payload_and_crc.upper()
-        best = None
-        for crc_len in _CRC_CANDIDATES:
-            if crc_len < 0 or len(payload_and_crc) < crc_len:
-                continue
-
-            data_region = payload_and_crc[: len(payload_and_crc) - crc_len]
-            trailing_crc = payload_and_crc[len(payload_and_crc) - crc_len :]
-
-            combined_payload = (self._payload_buffer + data_region).upper()
-            alignment = self._solve_chunk_alignment(combined_payload)
-            total_score = alignment["score"]
-            if alignment["remainder"]:
-                total_score -= _SCORING_WEIGHTS["crc_penalty"]
-
-            candidate = {
-                "crc_len": crc_len,
-                "crc": trailing_crc,
-                "payload_region": data_region,
-                "chunks": alignment["chunks"],
-                "meta": alignment["meta"],
-                "remainder": alignment["remainder"],
-                "score": total_score,
-            }
-
-            _LOGGER.debug(
-                "CRC candidate evaluated | crc_len=%s crc=%s chunks=%s score=%.2f remainder=%s",
-                crc_len,
-                trailing_crc,
-                [len(ch) for ch in alignment["chunks"]],
-                total_score,
-                alignment["remainder"],
-            )
-
-            if best is None or candidate["score"] > best["score"]:
-                best = candidate
-
-        if best is None:
+        decoder = self._get_decoder()
+        if decoder is None:
             return None
 
-        chunk_sizes = [len(c) for c in best["chunks"]]
-        _LOGGER.debug(
-            "Frame segmented | address=%s crc_len=%s crc=%s chunk_sizes=%s score=%.2f remainder=%s",
-            address,
-            best.get("crc_len"),
-            best.get("crc"),
-            chunk_sizes,
-            best.get("score"),
-            best.get("remainder"),
-        )
-        for entry in best.get("meta", []):
-            _LOGGER.debug(
-                "Chunk score detail | chunk=%s reversed=%s score=%.2f reasons=%s",
-                entry.get("chunk"),
-                entry.get("reversed"),
-                entry.get("score"),
-                ",".join(entry.get("reasons", [])),
-            )
+        if decoder.module_type == "dimmer_module":
+            payload_and_crc = payload_and_crc.upper()
+            if len(payload_and_crc) < 16:
+                _LOGGER.error(
+                    "Dimmer payload too short for alignment | address=%s payload=%s",
+                    address,
+                    payload_and_crc,
+                )
+                return None
+            return {
+                "crc_len": max(len(payload_and_crc) - 16, 0),
+                "crc": payload_and_crc[16:],
+                "payload_region": payload_and_crc[:16],
+                "chunks": [payload_and_crc[:16]],
+                "meta": [],
+                "remainder": "",
+                "score": 0,
+            }
 
-        return best
+        return decoder.analyze_frame_payload(self._payload_buffer, payload_and_crc)
 
     def _cancel_timeout(self):
         if self._timeout_task:
@@ -437,7 +251,28 @@ class NikobusDiscovery:
             address = (header_suffix + frame_body[:4]).upper()
             payload_and_crc = frame_body[4:]
 
-            analysis = self._analyze_frame_payload(address, payload_and_crc)
+            if self._module_type is None:
+                self._module_type = self._coordinator.get_module_type(address)
+
+            decoder = self._get_decoder()
+            if decoder is None:
+                _LOGGER.error("No decoder available for module type: %s", self._module_type)
+                return
+
+            if decoder.module_type == "dimmer_module":
+                commands = decoder.decode(message)
+                if commands:
+                    self._module_address = address
+                    await self._handle_decoded_commands(address, commands)
+                    self._message_complete = True
+                    self.reset_state()
+                    if hasattr(self, "on_discovery_finished") and self.on_discovery_finished:
+                        await self.on_discovery_finished()
+                else:
+                    _LOGGER.debug("Dimmer decoder returned no commands for message: %s", message)
+                return
+
+            analysis = decoder.analyze_frame_payload(self._payload_buffer, payload_and_crc)
             if analysis is None:
                 _LOGGER.error("Unable to analyze frame payload for message: %s", message)
                 return
@@ -462,6 +297,54 @@ class NikobusDiscovery:
             _LOGGER.error("Failed to parse module inventory response: %s", e)
             self.reset_state()
 
+    async def _handle_decoded_commands(
+        self, module_address: str | None, decoded_commands: list[DecodedCommand]
+    ):
+        new_commands = []
+        command_mapping = {}
+        for command in decoded_commands:
+            if not isinstance(command, DecodedCommand):
+                continue
+            decoded = command.metadata or {}
+            if decoded.get("push_button_address") is None:
+                continue
+
+            new_commands.append(decoded)
+            if module_address:
+                add_to_command_mapping(command_mapping, decoded, module_address)
+
+        self._decoded_buffer = {
+            "module_address": module_address,
+            "commands": new_commands,
+            "command_mapping": command_mapping,
+        }
+
+        _LOGGER.info("Decoded Button Commands:")
+        _LOGGER.info("module_address: %s", self._decoded_buffer["module_address"])
+        for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
+            _LOGGER.info(
+                "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, T1: %s, T2: %s, Mode: %s",
+                idx,
+                cmd.get("payload"),
+                cmd.get("button_address"),
+                cmd.get("push_button_address"),
+                cmd.get("K"),
+                cmd.get("C"),
+                cmd.get("T1"),
+                cmd.get("T2"),
+                cmd.get("M"),
+            )
+
+        updated_buttons, links_added, outputs_added = await merge_discovered_links(
+            self._hass, command_mapping
+        )
+        _LOGGER.info(
+            "Discovered links merged into config: %d buttons updated, %d link blocks added, %d outputs added.",
+            updated_buttons,
+            links_added,
+            outputs_added,
+        )
+
     async def process_complete_message(self):
         try:
             termination_index = None
@@ -477,72 +360,20 @@ class NikobusDiscovery:
                 chunks_to_process = self._chunks
             self._chunks = []
 
+            decoder = self._get_decoder()
+            if decoder is None:
+                _LOGGER.error("No decoder found for module type %s", self._module_type)
+                return
+
             _LOGGER.debug(
                 "Processing complete message with %d chunks.", len(chunks_to_process)
             )
-            new_commands = []
-            command_mapping = {}
+            decoded_commands: list[DecodedCommand] = []
             for chunk in chunks_to_process:
                 _LOGGER.debug("Decoding chunk: %r", chunk)
-                reversed_chunk = reverse_hex(chunk)
-                decoded = decode_command_payload(
-                    reversed_chunk,
-                    self._module_type,
-                    KEY_MAPPING_MODULE,
-                    CHANNEL_MAPPING,
-                    {
-                        "switch_module": SWITCH_MODE_MAPPING,
-                        "dimmer_module": DIMMER_MODE_MAPPING,
-                        "roller_module": ROLLER_MODE_MAPPING,
-                    },
-                    {
-                        "switch_module": SWITCH_TIMER_MAPPING,
-                        "dimmer_module": DIMMER_TIMER_MAPPING,
-                        "roller_module": ROLLER_TIMER_MAPPING,
-                    },
-                    self._coordinator.get_button_channels,
-                    convert_nikobus_address,
-                )
-                if decoded is not None and decoded.get("push_button_address") is not None:
-                    new_commands.append(decoded)
-                    add_to_command_mapping(
-                        command_mapping, decoded, self._module_address
-                    )
-                    _LOGGER.debug("Decoded chunk: %r", reversed_chunk)
-                else:
-                    _LOGGER.debug("Skipped chunk during decode: %r", reversed_chunk)
+                decoded_commands.extend(decoder.decode(chunk))
 
-            self._decoded_buffer = {
-                "module_address": self._module_address,
-                "commands": new_commands,
-                "command_mapping": command_mapping,
-            }
-
-            _LOGGER.info("Decoded Button Commands:")
-            _LOGGER.info("module_address: %s", self._decoded_buffer["module_address"])
-            for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
-                _LOGGER.info(
-                    "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, T1: %s, T2: %s, Mode: %s",
-                    idx,
-                    cmd.get("payload"),
-                    cmd.get("button_address"),
-                    cmd.get("push_button_address"),
-                    cmd.get("K"),
-                    cmd.get("C"),
-                    cmd.get("T1"),
-                    cmd.get("T2"),
-                    cmd.get("M"),
-                )
-
-            updated_buttons, links_added, outputs_added = await merge_discovered_links(
-                self._hass, command_mapping
-            )
-            _LOGGER.info(
-                "Discovered links merged into config: %d buttons updated, %d link blocks added, %d outputs added.",
-                updated_buttons,
-                links_added,
-                outputs_added,
-            )
+            await self._handle_decoded_commands(self._module_address, decoded_commands)
 
             self._payload_buffer = ""
             self._decoded_buffer = {"module_address": None, "commands": [], "command_mapping": {}}
@@ -555,3 +386,29 @@ class NikobusDiscovery:
             self.reset_state()
             if hasattr(self, "on_discovery_finished") and self.on_discovery_finished:
                 await self.on_discovery_finished()
+
+
+def run_decoder_harness(coordinator):
+    """Lightweight harness to exercise discovery decoders without full HA runtime."""
+
+    sample_messages = [
+        "$0522$1E6C0E5F1550000300B4FF452CA9",  # dimmer frame with expected 16-hex chunk
+        "5F1550000300B4FF",  # raw chunk form
+    ]
+
+    decoders = [DimmerDecoder(coordinator), SwitchDecoder(coordinator), ShutterDecoder(coordinator)]
+    for message in sample_messages:
+        _LOGGER.info("HARNESS message=%s", message)
+        for decoder in decoders:
+            results = decoder.decode(message)
+            if not results:
+                continue
+            for result in results:
+                _LOGGER.info(
+                    "HARNESS decoder=%s payload_len=%s chunk_len=%s payload=%s metadata=%s",
+                    decoder.module_type,
+                    len(result.payload_hex) if result.payload_hex else "?",
+                    len(result.chunk_hex) if result.chunk_hex else "?",
+                    result.payload_hex,
+                    result.metadata,
+                )
