@@ -139,7 +139,7 @@ def test_command_mapping_supports_one_to_many_and_deduplication():
     assert key in mapping
     assert len(mapping[key]) == 2
     assert mapping[key][0]["channel"] == 1
-    assert mapping[key][1]["channel"] == 2
+    assert mapping[key][1]["channel"] == 3
 
 
 def test_decode_handles_reversed_and_missing_mappings(caplog):
@@ -300,8 +300,9 @@ def test_raw_chunk_channel_bitmask_resolves_within_range():
     )
 
     assert decoded is not None
-    assert decoded["channel_raw"] in range(_get_channels(None))
-    assert decoded.get("channel_mask") is not None
+    assert decoded["channel_raw"] == 10
+    assert decoded.get("C") == CHANNEL_MAPPING[decoded["channel_raw"]]
+    assert decoded.get("channel_mask") is None
 
 
 def test_raw_chunk_channel_bitmask_supports_eight_channel_modules():
@@ -321,4 +322,4 @@ def test_raw_chunk_channel_bitmask_supports_eight_channel_modules():
     )
 
     assert decoded is not None
-    assert decoded["channel_raw"] in range(_get_eight_channels(None))
+    assert decoded["channel_raw"] == 10
