@@ -20,7 +20,11 @@ from .protocol import (
     decode_command_payload,
 )
 from ..const import DEVICE_INVENTORY
-from .fileio import update_module_data, update_button_data
+from .fileio import (
+    merge_discovered_links,
+    update_button_data,
+    update_module_data,
+)
 from ..nkbprotocol import make_pc_link_inventory_command
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,18 +39,38 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
 
     mapping_key = (push_button_address, key_raw)
     outputs = command_mapping.setdefault(mapping_key, [])
+    channel_raw = decoded_command.get("channel_raw")
+    channel_number = channel_raw + 1 if isinstance(channel_raw, int) else None
+
     output_definition = {
         "module_address": module_address,
-        "channel": decoded_command.get("channel_raw"),
-        "channel_label": decoded_command.get("C"),
+        "channel": channel_number,
         "mode": decoded_command.get("M"),
-        "timers": {
-            "T1": decoded_command.get("T1"),
-            "T2": decoded_command.get("T2"),
-        },
+        "t1": decoded_command.get("T1"),
+        "t2": decoded_command.get("T2"),
         "payload": decoded_command.get("payload"),
+        "button_address": decoded_command.get("button_address"),
     }
-    if output_definition not in outputs:
+
+    dedupe_key = (
+        output_definition["module_address"],
+        output_definition["channel"],
+        output_definition["mode"],
+        output_definition["t1"],
+        output_definition["t2"],
+    )
+    existing_keys = {
+        (
+            entry.get("module_address"),
+            entry.get("channel"),
+            entry.get("mode"),
+            entry.get("t1"),
+            entry.get("t2"),
+        )
+        for entry in outputs
+    }
+
+    if dedupe_key not in existing_keys:
         outputs.append(output_definition)
 
 class NikobusDiscovery:
@@ -308,6 +332,16 @@ class NikobusDiscovery:
                     cmd.get("T2"),
                     cmd.get("M"),
                 )
+
+            updated_buttons, links_added, outputs_added = await merge_discovered_links(
+                self._hass.config.path(""), command_mapping
+            )
+            _LOGGER.info(
+                "Discovered links merged into config: %d buttons updated, %d link blocks added, %d outputs added.",
+                updated_buttons,
+                links_added,
+                outputs_added,
+            )
 
             self._payload_buffer = ""
             self._decoded_buffer = {"module_address": None, "commands": [], "command_mapping": {}}

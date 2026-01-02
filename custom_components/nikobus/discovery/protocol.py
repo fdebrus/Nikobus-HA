@@ -266,7 +266,7 @@ def decode_command_payload(
         "t2_raw": t2_raw,
         "K": f"{key_raw}",
         "C": f"{channel_label}",
-        "T1": f"{t1_val}",
-        "T2": f"{t2_val}",
+        "T1": t1_val,
+        "T2": t2_val,
         "M": f"{mode_label}",
     }
