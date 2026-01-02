@@ -120,12 +120,26 @@ def test_command_mapping_supports_one_to_many_and_deduplication():
     key = (first["push_button_address"], first["key_raw"])
     assert key in mapping
     assert len(mapping[key]) == 2
-    assert mapping[key][0]["channel"] == 0
-    assert mapping[key][1]["channel"] == 1
+    assert mapping[key][0]["channel"] == 1
+    assert mapping[key][1]["channel"] == 2
 
 
 def test_decode_handles_reversed_and_missing_mappings(caplog):
     caplog.set_level(logging.DEBUG)
+
+    assert (
+        decode_command_payload(
+            "FFFFFFFFFF08",
+            "switch_module",
+            KEY_MAPPING_MODULE,
+            CHANNEL_MAPPING,
+            MODE_MAPPINGS,
+            TIMER_MAPPINGS,
+            _get_channels,
+            convert_nikobus_address,
+        )
+        is None
+    )
 
     assert (
         decode_command_payload(

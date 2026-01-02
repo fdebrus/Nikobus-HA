@@ -1,29 +1,56 @@
-import os
+import asyncio
 import json
 import logging
-import aiofiles
+import os
+import tempfile
 
 _LOGGER = logging.getLogger(__name__)
 
-async def write_json_file(file_path, data):
-    """Write JSON data to a file asynchronously."""
+
+async def _write_json_atomic(file_path, data):
+    """Write JSON data atomically to avoid partial writes."""
+
+    def _write(path):
+        with open(path, "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4)
+
+    directory = os.path.dirname(file_path) or "."
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix="tmp_", suffix=".json")
+    os.close(fd)
     try:
-        async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-            await file.write(json.dumps(data, indent=4))
+        await asyncio.to_thread(_write, tmp_path)
+        os.replace(tmp_path, file_path)
         _LOGGER.info("Data written to file: %s", file_path)
     except Exception as e:
         _LOGGER.error("Failed to write data to file %s: %s", file_path, e)
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+
+
+async def write_json_file(file_path, data):
+    """Write JSON data to a file asynchronously."""
+    await _write_json_atomic(file_path, data)
+
 
 async def read_json_file(file_path):
     """Read JSON data from a file asynchronously. Returns dict or None on error."""
     if not os.path.exists(file_path):
         return None
+
+    def _read(path):
+        with open(path, "r", encoding="utf-8") as file:
+            return json.load(file)
+
     try:
-        async with aiofiles.open(file_path, "r", encoding="utf-8") as file:
-            return json.loads(await file.read())
+        return await asyncio.to_thread(_read, file_path)
     except Exception as e:
         _LOGGER.error("Failed to read data from file %s: %s", file_path, e)
         return None
+
 
 async def update_module_data(hass_config_path, discovered_devices):
     """
@@ -53,6 +80,7 @@ async def update_module_data(hass_config_path, discovered_devices):
     file_path = os.path.join(hass_config_path, "nikobus_module_discovered.json")
     await write_json_file(file_path, module_data)
 
+
 async def update_button_data(hass_config_path, discovered_devices, key_mapping, convert_nikobus_address):
     """
     Update the button config JSON file based on discovered devices.
@@ -61,14 +89,11 @@ async def update_button_data(hass_config_path, discovered_devices, key_mapping, 
     file_path = os.path.join(hass_config_path, "nikobus_button_config.json")
     existing_data = []
     if os.path.exists(file_path):
-        try:
-            async with aiofiles.open(file_path, "r", encoding="utf-8") as file:
-                existing_json = json.loads(await file.read())
-                existing_data = existing_json.get("nikobus_button", [])
-                if not isinstance(existing_data, list):
-                    existing_data = []
-        except Exception as e:
-            _LOGGER.error("Failed to read existing button data: %s", e)
+        existing_json = await read_json_file(file_path)
+        if existing_json:
+            existing_data = existing_json.get("nikobus_button", [])
+            if not isinstance(existing_data, list):
+                existing_data = []
 
     updated_data = existing_data.copy()
     lookup = {
@@ -159,3 +184,134 @@ async def update_button_data(hass_config_path, discovered_devices, key_mapping, 
 
     output_json = {"nikobus_button": updated_data}
     await write_json_file(file_path, output_json)
+
+
+def _normalize_key(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+async def merge_discovered_links(hass_config_path, command_mapping):
+    """Merge discovery command mapping into nikobus_button_config.json."""
+
+    file_path = os.path.join(hass_config_path, "nikobus_button_config.json")
+    existing_json = await read_json_file(file_path)
+    if existing_json is None:
+        existing_json = {"nikobus_button": []}
+
+    buttons = existing_json.get("nikobus_button", [])
+    if not isinstance(buttons, list):
+        buttons = []
+
+    address_lookup = {
+        button.get("address"): button for button in buttons if "address" in button
+    }
+
+    updated_buttons = 0
+    links_added = 0
+    outputs_added = 0
+    any_updates = False
+
+    for (push_button_address, key_raw), outputs in command_mapping.items():
+        if push_button_address is None:
+            continue
+        button_entry = address_lookup.get(push_button_address)
+        if not button_entry:
+            continue
+
+        discovered_links = button_entry.setdefault("discovered_links", [])
+        updated_entry = False
+
+        for output in outputs:
+            module_address = output.get("module_address")
+            if module_address is None:
+                continue
+
+            channel_number = output.get("channel")
+            mode_label = output.get("mode")
+            t1_val = output.get("t1")
+            t2_val = output.get("t2")
+            payload_val = output.get("payload")
+            button_address = output.get("button_address")
+
+            matching_block = next(
+                (
+                    block
+                    for block in discovered_links
+                    if block.get("module_address") == module_address
+                    and _normalize_key(block.get("key")) == key_raw
+                ),
+                None,
+            )
+
+            if matching_block is None:
+                matching_block = {
+                    "module_address": module_address,
+                    "key": key_raw,
+                    "outputs": [],
+                }
+                discovered_links.append(matching_block)
+                links_added += 1
+                updated_entry = True
+
+            output_entry = {
+                "channel": channel_number,
+                "mode": mode_label,
+                "t1": t1_val,
+                "t2": t2_val,
+                "payload": payload_val,
+                "button_address": button_address,
+            }
+
+            dedupe_key = (
+                output_entry["channel"],
+                output_entry["mode"],
+                output_entry["t1"],
+                output_entry["t2"],
+            )
+            existing_outputs = matching_block.get("outputs", [])
+            existing_keys = {
+                (
+                    entry.get("channel"),
+                    entry.get("mode"),
+                    entry.get("t1"),
+                    entry.get("t2"),
+                )
+                for entry in existing_outputs
+            }
+            if dedupe_key not in existing_keys:
+                existing_outputs.append(output_entry)
+                matching_block["outputs"] = existing_outputs
+                outputs_added += 1
+                updated_entry = True
+
+        if updated_entry:
+            discovered_links.sort(
+                key=lambda block: (
+                    block.get("module_address", ""),
+                    _normalize_key(block.get("key"))
+                    if isinstance(_normalize_key(block.get("key")), int)
+                    else float("inf"),
+                )
+            )
+            for block in discovered_links:
+                block_outputs = block.get("outputs", [])
+                block_outputs.sort(
+                    key=lambda output: (
+                        output.get("channel")
+                        if output.get("channel") is not None
+                        else -1,
+                        output.get("mode", ""),
+                    )
+                )
+                block["outputs"] = block_outputs
+
+            updated_buttons += 1
+            any_updates = True
+
+    if any_updates:
+        await _write_json_atomic(file_path, {"nikobus_button": buttons})
+
+    return updated_buttons, links_added, outputs_added
