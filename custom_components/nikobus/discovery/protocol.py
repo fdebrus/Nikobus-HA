@@ -263,11 +263,25 @@ def _nibble_low(raw_bytes, idx):
         return None
 
 
-def _channel_index_from_mask(channel_raw: int | None, channel_mapping: dict[int, str]) -> tuple[int | None, int | None]:
-    """Normalize channel from possible bitmask to zero-based index."""
+def _channel_index_from_mask(
+    channel_raw: int | None,
+    channel_mapping: dict[int, str],
+    module_type: str | None = None,
+) -> tuple[int | None, int | None]:
+    """Normalize channel from possible bitmask to zero-based index.
+
+    For switch and roller modules the discovery payload already uses direct
+    channel indexes, so the value can be used as-is when it exists in the
+    mapping. Other module types keep the legacy bitmask interpretation.
+    """
 
     if channel_raw is None:
         return None, None
+
+    if module_type in {"switch_module", "roller_module"}:
+        if channel_raw in channel_mapping:
+            return channel_raw, None
+        return None, channel_raw
 
     if channel_raw > 0 and channel_raw & (channel_raw - 1) == 0:
         return int(channel_raw.bit_length() - 1), channel_raw
@@ -366,7 +380,7 @@ def _decode_switch_or_roller(
     channel_mask = None
     channel_source = None
     for source, candidate in channel_candidates:
-        idx, mask = _channel_index_from_mask(candidate, channel_mapping)
+        idx, mask = _channel_index_from_mask(candidate, channel_mapping, module_type)
         if idx is None:
             continue
         if channel_count is None or idx < channel_count:
@@ -376,7 +390,9 @@ def _decode_switch_or_roller(
             break
 
     if channel_raw is None:
-        channel_raw, channel_mask = _channel_index_from_mask(channel_candidates[0][1], channel_mapping)
+        channel_raw, channel_mask = _channel_index_from_mask(
+            channel_candidates[0][1], channel_mapping, module_type
+        )
         channel_source = channel_candidates[0][0]
 
     channel_label = channel_mapping.get(channel_raw, f"Unknown Channel ({channel_raw})")
