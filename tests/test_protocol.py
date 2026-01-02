@@ -197,10 +197,9 @@ def test_decode_handles_reversed_and_missing_mappings(caplog):
         convert_nikobus_address,
     )
 
-    assert decoded is not None
-    assert decoded["push_button_address"] is None
-    errors = [record for record in caplog.records if record.levelno >= logging.ERROR]
-    assert errors == []
+    assert decoded is None
+    warnings = [record for record in caplog.records if record.levelno >= logging.WARNING]
+    assert warnings
 
 
 def test_dimmer_decoder_uses_byte_based_candidates():
@@ -222,3 +221,61 @@ def test_dimmer_decoder_uses_byte_based_candidates():
     assert decoded["channel_raw"] in range(0, 12)
     assert decoded["mode_raw"] in DIMMER_MODE_MAPPING
     assert decoded["push_button_address"] is not None
+
+
+def test_normalizes_prefixed_dimmer_payload():
+    payload = "FF08F4AC5440"
+
+    decoded = decode_command_payload(
+        payload,
+        "dimmer_module",
+        KEY_MAPPING_MODULE,
+        CHANNEL_MAPPING,
+        MODE_MAPPINGS,
+        TIMER_MAPPINGS,
+        _get_eight_channels,
+        convert_nikobus_address,
+    )
+
+    assert decoded is not None
+    assert decoded["key_raw"] in range(0, 8)
+    assert decoded["channel_raw"] in range(0, 8)
+
+
+def test_non_dimmer_payload_unchanged_after_normalization():
+    payload = "001000000001"
+
+    decoded = decode_command_payload(
+        payload,
+        "switch_module",
+        KEY_MAPPING_MODULE,
+        CHANNEL_MAPPING,
+        MODE_MAPPINGS,
+        TIMER_MAPPINGS,
+        _get_channels,
+        convert_nikobus_address,
+    )
+
+    assert decoded is not None
+    assert decoded["key_raw"] == 1
+    assert decoded["channel_raw"] == 0
+
+
+def test_validation_rejects_invalid_channel(caplog):
+    caplog.set_level(logging.WARNING)
+
+    payload = "001900000001"
+    decoded = decode_command_payload(
+        payload,
+        "switch_module",
+        KEY_MAPPING_MODULE,
+        CHANNEL_MAPPING,
+        MODE_MAPPINGS,
+        TIMER_MAPPINGS,
+        _get_channels,
+        convert_nikobus_address,
+    )
+
+    assert decoded is None
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert warnings
