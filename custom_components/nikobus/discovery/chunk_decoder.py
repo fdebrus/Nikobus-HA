@@ -72,7 +72,7 @@ class BaseChunkingDecoder:
         decoded: dict[str, Any] | None = None
         try:
             decoded = decode_command_payload(
-                reversed_chunk,
+                chunk,
                 self.module_type,
                 KEY_MAPPING_MODULE,
                 CHANNEL_MAPPING,
@@ -86,6 +86,8 @@ class BaseChunkingDecoder:
                 },
                 self._coordinator.get_button_channels,
                 convert_nikobus_address,
+                reverse_before_decode=True,
+                raw_chunk_hex=chunk,
             )
         except Exception as err:  # pragma: no cover - defensive
             _LOGGER.debug("Decode error while scoring chunk %s: %s", chunk, err)
@@ -221,7 +223,7 @@ class BaseChunkingDecoder:
         chunk = message.strip().upper()
         reversed_chunk = reverse_hex(chunk)
         decoded = decode_command_payload(
-            reversed_chunk,
+            chunk,
             self.module_type,
             KEY_MAPPING_MODULE,
             CHANNEL_MAPPING,
@@ -235,6 +237,8 @@ class BaseChunkingDecoder:
             },
             self._coordinator.get_button_channels,
             convert_nikobus_address,
+            reverse_before_decode=True,
+            raw_chunk_hex=chunk,
         )
 
         if decoded is None or decoded.get("push_button_address") is None:
