@@ -287,6 +287,14 @@ class NikobusDiscovery:
             self._cancel_timeout()
             self._timeout_task = asyncio.create_task(self._timeout_waiter())
 
+            if analysis.get("terminated"):
+                _LOGGER.debug("Termination chunk encountered for address %s", address)
+                await self._coordinator.nikobus_command.clear_command_queue()
+                self._message_complete = True
+                self._cancel_timeout()
+                await self.process_complete_message()
+                return
+
             for candidate_chunk in self._chunks:
                 if candidate_chunk.strip().upper() == "F" * len(candidate_chunk):
                     _LOGGER.debug("Termination chunk encountered: %r", candidate_chunk)

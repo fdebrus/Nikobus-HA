@@ -1,5 +1,11 @@
 from __future__ import annotations
 
-from .switch_decoder import ShutterDecoder
+from .chunk_decoder import BaseChunkingDecoder
+
+
+class ShutterDecoder(BaseChunkingDecoder):
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "roller_module")
+
 
 __all__ = ["ShutterDecoder"]

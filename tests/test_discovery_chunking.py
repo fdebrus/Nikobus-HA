@@ -1,6 +1,10 @@
+import asyncio
+
 import pytest
 
+from custom_components.nikobus.discovery.base import DecodedCommand
 from custom_components.nikobus.discovery.discovery import NikobusDiscovery
+from custom_components.nikobus.discovery.switch_decoder import SwitchDecoder
 
 
 class DummyCommandQueue:
@@ -62,4 +66,62 @@ def test_chunk_alignment_does_not_swallow_crc(message, module_type, expected_chu
     assert not analysis["remainder"]
     if analysis["crc_len"]:
         assert analysis["crc"] == payload_and_crc[-analysis["crc_len"] :]
+
+
+def test_termination_chunk_triggers_completion(monkeypatch):
+    coordinator = DummyCoordinator()
+    coordinator.get_module_type = lambda _: "switch_module"
+
+    clear_called = False
+
+    async def _clear_queue():
+        nonlocal clear_called
+        clear_called = True
+
+    coordinator.nikobus_command.clear_command_queue = _clear_queue
+
+    decoded_chunks: list[str] = []
+
+    def fake_decode(self, message):  # pragma: no cover - simple harness stub
+        decoded_chunks.append(message.upper())
+        return [
+            DecodedCommand(
+                module_type=self.module_type,
+                raw_message=message,
+                chunk_hex=message,
+                payload_hex=message,
+                metadata={"push_button_address": "PB", "payload": message},
+            )
+        ]
+
+    monkeypatch.setattr(SwitchDecoder, "decode", fake_decode)
+
+    discovery = NikobusDiscovery(None, coordinator)
+
+    frame_chunks = ["112233445566", "AABBCCDDEEFF", "FFFFFFFFFFFF"]
+    crc = "ABCDEF"
+    payload_and_crc = "".join(frame_chunks) + crc
+    message = f"$0510$2E1234{payload_and_crc}"
+
+    asyncio.run(discovery.parse_module_inventory_response(message))
+
+    assert clear_called
+    assert decoded_chunks == frame_chunks[:2]
+
+
+def test_analyze_frame_payload_respects_termination():
+    coordinator = DummyCoordinator()
+    decoder = SwitchDecoder(coordinator)
+
+    payload_buffer = ""
+    frame_chunks = ["001122334455", "ABCDEF123456", "FFFFFFFFFFFF"]
+    crc = "123ABC"
+    payload_and_crc = "".join(frame_chunks) + crc
+
+    analysis = decoder.analyze_frame_payload(payload_buffer, payload_and_crc)
+
+    assert analysis is not None
+    assert analysis["chunks"] == frame_chunks[:2]
+    assert analysis["terminated"] is True
+    assert analysis["remainder"] == ""
 
