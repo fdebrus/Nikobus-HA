@@ -109,6 +109,51 @@ def test_termination_chunk_triggers_completion(monkeypatch):
     assert decoded_chunks == frame_chunks[:2]
 
 
+def test_module_address_reversed_without_header(monkeypatch):
+    coordinator = DummyCoordinator()
+    coordinator.get_module_type = lambda _: "switch_module"
+
+    captured_address = None
+
+    async def fake_handle(self, module_address, decoded_commands):  # pragma: no cover - stub
+        nonlocal captured_address
+        captured_address = module_address
+
+    def fake_decode(self, message):  # pragma: no cover - stub
+        return [
+            DecodedCommand(
+                module_type="switch_module",
+                raw_message=message,
+                chunk_hex=message,
+                payload_hex=message,
+                metadata={
+                    "push_button_address": "PB",
+                    "payload": message,
+                    "key_raw": 1,
+                    "channel_raw": 1,
+                    "M": "mode",
+                    "T1": "t1",
+                    "T2": "t2",
+                    "button_address": "BA",
+                },
+            )
+        ]
+
+    monkeypatch.setattr(NikobusDiscovery, "_handle_decoded_commands", fake_handle)
+    monkeypatch.setattr(SwitchDecoder, "decode", fake_decode)
+
+    discovery = NikobusDiscovery(None, coordinator)
+
+    chunk = "112233445566"
+    termination = "FFFFFFFFFFFF"
+    crc = "ABCDEF"
+    message = f"$0510$2EA5C9{chunk}{termination}{crc}"
+
+    asyncio.run(discovery.parse_module_inventory_response(message))
+
+    assert captured_address == "C9A5"
+
+
 def test_analyze_frame_payload_respects_termination():
     coordinator = DummyCoordinator()
     decoder = SwitchDecoder(coordinator)
