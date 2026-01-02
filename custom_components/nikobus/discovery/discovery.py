@@ -201,10 +201,10 @@ class NikobusDiscovery:
             )
 
             if category == "Module":
-                await update_module_data(self._hass.config.path(""), self.discovered_devices)
+                await update_module_data(self._hass, self.discovered_devices)
             elif category == "Button":
                 await update_button_data(
-                    self._hass.config.path(""),
+                    self._hass,
                     self.discovered_devices,
                     KEY_MAPPING,
                     convert_nikobus_address,
@@ -334,7 +334,7 @@ class NikobusDiscovery:
                 )
 
             updated_buttons, links_added, outputs_added = await merge_discovered_links(
-                self._hass.config.path(""), command_mapping
+                self._hass, command_mapping
             )
             _LOGGER.info(
                 "Discovered links merged into config: %d buttons updated, %d link blocks added, %d outputs added.",

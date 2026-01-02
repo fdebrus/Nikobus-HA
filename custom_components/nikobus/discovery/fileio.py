@@ -23,12 +23,13 @@ async def _write_json_atomic(file_path, data):
         os.replace(tmp_path, file_path)
         _LOGGER.info("Data written to file: %s", file_path)
     except Exception as e:
-        _LOGGER.error("Failed to write data to file %s: %s", file_path, e)
+        _LOGGER.exception("Failed to write data to file %s", file_path)
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
         except OSError:
             pass
+        raise
 
 
 async def write_json_file(file_path, data):
@@ -52,7 +53,11 @@ async def read_json_file(file_path):
         return None
 
 
-async def update_module_data(hass_config_path, discovered_devices):
+def _normalize_address(address):
+    return address.strip().upper() if isinstance(address, str) else ""
+
+
+async def update_module_data(hass, discovered_devices):
     """
     Write discovered module data to a JSON file.
     Expects discovered_devices to be a dict with address as key.
@@ -77,16 +82,17 @@ async def update_module_data(hass_config_path, discovered_devices):
         else:
             module_data["other_module"][address] = device
 
-    file_path = os.path.join(hass_config_path, "nikobus_module_discovered.json")
+    file_path = hass.config.path("nikobus_module_discovered.json")
     await write_json_file(file_path, module_data)
 
 
-async def update_button_data(hass_config_path, discovered_devices, key_mapping, convert_nikobus_address):
+async def update_button_data(hass, discovered_devices, key_mapping, convert_nikobus_address):
     """
     Update the button config JSON file based on discovered devices.
     Requires key_mapping and convert_nikobus_address function from protocol/mappings.
     """
-    file_path = os.path.join(hass_config_path, "nikobus_button_config.json")
+    file_path = hass.config.path("nikobus_button_config.json")
+    os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
     existing_data = []
     if os.path.exists(file_path):
         existing_json = await read_json_file(file_path)
@@ -193,10 +199,21 @@ def _normalize_key(value):
         return value
 
 
-async def merge_discovered_links(hass_config_path, command_mapping):
+async def merge_discovered_links(hass, command_mapping):
     """Merge discovery command mapping into nikobus_button_config.json."""
 
-    file_path = os.path.join(hass_config_path, "nikobus_button_config.json")
+    file_path = hass.config.path("nikobus_button_config.json")
+
+    file_exists_before = os.path.exists(file_path)
+    file_size_before = os.path.getsize(file_path) if file_exists_before else 0
+    _LOGGER.info("Updating button config JSON: %s", file_path)
+    _LOGGER.info(
+        "Button config JSON stats before update: cwd=%s exists=%s size=%s bytes",
+        os.getcwd(),
+        file_exists_before,
+        file_size_before,
+    )
+
     existing_json = await read_json_file(file_path)
     if existing_json is None:
         existing_json = {"nikobus_button": []}
@@ -206,23 +223,30 @@ async def merge_discovered_links(hass_config_path, command_mapping):
         buttons = []
 
     address_lookup = {
-        button.get("address"): button for button in buttons if "address" in button
+        _normalize_address(button.get("address")): button
+        for button in buttons
+        if "address" in button
     }
 
     updated_buttons = 0
     links_added = 0
     outputs_added = 0
     any_updates = False
+    matched_addresses = set()
+    unmatched_addresses = set()
 
     for (push_button_address, key_raw), outputs in command_mapping.items():
         if push_button_address is None:
             continue
-        button_entry = address_lookup.get(push_button_address)
+        normalized_address = _normalize_address(push_button_address)
+        button_entry = address_lookup.get(normalized_address)
         if not button_entry:
+            unmatched_addresses.add(normalized_address)
             continue
 
         discovered_links = button_entry.setdefault("discovered_links", [])
         updated_entry = False
+        matched_addresses.add(normalized_address)
 
         for output in outputs:
             module_address = output.get("module_address")
@@ -312,6 +336,38 @@ async def merge_discovered_links(hass_config_path, command_mapping):
             any_updates = True
 
     if any_updates:
+        os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
         await _write_json_atomic(file_path, {"nikobus_button": buttons})
+
+    file_exists_after = os.path.exists(file_path)
+    file_size_after = os.path.getsize(file_path) if file_exists_after else 0
+    _LOGGER.info(
+        "Button config JSON stats after update: exists=%s size=%s bytes",
+        file_exists_after,
+        file_size_after,
+    )
+
+    if not any_updates:
+        _LOGGER.info(
+            "Button config JSON updater ran: changes=0 (updated_buttons=%d, links_added=%d, outputs_added=%d)",
+            updated_buttons,
+            links_added,
+            outputs_added,
+        )
+    else:
+        _LOGGER.info(
+            "Button config JSON summary: updated_buttons=%d, links_added=%d, outputs_added=%d",
+            updated_buttons,
+            links_added,
+            outputs_added,
+        )
+
+    if not matched_addresses:
+        unmatched_sample = list(unmatched_addresses)[:5]
+        _LOGGER.debug(
+            "Button config JSON updater found no matching buttons. unmatched_count=%d sample=%s",
+            len(unmatched_addresses),
+            unmatched_sample,
+        )
 
     return updated_buttons, links_added, outputs_added
