@@ -510,7 +510,7 @@ def _select_roller_key(raw_bytes, button_channel_count: int | None, button_addre
                 method,
                 source,
             )
-            return normalized, source, candidates
+            return normalized, source, candidate, candidates
 
     for source, candidate in candidates:
         if candidate is None:
@@ -526,9 +526,9 @@ def _select_roller_key(raw_bytes, button_channel_count: int | None, button_addre
             method,
             source,
         )
-        return normalized, source, candidates
+        return normalized, source, candidate, candidates
 
-    return None, None, candidates
+    return None, None, None, candidates
 
 
 def _decode_switch(
@@ -715,7 +715,7 @@ def _decode_roller(
     button_address = get_button_address(button_address_hex)
     button_channel_count = coordinator_get_button_channels(button_address)
 
-    key_raw, key_source, key_candidates = _select_roller_key(
+    key_raw, key_source, key_raw_nibble, key_candidates = _select_roller_key(
         raw_bytes, button_channel_count, button_address
     )
 
@@ -865,7 +865,7 @@ def _decode_roller(
         "button_address": button_address,
         "push_button_address": push_button_address,
         "key_raw": key_raw,
-        "key_raw_nibble": key_raw,
+        "key_raw_nibble": key_raw_nibble,
         "channel_raw": channel_raw,
         "channel_mask": channel_mask,
         "channel_source": channel_source,
