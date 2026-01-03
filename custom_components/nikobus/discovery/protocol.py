@@ -122,6 +122,48 @@ def convert_nikobus_address(address_string):
         return f"[{address_string}]"
 
 
+def _normalize_key_index(key_raw, num_channels, key_mapping_module):
+    """Normalize raw nibble-based key values into mapping indexes.
+
+    Roller modules report the key nibble (e.g. 0x8/0x4/0xD) instead of the
+    zero-based index expected by :data:`KEY_MAPPING_MODULE`. This helper keeps
+    valid indexes as-is, otherwise it builds an inverse lookup of the mapping
+    values and resolves the nibble to the proper index. If the button channel
+    count is unknown we try all mappings and only accept an unambiguous match.
+    """
+
+    if key_raw is None:
+        return None, num_channels, []
+
+    inverse_mappings = {
+        channels: {value.upper(): index for index, value in mapping.items()}
+        for channels, mapping in key_mapping_module.items()
+    }
+
+    # Already a valid index for the detected channel count.
+    if num_channels in key_mapping_module and key_raw in key_mapping_module[num_channels]:
+        return key_raw, num_channels, [(num_channels, key_raw, "index")]
+
+    nibble_hex = f"{int(key_raw):X}".upper()
+
+    # Channel-count-specific inverse lookup first.
+    if num_channels in inverse_mappings and nibble_hex in inverse_mappings[num_channels]:
+        normalized_key = inverse_mappings[num_channels][nibble_hex]
+        return normalized_key, num_channels, [(num_channels, normalized_key, "inverse")]
+
+    # Fallback: try all mappings, but only accept when unambiguous.
+    matches = [
+        (channels, inverse_mappings[channels][nibble_hex], "inverse")
+        for channels in inverse_mappings
+        if nibble_hex in inverse_mappings[channels]
+    ]
+
+    if len(matches) == 1:
+        return matches[0][1], matches[0][0], matches
+
+    return key_raw, num_channels, matches
+
+
 def get_button_address(payload):
     """Convert a payload hex string into a button address."""
     try:
@@ -361,6 +403,46 @@ def _calculate_timer_values(module_type, mode_raw, t1_raw, t2_raw, timer_mapping
     return t1_val, t2_val
 
 
+def _select_roller_mode(raw_bytes, mode_mapping):
+    """Pick the first mode nibble that maps to a known roller mode."""
+
+    candidates = [
+        ("byte2_low", _nibble_low(raw_bytes, 2)),
+        ("byte3_low", _nibble_low(raw_bytes, 3)),
+        ("byte4_low", _nibble_low(raw_bytes, 4)),
+        ("byte5_low", _nibble_low(raw_bytes, 5)),
+    ]
+
+    selected_source = None
+    selected_value = None
+
+    for source, candidate in candidates:
+        if candidate is None:
+            continue
+        if candidate in mode_mapping:
+            selected_source = source
+            selected_value = candidate
+            break
+
+    if selected_source is None:
+        # Default back to the first available candidate even if it is unknown
+        for source, candidate in candidates:
+            if candidate is not None:
+                selected_source = source
+                selected_value = candidate
+                break
+
+    _LOGGER.debug(
+        "Roller mode selection | candidates=%s selected=%s source=%s valid_keys=%s",
+        candidates,
+        selected_value,
+        selected_source,
+        list(mode_mapping.keys()),
+    )
+
+    return selected_value, selected_source, candidates
+
+
 def _decode_switch_or_roller(
     payload_hex,
     module_type,
@@ -388,7 +470,13 @@ def _decode_switch_or_roller(
         ("byte2_low", _nibble_low(raw_bytes, 2)),
     ]
     t1_raw = _nibble_high(raw_bytes, 2)
+
     mode_raw = _nibble_low(raw_bytes, 2)
+    mode_source = "byte2_low"
+
+    if module_type == "roller_module":
+        mode_mapping = mode_mappings.get(module_type, {})
+        mode_raw, mode_source, _ = _select_roller_mode(raw_bytes, mode_mapping)
 
     if None in (t2_raw, key_raw, t1_raw, mode_raw):
         _LOGGER.error("Invalid command bytes: %s", raw_bytes)
@@ -408,6 +496,20 @@ def _decode_switch_or_roller(
 
     button_address_hex = payload_hex[-6:]
     button_address = get_button_address(button_address_hex)
+    button_channel_count = coordinator_get_button_channels(button_address)
+
+    key_raw_nibble = key_raw
+    key_raw, _, key_matches = _normalize_key_index(
+        key_raw, button_channel_count, key_mapping_module
+    )
+    _LOGGER.debug(
+        "Key normalization | module_type=%s raw_nibble=%s normalized=%s button_channels=%s matches=%s",
+        module_type,
+        key_raw_nibble,
+        key_raw,
+        button_channel_count,
+        key_matches,
+    )
 
     push_button_address, button_address = get_push_button_address(
         key_raw, button_address, key_mapping_module, coordinator_get_button_channels, convert_func
@@ -428,6 +530,28 @@ def _decode_switch_or_roller(
     channel_raw = None
     channel_mask = None
     channel_source = None
+    if module_type == "roller_module":
+        preferred = []
+        fallback = []
+        mode_candidates = []
+
+        for source, candidate in channel_candidates:
+            if source == mode_source:
+                mode_candidates.append((source, candidate))
+                continue
+
+            in_range = (
+                channel_count is not None
+                and candidate is not None
+                and 0 <= candidate < channel_count
+            )
+            (preferred if in_range else fallback).append((source, candidate))
+
+        reordered = preferred or []
+        reordered.extend(fallback)
+        reordered.extend(mode_candidates)
+        channel_candidates = reordered or channel_candidates
+
     for source, candidate in channel_candidates:
         idx, mask = _channel_index_from_mask(candidate, channel_mapping, module_type)
         if idx is None:
@@ -505,6 +629,7 @@ def _decode_switch_or_roller(
         "button_address": button_address,
         "push_button_address": push_button_address,
         "key_raw": key_raw,
+        "key_raw_nibble": key_raw_nibble,
         "channel_raw": channel_raw,
         "channel_mask": channel_mask,
         "channel_source": channel_source,
