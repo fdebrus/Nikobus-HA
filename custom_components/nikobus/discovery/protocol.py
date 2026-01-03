@@ -278,6 +278,22 @@ def _validate_decoded_result(
     channel_count = decoded.get("channel_count")
     button_channel_count = decoded.get("button_channel_count")
 
+    filler_values = {0xF}
+    if module_type == "roller_module":
+        filler_values = {0xE, 0xF}
+
+    if key_raw in filler_values or channel_raw in filler_values or mode_raw in filler_values:
+        _LOGGER.debug(
+            "Skipping payload after filler check | module_type=%s module_address=%s key=%s channel=%s mode=%s payload=%s",
+            module_type,
+            module_address,
+            key_raw,
+            channel_raw,
+            mode_raw,
+            normalized_payload_hex,
+        )
+        return None
+
     known_keys = {k for mapping in key_mapping_module.values() for k in mapping}
     expected_keys = known_keys
     if (
@@ -417,7 +433,7 @@ def _select_roller_mode(raw_bytes, mode_mapping):
     selected_value = None
 
     for source, candidate in candidates:
-        if candidate is None:
+        if candidate is None or candidate in {0xE, 0xF}:
             continue
         if candidate in mode_mapping:
             selected_source = source
@@ -425,9 +441,9 @@ def _select_roller_mode(raw_bytes, mode_mapping):
             break
 
     if selected_source is None:
-        # Default back to the first available candidate even if it is unknown
+        # Default back to the first non-filler candidate even if it is unknown
         for source, candidate in candidates:
-            if candidate is not None:
+            if candidate is not None and candidate not in {0xE, 0xF}:
                 selected_source = source
                 selected_value = candidate
                 break
@@ -443,9 +459,80 @@ def _select_roller_mode(raw_bytes, mode_mapping):
     return selected_value, selected_source, candidates
 
 
-def _decode_switch_or_roller(
+def _normalize_roller_key(
+    raw_nibble: int | None,
+    button_channel_count: int | None,
+    button_address: str,
+) -> tuple[int | None, str]:
+    """Normalize roller key nibble into the 0..3 effective key space."""
+
+    if raw_nibble is None:
+        return None, "missing"
+
+    if button_channel_count is None:
+        return raw_nibble & 0x3, "bitmask_no_channel"
+
+    if button_channel_count == 4:
+        if 0 <= raw_nibble < 4:
+            return raw_nibble, "direct"
+        return raw_nibble % 4, "modulo"
+
+    if 0 <= raw_nibble < button_channel_count:
+        return raw_nibble, "direct"
+
+    return raw_nibble & 0x3, "bitmask_fallback"
+
+
+def _select_roller_key(raw_bytes, button_channel_count: int | None, button_address: str):
+    """Choose and normalize the key nibble for roller modules."""
+
+    candidates = [
+        ("byte1_high", _nibble_high(raw_bytes, 1)),
+        ("byte2_high", _nibble_high(raw_bytes, 2)),
+        ("byte3_high", _nibble_high(raw_bytes, 3)),
+        ("byte4_high", _nibble_high(raw_bytes, 4)),
+    ]
+
+    for source, candidate in candidates:
+        if candidate in {0xE, 0xF}:
+            continue
+        normalized, method = _normalize_roller_key(
+            candidate, button_channel_count, button_address
+        )
+        if normalized is None:
+            continue
+        if 0 <= normalized <= 3:
+            _LOGGER.debug(
+                "Key normalization | module_type=roller_module raw_nibble=%s normalized=%s button_channels=%s method=%s source=%s",
+                candidate,
+                normalized,
+                button_channel_count,
+                method,
+                source,
+            )
+            return normalized, source, candidates
+
+    for source, candidate in candidates:
+        if candidate is None:
+            continue
+        normalized, method = _normalize_roller_key(
+            candidate, button_channel_count, button_address
+        )
+        _LOGGER.debug(
+            "Key normalization | module_type=roller_module raw_nibble=%s normalized=%s button_channels=%s method=%s source=%s",
+            candidate,
+            normalized,
+            button_channel_count,
+            method,
+            source,
+        )
+        return normalized, source, candidates
+
+    return None, None, candidates
+
+
+def _decode_switch(
     payload_hex,
-    module_type,
     key_mapping_module,
     channel_mapping,
     mode_mappings,
@@ -470,13 +557,7 @@ def _decode_switch_or_roller(
         ("byte2_low", _nibble_low(raw_bytes, 2)),
     ]
     t1_raw = _nibble_high(raw_bytes, 2)
-
     mode_raw = _nibble_low(raw_bytes, 2)
-    mode_source = "byte2_low"
-
-    if module_type == "roller_module":
-        mode_mapping = mode_mappings.get(module_type, {})
-        mode_raw, mode_source, _ = _select_roller_mode(raw_bytes, mode_mapping)
 
     if None in (t2_raw, key_raw, t1_raw, mode_raw):
         _LOGGER.error("Invalid command bytes: %s", raw_bytes)
@@ -503,8 +584,7 @@ def _decode_switch_or_roller(
         key_raw, button_channel_count, key_mapping_module
     )
     _LOGGER.debug(
-        "Key normalization | module_type=%s raw_nibble=%s normalized=%s button_channels=%s matches=%s",
-        module_type,
+        "Key normalization | module_type=switch_module raw_nibble=%s normalized=%s button_channels=%s matches=%s",
         key_raw_nibble,
         key_raw,
         button_channel_count,
@@ -517,7 +597,7 @@ def _decode_switch_or_roller(
 
     button_channel_count = coordinator_get_button_channels(button_address)
     channel_count = _module_channel_count_or_default(
-        module_address, module_type, logical_channel_count, coordinator_get_module_channels
+        module_address, "switch_module", logical_channel_count, coordinator_get_module_channels
     )
 
     _LOGGER.debug(
@@ -530,30 +610,9 @@ def _decode_switch_or_roller(
     channel_raw = None
     channel_mask = None
     channel_source = None
-    if module_type == "roller_module":
-        preferred = []
-        fallback = []
-        mode_candidates = []
-
-        for source, candidate in channel_candidates:
-            if source == mode_source:
-                mode_candidates.append((source, candidate))
-                continue
-
-            in_range = (
-                channel_count is not None
-                and candidate is not None
-                and 0 <= candidate < channel_count
-            )
-            (preferred if in_range else fallback).append((source, candidate))
-
-        reordered = preferred or []
-        reordered.extend(fallback)
-        reordered.extend(mode_candidates)
-        channel_candidates = reordered or channel_candidates
 
     for source, candidate in channel_candidates:
-        idx, mask = _channel_index_from_mask(candidate, channel_mapping, module_type)
+        idx, mask = _channel_index_from_mask(candidate, channel_mapping, "switch_module")
         if idx is None:
             continue
         if channel_count is None or idx < channel_count:
@@ -564,7 +623,7 @@ def _decode_switch_or_roller(
 
     if channel_raw is None:
         channel_raw, channel_mask = _channel_index_from_mask(
-            channel_candidates[0][1], channel_mapping, module_type
+            channel_candidates[0][1], channel_mapping, "switch_module"
         )
         channel_source = channel_candidates[0][0]
 
@@ -575,16 +634,16 @@ def _decode_switch_or_roller(
             "Mapping fail: channel_raw=%s | channel_keys=%s | module_type=%s | payload=%s",
             channel_raw,
             list(channel_mapping.keys()),
-            module_type,
+            "switch_module",
             payload_hex,
         )
 
     try:
-        mode_mapping = mode_mappings[module_type]
-        timer_mapping = timer_mappings[module_type]
+        mode_mapping = mode_mappings["switch_module"]
+        timer_mapping = timer_mappings["switch_module"]
     except KeyError:
         _LOGGER.error(
-            "Unknown module_type '%s'. Available: %s", module_type, list(mode_mappings.keys())
+            "Unknown module_type 'switch_module'. Available: %s", list(mode_mappings.keys())
         )
         return None
 
@@ -594,12 +653,189 @@ def _decode_switch_or_roller(
             "Unknown mode: mode_raw=%d | mode_keys=%s | module_type=%s | payload=%s",
             mode_raw,
             list(mode_mapping.keys()),
-            module_type,
+            "switch_module",
             payload_hex,
         )
 
     t1_val, t2_val = _calculate_timer_values(
-        module_type, mode_raw, t1_raw, t2_raw, timer_mapping
+        "switch_module", mode_raw, t1_raw, t2_raw, timer_mapping
+    )
+
+    return {
+        "button_address": button_address,
+        "push_button_address": push_button_address,
+        "key_raw": key_raw,
+        "channel_raw": channel_raw,
+        "channel_mask": channel_mask,
+        "channel_source": channel_source,
+        "channel_count": channel_count,
+        "button_channel_count": button_channel_count,
+        "mode_raw": mode_raw,
+        "t1_raw": t1_raw,
+        "t2_raw": t2_raw,
+        "K": f"{key_raw}",
+        "C": f"{channel_label}",
+        "T1": t1_val,
+        "T2": t2_val,
+        "M": f"{mode_label}",
+    }
+
+
+def _decode_roller(
+    payload_hex,
+    key_mapping_module,
+    channel_mapping,
+    mode_mappings,
+    timer_mappings,
+    coordinator_get_button_channels,
+    coordinator_get_module_channels,
+    convert_func,
+    raw_bytes,
+    *,
+    logical_channel_count: int | None = None,
+    module_address: str | None = None,
+):
+    # Roller frames reuse the normalized layout but fields can shift.
+    # We therefore probe multiple candidate nibbles for key/mode and
+    # normalize them into the expected ranges instead of assuming a
+    # single fixed offset.
+    t2_raw = _nibble_low(raw_bytes, 0)
+    t1_raw = _nibble_high(raw_bytes, 2)
+
+    if None in (t2_raw, t1_raw):
+        _LOGGER.error("Invalid command bytes: %s", raw_bytes)
+        return None
+
+    channel_candidates = [
+        ("byte1_low", _nibble_low(raw_bytes, 1)),
+        ("byte2_low", _nibble_low(raw_bytes, 2)),
+    ]
+
+    button_address_hex = payload_hex[-6:]
+    button_address = get_button_address(button_address_hex)
+    button_channel_count = coordinator_get_button_channels(button_address)
+
+    key_raw, key_source, key_candidates = _select_roller_key(
+        raw_bytes, button_channel_count, button_address
+    )
+
+    mode_mapping = mode_mappings.get("roller_module", {})
+    mode_raw, mode_source, mode_candidates = _select_roller_mode(raw_bytes, mode_mapping)
+
+    if key_raw is None or mode_raw is None:
+        _LOGGER.debug(
+            "Skipping roller payload due to missing key/mode | key_candidates=%s mode_candidates=%s payload=%s",
+            key_candidates,
+            mode_candidates,
+            payload_hex,
+        )
+        return None
+
+    if key_raw in {0xE, 0xF} or mode_raw in {0xE, 0xF}:
+        _LOGGER.debug(
+            "Skipping filler payload due to reserved nibble: key=%s mode=%s payload=%s",
+            key_raw,
+            mode_raw,
+            payload_hex,
+        )
+        return None
+
+    push_button_address, button_address = get_push_button_address(
+        key_raw, button_address, key_mapping_module, coordinator_get_button_channels, convert_func
+    )
+
+    button_channel_count = coordinator_get_button_channels(button_address)
+    channel_count = _module_channel_count_or_default(
+        module_address, "roller_module", logical_channel_count, coordinator_get_module_channels
+    )
+
+    _LOGGER.debug(
+        "Channel count comparison | module_address=%s module_channel_count=%s button_channel_count=%s",
+        module_address,
+        channel_count,
+        button_channel_count,
+    )
+
+    preferred = []
+    fallback = []
+    mode_candidates_for_channel = []
+
+    for source, candidate in channel_candidates:
+        if source == mode_source:
+            mode_candidates_for_channel.append((source, candidate))
+            continue
+
+        in_range = (
+            channel_count is not None
+            and candidate is not None
+            and 0 <= candidate < channel_count
+        )
+        (preferred if in_range else fallback).append((source, candidate))
+
+    reordered = preferred or []
+    reordered.extend(fallback)
+    reordered.extend(mode_candidates_for_channel)
+    channel_candidates = reordered or channel_candidates
+
+    channel_raw = None
+    channel_mask = None
+    channel_source = None
+
+    for source, candidate in channel_candidates:
+        idx, mask = _channel_index_from_mask(candidate, channel_mapping, "roller_module")
+        if idx is None:
+            continue
+        if channel_count is None or idx < channel_count:
+            channel_raw = idx
+            channel_mask = mask
+            channel_source = source
+            break
+
+    if channel_raw is None and channel_candidates:
+        channel_raw, channel_mask = _channel_index_from_mask(
+            channel_candidates[0][1], channel_mapping, "roller_module"
+        )
+        channel_source = channel_candidates[0][0]
+
+    if channel_raw in {0xE, 0xF}:
+        _LOGGER.debug(
+            "Skipping filler payload due to reserved channel nibble: channel=%s payload=%s",
+            channel_raw,
+            payload_hex,
+        )
+        return None
+
+    channel_label = channel_mapping.get(channel_raw, f"Unknown Channel ({channel_raw})")
+
+    if channel_label.startswith("Unknown Channel"):
+        _LOGGER.debug(
+            "Mapping fail: channel_raw=%s | channel_keys=%s | module_type=%s | payload=%s",
+            channel_raw,
+            list(channel_mapping.keys()),
+            "roller_module",
+            payload_hex,
+        )
+
+    try:
+        timer_mapping = timer_mappings["roller_module"]
+    except KeyError:
+        _LOGGER.error(
+            "Unknown module_type 'roller_module'. Available: %s", list(mode_mappings.keys())
+        )
+        return None
+
+    mode_label = mode_mapping.get(mode_raw, f"Unknown Mode ({mode_raw})")
+    if mode_label.startswith("Unknown Mode"):
+        _LOGGER.debug(
+            "Unknown mode: mode_raw=%s | candidates=%s | mode_keys=%s | payload=%s",
+            mode_raw,
+            mode_candidates,
+            list(mode_mapping.keys()),
+            payload_hex,
+        )
+
+    t1_val, t2_val = _calculate_timer_values(
+        "roller_module", mode_raw, t1_raw, t2_raw, timer_mapping
     )
 
     _LOGGER.debug(
@@ -629,7 +865,7 @@ def _decode_switch_or_roller(
         "button_address": button_address,
         "push_button_address": push_button_address,
         "key_raw": key_raw,
-        "key_raw_nibble": key_raw_nibble,
+        "key_raw_nibble": key_raw,
         "channel_raw": channel_raw,
         "channel_mask": channel_mask,
         "channel_source": channel_source,
@@ -916,10 +1152,9 @@ def decode_command_payload(
     raw_payload_hex = (raw_chunk_hex or input_payload_hex).upper()
 
     decoded = None
-    if module_type in {"switch_module", "roller_module"}:
-        decoded = _decode_switch_or_roller(
+    if module_type == "switch_module":
+        decoded = _decode_switch(
             payload_hex,
-            module_type,
             key_mapping_module,
             channel_mapping,
             mode_mappings,
@@ -931,7 +1166,20 @@ def decode_command_payload(
             logical_channel_count=logical_channel_count,
             module_address=module_address,
         )
-
+    elif module_type == "roller_module":
+        decoded = _decode_roller(
+            payload_hex,
+            key_mapping_module,
+            channel_mapping,
+            mode_mappings,
+            timer_mappings,
+            coordinator_get_button_channels,
+            coordinator_get_module_channels,
+            convert_func,
+            raw_bytes,
+            logical_channel_count=logical_channel_count,
+            module_address=module_address,
+        )
     elif module_type == "dimmer_module":
         decoded = _decode_dimmer(
             payload_hex,
