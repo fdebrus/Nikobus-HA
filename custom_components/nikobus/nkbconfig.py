@@ -71,7 +71,7 @@ class NikobusConfig:
 
     def _transform_module_data(self, data: dict) -> dict:
         """Transform module data from a list to a dictionary."""
-        for key in ["switch_module", "dimmer_module", "roller_module"]:
+        for key in ["switch_module", "dimmer_module", "roller_module", "other_module"]:
             if key in data:
                 data[key] = {module["address"]: module for module in data[key]}
         return data
@@ -94,6 +94,7 @@ class NikobusConfig:
                 "switch_module": {},
                 "dimmer_module": {},
                 "roller_module": {},
+                "other_module": {},
             }
 
         raise NikobusDataError(

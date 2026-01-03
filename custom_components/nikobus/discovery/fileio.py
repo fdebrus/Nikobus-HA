@@ -8,12 +8,64 @@ from datetime import datetime, timezone
 _LOGGER = logging.getLogger(__name__)
 
 
-async def _write_json_atomic(file_path, data):
+def _inline_channels(json_text: str) -> str:
+    """Collapse channel objects to a single line while preserving indentation."""
+
+    def _is_simple_object(block_lines: list[str]) -> bool:
+        if len(block_lines) < 3:
+            return False
+
+        closing = block_lines[-1].lstrip()
+        if not (closing.startswith("}") or closing.startswith("},")):
+            return False
+
+        inner = block_lines[1:-1]
+        if len(inner) > 2:
+            return False
+
+        return not any("{" in line or "}" in line for line in inner)
+
+    lines = json_text.splitlines()
+    output: list[str] = []
+    idx = 0
+
+    while idx < len(lines):
+        line = lines[idx]
+        if line.strip() == "{" and idx + 2 < len(lines):
+            block: list[str] = [line]
+            cursor = idx + 1
+            while cursor < len(lines):
+                block.append(lines[cursor])
+                if lines[cursor].lstrip().startswith("}"):
+                    break
+                cursor += 1
+
+            if _is_simple_object(block):
+                indent = line[: line.index("{")]
+                inner_content = " ".join(part.strip() for part in block[1:-1])
+                closing = block[-1].strip()
+                inline = f"{indent}{{ {inner_content} }}"
+                if closing.startswith("},"):
+                    inline += ","
+                output.append(inline)
+                idx = cursor + 1
+                continue
+
+        output.append(line)
+        idx += 1
+
+    return "\n".join(output) + ("\n" if json_text.endswith("\n") else "")
+
+
+async def _write_json_atomic(file_path, data, inline_channels: bool = False):
     """Write JSON data atomically to avoid partial writes."""
 
     def _write(path):
+        serialized = json.dumps(data, indent=4, ensure_ascii=False, sort_keys=False)
+        if inline_channels:
+            serialized = _inline_channels(serialized)
         with open(path, "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=4, ensure_ascii=False, sort_keys=False)
+            file.write(serialized)
 
     directory = os.path.dirname(file_path) or "."
     os.makedirs(directory, exist_ok=True)
@@ -33,9 +85,9 @@ async def _write_json_atomic(file_path, data):
         raise
 
 
-async def write_json_file(file_path, data):
+async def write_json_file(file_path, data, inline_channels: bool = False):
     """Write JSON data to a file asynchronously."""
-    await _write_json_atomic(file_path, data)
+    await _write_json_atomic(file_path, data, inline_channels=inline_channels)
 
 
 async def read_json_file(file_path):
@@ -73,6 +125,7 @@ async def update_module_data(hass, discovered_devices):
             "switch_module": _normalize_collection(data.get("switch_module")),
             "dimmer_module": _normalize_collection(data.get("dimmer_module")),
             "roller_module": _normalize_collection(data.get("roller_module")),
+            "other_module": _normalize_collection(data.get("other_module")),
         }
 
     def _sanitize_channel(channel: dict, module_type: str) -> dict:
@@ -85,6 +138,9 @@ async def update_module_data(hass, discovered_devices):
         if not isinstance(channels, list):
             channels = []
 
+        if channels_count is None or channels_count <= 0:
+            return []
+
         target_count = channels_count or len(channels)
         sanitized: list[dict] = []
 
@@ -94,11 +150,11 @@ async def update_module_data(hass, discovered_devices):
             else:
                 channel = {}
 
-            if "description" not in channel:
-                channel["description"] = f"not_in_use output_{idx + 1}"
-
             if module_type == "roller_module" and "operation_time" not in channel:
                 channel["operation_time"] = "00"
+
+            if "description" not in channel:
+                channel["description"] = ""
 
             sanitized.append(channel)
 
@@ -117,13 +173,15 @@ async def update_module_data(hass, discovered_devices):
 
         timestamp = module.get("last_seen") or datetime.now(timezone.utc).isoformat()
 
+        discovery_name = module.get("discovered_name") or module.get("description", "")
+        discovery_channels = channels_count if channels_count and channels_count > 0 else None
         discovery_info = {
-            "name": module.get("discovered_name") or module.get("description", ""),
-            "category": module.get("category", ""),
+            "name": discovery_name,
             "device_type": module.get("device_type"),
-            "channels_count": channels_count,
             "last_discovered": timestamp,
         }
+        if discovery_channels:
+            discovery_info["channels_count"] = discovery_channels
 
         existing = next(
             (item for item in module_list if _normalize_address(item.get("address")) == address),
@@ -131,26 +189,34 @@ async def update_module_data(hass, discovered_devices):
         )
 
         def _merge_discovery(existing_info: dict | None) -> dict:
-            merged = {
-                "name": (existing_info or {}).get("name", ""),
-                "category": (existing_info or {}).get("category", ""),
-                "device_type": (existing_info or {}).get("device_type"),
-                "channels_count": (existing_info or {}).get("channels_count", 0),
-                "last_discovered": (existing_info or {}).get("last_discovered", ""),
-            }
+            merged = {}
+            if existing_info:
+                for key in ("name", "device_type", "channels_count", "last_discovered"):
+                    if key in existing_info and existing_info[key]:
+                        merged[key] = existing_info[key]
+
             for key, value in discovery_info.items():
-                if value is not None:
+                if value:
+                    if key == "channels_count" and value <= 0:
+                        continue
                     merged[key] = value
+
+            if "channels_count" in merged and merged["channels_count"] <= 0:
+                merged.pop("channels_count", None)
+
             return merged
 
         def _module_base(description_value: str, model_value: str, channels_value: list) -> dict:
-            return {
+            base = {
                 "description": description_value,
                 "model": model_value,
                 "address": address,
                 "discovered_info": _merge_discovery(existing.get("discovered_info") if existing else None),
-                "channels": _sync_channels(channels_value, module_type, channels_count),
             }
+            sanitized_channels = _sync_channels(channels_value, module_type, channels_count)
+            if sanitized_channels:
+                base["channels"] = sanitized_channels
+            return base
 
         description = module.get("description", module.get("discovered_name", ""))
         model_value = module.get("model", "")
@@ -177,11 +243,12 @@ async def update_module_data(hass, discovered_devices):
 
     for device in filtered_devices:
         module_type = device.get("module_type", "other_module")
-        if module_type not in module_data:
-            continue
-        _merge_module(module_data[module_type], device, module_type)
+        target_list = module_data.get(module_type)
+        if target_list is None:
+            target_list = module_data["other_module"]
+        _merge_module(target_list, device, module_type)
 
-    await write_json_file(file_path, module_data)
+    await write_json_file(file_path, module_data, inline_channels=True)
 
 
 async def update_button_data(hass, discovered_devices, key_mapping, convert_nikobus_address):

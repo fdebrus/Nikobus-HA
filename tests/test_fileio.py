@@ -176,13 +176,12 @@ def test_update_module_data_creates_module_config(tmp_path):
         assert module["model"] == "05-000-02"
         assert module["discovered_info"] == {
             "name": "Switch Module",
-            "category": "Module",
             "device_type": "01",
             "channels_count": 4,
             "last_discovered": "2024-01-01T00:00:00+00:00",
         }
         assert len(module["channels"]) == 4
-        assert module["channels"][0]["description"] == "not_in_use output_1"
+        assert module["channels"][0]["description"] == ""
 
     asyncio.run(_run())
 
@@ -268,7 +267,6 @@ def test_update_module_data_merges_without_clobbering_user_fields(tmp_path):
         assert module["model"] == "05-000-02"
         assert module["discovered_info"] == {
             "name": "New Switch Name",
-            "category": "Module",
             "device_type": "01",
             "channels_count": 3,
             "last_discovered": "2024-01-02T00:00:00+00:00",
@@ -276,13 +274,12 @@ def test_update_module_data_merges_without_clobbering_user_fields(tmp_path):
         assert module["address"] == "C9A5"
         assert len(module["channels"]) == 3
         assert module["channels"][0]["description"] == "Living Room"
-        assert module["channels"][1]["description"] == "not_in_use output_2"
+        assert module["channels"][1]["description"] == ""
 
         roller = data["roller_module"][0]
         assert roller["model"] == "05-001-02"
         assert roller["discovered_info"] == {
             "name": "Roller Shutter Module",
-            "category": "Module",
             "device_type": "02",
             "channels_count": 2,
             "last_discovered": "2024-01-02T00:00:00+00:00",
