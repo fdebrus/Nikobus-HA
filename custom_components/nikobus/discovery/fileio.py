@@ -151,7 +151,7 @@ async def update_module_data(hass, discovered_devices):
                 channel = {}
 
             if module_type == "roller_module" and "operation_time" not in channel:
-                channel["operation_time"] = "00"
+                channel["operation_time"] = "60"
 
             if "description" not in channel:
                 channel["description"] = ""
