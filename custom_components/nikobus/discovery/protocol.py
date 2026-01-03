@@ -576,10 +576,10 @@ def _select_roller_channel(
     priority = [
         "byte1_low",
         "byte1_low_mask7",
-        "byte2_low",
-        "byte2_low_mask7",
         "byte3_low",
         "byte3_low_mask7",
+        "byte2_low",
+        "byte2_low_mask7",
     ]
 
     rejected_masked_from_invalid: list[tuple[str, int]] = []
@@ -600,17 +600,33 @@ def _select_roller_channel(
             in_range_candidates.append((source, candidate))
 
     if in_range_candidates:
-        ordered = sorted(
-            in_range_candidates,
-            key=lambda item: priority.index(item[0])
-            if item[0] in priority
-            else len(priority),
-        )
-        channel_source, selected_value = ordered[0]
-        channel_raw, channel_mask = _channel_index_from_mask(
-            selected_value, channel_mapping, "roller_module"
-        )
-        selection_reason = "priority_in_range"
+        non_zero_candidates = [
+            candidate for candidate in in_range_candidates if candidate[1] != 0
+        ]
+
+        if non_zero_candidates:
+            ordered = sorted(
+                non_zero_candidates,
+                key=lambda item: priority.index(item[0])
+                if item[0] in priority
+                else len(priority),
+            )
+            channel_source, selected_value = ordered[0]
+            channel_raw, channel_mask = _channel_index_from_mask(
+                selected_value, channel_mapping, "roller_module"
+            )
+            selection_reason = "priority_in_range"
+        elif len(in_range_candidates) == 1 and in_range_candidates[0][1] == 0:
+            channel_source, selected_value = in_range_candidates[0]
+            channel_raw, channel_mask = _channel_index_from_mask(
+                selected_value, channel_mapping, "roller_module"
+            )
+            selection_reason = "priority_in_range"
+            _LOGGER.debug(
+                "roller_channel_zero_selected_reason=only_valid_candidate"
+            )
+        else:
+            selection_reason = "ambiguous_zero_candidates"
     elif channel_count is None and eligible_candidates:
         channel_source, selected_value = eligible_candidates[0]
         channel_raw, channel_mask = _channel_index_from_mask(
