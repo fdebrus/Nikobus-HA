@@ -47,6 +47,7 @@ class BaseChunkingDecoder:
         self._coordinator = coordinator
         self.module_type = module_type
         self._logical_channel_count: int | None = None
+        self._module_address: str | None = None
 
     def can_handle(self, module_type: str) -> bool:
         return module_type == self.module_type
@@ -55,6 +56,11 @@ class BaseChunkingDecoder:
         """Store the module-specific logical channel count for decoding."""
 
         self._logical_channel_count = channel_count
+
+    def set_module_address(self, module_address: str | None) -> None:
+        """Store the module address for channel count resolution."""
+
+        self._module_address = module_address
 
     def _score_chunk(self, chunk: str) -> tuple[float, dict[str, Any]]:
         chunk = chunk.strip().upper()
@@ -92,7 +98,9 @@ class BaseChunkingDecoder:
                 },
                 self._coordinator.get_button_channels,
                 convert_nikobus_address,
+                self._coordinator.get_module_channel_count,
                 logical_channel_count=self._logical_channel_count,
+                module_address=self._module_address,
                 reverse_before_decode=True,
                 raw_chunk_hex=chunk,
             )
@@ -226,7 +234,10 @@ class BaseChunkingDecoder:
             "terminated": terminated,
         }
 
-    def decode(self, message: str) -> list[DecodedCommand]:
+    def decode(self, message: str, module_address: str | None = None) -> list[DecodedCommand]:
+        if module_address is not None:
+            self._module_address = module_address
+
         chunk = message.strip().upper()
         reversed_chunk = reverse_hex(chunk)
         decoded = decode_command_payload(
@@ -244,7 +255,9 @@ class BaseChunkingDecoder:
             },
             self._coordinator.get_button_channels,
             convert_nikobus_address,
+            self._coordinator.get_module_channel_count,
             logical_channel_count=self._logical_channel_count,
+            module_address=self._module_address,
             reverse_before_decode=True,
             raw_chunk_hex=chunk,
         )

@@ -300,7 +300,9 @@ class NikobusDiscovery:
             if self._module_type is None:
                 self._module_type = self._coordinator.get_module_type(address)
 
-            self._module_channels = self.discovered_devices.get(address, {}).get("channels")
+            coordinator_channels = self._coordinator.get_module_channel_count(address)
+            discovered_channels = self.discovered_devices.get(address, {}).get("channels")
+            self._module_channels = coordinator_channels or discovered_channels
 
             decoder = self._get_decoder()
             if decoder is None:
@@ -309,6 +311,9 @@ class NikobusDiscovery:
 
             if hasattr(decoder, "set_logical_channel_count"):
                 decoder.set_logical_channel_count(self._module_channels)
+
+            if hasattr(decoder, "set_module_address"):
+                decoder.set_module_address(address)
 
             if decoder.module_type == "dimmer_module":
                 commands = decoder.decode(message)
@@ -429,7 +434,7 @@ class NikobusDiscovery:
             decoded_commands: list[DecodedCommand] = []
             for chunk in chunks_to_process:
                 _LOGGER.debug("Decoding chunk: %r", chunk)
-                decoded_commands.extend(decoder.decode(chunk))
+                decoded_commands.extend(decoder.decode(chunk, module_address=self._module_address))
 
             await self._handle_decoded_commands(self._module_address, decoded_commands)
 
