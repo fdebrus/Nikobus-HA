@@ -262,7 +262,7 @@ class BaseChunkingDecoder:
             raw_chunk_hex=chunk,
         )
 
-        if decoded is None or decoded.get("push_button_address") is None:
+        if decoded is None:
             _LOGGER.debug("Skipped chunk during decode: %r", reversed_chunk)
             return []
 
