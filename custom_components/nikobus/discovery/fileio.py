@@ -13,7 +13,7 @@ async def _write_json_atomic(file_path, data):
 
     def _write(path):
         with open(path, "w", encoding="utf-8") as file:
-            json.dump(data, file, indent=4)
+            json.dump(data, file, indent=4, ensure_ascii=False, sort_keys=False)
 
     directory = os.path.dirname(file_path) or "."
     os.makedirs(directory, exist_ok=True)
@@ -75,43 +75,36 @@ async def update_module_data(hass, discovered_devices):
             "roller_module": _normalize_collection(data.get("roller_module")),
         }
 
-    def _default_channel(module_type: str, index: int) -> dict:
-        channel = {
-            "index": index,
-            "description": f"not_in_use output_{index}",
-            "discovered": True,
-        }
+    def _sanitize_channel(channel: dict, module_type: str) -> dict:
+        allowed_keys = {"description"}
         if module_type == "roller_module":
-            channel.setdefault("operation_time", "00")
-        return channel
+            allowed_keys.add("operation_time")
+        return {k: v for k, v in (channel or {}).items() if k in allowed_keys and v is not None}
 
-    def _sync_channels(module: dict, module_type: str, channels_count: int) -> None:
-        channels = module.get("channels") or []
+    def _sync_channels(channels: list, module_type: str, channels_count: int) -> list:
         if not isinstance(channels, list):
             channels = []
 
         target_count = channels_count or len(channels)
-        if len(channels) < target_count:
-            for idx in range(len(channels) + 1, target_count + 1):
-                channels.append(_default_channel(module_type, idx))
-        elif len(channels) > target_count:
-            _LOGGER.warning(
-                "Trimming channels for module %s from %d to %d to match discovery.",
-                module.get("address", "unknown"),
-                len(channels),
-                target_count,
-            )
-            channels = channels[:target_count]
+        sanitized: list[dict] = []
 
-        for idx, channel in enumerate(channels, start=1):
-            channel["index"] = idx
-            channel.setdefault("discovered", True)
-            if module_type == "roller_module":
-                channel.setdefault("operation_time", "00")
+        for idx in range(target_count):
+            if idx < len(channels):
+                channel = _sanitize_channel(channels[idx], module_type)
+            else:
+                channel = {}
 
-        module["channels"] = channels
+            if "description" not in channel:
+                channel["description"] = f"not_in_use output_{idx + 1}"
 
-    def _merge_module(module_list: list, module: dict) -> None:
+            if module_type == "roller_module" and "operation_time" not in channel:
+                channel["operation_time"] = "00"
+
+            sanitized.append(channel)
+
+        return sanitized
+
+    def _merge_module(module_list: list, module: dict, module_type: str) -> None:
         address = _normalize_address(module.get("address"))
         if not address:
             return
@@ -124,15 +117,12 @@ async def update_module_data(hass, discovered_devices):
 
         timestamp = module.get("last_seen") or datetime.now(timezone.utc).isoformat()
 
-        discovery_fields = {
-            "discovered_name": module.get("discovered_name", ""),
+        discovery_info = {
+            "name": module.get("discovered_name") or module.get("description", ""),
             "category": module.get("category", ""),
             "device_type": module.get("device_type"),
-            "model": module.get("model", ""),
-            "address": address,
             "channels_count": channels_count,
-            "discovered": True,
-            "last_seen": timestamp,
+            "last_discovered": timestamp,
         }
 
         existing = next(
@@ -140,19 +130,39 @@ async def update_module_data(hass, discovered_devices):
             None,
         )
 
-        if existing:
-            existing.setdefault(
-                "description", module.get("description", module.get("discovered_name", ""))
-            )
-            existing.update({k: v for k, v in discovery_fields.items() if v is not None})
-            _sync_channels(existing, module.get("module_type", ""), channels_count)
-        else:
-            new_module = {
-                "description": module.get("description", module.get("discovered_name", "")),
-                "channels": [_default_channel(module.get("module_type", ""), i) for i in range(1, channels_count + 1)],
+        def _merge_discovery(existing_info: dict | None) -> dict:
+            merged = {
+                "name": (existing_info or {}).get("name", ""),
+                "category": (existing_info or {}).get("category", ""),
+                "device_type": (existing_info or {}).get("device_type"),
+                "channels_count": (existing_info or {}).get("channels_count", 0),
+                "last_discovered": (existing_info or {}).get("last_discovered", ""),
             }
-            new_module.update(discovery_fields)
-            _sync_channels(new_module, module.get("module_type", ""), channels_count)
+            for key, value in discovery_info.items():
+                if value is not None:
+                    merged[key] = value
+            return merged
+
+        def _module_base(description_value: str, model_value: str, channels_value: list) -> dict:
+            return {
+                "description": description_value,
+                "model": model_value,
+                "address": address,
+                "discovered_info": _merge_discovery(existing.get("discovered_info") if existing else None),
+                "channels": _sync_channels(channels_value, module_type, channels_count),
+            }
+
+        description = module.get("description", module.get("discovered_name", ""))
+        model_value = module.get("model", "")
+
+        if existing:
+            description = existing.get("description", description)
+            model_value = existing.get("model", model_value)
+            merged_module = _module_base(description, model_value, existing.get("channels") or [])
+            existing.clear()
+            existing.update(merged_module)
+        else:
+            new_module = _module_base(description, model_value, [])
             module_list.append(new_module)
 
     filtered_devices = [
@@ -169,7 +179,7 @@ async def update_module_data(hass, discovered_devices):
         module_type = device.get("module_type", "other_module")
         if module_type not in module_data:
             continue
-        _merge_module(module_data[module_type], device)
+        _merge_module(module_data[module_type], device, module_type)
 
     await write_json_file(file_path, module_data)
 

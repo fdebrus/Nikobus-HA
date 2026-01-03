@@ -107,7 +107,9 @@ class NikobusConfig:
         try:
             transformed_data = self._transform_data_for_writing(data_type, data)
             async with aio_open(file_path, "w") as file:
-                json_data = json.dumps(transformed_data, indent=4)
+                json_data = json.dumps(
+                    transformed_data, indent=4, ensure_ascii=False, sort_keys=False
+                )
                 await file.write(json_data)
 
         except IOError as err:
