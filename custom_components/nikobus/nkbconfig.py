@@ -71,10 +71,30 @@ class NikobusConfig:
 
     def _transform_module_data(self, data: dict) -> dict:
         """Transform module data from a list to a dictionary."""
-        for key in ["switch_module", "dimmer_module", "roller_module", "other_module"]:
-            if key in data:
-                data[key] = {module["address"]: module for module in data[key]}
-        return data
+        transformed: Dict[str, Dict] = {}
+        for module_type, modules in data.items():
+            if isinstance(modules, list):
+                transformed[module_type] = {
+                    module.get("address"): module
+                    for module in modules
+                    if isinstance(module, dict) and module.get("address")
+                }
+            elif isinstance(modules, dict):
+                transformed[module_type] = modules
+            else:
+                transformed[module_type] = {}
+
+        for module_type in (
+            "switch_module",
+            "dimmer_module",
+            "roller_module",
+            "pc_link",
+            "pc_logic",
+            "feedback_module",
+        ):
+            transformed.setdefault(module_type, {})
+
+        return transformed
 
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:
         """Handle the case where the configuration file is not found."""
@@ -94,7 +114,9 @@ class NikobusConfig:
                 "switch_module": {},
                 "dimmer_module": {},
                 "roller_module": {},
-                "other_module": {},
+                "pc_link": {},
+                "pc_logic": {},
+                "feedback_module": {},
             }
 
         raise NikobusDataError(

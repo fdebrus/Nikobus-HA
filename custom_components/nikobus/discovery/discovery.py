@@ -69,6 +69,9 @@ def _infer_module_type(device_type_hex: str, name: str) -> str:
         "03": "dimmer_module",
         "32": "dimmer_module",
         "02": "roller_module",
+        "0A": "pc_link",
+        "08": "pc_logic",
+        "42": "feedback_module",
     }
 
     if device_type_hex in module_type_lookup:
@@ -81,7 +84,13 @@ def _infer_module_type(device_type_hex: str, name: str) -> str:
         return "roller_module"
     if "switch" in name_lower:
         return "switch_module"
-    return "other_module"
+    if "pc link" in name_lower:
+        return "pc_link"
+    if "pc logic" in name_lower:
+        return "pc_logic"
+    if "feedback" in name_lower:
+        return "feedback_module"
+    return "unknown_module"
 
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):

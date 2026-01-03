@@ -7,6 +7,24 @@ from datetime import datetime, timezone
 
 _LOGGER = logging.getLogger(__name__)
 
+MODULE_TYPE_ORDER = [
+    "switch_module",
+    "dimmer_module",
+    "roller_module",
+    "pc_link",
+    "pc_logic",
+    "feedback_module",
+]
+
+DESCRIPTION_PREFIX = {
+    "switch_module": "switch_module_s",
+    "dimmer_module": "dimmer_module_d",
+    "roller_module": "roller_module_r",
+    "pc_link": "pc_link_pcl",
+    "pc_logic": "pc_logic_log",
+    "feedback_module": "feedback_module_fb",
+}
+
 
 def _inline_channels(json_text: str) -> str:
     """Collapse channel objects to a single line while preserving indentation."""
@@ -113,123 +131,161 @@ def _normalize_address(address):
 async def update_module_data(hass, discovered_devices):
     """Create or merge the integration module config from discovery results."""
 
-    def _ensure_structure(data):
-        def _normalize_collection(value):
+    def _ensure_inventory(data: dict | None) -> dict[str, list]:
+        data = data or {}
+
+        def _as_list(value):
             if isinstance(value, list):
-                return value
+                return [item for item in value if isinstance(item, dict)]
             if isinstance(value, dict):
-                return list(value.values())
+                return [item for item in value.values() if isinstance(item, dict)]
             return []
 
-        return {
-            "switch_module": _normalize_collection(data.get("switch_module")),
-            "dimmer_module": _normalize_collection(data.get("dimmer_module")),
-            "roller_module": _normalize_collection(data.get("roller_module")),
-            "other_module": _normalize_collection(data.get("other_module")),
-        }
+        inventory: dict[str, list] = {}
+        for module_type, modules in data.items():
+            inventory[module_type] = _as_list(modules)
 
-    def _sanitize_channel(channel: dict, module_type: str) -> dict:
-        allowed_keys = {"description"}
+        for module_type in MODULE_TYPE_ORDER:
+            inventory.setdefault(module_type, [])
+
+        return inventory
+
+    def _default_channel(module_type: str, index: int) -> dict:
+        channel = {"description": f"not_in_use output_{index}"}
         if module_type == "roller_module":
-            allowed_keys.add("operation_time")
-        return {k: v for k, v in (channel or {}).items() if k in allowed_keys and v is not None}
+            channel["operation_time"] = "60"
+        return channel
 
-    def _sync_channels(channels: list, module_type: str, channels_count: int) -> list:
-        if not isinstance(channels, list):
-            channels = []
+    def _sanitize_channel(module_type: str, channel: dict, index: int) -> dict:
+        sanitized: dict = {}
+        if isinstance(channel, dict):
+            if channel.get("description"):
+                sanitized["description"] = channel["description"]
+            if module_type == "roller_module" and channel.get("operation_time") is not None:
+                sanitized["operation_time"] = str(channel.get("operation_time"))
 
-        if channels_count is None or channels_count <= 0:
-            return []
+        if "description" not in sanitized:
+            sanitized["description"] = f"not_in_use output_{index}"
 
-        target_count = channels_count or len(channels)
-        sanitized: list[dict] = []
-
-        for idx in range(target_count):
-            if idx < len(channels):
-                channel = _sanitize_channel(channels[idx], module_type)
-            else:
-                channel = {}
-
-            if module_type == "roller_module" and "operation_time" not in channel:
-                channel["operation_time"] = "00"
-
-            if "description" not in channel:
-                channel["description"] = ""
-
-            sanitized.append(channel)
+        if module_type == "roller_module" and "operation_time" not in sanitized:
+            sanitized["operation_time"] = "60"
 
         return sanitized
 
-    def _merge_module(module_list: list, module: dict, module_type: str) -> None:
+    def _build_channels(module_type: str, channels: list, channels_count: int) -> list:
+        if channels_count <= 0:
+            return []
+
+        sanitized_channels: list[dict] = []
+        channels = channels or []
+
+        for idx in range(channels_count):
+            if idx < len(channels):
+                sanitized_channels.append(
+                    _sanitize_channel(module_type, channels[idx], idx + 1)
+                )
+            else:
+                sanitized_channels.append(_default_channel(module_type, idx + 1))
+
+        if len(channels) > channels_count:
+            _LOGGER.warning(
+                "Module %s has %s channels but discovery reported %s. Extra channels were trimmed.",
+                module_type,
+                len(channels),
+                channels_count,
+            )
+
+        return sanitized_channels
+
+    def _sanitize_discovered_info(info: dict | None) -> dict:
+        info = info or {}
+        sanitized: dict = {}
+        for key in ("name", "device_type", "channels_count", "last_discovered"):
+            if key not in info:
+                continue
+            value = info.get(key)
+            if value in (None, ""):
+                continue
+            if key == "channels_count":
+                try:
+                    value = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if value <= 0:
+                    continue
+            sanitized[key] = value
+        return sanitized
+
+    def _canonical_module(module: dict, module_type: str) -> dict:
         address = _normalize_address(module.get("address"))
-        if not address:
-            return
+        description = module.get("description", "") or ""
+        model = module.get("model", "") or ""
+        discovered_info = _sanitize_discovered_info(module.get("discovered_info"))
 
-        channels_count = module.get("channels_count") or module.get("channels") or 0
+        channels_from_discovery = discovered_info.get("channels_count")
+        fallback_channel_count = module.get(
+            "channels_count", len(module.get("channels", []))
+        )
         try:
-            channels_count = int(channels_count)
+            fallback_channel_count = int(fallback_channel_count)
         except (TypeError, ValueError):
-            channels_count = 0
+            fallback_channel_count = None
 
-        timestamp = module.get("last_seen") or datetime.now(timezone.utc).isoformat()
+        if channels_from_discovery is None:
+            channels_from_discovery = (
+                fallback_channel_count if fallback_channel_count is not None else 0
+            )
+            if channels_from_discovery > 0:
+                discovered_info["channels_count"] = channels_from_discovery
 
-        discovery_name = module.get("discovered_name") or module.get("description", "")
-        discovery_channels = channels_count if channels_count and channels_count > 0 else None
-        discovery_info = {
-            "name": discovery_name,
-            "device_type": module.get("device_type"),
-            "last_discovered": timestamp,
-        }
-        if discovery_channels:
-            discovery_info["channels_count"] = discovery_channels
-
-        existing = next(
-            (item for item in module_list if _normalize_address(item.get("address")) == address),
-            None,
+        channels_list = _build_channels(
+            module_type, module.get("channels", []), channels_from_discovery or 0
         )
 
-        def _merge_discovery(existing_info: dict | None) -> dict:
-            merged = {}
-            if existing_info:
-                for key in ("name", "device_type", "channels_count", "last_discovered"):
-                    if key in existing_info and existing_info[key]:
-                        merged[key] = existing_info[key]
+        canonical = {
+            "description": description,
+            "model": model,
+            "address": address,
+            "discovered_info": discovered_info,
+        }
 
-            for key, value in discovery_info.items():
-                if value:
-                    if key == "channels_count" and value <= 0:
-                        continue
-                    merged[key] = value
+        if channels_list:
+            canonical["channels"] = channels_list
 
-            if "channels_count" in merged and merged["channels_count"] <= 0:
-                merged.pop("channels_count", None)
+        return canonical
 
-            return merged
+    def _inventory_to_map(inventory: dict[str, list]) -> dict[str, dict]:
+        mapped: dict[str, dict] = {}
+        for module_type, modules in inventory.items():
+            module_lookup: dict[str, dict] = {}
+            for module in modules:
+                address = _normalize_address(module.get("address"))
+                if not address:
+                    continue
+                module_lookup[address] = _canonical_module(module, module_type)
+            mapped[module_type] = module_lookup
+        return mapped
 
-        def _module_base(description_value: str, model_value: str, channels_value: list) -> dict:
-            base = {
-                "description": description_value,
-                "model": model_value,
-                "address": address,
-                "discovered_info": _merge_discovery(existing.get("discovered_info") if existing else None),
-            }
-            sanitized_channels = _sync_channels(channels_value, module_type, channels_count)
-            if sanitized_channels:
-                base["channels"] = sanitized_channels
-            return base
+    def _generate_description(module_type: str, module_lookup: dict[str, dict]) -> str:
+        prefix = DESCRIPTION_PREFIX.get(module_type, f"{module_type}_")
+        existing = {module.get("description") for module in module_lookup.values()}
+        counter = 1
+        candidate = f"{prefix}{counter}"
+        while candidate in existing:
+            counter += 1
+            candidate = f"{prefix}{counter}"
+        return candidate
 
-        description = module.get("description", module.get("discovered_name", ""))
-        model_value = module.get("model", "")
-
-        if existing:
-            description = existing.get("description", description)
-            model_value = existing.get("model", model_value)
-            merged_module = _module_base(description, model_value, existing.get("channels") or [])
-            existing.clear()
-            existing.update(merged_module)
-        else:
-            new_module = _module_base(description, model_value, [])
-            module_list.append(new_module)
+    def _refresh_discovered_info(channels_count: int, device: dict) -> dict:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        discovery_info = {
+            "name": device.get("discovered_name") or device.get("description", ""),
+            "device_type": device.get("device_type"),
+            "last_discovered": timestamp,
+        }
+        if channels_count > 0:
+            discovery_info["channels_count"] = channels_count
+        return discovery_info
 
     filtered_devices = [
         device
@@ -238,17 +294,74 @@ async def update_module_data(hass, discovered_devices):
     ]
 
     file_path = hass.config.path("nikobus_module_config.json")
-    existing_data = await read_json_file(file_path) or {}
-    module_data = _ensure_structure(existing_data)
+    existing_data = await read_json_file(file_path)
+
+    inventory = _ensure_inventory(existing_data)
+    inventory_map = _inventory_to_map(inventory)
 
     for device in filtered_devices:
-        module_type = device.get("module_type", "other_module")
-        target_list = module_data.get(module_type)
-        if target_list is None:
-            target_list = module_data["other_module"]
-        _merge_module(target_list, device, module_type)
+        module_type = device.get("module_type", "unknown_module")
+        address = _normalize_address(device.get("address"))
+        if not address:
+            continue
 
-    await write_json_file(file_path, module_data, inline_channels=True)
+        module_lookup = inventory_map.setdefault(module_type, {})
+
+        channels_count = device.get("channels_count") or device.get("channels") or 0
+        try:
+            channels_count = int(channels_count)
+        except (TypeError, ValueError):
+            channels_count = 0
+
+        discovered_info = _refresh_discovered_info(channels_count, device)
+
+        existing_module = module_lookup.get(address)
+        if existing_module:
+            description = existing_module.get("description") or _generate_description(
+                module_type, module_lookup
+            )
+            model_value = existing_module.get("model")
+            discovered_model = device.get("model", "")
+            if not model_value or (
+                discovered_model and discovered_model != model_value
+            ):
+                model_value = discovered_model
+            channels = existing_module.get("channels", [])
+        else:
+            description = _generate_description(module_type, module_lookup)
+            model_value = device.get("model", "")
+            channels = []
+
+        updated_module = {
+            "description": description,
+            "model": model_value,
+            "address": address,
+            "discovered_info": discovered_info,
+        }
+
+        if channels_count > 0:
+            updated_module["channels"] = _build_channels(
+                module_type, channels, channels_count
+            )
+        module_lookup[address] = updated_module
+
+    # Rebuild inventory lists with canonical ordering and sanitization
+    ordered_inventory: dict[str, list] = {}
+    for module_type in MODULE_TYPE_ORDER:
+        module_entries = inventory_map.get(module_type, {})
+        ordered_inventory[module_type] = [
+            _canonical_module(module, module_type)
+            for module in module_entries.values()
+        ]
+
+    for module_type, modules in inventory_map.items():
+        if module_type in MODULE_TYPE_ORDER:
+            continue
+        ordered_inventory[module_type] = [
+            _canonical_module(module, module_type) for module in modules.values()
+        ]
+
+    await write_json_file(file_path, ordered_inventory, inline_channels=True)
 
 
 async def update_button_data(hass, discovered_devices, key_mapping, convert_nikobus_address):
@@ -536,3 +649,4 @@ async def merge_discovered_links(hass, command_mapping):
         )
 
     return updated_buttons, links_added, outputs_added
+
