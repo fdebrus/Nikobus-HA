@@ -328,6 +328,8 @@ def _decode_switch_or_roller(
     coordinator_get_button_channels,
     convert_func,
     raw_bytes,
+    *,
+    logical_channel_count: int | None = None,
 ):
     # Normalized layout (nibbles):
     #   byte0 -> [ignored_hi, T2]
@@ -367,8 +369,10 @@ def _decode_switch_or_roller(
     )
 
     button_channel_count = coordinator_get_button_channels(button_address)
-    logical_channel_count = len(channel_mapping)
     channel_count = logical_channel_count
+    if channel_count is None:
+        channel_count = {"switch_module": 12, "roller_module": 6}.get(module_type)
+        logical_channel_count = channel_count
 
     _LOGGER.debug(
         "Channel count comparison | logical_channel_count=%s button_channel_count=%s",
@@ -684,6 +688,7 @@ def decode_command_payload(
     timer_mappings,
     coordinator_get_button_channels,
     convert_func=None,
+    logical_channel_count: int | None = None,
     *,
     reverse_before_decode: bool = False,
     raw_chunk_hex: str | None = None,
@@ -750,6 +755,7 @@ def decode_command_payload(
             coordinator_get_button_channels,
             convert_func,
             raw_bytes,
+            logical_channel_count=logical_channel_count,
         )
 
     elif module_type == "dimmer_module":

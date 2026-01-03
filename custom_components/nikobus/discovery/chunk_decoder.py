@@ -46,9 +46,15 @@ class BaseChunkingDecoder:
     def __init__(self, coordinator, module_type: str):
         self._coordinator = coordinator
         self.module_type = module_type
+        self._logical_channel_count: int | None = None
 
     def can_handle(self, module_type: str) -> bool:
         return module_type == self.module_type
+
+    def set_logical_channel_count(self, channel_count: int | None) -> None:
+        """Store the module-specific logical channel count for decoding."""
+
+        self._logical_channel_count = channel_count
 
     def _score_chunk(self, chunk: str) -> tuple[float, dict[str, Any]]:
         chunk = chunk.strip().upper()
@@ -86,6 +92,7 @@ class BaseChunkingDecoder:
                 },
                 self._coordinator.get_button_channels,
                 convert_nikobus_address,
+                logical_channel_count=self._logical_channel_count,
                 reverse_before_decode=True,
                 raw_chunk_hex=chunk,
             )
@@ -237,6 +244,7 @@ class BaseChunkingDecoder:
             },
             self._coordinator.get_button_channels,
             convert_nikobus_address,
+            logical_channel_count=self._logical_channel_count,
             reverse_before_decode=True,
             raw_chunk_hex=chunk,
         )
