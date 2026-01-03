@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 
 from .base import DecodedCommand
 from .dimmer_decoder import DimmerDecoder
@@ -56,6 +57,31 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
 
     if dedupe_key not in existing_keys:
         outputs.append(output_definition)
+
+
+def _infer_module_type(device_type_hex: str, name: str) -> str:
+    """Map device type or name to module type buckets."""
+
+    module_type_lookup = {
+        "01": "switch_module",
+        "09": "switch_module",
+        "31": "switch_module",
+        "03": "dimmer_module",
+        "32": "dimmer_module",
+        "02": "roller_module",
+    }
+
+    if device_type_hex in module_type_lookup:
+        return module_type_lookup[device_type_hex]
+
+    name_lower = name.lower()
+    if "dimmer" in name_lower or "dim controller" in name_lower:
+        return "dimmer_module"
+    if "roller" in name_lower:
+        return "roller_module"
+    if "switch" in name_lower:
+        return "switch_module"
+    return "other_module"
 
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):
@@ -205,14 +231,37 @@ class NikobusDiscovery:
                 return
 
             if converted_address not in self.discovered_devices:
+                module_type = _infer_module_type(device_type_hex, name)
+                last_seen = datetime.now(timezone.utc).isoformat()
                 base_device = {
                     "description": name,
+                    "discovered_name": name,
                     "category": category,
+                    "device_type": device_type_hex,
                     "model": model,
                     "address": converted_address,
                     "channels": channels,
+                    "channels_count": channels,
+                    "module_type": module_type,
+                    "discovered": True,
+                    "last_seen": last_seen,
                 }
                 self.discovered_devices[converted_address] = base_device
+            else:
+                existing = self.discovered_devices[converted_address]
+                existing.update(
+                    {
+                        "discovered_name": name,
+                        "category": category,
+                        "device_type": device_type_hex,
+                        "model": model,
+                        "channels": channels,
+                        "channels_count": channels,
+                        "module_type": _infer_module_type(device_type_hex, name),
+                        "discovered": True,
+                        "last_seen": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
 
             _LOGGER.debug(
                 "Inventory classification | module_address=%s device_type=%s model=%s channels=%s",

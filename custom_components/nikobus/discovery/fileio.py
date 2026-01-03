@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import tempfile
+from datetime import datetime, timezone
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,31 +59,118 @@ def _normalize_address(address):
 
 
 async def update_module_data(hass, discovered_devices):
-    """
-    Write discovered module data to a JSON file.
-    Expects discovered_devices to be a dict with address as key.
-    """
-    module_data = {
-        "switch_module": {},
-        "dimmer_module": {},
-        "roller_module": {},
-        "other_module": {},
-    }
-    for device in discovered_devices.values():
-        if device.get("category") == "Button":
-            continue
-        address = device.get("address")
-        description = device.get("description", "")
-        if "Switch Module" in description or "Compact Switch Module" in description:
-            module_data["switch_module"][address] = device
-        elif "Dimmer Module" in description or "Compact Dim Controller" in description:
-            module_data["dimmer_module"][address] = device
-        elif "Roller Shutter Module" in description:
-            module_data["roller_module"][address] = device
-        else:
-            module_data["other_module"][address] = device
+    """Create or merge the integration module config from discovery results."""
 
-    file_path = hass.config.path("nikobus_module_discovered.json")
+    def _ensure_structure(data):
+        def _normalize_collection(value):
+            if isinstance(value, list):
+                return value
+            if isinstance(value, dict):
+                return list(value.values())
+            return []
+
+        return {
+            "switch_module": _normalize_collection(data.get("switch_module")),
+            "dimmer_module": _normalize_collection(data.get("dimmer_module")),
+            "roller_module": _normalize_collection(data.get("roller_module")),
+        }
+
+    def _default_channel(module_type: str, index: int) -> dict:
+        channel = {
+            "index": index,
+            "description": f"not_in_use output_{index}",
+            "discovered": True,
+        }
+        if module_type == "roller_module":
+            channel.setdefault("operation_time", "00")
+        return channel
+
+    def _sync_channels(module: dict, module_type: str, channels_count: int) -> None:
+        channels = module.get("channels") or []
+        if not isinstance(channels, list):
+            channels = []
+
+        target_count = channels_count or len(channels)
+        if len(channels) < target_count:
+            for idx in range(len(channels) + 1, target_count + 1):
+                channels.append(_default_channel(module_type, idx))
+        elif len(channels) > target_count:
+            _LOGGER.warning(
+                "Trimming channels for module %s from %d to %d to match discovery.",
+                module.get("address", "unknown"),
+                len(channels),
+                target_count,
+            )
+            channels = channels[:target_count]
+
+        for idx, channel in enumerate(channels, start=1):
+            channel["index"] = idx
+            channel.setdefault("discovered", True)
+            if module_type == "roller_module":
+                channel.setdefault("operation_time", "00")
+
+        module["channels"] = channels
+
+    def _merge_module(module_list: list, module: dict) -> None:
+        address = _normalize_address(module.get("address"))
+        if not address:
+            return
+
+        channels_count = module.get("channels_count") or module.get("channels") or 0
+        try:
+            channels_count = int(channels_count)
+        except (TypeError, ValueError):
+            channels_count = 0
+
+        timestamp = module.get("last_seen") or datetime.now(timezone.utc).isoformat()
+
+        discovery_fields = {
+            "discovered_name": module.get("discovered_name", ""),
+            "category": module.get("category", ""),
+            "device_type": module.get("device_type"),
+            "model": module.get("model", ""),
+            "address": address,
+            "channels_count": channels_count,
+            "discovered": True,
+            "last_seen": timestamp,
+        }
+
+        existing = next(
+            (item for item in module_list if _normalize_address(item.get("address")) == address),
+            None,
+        )
+
+        if existing:
+            existing.setdefault(
+                "description", module.get("description", module.get("discovered_name", ""))
+            )
+            existing.update({k: v for k, v in discovery_fields.items() if v is not None})
+            _sync_channels(existing, module.get("module_type", ""), channels_count)
+        else:
+            new_module = {
+                "description": module.get("description", module.get("discovered_name", "")),
+                "channels": [_default_channel(module.get("module_type", ""), i) for i in range(1, channels_count + 1)],
+            }
+            new_module.update(discovery_fields)
+            _sync_channels(new_module, module.get("module_type", ""), channels_count)
+            module_list.append(new_module)
+
+    filtered_devices = [
+        device
+        for device in discovered_devices.values()
+        if device.get("category") == "Module"
+    ]
+
+    file_path = hass.config.path("nikobus_module_config.json")
+    existing_data = await read_json_file(file_path) or {}
+    module_data = _ensure_structure(existing_data)
+
+    for device in filtered_devices:
+        module_type = device.get("module_type", "other_module")
+        if module_type not in module_data:
+            continue
+        _merge_module(module_data[module_type], device)
+
     await write_json_file(file_path, module_data)
 
 
