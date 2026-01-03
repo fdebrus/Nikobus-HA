@@ -159,13 +159,13 @@ async def update_module_data(hass, discovered_devices):
     def _sanitize_channel(module_type: str, channel: dict, index: int) -> dict:
         sanitized: dict = {}
         if isinstance(channel, dict):
-            if channel.get("description"):
-                sanitized["description"] = channel["description"]
+            if "description" in channel:
+                sanitized["description"] = channel.get("description") or ""
             if module_type == "roller_module" and channel.get("operation_time") is not None:
                 sanitized["operation_time"] = str(channel.get("operation_time"))
 
         if "description" not in sanitized:
-            sanitized["description"] = f"not_in_use output_{index}"
+            sanitized["description"] = ""
 
         if module_type == "roller_module" and "operation_time" not in sanitized:
             sanitized["operation_time"] = "60"
@@ -177,21 +177,19 @@ async def update_module_data(hass, discovered_devices):
             return []
 
         sanitized_channels: list[dict] = []
-        channels = channels or []
+        channels_list = channels if isinstance(channels, list) else []
 
         for idx in range(channels_count):
-            if idx < len(channels):
-                sanitized_channels.append(
-                    _sanitize_channel(module_type, channels[idx], idx + 1)
+            if idx < len(channels_list):
+                sanitized_channel = _sanitize_channel(
+                    module_type, channels_list[idx], idx + 1
                 )
             else:
-                channel = {}
+                sanitized_channel = {"description": ""}
+                if module_type == "roller_module":
+                    sanitized_channel["operation_time"] = "60"
 
-            if module_type == "roller_module" and "operation_time" not in channel:
-                channel["operation_time"] = "60"
-
-            if "description" not in channel:
-                channel["description"] = ""
+            sanitized_channels.append(sanitized_channel)
 
         return sanitized_channels
 
@@ -275,7 +273,7 @@ async def update_module_data(hass, discovered_devices):
         return candidate
 
     def _refresh_discovered_info(channels_count: int, device: dict) -> dict:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = device.get("last_seen") or datetime.now(timezone.utc).isoformat()
         discovery_info = {
             "name": device.get("discovered_name") or device.get("description", ""),
             "device_type": device.get("device_type"),

@@ -1,7 +1,5 @@
 """Constants for the Nikobus integration."""
 
-from typing import Final
-
 # =============================================================================
 # Discovery
 # =============================================================================
@@ -136,6 +134,33 @@ DEVICE_TYPES = {
         "Name": "Switch Interface",
     },
 }
+
+
+def get_module_type_from_device_type(device_type_hex: str) -> str:
+    """Return the module type bucket for a given device type hex code."""
+
+    normalized_type = (device_type_hex or "").strip().upper()
+    device_info = DEVICE_TYPES.get(normalized_type, {})
+    name = str(device_info.get("Name", "")).lower()
+    category = str(device_info.get("Category", "")).lower()
+
+    if category != "module":
+        return "other_module"
+    if "pc link" in name:
+        return "pc_link"
+    if "pc logic" in name:
+        return "pc_logic"
+    if "feedback" in name:
+        return "feedback_module"
+    if "roller" in name:
+        return "roller_module"
+    if "dimmer" in name or "dim controller" in name:
+        return "dimmer_module"
+    if "switch" in name:
+        return "switch_module"
+
+    return "other_module"
+
 
 CHANNEL_MAPPING = {
     0: "Channel 1",

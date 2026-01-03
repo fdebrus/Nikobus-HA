@@ -6,7 +6,13 @@ from .base import DecodedCommand
 from .dimmer_decoder import DimmerDecoder
 from .shutter_decoder import ShutterDecoder
 from .switch_decoder import SwitchDecoder
-from .mapping import DEVICE_TYPES, KEY_MAPPING, KEY_MAPPING_MODULE, CHANNEL_MAPPING
+from .mapping import (
+    CHANNEL_MAPPING,
+    DEVICE_TYPES,
+    KEY_MAPPING,
+    KEY_MAPPING_MODULE,
+    get_module_type_from_device_type,
+)
 from .protocol import classify_device_type, convert_nikobus_address, reverse_hex
 from ..const import DEVICE_INVENTORY
 from .fileio import merge_discovered_links, update_button_data, update_module_data
@@ -57,41 +63,6 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
 
     if dedupe_key not in existing_keys:
         outputs.append(output_definition)
-
-
-def _infer_module_type(device_type_hex: str, name: str) -> str:
-    """Map device type or name to module type buckets."""
-
-    module_type_lookup = {
-        "01": "switch_module",
-        "09": "switch_module",
-        "31": "switch_module",
-        "03": "dimmer_module",
-        "32": "dimmer_module",
-        "02": "roller_module",
-        "0A": "pc_link",
-        "08": "pc_logic",
-        "42": "feedback_module",
-    }
-
-    if device_type_hex in module_type_lookup:
-        return module_type_lookup[device_type_hex]
-
-    name_lower = name.lower()
-    if "dimmer" in name_lower or "dim controller" in name_lower:
-        return "dimmer_module"
-    if "roller" in name_lower:
-        return "roller_module"
-    if "switch" in name_lower:
-        return "switch_module"
-    if "pc link" in name_lower:
-        return "pc_link"
-    if "pc logic" in name_lower:
-        return "pc_logic"
-    if "feedback" in name_lower:
-        return "feedback_module"
-    return "unknown_module"
-
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):
         self.discovered_devices = {}
@@ -240,7 +211,7 @@ class NikobusDiscovery:
                 return
 
             if converted_address not in self.discovered_devices:
-                module_type = _infer_module_type(device_type_hex, name)
+                module_type = get_module_type_from_device_type(device_type_hex)
                 last_seen = datetime.now(timezone.utc).isoformat()
                 base_device = {
                     "description": name,
@@ -266,7 +237,7 @@ class NikobusDiscovery:
                         "model": model,
                         "channels": channels,
                         "channels_count": channels,
-                        "module_type": _infer_module_type(device_type_hex, name),
+                        "module_type": get_module_type_from_device_type(device_type_hex),
                         "discovered": True,
                         "last_seen": datetime.now(timezone.utc).isoformat(),
                     }
