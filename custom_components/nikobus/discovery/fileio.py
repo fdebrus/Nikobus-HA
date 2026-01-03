@@ -3,7 +3,8 @@ import json
 import logging
 import os
 import tempfile
-from datetime import datetime, timezone
+
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ async def update_module_data(hass, discovered_devices):
         return candidate
 
     def _refresh_discovered_info(channels_count: int, device: dict) -> dict:
-        timestamp = device.get("last_seen") or datetime.now(timezone.utc).isoformat()
+        timestamp = device.get("last_seen") or dt_util.now().isoformat()
         discovery_info = {
             "name": device.get("discovered_name") or device.get("description", ""),
             "device_type": device.get("device_type"),
