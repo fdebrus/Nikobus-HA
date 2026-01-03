@@ -63,6 +63,16 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
 
     if dedupe_key not in existing_keys:
         outputs.append(output_definition)
+
+
+async def _notify_discovery_finished(discovery) -> None:
+    """Call the discovery finished callback when available."""
+
+    callback = getattr(discovery, "on_discovery_finished", None)
+    if callback:
+        await callback()
+
+
 class NikobusDiscovery:
     def __init__(self, hass, coordinator):
         self.discovered_devices = {}
@@ -84,12 +94,9 @@ class NikobusDiscovery:
         self._module_channels: int | None = None
         self._message_complete = False
         self._timeout_task = None
-        if hasattr(self._coordinator, "discovery_running"):
-            self._coordinator.discovery_running = False
-        if hasattr(self._coordinator, "discovery_module"):
-            self._coordinator.discovery_module = False
-        if hasattr(self._coordinator, "discovery_module_address"):
-            self._coordinator.discovery_module_address = None
+        self._coordinator.discovery_running = False
+        self._coordinator.discovery_module = False
+        self._coordinator.discovery_module_address = None
 
     def _get_decoder(self):
         for decoder in getattr(self, "_decoders", []):
@@ -150,8 +157,7 @@ class NikobusDiscovery:
                     await asyncio.sleep(0.5)
                 _LOGGER.info("Completed discovery for module: %s", addr)
             self.reset_state()
-            if hasattr(self, "on_discovery_finished") and self.on_discovery_finished:
-                await self.on_discovery_finished()
+            await _notify_discovery_finished(self)
             return
 
         base_command = f"10{device_address}"
@@ -189,8 +195,7 @@ class NikobusDiscovery:
                 self._message_complete = True
                 self._cancel_timeout()
                 self.reset_state()
-                if hasattr(self, "on_discovery_finished") and self.on_discovery_finished:
-                    await self.on_discovery_finished()
+                await _notify_discovery_finished(self)
                 return
 
             device_info = classify_device_type(device_type_hex, DEVICE_TYPES)
@@ -306,16 +311,13 @@ class NikobusDiscovery:
                 decoder.set_logical_channel_count(self._module_channels)
 
             if decoder.module_type == "dimmer_module":
-                if hasattr(decoder, "set_logical_channel_count"):
-                    decoder.set_logical_channel_count(self._module_channels)
                 commands = decoder.decode(message)
                 if commands:
                     self._module_address = address
                     await self._handle_decoded_commands(address, commands)
                     self._message_complete = True
                     self.reset_state()
-                    if hasattr(self, "on_discovery_finished") and self.on_discovery_finished:
-                        await self.on_discovery_finished()
+                    await _notify_discovery_finished(self)
                 else:
                     _LOGGER.debug("Dimmer decoder returned no commands for message: %s", message)
                 return
@@ -440,8 +442,7 @@ class NikobusDiscovery:
             _LOGGER.error("Error during process_complete_message: %s", e)
         finally:
             self.reset_state()
-            if hasattr(self, "on_discovery_finished") and self.on_discovery_finished:
-                await self.on_discovery_finished()
+            await _notify_discovery_finished(self)
 
 
 def run_decoder_harness(coordinator):
