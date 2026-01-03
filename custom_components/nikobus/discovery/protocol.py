@@ -5,8 +5,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 _DIMMER_CANDIDATE_SUCCESS: dict[str, int] = {}
-_ROLLER_CHANNEL_POSITION_STATS: dict[str, dict[str, Any]] = {}
-_ROLLER_CHANNEL_LOCK_FRAMES = 10
 
 
 def _module_channel_count_or_default(
@@ -375,105 +373,6 @@ def _extract_all_nibbles(raw_bytes: list[str]):
     return nibble_map
 
 
-def _roller_tracker_key(module_address: str | None, channel_count: int | None) -> str:
-    key = module_address or "unknown"
-    if channel_count is not None:
-        return f"{key}|{channel_count}"
-    return key
-
-
-def _reset_or_get_roller_tracker(key: str, channel_count: int | None):
-    tracker = _ROLLER_CHANNEL_POSITION_STATS.get(key)
-    if tracker is None or tracker.get("channel_count") != channel_count:
-        tracker = {
-            "channel_count": channel_count,
-            "counts": {},
-            "frames": 0,
-            "locked_source": None,
-        }
-        _ROLLER_CHANNEL_POSITION_STATS[key] = tracker
-    return tracker
-
-
-def _record_roller_channel_observations(
-    tracker: dict[str, Any],
-    channel_count: int | None,
-    channel_candidates: list[tuple[str, int | None]],
-):
-    if channel_count is None:
-        return tracker
-
-    in_range_seen = False
-    for source, candidate in channel_candidates:
-        if candidate is None:
-            continue
-        if 0 <= candidate < channel_count:
-            tracker["counts"][source] = tracker["counts"].get(source, 0) + 1
-            in_range_seen = True
-
-    if in_range_seen:
-        tracker["frames"] = tracker.get("frames", 0) + 1
-
-    if (
-        tracker.get("locked_source") is None
-        and tracker.get("frames", 0) >= _ROLLER_CHANNEL_LOCK_FRAMES
-        and tracker.get("counts")
-    ):
-        tracker["locked_source"] = max(
-            tracker["counts"].items(), key=lambda item: (item[1], item[0])
-        )[0]
-
-    return tracker
-
-
-def _prioritize_roller_channel_candidates(
-    channel_candidates: list[tuple[str, int | None]],
-    channel_count: int | None,
-    tracker: dict[str, Any],
-):
-    ordered = list(channel_candidates)
-    selection_reason = "original_order"
-    source_order = {source: idx for idx, (source, _) in enumerate(channel_candidates)}
-
-    locked_source = tracker.get("locked_source")
-    if locked_source:
-        locked_candidate = next(
-            (candidate for candidate in channel_candidates if candidate[0] == locked_source),
-            None,
-        )
-        if locked_candidate:
-            ordered = [locked_candidate] + [c for c in channel_candidates if c[0] != locked_source]
-            selection_reason = f"locked_source:{locked_source}"
-            return ordered, selection_reason
-
-    if channel_count is not None:
-        in_range_candidates = [
-            (source, candidate)
-            for source, candidate in channel_candidates
-            if candidate is not None and 0 <= candidate < channel_count
-        ]
-
-        if in_range_candidates:
-            if len(in_range_candidates) > 1:
-                in_range_candidates = sorted(
-                    in_range_candidates,
-                    key=lambda item: (
-                        -tracker.get("counts", {}).get(item[0], 0),
-                        source_order.get(item[0], 0),
-                    ),
-                )
-                selection_reason = "in_range_most_frequent"
-            else:
-                selection_reason = "single_in_range"
-
-            ordered = in_range_candidates + [
-                candidate for candidate in ordered if candidate not in in_range_candidates
-            ]
-            return ordered, selection_reason
-
-    return ordered, selection_reason
-
-
 def _channel_index_from_mask(
     channel_raw: int | None,
     channel_mapping: dict[int, str],
@@ -818,10 +717,22 @@ def _decode_roller(
         _LOGGER.error("Invalid command bytes: %s", raw_bytes)
         return None
 
-    channel_candidates = [
+    raw_channel_candidates = [
         ("byte1_low", _nibble_low(raw_bytes, 1)),
         ("byte2_low", _nibble_low(raw_bytes, 2)),
+        ("byte3_low", _nibble_low(raw_bytes, 3)),
     ]
+
+    # Roller payloads have shown channel nibbles drifting between bytes and
+    # occasionally setting the high bit. We keep raw and masked variants for
+    # each plausible nibble and pick per-payload instead of tracking state
+    # across frames.
+    channel_candidates: list[tuple[str, int | None]] = []
+
+    for source, candidate in raw_channel_candidates:
+        channel_candidates.append((source, candidate))
+        if candidate is not None:
+            channel_candidates.append((f"{source}_mask7", candidate & 0x7))
 
     button_address_hex = payload_hex[-6:]
     button_address = get_button_address(button_address_hex)
@@ -861,10 +772,6 @@ def _decode_roller(
         module_address, "roller_module", logical_channel_count, coordinator_get_module_channels
     )
 
-    channel_key = _roller_tracker_key(module_address, channel_count)
-    tracker = _reset_or_get_roller_tracker(channel_key, channel_count)
-    tracker = _record_roller_channel_observations(tracker, channel_count, channel_candidates)
-
     nibble_map = _extract_all_nibbles(raw_bytes)
 
     _LOGGER.debug(
@@ -878,39 +785,62 @@ def _decode_roller(
         nibble_map,
     )
 
-    _LOGGER.debug(
-        "Channel count comparison | module_address=%s module_channel_count=%s button_channel_count=%s tracker_frames=%s tracker_counts=%s tracker_locked=%s",
-        module_address,
-        channel_count,
-        button_channel_count,
-        tracker.get("frames"),
-        tracker.get("counts"),
-        tracker.get("locked_source"),
-    )
-
-    ordered_channels, selection_reason = _prioritize_roller_channel_candidates(
-        channel_candidates, channel_count, tracker
-    )
-
+    selection_reason = "no_candidates"
     channel_raw = None
     channel_mask = None
     channel_source = None
 
-    for source, candidate in ordered_channels:
-        idx, mask = _channel_index_from_mask(candidate, channel_mapping, "roller_module")
-        if idx is None:
-            continue
-        if channel_count is None or 0 <= idx < channel_count:
-            channel_raw = idx
-            channel_mask = mask
-            channel_source = source
-            break
+    # Deterministic priority avoids the previous global tracker that could lock
+    # onto the first in-range nibble (often byte2_low) even when it produced the
+    # wrong shutter output mapping.
+    priority = [
+        "byte1_low",
+        "byte1_low_mask7",
+        "byte2_low",
+        "byte2_low_mask7",
+        "byte3_low",
+        "byte3_low_mask7",
+    ]
 
-    if channel_raw is None and ordered_channels:
-        channel_raw, channel_mask = _channel_index_from_mask(
-            ordered_channels[0][1], channel_mapping, "roller_module"
+    in_range_candidates = []
+    for source, candidate in channel_candidates:
+        if candidate is None:
+            continue
+        if channel_count is None or 0 <= candidate < channel_count:
+            in_range_candidates.append((source, candidate))
+
+    if in_range_candidates:
+        ordered = sorted(
+            in_range_candidates,
+            key=lambda item: priority.index(item[0])
+            if item[0] in priority
+            else len(priority),
         )
-        channel_source = ordered_channels[0][0]
+        channel_source, selected_value = ordered[0]
+        channel_raw, channel_mask = _channel_index_from_mask(
+            selected_value, channel_mapping, "roller_module"
+        )
+        selection_reason = "priority_in_range"
+    else:
+        fallback = next(((s, c) for s, c in channel_candidates if c is not None), None)
+        if fallback:
+            channel_source, selected_value = fallback
+            channel_raw, channel_mask = _channel_index_from_mask(
+                selected_value, channel_mapping, "roller_module"
+            )
+            selection_reason = "fallback_first_non_null"
+
+    if channel_raw is None:
+        _LOGGER.debug(
+            "Skipping roller payload after channel selection | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s candidates=%s selection_reason=%s",
+            module_address,
+            channel_count,
+            raw_chunk_hex or payload_hex,
+            reversed_chunk_hex or payload_hex,
+            channel_candidates,
+            selection_reason,
+        )
+        return None
 
     if channel_raw in {0xE, 0xF}:
         _LOGGER.debug(
@@ -954,20 +884,18 @@ def _decode_roller(
     )
 
     _LOGGER.debug(
-        "Channel extraction | raw_chunk=%s reversed_payload=%s candidates=%s ordered_candidates=%s selected=%s selected_source=%s mask=%s channel_count=%s button_channel_count=%s selection_reason=%s tracker_frames=%s tracker_locked=%s tracker_counts=%s",
-        payload_hex,
-        raw_bytes,
+        "Roller channel decision | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s nibbles=%s candidates=%s selected_channel=%s selected_source=%s mask=%s button_channel_count=%s selection_reason=%s",
+        module_address,
+        channel_count,
+        raw_chunk_hex or payload_hex,
+        reversed_chunk_hex or payload_hex,
+        nibble_map,
         channel_candidates,
-        ordered_channels,
         channel_raw,
         channel_source,
         channel_mask,
-        channel_count,
         button_channel_count,
         selection_reason,
-        tracker.get("frames"),
-        tracker.get("locked_source"),
-        tracker.get("counts"),
     )
 
     _LOGGER.debug(
