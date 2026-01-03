@@ -185,15 +185,13 @@ async def update_module_data(hass, discovered_devices):
                     _sanitize_channel(module_type, channels[idx], idx + 1)
                 )
             else:
-                sanitized_channels.append(_default_channel(module_type, idx + 1))
+                channel = {}
 
-        if len(channels) > channels_count:
-            _LOGGER.warning(
-                "Module %s has %s channels but discovery reported %s. Extra channels were trimmed.",
-                module_type,
-                len(channels),
-                channels_count,
-            )
+            if module_type == "roller_module" and "operation_time" not in channel:
+                channel["operation_time"] = "60"
+
+            if "description" not in channel:
+                channel["description"] = ""
 
         return sanitized_channels
 

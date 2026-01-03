@@ -222,7 +222,10 @@ def test_update_module_data_merges_without_clobbering_user_fields(tmp_path):
                         {
                             "description": "Window",
                             "operation_time": "45",
-                        }
+                        },
+                        {
+                            "description": "Door",
+                        },
                     ],
                 }
             ],
@@ -251,8 +254,8 @@ def test_update_module_data_merges_without_clobbering_user_fields(tmp_path):
                 "description": "Roller Shutter Module",
                 "model": "05-001-02",
                 "address": "9105",
-                "channels_count": 2,
-                "channels": 2,
+                "channels_count": 3,
+                "channels": 3,
                 "last_seen": "2024-01-02T00:00:00+00:00",
             },
         }
@@ -281,11 +284,12 @@ def test_update_module_data_merges_without_clobbering_user_fields(tmp_path):
         assert roller["discovered_info"] == {
             "name": "Roller Shutter Module",
             "device_type": "02",
-            "channels_count": 2,
+            "channels_count": 3,
             "last_discovered": "2024-01-02T00:00:00+00:00",
         }
         assert roller["address"] == "9105"
         assert roller["channels"][0]["operation_time"] == "45"
-        assert roller["channels"][1]["operation_time"] == "00"
+        assert roller["channels"][1]["operation_time"] == "60"
+        assert roller["channels"][2]["operation_time"] == "60"
 
     asyncio.run(_run())
