@@ -353,6 +353,13 @@ def _validate_decoded_result(
 
     return decoded
 
+
+def _byte_value(raw_bytes, idx):
+    try:
+        return int(raw_bytes[idx], 16)
+    except (IndexError, ValueError, TypeError):
+        return None
+
 def _nibble_high(raw_bytes, idx):
     try:
         return int(raw_bytes[idx][0], 16)
@@ -821,12 +828,6 @@ def _decode_roller(
         _LOGGER.error("Invalid command bytes: %s", raw_bytes)
         return None
 
-    raw_channel_candidates = [
-        ("byte1_low", _nibble_low(raw_bytes, 1)),
-        ("byte2_low", _nibble_low(raw_bytes, 2)),
-        ("byte3_low", _nibble_low(raw_bytes, 3)),
-    ]
-
     button_address_hex = payload_hex[-6:]
     button_address = get_button_address(button_address_hex)
     button_channel_count = coordinator_get_button_channels(button_address)
@@ -865,9 +866,48 @@ def _decode_roller(
         module_address, "roller_module", logical_channel_count, coordinator_get_module_channels
     )
 
-    channel_candidates = _build_roller_channel_candidates(
-        raw_channel_candidates, channel_count
+    channel_raw_byte = _byte_value(raw_bytes, 1)
+
+    if channel_raw_byte is None:
+        _LOGGER.debug(
+            "Skipping roller payload due to missing channel byte | module_address=%s payload=%s",
+            module_address,
+            payload_hex,
+        )
+        return None
+
+    if channel_raw_byte % 2 != 0:
+        _LOGGER.debug(
+            "Roller channel decode | raw_byte=0x%02X decoded_channel=%d module_channels=%d",
+            channel_raw_byte,
+            -1,
+            channel_count or 0,
+        )
+        _LOGGER.debug(
+            "Skipping roller payload due to odd channel selector | module_address=%s payload=%s",
+            module_address,
+            payload_hex,
+        )
+        return None
+
+    channel_raw = (channel_raw_byte // 2) + 1
+    _LOGGER.debug(
+        "Roller channel decode | raw_byte=0x%02X decoded_channel=%d module_channels=%d",
+        channel_raw_byte,
+        channel_raw,
+        channel_count or 0,
     )
+
+    if channel_count is not None and not (0 <= channel_raw < channel_count):
+        _LOGGER.debug(
+            "Skipping roller payload due to channel out of range | module_address=%s payload=%s",
+            module_address,
+            payload_hex,
+        )
+        return None
+
+    channel_mask = None
+    channel_source = "byte1"
 
     nibble_map = _extract_all_nibbles(raw_bytes)
 
@@ -881,27 +921,6 @@ def _decode_roller(
         push_button_address,
         nibble_map,
     )
-
-    (
-        channel_raw,
-        channel_mask,
-        channel_source,
-        selection_reason,
-        rejection_reason,
-    ) = _select_roller_channel(channel_candidates, channel_count, channel_mapping)
-
-    if channel_raw is None:
-        _LOGGER.debug(
-            "Skipping roller payload after channel selection | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s candidates=%s selection_reason=%s rejection_reason=%s",
-            module_address,
-            channel_count,
-            raw_chunk_hex or payload_hex,
-            reversed_chunk_hex or payload_hex,
-            channel_candidates,
-            selection_reason,
-            rejection_reason,
-        )
-        return None
 
     if channel_raw in {0xE, 0xF}:
         _LOGGER.debug(
@@ -945,19 +964,16 @@ def _decode_roller(
     )
 
     _LOGGER.debug(
-        "Roller channel decision | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s nibbles=%s candidates=%s selected_channel=%s selected_source=%s mask=%s button_channel_count=%s selection_reason=%s rejection_reason=%s",
+        "Roller channel decision | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s nibbles=%s selected_channel=%s selected_source=%s mask=%s button_channel_count=%s",
         module_address,
         channel_count,
         raw_chunk_hex or payload_hex,
         reversed_chunk_hex or payload_hex,
         nibble_map,
-        channel_candidates,
         channel_raw,
         channel_source,
         channel_mask,
         button_channel_count,
-        selection_reason,
-        rejection_reason,
     )
 
     _LOGGER.debug(
