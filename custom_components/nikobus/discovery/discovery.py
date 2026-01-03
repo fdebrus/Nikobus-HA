@@ -75,6 +75,7 @@ class NikobusDiscovery:
         self._chunks = []
         self._module_address = None
         self._module_type = None
+        self._module_channels: int | None = None
         self._message_complete = False
         self._timeout_task = None
         if hasattr(self._coordinator, "discovery_running"):
@@ -265,12 +266,19 @@ class NikobusDiscovery:
             if self._module_type is None:
                 self._module_type = self._coordinator.get_module_type(address)
 
+            self._module_channels = self.discovered_devices.get(address, {}).get("channels")
+
             decoder = self._get_decoder()
             if decoder is None:
                 _LOGGER.error("No decoder available for module type: %s", self._module_type)
                 return
 
+            if hasattr(decoder, "set_logical_channel_count"):
+                decoder.set_logical_channel_count(self._module_channels)
+
             if decoder.module_type == "dimmer_module":
+                if hasattr(decoder, "set_logical_channel_count"):
+                    decoder.set_logical_channel_count(self._module_channels)
                 commands = decoder.decode(message)
                 if commands:
                     self._module_address = address
