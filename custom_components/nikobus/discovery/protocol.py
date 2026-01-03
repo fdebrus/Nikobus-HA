@@ -6,6 +6,39 @@ _LOGGER = logging.getLogger(__name__)
 _DIMMER_CANDIDATE_SUCCESS: dict[str, int] = {}
 
 
+def _module_channel_count_or_default(
+    module_address: str | None,
+    module_type: str | None,
+    logical_channel_count: int | None,
+    coordinator_get_module_channels,
+) -> int | None:
+    fallback_default = {
+        "switch_module": 12,
+        "roller_module": 6,
+        "dimmer_module": 12,
+    }.get(module_type)
+
+    module_channel_count = None
+
+    if coordinator_get_module_channels and module_address:
+        try:
+            module_channel_count = coordinator_get_module_channels(module_address)
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.debug(
+                "Error retrieving module channel count | module_address=%s error=%s",
+                module_address,
+                err,
+            )
+
+    if isinstance(module_channel_count, int) and module_channel_count > 0:
+        return module_channel_count
+
+    if isinstance(logical_channel_count, int) and logical_channel_count > 0:
+        return logical_channel_count
+
+    return fallback_default
+
+
 def _looks_like_prefixed_dimmer_frame(raw_bytes: bytes) -> bool:
     """Return True if the bytes match a known prefixed dimmer opcode layout."""
 
@@ -190,6 +223,7 @@ def _validate_decoded_result(
     coordinator_get_button_channels,
     raw_payload_hex,
     normalized_payload_hex,
+    module_address: str | None = None,
 ):
     """Validate decoded payload fields before using them to update state."""
 
@@ -217,14 +251,22 @@ def _validate_decoded_result(
 
     if channel_count is not None:
         if channel_raw is None or channel_raw < 0 or channel_raw >= channel_count:
+            _LOGGER.debug(
+                "Channel validation failed | module_type=%s module_address=%s extracted_channel=%s module_channel_count=%s",
+                module_type,
+                module_address,
+                channel_raw,
+                channel_count,
+            )
             invalid = True
     elif channel_mapping and channel_raw not in channel_mapping:
         invalid = True
 
     if invalid:
         _LOGGER.warning(
-            "Skipping payload after validation failure | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_count=%s button_channel_count=%s mode=%s",
+            "Skipping payload after validation failure | module_type=%s module_address=%s raw_payload=%s normalized_payload=%s key=%s channel=%s module_channel_count=%s button_channel_count=%s mode=%s",
             module_type,
+            module_address,
             raw_payload_hex,
             normalized_payload_hex,
             key_raw,
@@ -236,8 +278,9 @@ def _validate_decoded_result(
         return None
 
     _LOGGER.debug(
-        "Validation passed | module_type=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_mask=%s channel_count=%s button_channel_count=%s",
+        "Validation passed | module_type=%s module_address=%s raw_payload=%s normalized_payload=%s key=%s channel=%s channel_mask=%s module_channel_count=%s button_channel_count=%s",
         module_type,
+        module_address,
         raw_payload_hex,
         normalized_payload_hex,
         key_raw,
@@ -326,10 +369,12 @@ def _decode_switch_or_roller(
     mode_mappings,
     timer_mappings,
     coordinator_get_button_channels,
+    coordinator_get_module_channels,
     convert_func,
     raw_bytes,
     *,
     logical_channel_count: int | None = None,
+    module_address: str | None = None,
 ):
     # Normalized layout (nibbles):
     #   byte0 -> [ignored_hi, T2]
@@ -369,14 +414,14 @@ def _decode_switch_or_roller(
     )
 
     button_channel_count = coordinator_get_button_channels(button_address)
-    channel_count = logical_channel_count
-    if channel_count is None:
-        channel_count = {"switch_module": 12, "roller_module": 6}.get(module_type)
-        logical_channel_count = channel_count
+    channel_count = _module_channel_count_or_default(
+        module_address, module_type, logical_channel_count, coordinator_get_module_channels
+    )
 
     _LOGGER.debug(
-        "Channel count comparison | logical_channel_count=%s button_channel_count=%s",
-        logical_channel_count,
+        "Channel count comparison | module_address=%s module_channel_count=%s button_channel_count=%s",
+        module_address,
+        channel_count,
         button_channel_count,
     )
 
@@ -688,8 +733,10 @@ def decode_command_payload(
     timer_mappings,
     coordinator_get_button_channels,
     convert_func=None,
+    coordinator_get_module_channels=None,
     logical_channel_count: int | None = None,
     *,
+    module_address: str | None = None,
     reverse_before_decode: bool = False,
     raw_chunk_hex: str | None = None,
 ):
@@ -753,9 +800,11 @@ def decode_command_payload(
             mode_mappings,
             timer_mappings,
             coordinator_get_button_channels,
+            coordinator_get_module_channels,
             convert_func,
             raw_bytes,
             logical_channel_count=logical_channel_count,
+            module_address=module_address,
         )
 
     elif module_type == "dimmer_module":
@@ -783,4 +832,5 @@ def decode_command_payload(
         coordinator_get_button_channels,
         raw_payload_hex,
         payload_hex,
+        module_address,
     )
