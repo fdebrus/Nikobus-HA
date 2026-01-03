@@ -1,6 +1,8 @@
 import logging
 from typing import Any
 
+from .mapping import CHANNEL_MAPPING
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -373,6 +375,26 @@ def _extract_all_nibbles(raw_bytes: list[str]):
     return nibble_map
 
 
+def _build_roller_channel_candidates(
+    raw_channel_candidates: list[tuple[str, int | None]],
+    channel_count: int | None,
+):
+    channel_candidates: list[tuple[str, int | None, bool]] = []
+
+    for source, candidate in raw_channel_candidates:
+        channel_candidates.append((source, candidate, False))
+
+        if candidate is None:
+            continue
+
+        base_in_range = channel_count is None or 0 <= candidate < channel_count
+        derived_from_invalid = channel_count is not None and not base_in_range
+
+        channel_candidates.append((f"{source}_mask7", candidate & 0x7, derived_from_invalid))
+
+    return channel_candidates
+
+
 def _channel_index_from_mask(
     channel_raw: int | None,
     channel_mapping: dict[int, str],
@@ -538,6 +560,72 @@ def _select_roller_key(raw_bytes, button_channel_count: int | None, button_addre
         return normalized, source, candidate, candidates
 
     return None, None, None, candidates
+
+
+def _select_roller_channel(
+    channel_candidates: list[tuple[str, int | None, bool]],
+    channel_count: int | None,
+    channel_mapping,
+):
+    selection_reason = "no_candidates"
+    rejection_reason = None
+    channel_raw = None
+    channel_mask = None
+    channel_source = None
+
+    priority = [
+        "byte1_low",
+        "byte1_low_mask7",
+        "byte2_low",
+        "byte2_low_mask7",
+        "byte3_low",
+        "byte3_low_mask7",
+    ]
+
+    rejected_masked_from_invalid: list[tuple[str, int]] = []
+    eligible_candidates: list[tuple[str, int]] = []
+    in_range_candidates: list[tuple[str, int]] = []
+
+    for source, candidate, derived_from_invalid in channel_candidates:
+        if candidate is None:
+            continue
+
+        if derived_from_invalid:
+            rejected_masked_from_invalid.append((source, candidate))
+            continue
+
+        eligible_candidates.append((source, candidate))
+
+        if channel_count is None or 0 <= candidate < channel_count:
+            in_range_candidates.append((source, candidate))
+
+    if in_range_candidates:
+        ordered = sorted(
+            in_range_candidates,
+            key=lambda item: priority.index(item[0])
+            if item[0] in priority
+            else len(priority),
+        )
+        channel_source, selected_value = ordered[0]
+        channel_raw, channel_mask = _channel_index_from_mask(
+            selected_value, channel_mapping, "roller_module"
+        )
+        selection_reason = "priority_in_range"
+    elif channel_count is None and eligible_candidates:
+        channel_source, selected_value = eligible_candidates[0]
+        channel_raw, channel_mask = _channel_index_from_mask(
+            selected_value, channel_mapping, "roller_module"
+        )
+        selection_reason = "fallback_first_non_null"
+    elif eligible_candidates:
+        selection_reason = "all_candidates_out_of_range"
+
+    if rejected_masked_from_invalid:
+        rejection_reason = f"masked_candidates_from_out_of_range={rejected_masked_from_invalid}"
+        if selection_reason == "no_candidates":
+            selection_reason = "masked_candidates_rejected"
+
+    return channel_raw, channel_mask, channel_source, selection_reason, rejection_reason
 
 
 def _decode_switch(
@@ -723,17 +811,6 @@ def _decode_roller(
         ("byte3_low", _nibble_low(raw_bytes, 3)),
     ]
 
-    # Roller payloads have shown channel nibbles drifting between bytes and
-    # occasionally setting the high bit. We keep raw and masked variants for
-    # each plausible nibble and pick per-payload instead of tracking state
-    # across frames.
-    channel_candidates: list[tuple[str, int | None]] = []
-
-    for source, candidate in raw_channel_candidates:
-        channel_candidates.append((source, candidate))
-        if candidate is not None:
-            channel_candidates.append((f"{source}_mask7", candidate & 0x7))
-
     button_address_hex = payload_hex[-6:]
     button_address = get_button_address(button_address_hex)
     button_channel_count = coordinator_get_button_channels(button_address)
@@ -772,6 +849,10 @@ def _decode_roller(
         module_address, "roller_module", logical_channel_count, coordinator_get_module_channels
     )
 
+    channel_candidates = _build_roller_channel_candidates(
+        raw_channel_candidates, channel_count
+    )
+
     nibble_map = _extract_all_nibbles(raw_bytes)
 
     _LOGGER.debug(
@@ -785,60 +866,24 @@ def _decode_roller(
         nibble_map,
     )
 
-    selection_reason = "no_candidates"
-    channel_raw = None
-    channel_mask = None
-    channel_source = None
-
-    # Deterministic priority avoids the previous global tracker that could lock
-    # onto the first in-range nibble (often byte2_low) even when it produced the
-    # wrong shutter output mapping.
-    priority = [
-        "byte1_low",
-        "byte1_low_mask7",
-        "byte2_low",
-        "byte2_low_mask7",
-        "byte3_low",
-        "byte3_low_mask7",
-    ]
-
-    in_range_candidates = []
-    for source, candidate in channel_candidates:
-        if candidate is None:
-            continue
-        if channel_count is None or 0 <= candidate < channel_count:
-            in_range_candidates.append((source, candidate))
-
-    if in_range_candidates:
-        ordered = sorted(
-            in_range_candidates,
-            key=lambda item: priority.index(item[0])
-            if item[0] in priority
-            else len(priority),
-        )
-        channel_source, selected_value = ordered[0]
-        channel_raw, channel_mask = _channel_index_from_mask(
-            selected_value, channel_mapping, "roller_module"
-        )
-        selection_reason = "priority_in_range"
-    else:
-        fallback = next(((s, c) for s, c in channel_candidates if c is not None), None)
-        if fallback:
-            channel_source, selected_value = fallback
-            channel_raw, channel_mask = _channel_index_from_mask(
-                selected_value, channel_mapping, "roller_module"
-            )
-            selection_reason = "fallback_first_non_null"
+    (
+        channel_raw,
+        channel_mask,
+        channel_source,
+        selection_reason,
+        rejection_reason,
+    ) = _select_roller_channel(channel_candidates, channel_count, channel_mapping)
 
     if channel_raw is None:
         _LOGGER.debug(
-            "Skipping roller payload after channel selection | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s candidates=%s selection_reason=%s",
+            "Skipping roller payload after channel selection | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s candidates=%s selection_reason=%s rejection_reason=%s",
             module_address,
             channel_count,
             raw_chunk_hex or payload_hex,
             reversed_chunk_hex or payload_hex,
             channel_candidates,
             selection_reason,
+            rejection_reason,
         )
         return None
 
@@ -884,7 +929,7 @@ def _decode_roller(
     )
 
     _LOGGER.debug(
-        "Roller channel decision | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s nibbles=%s candidates=%s selected_channel=%s selected_source=%s mask=%s button_channel_count=%s selection_reason=%s",
+        "Roller channel decision | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s nibbles=%s candidates=%s selected_channel=%s selected_source=%s mask=%s button_channel_count=%s selection_reason=%s rejection_reason=%s",
         module_address,
         channel_count,
         raw_chunk_hex or payload_hex,
@@ -896,6 +941,7 @@ def _decode_roller(
         channel_mask,
         button_channel_count,
         selection_reason,
+        rejection_reason,
     )
 
     _LOGGER.debug(
@@ -1258,3 +1304,52 @@ def decode_command_payload(
         payload_hex,
         module_address,
     )
+
+
+def _test_roller_channel_selection_from_logs():
+    """Lightweight assertions to guard against masked roller channel rescue."""
+
+    examples = [
+        "0F28B258C977",  # reversed_chunk from shutter.txt
+        "0E38B280EE73",  # reversed_chunk from shutter.txt
+    ]
+
+    module_channel_count = 6
+
+    for reversed_chunk_hex in examples:
+        raw_bytes = [f"{b:02X}" for b in bytes.fromhex(reversed_chunk_hex)]
+        raw_channel_candidates = [
+            ("byte1_low", _nibble_low(raw_bytes, 1)),
+            ("byte2_low", _nibble_low(raw_bytes, 2)),
+            ("byte3_low", _nibble_low(raw_bytes, 3)),
+        ]
+
+        channel_candidates = _build_roller_channel_candidates(
+            raw_channel_candidates, module_channel_count
+        )
+
+        byte1_low = next(
+            candidate for source, candidate, _ in channel_candidates if source == "byte1_low"
+        )
+        byte1_low_mask7 = next(
+            candidate
+            for source, candidate, _ in channel_candidates
+            if source == "byte1_low_mask7"
+        )
+        derived_flag = next(
+            derived
+            for source, _, derived in channel_candidates
+            if source == "byte1_low_mask7"
+        )
+
+        assert byte1_low == 8
+        assert byte1_low_mask7 == 0
+        assert derived_flag is True
+
+        channel_raw, _, channel_source, selection_reason, _ = _select_roller_channel(
+            channel_candidates, module_channel_count, CHANNEL_MAPPING
+        )
+
+        assert channel_source != "byte1_low_mask7"
+        assert channel_raw != 0 or channel_raw is None
+        assert selection_reason != "fallback_first_non_null"
