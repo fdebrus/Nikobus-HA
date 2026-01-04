@@ -33,6 +33,22 @@ class DimmerDecoder:
         raw_bytes = [payload_hex[i : i + 2] for i in range(0, len(payload_hex), 2)]
         button_address_hex = payload_hex[-6:]
         button_address = get_button_address(button_address_hex)
+        if button_address is None:
+            _LOGGER.debug(
+                "Skipping dimmer payload due to invalid button address | payload=%s",
+                payload_hex,
+            )
+            return None
+
+        normalized_button_address = button_address.upper()
+        if normalized_button_address in {"3FFFFF", "3FFFFE"}:
+            _LOGGER.debug(
+                "Skipping dimmer payload for empty slot | button_address=%s payload=%s",
+                normalized_button_address,
+                payload_hex,
+            )
+            return None
+
         num_channels = self._coordinator.get_button_channels(button_address)
 
         candidates = _build_dimmer_candidates(
@@ -129,6 +145,10 @@ class DimmerDecoder:
                 len(payload_hex),
                 EXPECTED_CHUNK_LEN,
             )
+            return []
+
+        if payload_hex == "FFFFFFFFFFFFFFFF":
+            _LOGGER.debug("Skipping dimmer payload because it is empty: %s", payload_hex)
             return []
 
         decoded_fields = self._decode_fields(payload_hex)
