@@ -48,7 +48,7 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
 
     if None in (key_raw, channel_raw, mode_raw):
         _LOGGER.debug(
-            "Discovery skipped | type=dimmer module=%s reason=invalid_length payload=%s",
+            "Discovery skipped | type=dimmer module=%s reason=invalid_payload payload=%s",
             context.module_address,
             payload_hex,
         )
@@ -142,13 +142,17 @@ class DimmerDecoder:
         address, chunk_hex, crc_region = self._chunk_from_message(message)
 
         if chunk_hex is None or address is None:
-            _LOGGER.debug("Discovery skipped | type=dimmer module=%s payload=%s reason=invalid_length", address, message)
+            _LOGGER.debug(
+                "Discovery skipped | type=dimmer module=%s reason=invalid_length payload=%s",
+                address,
+                message,
+            )
             return []
 
         chunk_hex = chunk_hex.upper()
         if len(chunk_hex) != EXPECTED_CHUNK_LEN:
             _LOGGER.debug(
-                "Discovery skipped | type=dimmer module=%s payload=%s reason=invalid_length",
+                "Discovery skipped | type=dimmer module=%s reason=invalid_length payload=%s",
                 address,
                 chunk_hex,
             )

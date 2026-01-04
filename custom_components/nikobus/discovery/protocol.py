@@ -157,9 +157,6 @@ def get_push_button_address(
     return final_push_button_address, button_address
 
 
-_CHANNEL_FALLBACK_LOGGED: set[str] = set()
-
-
 def decode_command_payload(
     payload_hex: str,
     module_type: str,
@@ -182,37 +179,14 @@ def decode_command_payload(
     if raw_bytes is None:
         return None
 
-    resolved_channel_count: int | None = None
-    coordinator_count: int | None = None
-    if coordinator and module_address:
+    resolved_channel_count: int | None = module_channel_count
+    if coordinator and module_address and resolved_channel_count is None:
         try:
-            coordinator_count = coordinator.get_module_channel_count(module_address)
+            resolved_channel_count = coordinator.get_module_channel_count(module_address)
         except Exception as err:  # pragma: no cover - defensive
             _LOGGER.debug(
                 "Module channel lookup failed | module=%s error=%s", module_address, err
             )
-
-    fallback_reason: str | None = None
-    if coordinator_count is not None:
-        resolved_channel_count = coordinator_count
-    elif module_channel_count is not None:
-        resolved_channel_count = module_channel_count
-        fallback_reason = "inventory"
-    else:
-        fallback_reason = "unknown"
-
-    if (
-        fallback_reason
-        and module_address
-        and module_address not in _CHANNEL_FALLBACK_LOGGED
-    ):
-        _CHANNEL_FALLBACK_LOGGED.add(module_address)
-        _LOGGER.debug(
-            "Discovery channel fallback | module=%s source=%s count=%s",
-            module_address,
-            fallback_reason,
-            resolved_channel_count,
-        )
 
     context = DecoderContext(
         coordinator=coordinator,
