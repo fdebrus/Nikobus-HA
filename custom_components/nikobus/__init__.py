@@ -116,48 +116,42 @@ async def _async_cleanup_orphan_entities(
     dev_reg = dr.async_get(hass)
 
     valid_entity_ids = coordinator.get_known_entity_unique_ids()
-    _LOGGER.debug("Valid Nikobus entity IDs: %s", valid_entity_ids)
 
-    entities = [
-        entity
-        for entity in ent_reg.entities.values()
-        if entity.config_entry_id == entry.entry_id and entity.platform == DOMAIN
-    ]
+    registry_entities = list(ent_reg.entities.values())
+    registry_devices = list(dev_reg.devices.values())
 
-    for entity in entities:
+    orphan_entity_ids: list[str] = []
+    device_entities: dict[str, set[str]] = {}
+
+    for entity in registry_entities:
+        if entity.config_entry_id != entry.entry_id or entity.platform != DOMAIN:
+            continue
+        if entity.device_id:
+            device_entities.setdefault(entity.device_id, set()).add(entity.entity_id)
         if entity.unique_id not in valid_entity_ids:
-            _LOGGER.warning(
-                "Removing orphan Nikobus entity: %s (unique_id=%s)",
-                entity.entity_id,
-                entity.unique_id,
-            )
-            ent_reg.async_remove(entity.entity_id)
+            orphan_entity_ids.append(entity.entity_id)
 
-    # Rebuild after entity removals
-    ent_reg = er.async_get(hass)
+    for entity_id in orphan_entity_ids:
+        ent_reg.async_remove(entity_id)
+        _LOGGER.debug("Removed orphan Nikobus entity: %s", entity_id)
+
+    orphan_entity_set = set(orphan_entity_ids)
+    devices_to_remove: list[str] = []
     hub_identifier = (DOMAIN, HUB_IDENTIFIER)
 
-    devices_with_entities = {
-        entity.device_id
-        for entity in ent_reg.entities.values()
-        if entity.config_entry_id == entry.entry_id
-        and entity.platform == DOMAIN
-        and entity.device_id
-    }
-
-    for device in dev_reg.devices.values():
+    for device in registry_devices:
         if entry.entry_id not in device.config_entries:
             continue
         if hub_identifier in device.identifiers:
             continue
-        if device.id not in devices_with_entities:
-            _LOGGER.warning(
-                "Removing orphan Nikobus device: %s (id=%s, identifiers=%s)",
-                device.name,
-                device.id,
-                device.identifiers,
-            )
-            dev_reg.async_remove_device(device.id)
+
+        remaining_entities = device_entities.get(device.id, set()) - orphan_entity_set
+        if not remaining_entities:
+            devices_to_remove.append(device.id)
+
+    for device_id in devices_to_remove:
+        dev_reg.async_remove_device(device_id)
+        _LOGGER.debug("Removed orphan Nikobus device: %s", device_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
