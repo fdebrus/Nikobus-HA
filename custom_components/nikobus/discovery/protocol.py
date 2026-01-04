@@ -402,6 +402,88 @@ def _build_roller_channel_candidates(
     return channel_candidates
 
 
+def _decode_roller_channel(
+    raw_bytes,
+    channel_count: int | None,
+    channel_mapping,
+):
+    """Decode roller channel using multiple strategies."""
+
+    channel_raw_byte = _byte_value(raw_bytes, 1)
+
+    def _channel_in_range(channel_raw: int | None) -> bool:
+        return channel_raw is not None and (
+            channel_count is None or 0 <= channel_raw < channel_count
+        )
+
+    if channel_raw_byte is None:
+        return None, None, None, "missing_channel_byte", None, channel_raw_byte
+
+    selector_upper_bound = 2 * channel_count if channel_count is not None else None
+
+    if channel_raw_byte % 2 == 0 and (
+        selector_upper_bound is None or 2 <= channel_raw_byte <= selector_upper_bound
+    ):
+        channel_raw = (channel_raw_byte // 2) + 1
+        if _channel_in_range(channel_raw):
+            return (
+                channel_raw,
+                None,
+                "byte1",
+                "strategy_a_even_selector",
+                None,
+                channel_raw_byte,
+            )
+
+    selector = channel_raw_byte & 0x7F
+    if selector % 2 == 0 and (
+        selector_upper_bound is None or 2 <= selector <= selector_upper_bound
+    ):
+        channel_raw = (selector // 2) + 1
+        if _channel_in_range(channel_raw):
+            return (
+                channel_raw,
+                None,
+                "byte1_packed",
+                "strategy_b_packed_selector",
+                None,
+                channel_raw_byte,
+            )
+
+    raw_channel_candidates = [
+        ("byte1_low", _nibble_low(raw_bytes, 1)),
+        ("byte2_low", _nibble_low(raw_bytes, 2)),
+        ("byte3_low", _nibble_low(raw_bytes, 3)),
+    ]
+
+    channel_candidates = _build_roller_channel_candidates(
+        raw_channel_candidates, channel_count
+    )
+
+    channel_raw, channel_mask, channel_source, selection_reason, _ = (
+        _select_roller_channel(channel_candidates, channel_count, channel_mapping)
+    )
+
+    if channel_raw is not None:
+        return (
+            channel_raw,
+            channel_mask,
+            channel_source,
+            "strategy_c_nibble_candidates",
+            selection_reason,
+            channel_raw_byte,
+        )
+
+    return (
+        None,
+        None,
+        None,
+        "strategy_unresolved_channel_encoding",
+        selection_reason,
+        channel_raw_byte,
+    )
+
+
 def _channel_index_from_mask(
     channel_raw: int | None,
     channel_mapping: dict[int, str],
@@ -866,50 +948,37 @@ def _decode_roller(
         module_address, "roller_module", logical_channel_count, coordinator_get_module_channels
     )
 
-    channel_raw_byte = _byte_value(raw_bytes, 1)
-
-    if channel_raw_byte is None:
-        _LOGGER.debug(
-            "Skipping roller payload due to missing channel byte | module_address=%s payload=%s",
-            module_address,
-            payload_hex,
-        )
-        return None
-
-    if channel_raw_byte % 2 != 0:
-        _LOGGER.debug(
-            "Roller channel decode | raw_byte=0x%02X decoded_channel=%d module_channels=%d",
-            channel_raw_byte,
-            -1,
-            channel_count or 0,
-        )
-        _LOGGER.debug(
-            "Skipping roller payload due to odd channel selector | module_address=%s payload=%s",
-            module_address,
-            payload_hex,
-        )
-        return None
-
-    channel_raw = (channel_raw_byte // 2) + 1
-    _LOGGER.debug(
-        "Roller channel decode | raw_byte=0x%02X decoded_channel=%d module_channels=%d",
-        channel_raw_byte,
-        channel_raw,
-        channel_count or 0,
+    channel_raw, channel_mask, channel_source, channel_strategy, selection_reason, channel_raw_byte = (
+        _decode_roller_channel(raw_bytes, channel_count, channel_mapping)
     )
 
-    if channel_count is not None and not (0 <= channel_raw < channel_count):
+    nibble_map = _extract_all_nibbles(raw_bytes)
+
+    bytes_with_index = [f"{idx}:0x{byte}" for idx, byte in enumerate(raw_bytes)]
+
+    _LOGGER.debug(
+        "Roller byte debug | reversed_chunk=%s bytes=%s key_raw=%s mode_raw=%s t1_raw=%s t2_raw=%s channel_raw_byte=%s decoded_channel=%s strategy=%s selection_reason=%s",
+        reversed_chunk_hex or payload_hex,
+        bytes_with_index,
+        key_raw,
+        mode_raw,
+        t1_raw,
+        t2_raw,
+        f"0x{channel_raw_byte:02X}" if channel_raw_byte is not None else None,
+        channel_raw,
+        channel_strategy,
+        selection_reason,
+    )
+
+    if channel_raw is None:
         _LOGGER.debug(
-            "Skipping roller payload due to channel out of range | module_address=%s payload=%s",
+            "Skipping roller payload due to unresolved channel encoding | module_address=%s payload=%s strategy=%s reason=%s",
             module_address,
             payload_hex,
+            channel_strategy,
+            selection_reason,
         )
         return None
-
-    channel_mask = None
-    channel_source = "byte1"
-
-    nibble_map = _extract_all_nibbles(raw_bytes)
 
     _LOGGER.debug(
         "Roller decode debug | module_address=%s module_channel_count=%s raw_chunk=%s reversed_chunk=%s button_address=%s push_button_address=%s nibbles=%s",
