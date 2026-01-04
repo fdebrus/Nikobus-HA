@@ -98,7 +98,7 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
         "M": DIMMER_MODE_MAPPING.get(mode_raw),
     }
 
-    _LOGGER.debug(
+    _LOGGER.info(
         "Discovery decoded | type=dimmer module=%s button=%s key=%s channel=%s mode=%s",
         context.module_address,
         normalized_button,
