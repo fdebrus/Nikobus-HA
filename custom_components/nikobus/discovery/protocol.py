@@ -415,14 +415,7 @@ def _calculate_timer_values(module_type, mode_raw, t1_raw, t2_raw, timer_mapping
         elif mode_raw in [1, 2]:
             t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 2)
     elif module_type == "dimmer_module":
-        if mode_raw in [0, 1, 2, 10, 11]:
-            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 1)
-            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
-        elif mode_raw == 3:
-            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
-        elif mode_raw in [4, 5, 6, 7, 8, 9]:
-            t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
-            t2_val = get_timer_value(timer_mapping.get(t2_raw, ["Unknown"]), 2)
+        return t1_val, t2_val
     elif module_type == "roller_module":
         t1_val = get_timer_value(timer_mapping.get(t1_raw, ["Unknown"]), 0)
 
@@ -776,12 +769,6 @@ def _build_dimmer_candidates(
         "t2_idx1_lo": _nibble_low(raw_bytes, 1),
         "t2_idx1_hi": _nibble_high(raw_bytes, 1),
     }
-
-    _LOGGER.debug(
-        "Dimmer timer nibble candidates | raw_bytes=%s | indexed=%s",
-        list(enumerate(raw_bytes)),
-        timers_indexed,
-    )
 
     key_options = [
         ("b3_hi", _nibble_high(raw_bytes, 3)),
