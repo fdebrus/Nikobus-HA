@@ -100,6 +100,30 @@ class NikobusDiscovery:
         self._coordinator.discovery_module = False
         self._coordinator.discovery_module_address = None
 
+    def normalize_module_address(
+        self, address: str, *, source: str, reverse_bus_order: bool = False
+    ) -> str:
+        """Return a canonical module address, logging when normalization occurs."""
+
+        raw = (address or "").strip().upper()
+        normalized = raw
+
+        try:
+            if reverse_bus_order:
+                normalized = reverse_hex(raw)
+        except ValueError:
+            normalized = raw
+
+        if normalized != raw:
+            _LOGGER.debug(
+                "Normalized module address | raw=%s normalized=%s source=%s",
+                raw,
+                normalized,
+                source,
+            )
+
+        return normalized
+
     def _get_decoder(self):
         for decoder in getattr(self, "_decoders", []):
             if decoder.can_handle(self._module_type):
@@ -174,25 +198,43 @@ class NikobusDiscovery:
             self.reset_state()
             return
 
-        base_command = f"10{device_address}"
-        self._module_address = device_address
+        normalized_address = self.normalize_module_address(
+            device_address, source="query_module_inventory"
+        )
+
+        base_command = f"10{normalized_address}"
+        self._module_address = normalized_address
 
         if not self._coordinator.discovery_module:
-            _LOGGER.info("Discovery started | module=%s", device_address)
+            _LOGGER.info("Discovery started | module=%s", normalized_address)
             self._coordinator.discovery_running = True
             self._coordinator.discovery_module = True
-            self._coordinator.discovery_module_address = device_address
+            self._coordinator.discovery_module_address = normalized_address
+
+        if self._module_type is None:
+            self._module_type = self._coordinator.get_module_type(normalized_address)
+
+        non_output_modules = {"pc_link", "pc_logic", "feedback_module"}
+        is_output_module = self._module_type not in non_output_modules
 
         if self._coordinator.discovery_module:
-            base_command = f"10{device_address[2:4] + device_address[:2]}"
-            self._module_type = self._coordinator.get_module_type(device_address)
+            base_command = f"10{normalized_address[2:4] + normalized_address[:2]}"
             if self._module_type == "dimmer_module":
-                base_command = f"22{device_address[2:4] + device_address[:2]}"
+                base_command = f"22{normalized_address[2:4] + normalized_address[:2]}"
                 command_range = range(0x10, 0x100)
             else:
                 command_range = range(0x10, 0x100)
         else:
             command_range = range(0xA4, 0x100)
+
+        if not is_output_module:
+            _LOGGER.info(
+                "Skipping register scan for non-output module | module=%s type=%s",
+                normalized_address,
+                self._module_type,
+            )
+            await self._finalize_discovery(normalized_address)
+            return
 
         for cmd in command_range:
             partial_hex = f"{base_command}{cmd:02X}04"

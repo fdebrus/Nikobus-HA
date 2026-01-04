@@ -159,7 +159,12 @@ class NikobusEventListener:
         if DEVICE_ADDRESS_INVENTORY in message:
             _LOGGER.debug("Device address inventory: %s", message)
             if discovery_running:
-                await self.nikobus_discovery.query_module_inventory(message[3:7])
+                module_address = self.nikobus_discovery.normalize_module_address(
+                    message[3:7],
+                    source="device_address_inventory",
+                    reverse_bus_order=True,
+                )
+                await self.nikobus_discovery.query_module_inventory(module_address)
             else:
                 await self.nikobus_discovery.process_mode_button_press(message)
             return
