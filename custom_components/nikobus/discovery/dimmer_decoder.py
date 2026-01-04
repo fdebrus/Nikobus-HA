@@ -5,10 +5,9 @@ from typing import Any
 
 from ..const import DEVICE_INVENTORY
 from .base import DecodedCommand
-from .mapping import CHANNEL_MAPPING, DIMMER_MODE_MAPPING, DIMMER_TIMER_MAPPING, KEY_MAPPING_MODULE
+from .mapping import CHANNEL_MAPPING, DIMMER_MODE_MAPPING, KEY_MAPPING_MODULE
 from .protocol import (
     _build_dimmer_candidates,
-    _calculate_timer_values,
     convert_nikobus_address,
     get_button_address,
     get_push_button_address,
@@ -84,9 +83,8 @@ class DimmerDecoder:
         channel_label = CHANNEL_MAPPING.get(channel_raw, f"Unknown Channel ({channel_raw})")
         mode_label = DIMMER_MODE_MAPPING.get(mode_raw, f"Unknown Mode ({mode_raw})")
 
-        t1_val, t2_val = _calculate_timer_values(
-            "dimmer_module", mode_raw, t1_raw, t2_raw, {"dimmer_module": DIMMER_TIMER_MAPPING}
-        )
+        t1_val = None
+        t2_val = None
 
         return {
             "payload": payload_hex,
