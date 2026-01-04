@@ -265,7 +265,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         """Process feedback data from Nikobus."""
         try:
             module_address_raw = data[3:7]
-            module_address = module_address_raw[2:] + module_address_raw[:2]
+            module_address = (module_address_raw[2:] + module_address_raw[:2]).upper()
             module_type = self.get_module_type(module_address)
             module_state_raw = data[9:21]
 
@@ -411,6 +411,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     def get_module_type(self, module_id: str) -> str:
         """Determine the module type based on the module ID."""
+        module_id = (module_id or "").upper()
         for module_type, modules in self.dict_module_data.items():
             if module_id in modules:
                 return module_type
@@ -418,6 +419,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         return "unknown"
 
     def get_module_channel_count(self, module_id: str) -> int:
+        module_id = (module_id or "").upper()
         for modules in self.dict_module_data.values():
             if module_id in modules:
                 module_data = modules[module_id]
