@@ -183,7 +183,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 await self.nikobus_discovery.query_module_inventory(module_address)
             else:
                 self._discovery_module = False
-                await self.nikobus_command.queue_command("#A")
+                await self.nikobus_discovery.start_inventory_discovery()
         except Exception as e:
             _LOGGER.exception("Error during discovery: %s", e)
             raise

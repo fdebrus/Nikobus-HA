@@ -91,6 +91,7 @@ class NikobusConfig:
             "pc_link",
             "pc_logic",
             "feedback_module",
+            "other_module",
         ):
             transformed.setdefault(module_type, {})
 
@@ -117,6 +118,7 @@ class NikobusConfig:
                 "pc_link": {},
                 "pc_logic": {},
                 "feedback_module": {},
+                "other_module": {},
             }
 
         raise NikobusDataError(

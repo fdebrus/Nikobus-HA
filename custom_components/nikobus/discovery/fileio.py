@@ -15,6 +15,7 @@ MODULE_TYPE_ORDER = [
     "pc_link",
     "pc_logic",
     "feedback_module",
+    "other_module",
 ]
 
 DESCRIPTION_PREFIX = {
@@ -24,6 +25,7 @@ DESCRIPTION_PREFIX = {
     "pc_link": "pc_link_pcl",
     "pc_logic": "pc_logic_log",
     "feedback_module": "feedback_module_fb",
+    "other_module": "other_module_oth",
 }
 
 
