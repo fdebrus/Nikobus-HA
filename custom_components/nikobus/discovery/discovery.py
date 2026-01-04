@@ -32,8 +32,7 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
 
     mapping_key = (push_button_address, key_raw)
     outputs = command_mapping.setdefault(mapping_key, [])
-    channel_raw = decoded_command.get("channel_raw")
-    channel_number = channel_raw + 1 if isinstance(channel_raw, int) else None
+    channel_number = decoded_command.get("channel")
 
     output_definition = {
         "module_address": module_address,
@@ -90,15 +89,9 @@ class NikobusDiscovery:
 
     def reset_state(self):
         self._payload_buffer = ""
-        self._chunks = []
         self._module_address = None
         self._module_type = None
         self._module_channels: int | None = None
-        self._message_complete = False
-        self._timeout_task = None
-        self._inventory_command_prefix: str | None = None
-        self._inventory_commands_remaining: int | None = None
-        self._consecutive_empty_registers: int = 0
         self._coordinator.discovery_running = False
         self._coordinator.discovery_module = False
         self._coordinator.discovery_module_address = None
@@ -135,32 +128,18 @@ class NikobusDiscovery:
 
         return decoder.analyze_frame_payload(self._payload_buffer, payload_and_crc)
 
-    def _cancel_timeout(self):
-        if self._timeout_task:
-            self._timeout_task.cancel()
-            self._timeout_task = None
-
-    async def _timeout_waiter(self):
-        try:
-            await asyncio.sleep(self._timeout_seconds)
-            if not self._message_complete:
-                _LOGGER.debug("Timeout reached. Processing complete message.")
-                await self.process_complete_message()
-        except asyncio.CancelledError:
-            pass
-
     async def query_module_inventory(self, device_address):
         if device_address == "ALL":
             all_addresses = self._coordinator.get_all_module_addresses()
             for addr in all_addresses:
-                _LOGGER.info("Starting discovery for module: %s", addr)
+                _LOGGER.info("Discovery started | module=%s", addr)
                 self._coordinator.discovery_running = True
                 self._coordinator.discovery_module = True
                 self._coordinator.discovery_module_address = addr
                 await self.query_module_inventory(addr)
                 while self._coordinator.discovery_module:
                     await asyncio.sleep(0.5)
-                _LOGGER.info("Completed discovery for module: %s", addr)
+                _LOGGER.info("Discovery finished | module=%s", addr)
             self.reset_state()
             await _notify_discovery_finished(self)
             return
@@ -173,18 +152,11 @@ class NikobusDiscovery:
             self._module_type = self._coordinator.get_module_type(device_address)
             if self._module_type == "dimmer_module":
                 base_command = f"22{device_address[2:4] + device_address[:2]}"
-                command_range = range(0x10, 0x100)  # 0x10 à 0xFF inclus, un à un
-                self._inventory_command_prefix = base_command
-                self._inventory_commands_remaining = len(command_range)
-                _LOGGER.info(
-                    "Dimmer inventory scan queued | module=%s start=0x10 end=0xFF count=%d",
-                    device_address,
-                    len(command_range),
-                )
+                command_range = range(0x10, 0x100)
             else:
-                command_range = range(0x10, 0x100)  # 0x10 à 0xFF inclus, un à un
+                command_range = range(0x10, 0x100)
         else:
-            command_range = range(0xA4, 0x100)      # 0xA0 à 0xFF inclus
+            command_range = range(0xA4, 0x100)
 
         for cmd in command_range:
             partial_hex = f"{base_command}{cmd:02X}04"
@@ -202,12 +174,10 @@ class NikobusDiscovery:
             device_type_hex = f"{payload_bytes[7]:02X}"
             
             if device_type_hex == "FF":
-                _LOGGER.debug("Empty register / device_address == FF")
-                await self._coordinator.nikobus_command.clear_command_queue()
-                self._message_complete = True
-                self._cancel_timeout()
-                self.reset_state()
-                await _notify_discovery_finished(self)
+                _LOGGER.debug(
+                    "Discovery skipped | type=inventory module=%s reason=empty_register",
+                    self._module_address,
+                )
                 return
 
             device_info = classify_device_type(device_type_hex, DEVICE_TYPES)
@@ -321,42 +291,14 @@ class NikobusDiscovery:
                 _LOGGER.error("No decoder available for module type: %s", self._module_type)
                 return
 
-            if hasattr(decoder, "set_logical_channel_count"):
-                decoder.set_logical_channel_count(self._module_channels)
-
             if hasattr(decoder, "set_module_address"):
                 decoder.set_module_address(address)
 
             if decoder.module_type == "dimmer_module":
-                register_hex = payload_and_crc[:2].upper() if payload_and_crc else ""
-                chunk_hex = payload_and_crc[:EXPECTED_CHUNK_LEN].upper()
-                is_empty_chunk = chunk_hex and set(chunk_hex) == {"F"}
-                if is_empty_chunk:
-                    self._consecutive_empty_registers += 1
-                else:
-                    self._consecutive_empty_registers = 0
-
                 commands = decoder.decode(message)
                 if commands:
                     self._module_address = address
                     await self._handle_decoded_commands(address, commands)
-                else:
-                    _LOGGER.debug("Dimmer decoder returned no commands for message: %s", message)
-                if self._consecutive_empty_registers >= DIMMER_EMPTY_RESPONSE_THRESHOLD:
-                    await self._coordinator.nikobus_command.clear_inventory_commands_for_prefix(
-                        self._inventory_command_prefix
-                    )
-                    _LOGGER.info(
-                        "Dimmer inventory early-stop | module=%s after %d consecutive empty registers at reg=0x%02X",
-                        address,
-                        self._consecutive_empty_registers,
-                        int(register_hex or "0", 16),
-                    )
-                    self.reset_state()
-                    await _notify_discovery_finished(self)
-                    return
-
-                await self._consume_dimmer_inventory_response()
                 return
 
             analysis = decoder.analyze_frame_payload(self._payload_buffer, payload_and_crc)
@@ -366,31 +308,29 @@ class NikobusDiscovery:
 
             self._module_address = address
             self._payload_buffer = analysis["remainder"]
-            self._chunks.extend(analysis["chunks"])
 
-            self._cancel_timeout()
-            self._timeout_task = asyncio.create_task(self._timeout_waiter())
+            decoded_commands: list[DecodedCommand] = []
+            for chunk in analysis["chunks"]:
+                if chunk.strip().upper() == "F" * len(chunk):
+                    _LOGGER.debug(
+                        "Discovery skipped | type=%s module=%s reason=terminator payload=%s",
+                        decoder.module_type,
+                        address,
+                        chunk,
+                    )
+                    continue
+                decoded_commands.extend(decoder.decode(chunk, module_address=address))
 
-            if analysis.get("terminated"):
-                _LOGGER.debug("Termination chunk encountered for address %s", address)
-                await self._coordinator.nikobus_command.clear_command_queue()
-                self._message_complete = True
-                self._cancel_timeout()
-                await self.process_complete_message()
-                return
-
-            for candidate_chunk in self._chunks:
-                if candidate_chunk.strip().upper() == "F" * len(candidate_chunk):
-                    _LOGGER.debug("Termination chunk encountered: %r", candidate_chunk)
-                    await self._coordinator.nikobus_command.clear_command_queue()
-                    self._message_complete = True
-                    self._cancel_timeout()
-                    await self.process_complete_message()
-                    return
+            if decoded_commands:
+                await self._handle_decoded_commands(address, decoded_commands)
 
         except Exception as e:
             _LOGGER.error("Failed to parse module inventory response: %s", e)
             self.reset_state()
+        finally:
+            if self._coordinator.discovery_module:
+                self.reset_state()
+                await _notify_discovery_finished(self)
 
     async def _handle_decoded_commands(
         self, module_address: str | None, decoded_commands: list[DecodedCommand]
@@ -414,21 +354,11 @@ class NikobusDiscovery:
             "command_mapping": command_mapping,
         }
 
-        _LOGGER.info("Decoded Button Commands:")
-        _LOGGER.info("module_address: %s", self._decoded_buffer["module_address"])
-        for idx, cmd in enumerate(self._decoded_buffer["commands"], start=1):
-            _LOGGER.info(
-                "Command %d: Payload: %s, Button Address: %s, Push Button Address: %s, Key: %s, Channel: %s, T1: %s, T2: %s, Mode: %s",
-                idx,
-                cmd.get("payload"),
-                cmd.get("button_address"),
-                cmd.get("push_button_address"),
-                cmd.get("K"),
-                cmd.get("C"),
-                cmd.get("T1"),
-                cmd.get("T2"),
-                cmd.get("M"),
-            )
+        _LOGGER.info(
+            "Discovery decoded commands | module=%s count=%d",
+            self._decoded_buffer["module_address"],
+            len(self._decoded_buffer["commands"]),
+        )
 
         updated_buttons, links_added, outputs_added = await merge_discovered_links(
             self._hass, command_mapping
@@ -439,60 +369,6 @@ class NikobusDiscovery:
             links_added,
             outputs_added,
         )
-
-    async def process_complete_message(self):
-        try:
-            termination_index = None
-            for i, chunk in enumerate(self._chunks):
-                if chunk.strip().upper() == ("F" * len(chunk)):
-                    termination_index = i
-                    _LOGGER.debug("Termination chunk encountered at index %d.", i)
-                    break
-
-            if termination_index is not None:
-                chunks_to_process = self._chunks[:termination_index]
-            else:
-                chunks_to_process = self._chunks
-            self._chunks = []
-
-            decoder = self._get_decoder()
-            if decoder is None:
-                _LOGGER.error("No decoder found for module type %s", self._module_type)
-                return
-
-            _LOGGER.debug(
-                "Processing complete message with %d chunks.", len(chunks_to_process)
-            )
-            decoded_commands: list[DecodedCommand] = []
-            for chunk in chunks_to_process:
-                _LOGGER.debug("Decoding chunk: %r", chunk)
-                decoded_commands.extend(decoder.decode(chunk, module_address=self._module_address))
-
-            await self._handle_decoded_commands(self._module_address, decoded_commands)
-
-            self._payload_buffer = ""
-            self._decoded_buffer = {"module_address": None, "commands": [], "command_mapping": {}}
-            self._module_address = None
-            self._message_complete = False
-
-        except Exception as e:
-            _LOGGER.error("Error during process_complete_message: %s", e)
-        finally:
-            self.reset_state()
-            await _notify_discovery_finished(self)
-
-    async def _consume_dimmer_inventory_response(self) -> None:
-        """Track remaining queued dimmer inventory responses and finish when done."""
-
-        if self._inventory_commands_remaining is None:
-            return
-
-        if self._inventory_commands_remaining > 0:
-            self._inventory_commands_remaining -= 1
-
-        if self._inventory_commands_remaining <= 0:
-            self.reset_state()
-            await _notify_discovery_finished(self)
 
 
 def run_decoder_harness(coordinator):

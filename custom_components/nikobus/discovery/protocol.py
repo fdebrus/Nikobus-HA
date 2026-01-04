@@ -6,13 +6,9 @@ import logging
 from dataclasses import dataclass
 from typing import Callable
 
-from . import dimmer_decoder, shutter_decoder, switch_decoder
 from .mapping import CHANNEL_MAPPING, KEY_MAPPING_MODULE
 
 _LOGGER = logging.getLogger(__name__)
-
-
-_FALLBACK_LOGGED: set[tuple[str | None, str]] = set()
 
 
 @dataclass(slots=True)
@@ -21,7 +17,6 @@ class DecoderContext:
 
     coordinator: any
     module_address: str | None
-    logical_channel_count: int | None
     module_channel_count: int | None
 
 
@@ -65,51 +60,24 @@ def _safe_int(hex_byte: str | None) -> int | None:
         return None
 
 
-def _format_channel(channel_index: int | None) -> str | None:
+def _format_channel(channel_number: int | None) -> str | None:
     """Return a consistent channel label for discovery logs."""
 
-    if channel_index is None:
+    if channel_number is None or channel_number <= 0:
         return None
-    return CHANNEL_MAPPING.get(channel_index, f"Channel {channel_index + 1}")
+
+    index = channel_number - 1
+    return CHANNEL_MAPPING.get(index, f"Channel {channel_number}")
 
 
-def _module_channel_count(
-    coordinator,
-    module_address: str | None,
-    module_type: str,
-    logical_channel_count: int | None,
-) -> int | None:
-    """Resolve the channel count using coordinator data with safe fallbacks."""
+def classify_device_type(device_type_hex: str, device_types: dict) -> dict:
+    """Return device metadata for the given device type."""
 
-    fallback = {"switch_module": 12, "dimmer_module": 12, "roller_module": 6}.get(
-        module_type
+    normalized_type = (device_type_hex or "").strip().upper()
+    return device_types.get(
+        normalized_type,
+        {"Category": "Unknown", "Name": "Unknown", "Model": "N/A", "Channels": 0},
     )
-
-    coordinator_count: int | None = None
-    if coordinator and module_address:
-        try:
-            coordinator_count = coordinator.get_module_channel_count(module_address)
-        except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.debug(
-                "Module channel lookup failed | module=%s error=%s", module_address, err
-            )
-
-    if isinstance(coordinator_count, int) and coordinator_count > 0:
-        return coordinator_count
-
-    if isinstance(logical_channel_count, int) and logical_channel_count > 0:
-        return logical_channel_count
-
-    if (module_address, module_type) not in _FALLBACK_LOGGED:
-        _LOGGER.debug(
-            "Using fallback channel count | module=%s type=%s fallback=%s",
-            module_address,
-            module_type,
-            fallback,
-        )
-        _FALLBACK_LOGGED.add((module_address, module_type))
-
-    return fallback
 
 
 def convert_nikobus_address(address_string: str) -> str:
@@ -196,7 +164,6 @@ def decode_command_payload(
     coordinator,
     *,
     module_address: str | None = None,
-    logical_channel_count: int | None = None,
     reverse_before_decode: bool = False,
     raw_chunk_hex: str | None = None,
 ):
@@ -212,22 +179,31 @@ def decode_command_payload(
     if raw_bytes is None:
         return None
 
+    module_channel_count: int | None = None
+    if coordinator and module_address:
+        try:
+            module_channel_count = coordinator.get_module_channel_count(module_address)
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.debug(
+                "Module channel lookup failed | module=%s error=%s", module_address, err
+            )
+
     context = DecoderContext(
         coordinator=coordinator,
         module_address=module_address,
-        logical_channel_count=logical_channel_count,
-        module_channel_count=_module_channel_count(
-            coordinator, module_address, module_type, logical_channel_count
-        ),
+        module_channel_count=module_channel_count,
     )
 
-    decoders: dict[str, Callable[..., dict | None]] = {
-        "switch_module": switch_decoder.decode,
-        "roller_module": shutter_decoder.decode,
-        "dimmer_module": dimmer_decoder.decode,
-    }
+    if module_type == "switch_module":
+        from . import switch_decoder as decoder_module
+    elif module_type == "roller_module":
+        from . import shutter_decoder as decoder_module
+    elif module_type == "dimmer_module":
+        from . import dimmer_decoder as decoder_module
+    else:
+        decoder_module = None
 
-    decoder = decoders.get(module_type)
+    decoder = getattr(decoder_module, "decode", None) if decoder_module else None
     if decoder is None:
         _LOGGER.error("Unknown module_type '%s' for payload %s", module_type, raw_input)
         return None
@@ -251,6 +227,7 @@ __all__ = [
     "normalize_payload",
     "reverse_hex",
     "convert_nikobus_address",
+    "classify_device_type",
     "get_button_address",
     "get_push_button_address",
     "_format_channel",

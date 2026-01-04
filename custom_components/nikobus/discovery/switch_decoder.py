@@ -41,7 +41,7 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
 
     if _is_all_ff(payload_hex, 12):
         _LOGGER.debug(
-            "Discovery skipped | type=switch module=%s payload=%s reason=empty_slot",
+            "Discovery skipped | type=switch module=%s reason=empty_slot payload=%s",
             context.module_address,
             payload_hex,
         )
@@ -49,7 +49,7 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
 
     if len(raw_bytes) != 6:
         _LOGGER.debug(
-            "Discovery skipped | type=switch module=%s payload=%s reason=invalid_length",
+            "Discovery skipped | type=switch module=%s reason=invalid_length payload=%s",
             context.module_address,
             payload_hex,
         )
@@ -63,7 +63,7 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
 
     if None in (key_raw, channel_raw, mode_raw):
         _LOGGER.debug(
-            "Discovery skipped | type=switch module=%s payload=%s reason=invalid_length",
+            "Discovery skipped | type=switch module=%s reason=invalid_length payload=%s",
             context.module_address,
             payload_hex,
         )
@@ -71,16 +71,19 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
 
     if mode_raw not in SWITCH_MODE_MAPPING:
         _LOGGER.debug(
-            "Discovery skipped | type=switch module=%s payload=%s reason=unknown_mode",
+            "Discovery skipped | type=switch module=%s reason=unknown_mode payload=%s",
             context.module_address,
             payload_hex,
         )
         return None
 
     channel_count = context.module_channel_count
-    if channel_count is not None and not (0 <= channel_raw < channel_count):
+    channel_decoded = channel_raw + 1 if channel_raw is not None else None
+    if channel_count is not None and (
+        channel_decoded is None or not (1 <= channel_decoded <= channel_count)
+    ):
         _LOGGER.debug(
-            "Discovery skipped | type=switch module=%s payload=%s reason=invalid_channel",
+            "Discovery skipped | type=switch module=%s reason=invalid_channel payload=%s",
             context.module_address,
             payload_hex,
         )
@@ -101,25 +104,24 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
         "push_button_address": push_button_address,
         "key_raw": key_raw,
         "channel_raw": channel_raw,
+        "channel": channel_decoded,
         "mode_raw": mode_raw,
         "t1_raw": t1_raw,
         "t2_raw": t2_raw,
         "K": key_raw,
-        "C": _format_channel(channel_raw),
+        "C": _format_channel(channel_decoded),
         "T1": t1_val,
         "T2": t2_val,
         "M": SWITCH_MODE_MAPPING.get(mode_raw),
     }
 
     _LOGGER.debug(
-        "Discovery decoded | type=switch module=%s button=%s key=%s channel=%s mode=%s t1=%s t2=%s",
+        "Discovery decoded | type=switch module=%s button=%s key=%s channel=%s mode=%s",
         context.module_address,
         normalized_button,
         key_raw,
-        decoded["C"],
+        decoded["channel"],
         decoded["M"],
-        t1_val,
-        t2_val,
     )
 
     return decoded
@@ -135,7 +137,6 @@ class SwitchDecoder(BaseChunkingDecoder):
             self.module_type,
             self._coordinator,
             module_address=module_address or self._module_address,
-            logical_channel_count=self._logical_channel_count,
             reverse_before_decode=True,
             raw_chunk_hex=chunk,
         )
