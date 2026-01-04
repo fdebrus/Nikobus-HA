@@ -136,11 +136,10 @@ def get_push_button_address(
         except Exception:  # pragma: no cover - defensive
             num_channels = None
 
-    fallback_count = num_channels or 4
-    mapping = KEY_MAPPING_MODULE.get(fallback_count, {})
-    if not mapping:
-        mapping = next(iter(KEY_MAPPING_MODULE.values()), {})
+    if num_channels is None or num_channels not in KEY_MAPPING_MODULE:
+        return None, button_address
 
+    mapping = KEY_MAPPING_MODULE[num_channels]
     if key_index not in mapping:
         return None, button_address
 
@@ -183,7 +182,7 @@ def decode_command_payload(
     if raw_bytes is None:
         return None
 
-    resolved_channel_count: int | None = module_channel_count
+    resolved_channel_count: int | None = None
     coordinator_count: int | None = None
     if coordinator and module_address:
         try:
@@ -194,14 +193,13 @@ def decode_command_payload(
             )
 
     fallback_reason: str | None = None
-    if coordinator_count:
+    if coordinator_count is not None:
         resolved_channel_count = coordinator_count
-    elif module_channel_count:
+    elif module_channel_count is not None:
         resolved_channel_count = module_channel_count
         fallback_reason = "inventory"
     else:
-        resolved_channel_count = 12
-        fallback_reason = "default"
+        fallback_reason = "unknown"
 
     if (
         fallback_reason
