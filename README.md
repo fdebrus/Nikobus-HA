@@ -17,8 +17,8 @@ This custom integration connects Home Assistant to your Nikobus installation so 
 Recent releases standardized **unique ID formats** for module-based entities (lights, switches, and covers) to explicitly include the entity type, for example:
 
 ```yaml
-nikobus_light_<address><channel>
-nikobus_switch_<address><channel>
+nikobus_light_<address>_<channel>
+nikobus_switch_<address>_<channel>
 nikobus_cover_<address>_<channel>
 ```
 
@@ -37,7 +37,8 @@ Rather than manually fixing each reference, Home Assistant provides a built-in w
 1. Go to **Settings → Devices & Services → Integrations**
 2. Open **Nikobus**
 3. Click **Entities**
-4. Use **Recreate entity IDs**
+4. Select all Entities
+5. Use **Recreate entity IDs** from the 3 dots top right
 
 This will regenerate entity IDs using the new standardized format while preserving history and minimizing dashboard disruption where possible.
 
