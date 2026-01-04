@@ -37,7 +37,8 @@ Rather than manually fixing each reference, Home Assistant provides a built-in w
 1. Go to **Settings → Devices & Services → Integrations**
 2. Open **Nikobus**
 3. Click **Entities**
-4. Use **Recreate entity IDs**
+4. Select all Entities
+5. Use **Recreate entity IDs** from the 3 dots top right
 
 This will regenerate entity IDs using the new standardized format while preserving history and minimizing dashboard disruption where possible.
 
