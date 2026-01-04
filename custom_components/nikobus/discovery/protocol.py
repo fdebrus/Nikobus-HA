@@ -770,6 +770,19 @@ def _build_dimmer_candidates(
     mode_mapping,
     num_channels,
 ):
+    timers_indexed = {
+        "t1_idx1_lo": _nibble_low(raw_bytes, 1),
+        "t1_idx1_hi": _nibble_high(raw_bytes, 1),
+        "t2_idx1_lo": _nibble_low(raw_bytes, 1),
+        "t2_idx1_hi": _nibble_high(raw_bytes, 1),
+    }
+
+    _LOGGER.debug(
+        "Dimmer timer nibble candidates | raw_bytes=%s | indexed=%s",
+        list(enumerate(raw_bytes)),
+        timers_indexed,
+    )
+
     key_options = [
         ("b3_hi", _nibble_high(raw_bytes, 3)),
         ("b3_lo", _nibble_low(raw_bytes, 3)),
@@ -787,10 +800,8 @@ def _build_dimmer_candidates(
         ("b2_lo", _nibble_low(raw_bytes, 2)),
         ("b3_lo", _nibble_low(raw_bytes, 3)),
     ]
-    t2_options = [
-        ("b0_hi", _nibble_high(raw_bytes, 0)),
-        ("b2_hi", _nibble_high(raw_bytes, 2)),
-    ]
+    t1_raw = timers_indexed["t1_idx1_lo"]
+    t2_raw = timers_indexed["t2_idx1_hi"]
 
     possible_keys = set()
     if num_channels is not None:
@@ -809,35 +820,34 @@ def _build_dimmer_candidates(
             for mode_label, mode_val in mode_options:
                 if mode_val is None:
                     continue
-                t1_val = None
-                if mode_label == "b4_lo":
-                    t1_val = _nibble_high(raw_bytes, 4)
-                elif mode_label == "b2_lo":
-                    t1_val = _nibble_high(raw_bytes, 2)
-                elif mode_label == "b3_lo":
-                    t1_val = _nibble_high(raw_bytes, 3)
-                for t2_label, t2_val in t2_options:
-                    if t2_val is None:
-                        continue
-                    candidate_id = f"k:{key_label}|c:{channel_label}|m:{mode_label}|t2:{t2_label}"
-                    valid_key = key_val in possible_keys
-                    valid_channel = channel_val in channel_mapping
-                    valid_mode = mode_val in mode_mapping
-                    candidates.append(
-                        {
-                            "id": candidate_id,
-                            "key_raw": key_val,
-                            "channel_raw": channel_val,
-                            "mode_raw": mode_val,
-                            "t1_raw": t1_val,
-                            "t2_raw": t2_val,
-                            "valid_key": valid_key,
-                            "valid_channel": valid_channel,
-                            "valid_mode": valid_mode,
-                            "valid_all": all([valid_key, valid_channel, valid_mode]),
-                            "count": _DIMMER_CANDIDATE_SUCCESS.get(candidate_id, 0),
-                        }
-                    )
+                t1_val = t1_raw
+                if t1_val is None:
+                    if mode_label == "b4_lo":
+                        t1_val = _nibble_high(raw_bytes, 4)
+                    elif mode_label == "b2_lo":
+                        t1_val = _nibble_high(raw_bytes, 2)
+                    elif mode_label == "b3_lo":
+                        t1_val = _nibble_high(raw_bytes, 3)
+
+                candidate_id = f"k:{key_label}|c:{channel_label}|m:{mode_label}|t2:idx1_hi"
+                valid_key = key_val in possible_keys
+                valid_channel = channel_val in channel_mapping
+                valid_mode = mode_val in mode_mapping
+                candidates.append(
+                    {
+                        "id": candidate_id,
+                        "key_raw": key_val,
+                        "channel_raw": channel_val,
+                        "mode_raw": mode_val,
+                        "t1_raw": t1_val,
+                        "t2_raw": t2_raw,
+                        "valid_key": valid_key,
+                        "valid_channel": valid_channel,
+                        "valid_mode": valid_mode,
+                        "valid_all": all([valid_key, valid_channel, valid_mode]),
+                        "count": _DIMMER_CANDIDATE_SUCCESS.get(candidate_id, 0),
+                    }
+                )
 
     return candidates
 
@@ -858,6 +868,22 @@ def _decode_dimmer_fixed(
 
     button_address_hex = payload_hex[-6:]
     button_address = get_button_address(button_address_hex)
+    if button_address is None:
+        _LOGGER.debug(
+            "Skipping dimmer payload due to invalid button address | payload=%s",
+            payload_hex,
+        )
+        return None
+
+    normalized_button_address = button_address.upper()
+    if normalized_button_address in {"3FFFFF", "3FFFFE"}:
+        _LOGGER.debug(
+            "Skipping dimmer payload for empty slot | button_address=%s payload=%s",
+            normalized_button_address,
+            payload_hex,
+        )
+        return None
+
     num_channels = coordinator_get_button_channels(button_address)
 
     try:
