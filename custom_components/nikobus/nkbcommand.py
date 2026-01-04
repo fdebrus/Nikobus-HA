@@ -66,6 +66,31 @@ class NikobusCommandHandler:
             except asyncio.QueueEmpty:
                 break
 
+    async def clear_inventory_commands_for_prefix(self, base_command_prefix: str | None) -> None:
+        """Clear queued inventory commands matching the provided base prefix."""
+
+        if not base_command_prefix:
+            return
+
+        commands_to_keep = []
+        prefix = f"$14{base_command_prefix}".upper()
+
+        while True:
+            try:
+                item = self._command_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+            command_str = str(item.get("command", "")).upper()
+            matches_prefix = command_str.startswith(prefix)
+            self._command_queue.task_done()
+
+            if not matches_prefix:
+                commands_to_keep.append(item)
+
+        for item in commands_to_keep:
+            await self._command_queue.put(item)
+
     async def process_commands(self) -> None:
         """Process commands from the queue."""
         _LOGGER.info("Nikobus Command Processing starting.")
