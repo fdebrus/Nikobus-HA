@@ -274,7 +274,11 @@ async def update_module_data(hass, discovered_devices):
         return candidate
 
     def _refresh_discovered_info(channels_count: int, device: dict) -> dict:
-        timestamp = device.get("last_seen") or dt_util.now().isoformat()
+        timestamp = (
+            device.get("last_discovered")
+            or device.get("last_seen")
+            or dt_util.now().isoformat()
+        )
         discovery_info = {
             "name": device.get("discovered_name") or device.get("description", ""),
             "device_type": device.get("device_type"),

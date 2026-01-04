@@ -115,9 +115,13 @@ class DimmerDecoder:
 
     def __init__(self, coordinator):
         self._coordinator = coordinator
+        self._module_channel_count: int | None = None
 
     def can_handle(self, module_type: str) -> bool:
         return module_type == self.module_type
+
+    def set_module_channel_count(self, module_channel_count: int | None) -> None:
+        self._module_channel_count = module_channel_count
 
     def _chunk_from_message(self, message: str) -> tuple[str | None, str | None, str | None]:
         matched_header = next((candidate for candidate in DEVICE_INVENTORY if message.startswith(candidate)), None)
@@ -166,6 +170,7 @@ class DimmerDecoder:
             module_address=address,
             reverse_before_decode=False,
             raw_chunk_hex=chunk_hex,
+            module_channel_count=self._module_channel_count,
         )
 
         if decoded_fields is None:

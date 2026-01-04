@@ -22,6 +22,7 @@ class BaseChunkingDecoder:
         self._coordinator = coordinator
         self.module_type = module_type
         self._module_address: str | None = None
+        self._module_channel_count: int | None = None
 
     def can_handle(self, module_type: str) -> bool:
         return module_type == self.module_type
@@ -29,13 +30,16 @@ class BaseChunkingDecoder:
     def set_module_address(self, module_address: str | None) -> None:
         self._module_address = module_address
 
+    def set_module_channel_count(self, module_channel_count: int | None) -> None:
+        self._module_channel_count = module_channel_count
+
     def analyze_frame_payload(self, payload_buffer: str, payload_and_crc: str) -> dict[str, Any] | None:
         payload_and_crc = payload_and_crc.upper()
         if len(payload_and_crc) < _CRC_LEN:
-            _LOGGER.error(
-                "Payload too short to contain CRC | payload=%s module_type=%s",
-                payload_and_crc,
+            _LOGGER.debug(
+                "Discovery skipped | type=%s reason=short_payload payload=%s",
                 self.module_type,
+                payload_and_crc,
             )
             return None
 
@@ -56,14 +60,10 @@ class BaseChunkingDecoder:
             remainder = combined_payload[idx:]
 
         return {
-            "crc_len": _CRC_LEN,
             "crc": trailing_crc,
             "payload_region": data_region,
             "chunks": chunks,
-            "meta": [],
             "remainder": remainder,
-            "score": 0,
-            "terminated": False,
         }
 
     def decode_chunk(self, chunk: str, module_address: str | None = None) -> list[DecodedCommand]:
@@ -74,6 +74,7 @@ class BaseChunkingDecoder:
             module_address=module_address or self._module_address,
             reverse_before_decode=True,
             raw_chunk_hex=chunk,
+            module_channel_count=self._module_channel_count,
         )
 
         if decoded is None:

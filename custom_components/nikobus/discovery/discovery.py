@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
 
 from .base import DecodedCommand
 from .dimmer_decoder import DimmerDecoder, EXPECTED_CHUNK_LEN
@@ -17,6 +16,7 @@ from .protocol import classify_device_type, convert_nikobus_address, reverse_hex
 from ..const import DEVICE_INVENTORY
 from .fileio import merge_discovered_links, update_button_data, update_module_data
 from ..nkbprotocol import make_pc_link_inventory_command
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,9 +85,13 @@ class NikobusDiscovery:
             SwitchDecoder(coordinator),
             ShutterDecoder(coordinator),
         ]
+        self._timeout_task: asyncio.Task | None = None
         self.reset_state()
 
     def reset_state(self):
+        if self._timeout_task:
+            self._timeout_task.cancel()
+            self._timeout_task = None
         self._payload_buffer = ""
         self._module_address = None
         self._module_type = None
@@ -101,6 +105,34 @@ class NikobusDiscovery:
             if decoder.can_handle(self._module_type):
                 return decoder
         return None
+
+    def _cancel_timeout(self) -> None:
+        if self._timeout_task:
+            self._timeout_task.cancel()
+            self._timeout_task = None
+
+    def _schedule_timeout(self) -> None:
+        self._cancel_timeout()
+        module_address = self._module_address
+        self._timeout_task = asyncio.create_task(
+            self._timeout_after(module_address)
+        )
+
+    async def _timeout_after(self, module_address: str | None) -> None:
+        try:
+            await asyncio.sleep(self._timeout_seconds)
+        except asyncio.CancelledError:
+            return
+        await self._finalize_discovery(module_address)
+
+    async def _finalize_discovery(self, module_address: str | None = None) -> None:
+        self._cancel_timeout()
+        resolved_address = (
+            module_address or self._module_address or self._coordinator.discovery_module_address
+        )
+        self.reset_state()
+        _LOGGER.info("Discovery finished | module=%s", resolved_address)
+        await _notify_discovery_finished(self)
 
     def _analyze_frame_payload(self, address, payload_and_crc):
         decoder = self._get_decoder()
@@ -139,13 +171,17 @@ class NikobusDiscovery:
                 await self.query_module_inventory(addr)
                 while self._coordinator.discovery_module:
                     await asyncio.sleep(0.5)
-                _LOGGER.info("Discovery finished | module=%s", addr)
             self.reset_state()
-            await _notify_discovery_finished(self)
             return
 
         base_command = f"10{device_address}"
         self._module_address = device_address
+
+        if not self._coordinator.discovery_module:
+            _LOGGER.info("Discovery started | module=%s", device_address)
+            self._coordinator.discovery_running = True
+            self._coordinator.discovery_module = True
+            self._coordinator.discovery_module_address = device_address
 
         if self._coordinator.discovery_module:
             base_command = f"10{device_address[2:4] + device_address[:2]}"
@@ -199,7 +235,7 @@ class NikobusDiscovery:
 
             if converted_address not in self.discovered_devices:
                 module_type = get_module_type_from_device_type(device_type_hex)
-                last_seen = datetime.now(timezone.utc).isoformat()
+                last_seen = dt_util.now().isoformat()
                 base_device = {
                     "description": name,
                     "discovered_name": name,
@@ -211,7 +247,7 @@ class NikobusDiscovery:
                     "channels_count": channels,
                     "module_type": module_type,
                     "discovered": True,
-                    "last_seen": last_seen,
+                    "last_discovered": last_seen,
                 }
                 self.discovered_devices[converted_address] = base_device
             else:
@@ -226,7 +262,7 @@ class NikobusDiscovery:
                         "channels_count": channels,
                         "module_type": get_module_type_from_device_type(device_type_hex),
                         "discovered": True,
-                        "last_seen": datetime.now(timezone.utc).isoformat(),
+                        "last_discovered": dt_util.now().isoformat(),
                     }
                 )
 
@@ -261,30 +297,32 @@ class NikobusDiscovery:
 
     async def parse_module_inventory_response(self, message):
         try:
-            _LOGGER.debug("Received message: %r", message)
             matched_header = next(
                 (h for h in DEVICE_INVENTORY if message.startswith(h)), None
             )
             if not matched_header:
-                _LOGGER.error("Message does not start with expected header.")
                 return
 
             frame_body = message[len(matched_header) :]
 
             if len(frame_body) < 4:
-                _LOGGER.error("Frame body too short to contain address and payload.")
                 return
 
             address_segment = frame_body[:4].upper()
             address = reverse_hex(address_segment)
             payload_and_crc = frame_body[4:]
 
+            self._module_address = address
+
             if self._module_type is None:
                 self._module_type = self._coordinator.get_module_type(address)
 
             coordinator_channels = self._coordinator.get_module_channel_count(address)
             discovered_channels = self.discovered_devices.get(address, {}).get("channels")
-            self._module_channels = coordinator_channels or discovered_channels
+            self._module_channels = next(
+                (count for count in (coordinator_channels, discovered_channels) if count),
+                None,
+            )
 
             decoder = self._get_decoder()
             if decoder is None:
@@ -293,44 +331,56 @@ class NikobusDiscovery:
 
             if hasattr(decoder, "set_module_address"):
                 decoder.set_module_address(address)
+            if hasattr(decoder, "set_module_channel_count"):
+                decoder.set_module_channel_count(self._module_channels)
 
             if decoder.module_type == "dimmer_module":
                 commands = decoder.decode(message)
                 if commands:
                     self._module_address = address
                     await self._handle_decoded_commands(address, commands)
+                self._schedule_timeout()
                 return
 
             analysis = decoder.analyze_frame_payload(self._payload_buffer, payload_and_crc)
             if analysis is None:
-                _LOGGER.error("Unable to analyze frame payload for message: %s", message)
+                self._schedule_timeout()
                 return
 
             self._module_address = address
             self._payload_buffer = analysis["remainder"]
 
             decoded_commands: list[DecodedCommand] = []
+            terminator_seen = False
             for chunk in analysis["chunks"]:
-                if chunk.strip().upper() == "F" * len(chunk):
-                    _LOGGER.debug(
-                        "Discovery skipped | type=%s module=%s reason=terminator payload=%s",
-                        decoder.module_type,
-                        address,
-                        chunk,
-                    )
+                normalized_chunk = chunk.strip().upper()
+                if not normalized_chunk:
                     continue
-                decoded_commands.extend(decoder.decode(chunk, module_address=address))
+                if normalized_chunk == "F" * len(normalized_chunk):
+                    terminator_seen = True
+                    continue
+                decoded_commands.extend(
+                    decoder.decode(normalized_chunk, module_address=address)
+                )
 
             if decoded_commands:
                 await self._handle_decoded_commands(address, decoded_commands)
 
+            completion_detected = False
+            if terminator_seen and not self._payload_buffer:
+                completion_detected = True
+
+            if not self._coordinator.discovery_module:
+                completion_detected = True
+
+            if completion_detected:
+                await self._finalize_discovery(address)
+            else:
+                self._schedule_timeout()
+
         except Exception as e:
             _LOGGER.error("Failed to parse module inventory response: %s", e)
             self.reset_state()
-        finally:
-            if self._coordinator.discovery_module:
-                self.reset_state()
-                await _notify_discovery_finished(self)
 
     async def _handle_decoded_commands(
         self, module_address: str | None, decoded_commands: list[DecodedCommand]
