@@ -55,23 +55,33 @@ class PositionEstimator:
         )
 
     def start(self, direction: str, position: Optional[float] = None) -> None:
-        if self._is_moving:
-            _LOGGER.warning("Movement already started; stopping previous movement and restarting.")
-            self.stop()  # Reset previous movement
-
         if direction not in ("opening", "closing"):
             _LOGGER.error("Invalid direction '%s' provided to PositionEstimator", direction)
             return
 
-        self._direction_value = 1 if direction == "opening" else -1
+        direction_value = 1 if direction == "opening" else -1
+        baseline_position = self.get_position() if self._is_moving else self._current_position
+
+        if self._is_moving and self._direction_value == direction_value:
+            _LOGGER.debug(
+                "Estimator already moving %s; refreshing baseline without stopping.", direction
+            )
+        elif self._is_moving:
+            _LOGGER.debug(
+                "Estimator restarting for direction change: %s -> %s.",
+                "opening" if self._direction_value == 1 else "closing",
+                direction,
+            )
+
+        self._direction_value = direction_value
         self._start_time = time.monotonic()
         self._is_moving = True
 
         # Capture the initial position once at the start.
         if position is not None:
             self._initial_position = max(0.0, min(100.0, float(position)))
-        elif self._current_position is not None:
-            self._initial_position = self._current_position
+        elif baseline_position is not None:
+            self._initial_position = baseline_position
         else:
             self._initial_position = 100.0 if self._direction_value == 1 else 0.0
         self._current_position = self._initial_position
@@ -482,6 +492,15 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         if new_state in (STATE_OPENING, STATE_CLOSING):
             direction = "opening" if new_state == STATE_OPENING else "closing"
+            if self._in_motion and self._direction == direction:
+                _LOGGER.debug(
+                    "Ignoring duplicate %s update for %s; already moving.",
+                    direction,
+                    self._attr_name,
+                )
+                self._previous_state = new_state
+                self._movement_source = source
+                return
             if source == "nikobus":
                 self._target_position = None
             await self._begin_motion(
@@ -550,6 +569,25 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         """Authoritative entrypoint for starting movement."""
 
         if self._in_motion:
+            if self._direction == direction:
+                _LOGGER.debug(
+                    "Duplicate start for %s in direction %s; keeping current motion.",
+                    self._attr_name,
+                    direction,
+                )
+                if target_position is not None:
+                    self._target_position = _clamp_position(target_position)
+                if button_limit is not None:
+                    self._button_operation_time = button_limit
+                self._movement_source = source
+                return
+
+            _LOGGER.debug(
+                "Reversing direction for %s: %s -> %s; stopping current motion first.",
+                self._attr_name,
+                self._direction,
+                direction,
+            )
             await self._end_motion(send_stop=source == "ha")
 
         self._direction = direction
