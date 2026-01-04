@@ -5,14 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .base import DecodedCommand
 from .chunk_decoder import BaseChunkingDecoder
 from .mapping import ROLLER_MODE_MAPPING, ROLLER_TIMER_MAPPING
 from .protocol import (
     _format_channel,
     _is_all_ff,
     _safe_int,
-    decode_command_payload,
     get_button_address,
     get_push_button_address,
 )
@@ -68,7 +66,8 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
         )
         return None
 
-    selector = selector_byte & 0x0F
+    selector = selector_byte & 0x7F
+    channel_raw = selector
     channel_decoded = (selector // 2) + 1
     channel_count = context.module_channel_count
     if channel_count is not None and not (1 <= channel_decoded <= channel_count):
@@ -79,7 +78,6 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
         )
         return None
 
-    channel_raw = channel_decoded
     button_address = get_button_address(payload_hex[-6:])
     push_button_address, normalized_button = get_push_button_address(
         key_raw,
@@ -121,34 +119,6 @@ def decode(payload_hex: str, raw_bytes: list[str], context) -> dict[str, Any] | 
 class ShutterDecoder(BaseChunkingDecoder):
     def __init__(self, coordinator):
         super().__init__(coordinator, "roller_module")
-
-    def decode_chunk(self, chunk: str, module_address: str | None = None) -> list[DecodedCommand]:
-        decoded = decode_command_payload(
-            chunk,
-            self.module_type,
-            self._coordinator,
-            module_address=module_address or self._module_address,
-            reverse_before_decode=True,
-            raw_chunk_hex=chunk,
-        )
-
-        if decoded is None:
-            _LOGGER.debug(
-                "Discovery skipped | type=roller module=%s payload=%s reason=empty_slot",
-                module_address or self._module_address,
-                chunk,
-            )
-            return []
-
-        command = DecodedCommand(
-            module_type=self.module_type,
-            raw_message=chunk,
-            prefix_hex=None,
-            chunk_hex=chunk,
-            payload_hex=chunk,
-            metadata=decoded,
-        )
-        return [command]
 
 
 __all__ = ["ShutterDecoder", "decode"]
