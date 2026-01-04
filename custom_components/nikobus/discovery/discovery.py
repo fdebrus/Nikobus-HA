@@ -3,7 +3,7 @@ import logging
 from datetime import datetime, timezone
 
 from .base import DecodedCommand
-from .dimmer_decoder import DimmerDecoder
+from .dimmer_decoder import DimmerDecoder, EXPECTED_CHUNK_LEN
 from .shutter_decoder import ShutterDecoder
 from .switch_decoder import SwitchDecoder
 from .mapping import (
@@ -19,6 +19,8 @@ from .fileio import merge_discovered_links, update_button_data, update_module_da
 from ..nkbprotocol import make_pc_link_inventory_command
 
 _LOGGER = logging.getLogger(__name__)
+
+DIMMER_EMPTY_RESPONSE_THRESHOLD = 8
 
 
 def add_to_command_mapping(command_mapping, decoded_command, module_address):
@@ -94,6 +96,9 @@ class NikobusDiscovery:
         self._module_channels: int | None = None
         self._message_complete = False
         self._timeout_task = None
+        self._inventory_command_prefix: str | None = None
+        self._inventory_commands_remaining: int | None = None
+        self._consecutive_empty_registers: int = 0
         self._coordinator.discovery_running = False
         self._coordinator.discovery_module = False
         self._coordinator.discovery_module_address = None
@@ -168,7 +173,14 @@ class NikobusDiscovery:
             self._module_type = self._coordinator.get_module_type(device_address)
             if self._module_type == "dimmer_module":
                 base_command = f"22{device_address[2:4] + device_address[:2]}"
-                command_range = range(0x20, 0x100)  # 0x20 à 0xFF inclus, un à un
+                command_range = range(0x10, 0x100)  # 0x10 à 0xFF inclus, un à un
+                self._inventory_command_prefix = base_command
+                self._inventory_commands_remaining = len(command_range)
+                _LOGGER.info(
+                    "Dimmer inventory scan queued | module=%s start=0x10 end=0xFF count=%d",
+                    device_address,
+                    len(command_range),
+                )
             else:
                 command_range = range(0x10, 0x100)  # 0x10 à 0xFF inclus, un à un
         else:
@@ -316,15 +328,35 @@ class NikobusDiscovery:
                 decoder.set_module_address(address)
 
             if decoder.module_type == "dimmer_module":
+                register_hex = payload_and_crc[:2].upper() if payload_and_crc else ""
+                chunk_hex = payload_and_crc[:EXPECTED_CHUNK_LEN].upper()
+                is_empty_chunk = chunk_hex and set(chunk_hex) == {"F"}
+                if is_empty_chunk:
+                    self._consecutive_empty_registers += 1
+                else:
+                    self._consecutive_empty_registers = 0
+
                 commands = decoder.decode(message)
                 if commands:
                     self._module_address = address
                     await self._handle_decoded_commands(address, commands)
-                    self._message_complete = True
-                    self.reset_state()
-                    await _notify_discovery_finished(self)
                 else:
                     _LOGGER.debug("Dimmer decoder returned no commands for message: %s", message)
+                if self._consecutive_empty_registers >= DIMMER_EMPTY_RESPONSE_THRESHOLD:
+                    await self._coordinator.nikobus_command.clear_inventory_commands_for_prefix(
+                        self._inventory_command_prefix
+                    )
+                    _LOGGER.info(
+                        "Dimmer inventory early-stop | module=%s after %d consecutive empty registers at reg=0x%02X",
+                        address,
+                        self._consecutive_empty_registers,
+                        int(register_hex or "0", 16),
+                    )
+                    self.reset_state()
+                    await _notify_discovery_finished(self)
+                    return
+
+                await self._consume_dimmer_inventory_response()
                 return
 
             analysis = decoder.analyze_frame_payload(self._payload_buffer, payload_and_crc)
@@ -446,6 +478,19 @@ class NikobusDiscovery:
         except Exception as e:
             _LOGGER.error("Error during process_complete_message: %s", e)
         finally:
+            self.reset_state()
+            await _notify_discovery_finished(self)
+
+    async def _consume_dimmer_inventory_response(self) -> None:
+        """Track remaining queued dimmer inventory responses and finish when done."""
+
+        if self._inventory_commands_remaining is None:
+            return
+
+        if self._inventory_commands_remaining > 0:
+            self._inventory_commands_remaining -= 1
+
+        if self._inventory_commands_remaining <= 0:
             self.reset_state()
             await _notify_discovery_finished(self)
 

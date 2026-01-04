@@ -11,6 +11,9 @@ class DummyCommandQueue:
     async def clear_command_queue(self):  # pragma: no cover - not used in these tests
         return None
 
+    async def clear_inventory_commands_for_prefix(self, _):  # pragma: no cover - test stub
+        return None
+
 
 class DummyCoordinator:
     def __init__(self):
@@ -169,4 +172,37 @@ def test_analyze_frame_payload_respects_termination():
     assert analysis["chunks"] == frame_chunks[:2]
     assert analysis["terminated"] is True
     assert analysis["remainder"] == ""
+
+
+async def test_dimmer_empty_responses_trigger_early_stop(monkeypatch):
+    cleared_prefix: list[str | None] = []
+
+    class _CommandQueue(DummyCommandQueue):
+        async def clear_inventory_commands_for_prefix(self, prefix):
+            cleared_prefix.append(prefix)
+
+    coordinator = DummyCoordinator()
+    coordinator.get_module_type = lambda _: "dimmer_module"
+    coordinator.nikobus_command = _CommandQueue()
+
+    monkeypatch.setattr(
+        "custom_components.nikobus.discovery.discovery.DIMMER_EMPTY_RESPONSE_THRESHOLD",
+        2,
+    )
+    monkeypatch.setattr(
+        "custom_components.nikobus.discovery.dimmer_decoder.DimmerDecoder.decode",
+        lambda self, message: [],
+    )
+
+    discovery = NikobusDiscovery(None, coordinator)
+    discovery._inventory_command_prefix = "22A1B2"
+    discovery._inventory_commands_remaining = 2
+
+    empty_message = "$0522$1E1234FFFFFFFFFFFFFFFF"
+
+    await discovery.parse_module_inventory_response(empty_message)
+    await discovery.parse_module_inventory_response(empty_message)
+
+    assert cleared_prefix == ["22A1B2"]
+    assert discovery._coordinator.discovery_module is False
 
