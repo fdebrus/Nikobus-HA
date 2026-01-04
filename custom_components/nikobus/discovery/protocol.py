@@ -382,105 +382,85 @@ def _extract_all_nibbles(raw_bytes: list[str]):
     return nibble_map
 
 
-def _build_roller_channel_candidates(
-    raw_channel_candidates: list[tuple[str, int | None]],
-    channel_count: int | None,
-):
-    channel_candidates: list[tuple[str, int | None, bool]] = []
-
-    for source, candidate in raw_channel_candidates:
-        channel_candidates.append((source, candidate, False))
-
-        if candidate is None:
-            continue
-
-        base_in_range = channel_count is None or 0 <= candidate < channel_count
-        derived_from_invalid = channel_count is not None and not base_in_range
-
-        channel_candidates.append((f"{source}_mask7", candidate & 0x7, derived_from_invalid))
-
-    return channel_candidates
-
-
 def _decode_roller_channel(
     raw_bytes,
     channel_count: int | None,
     channel_mapping,
 ):
-    """Decode roller channel using multiple strategies."""
+    """Decode roller channel using deterministic priority rules."""
 
     channel_raw_byte = _byte_value(raw_bytes, 1)
 
-    def _channel_in_range(channel_raw: int | None) -> bool:
-        return channel_raw is not None and (
-            channel_count is None or 0 <= channel_raw < channel_count
-        )
-
     if channel_raw_byte is None:
-        return None, None, None, "missing_channel_byte", None, channel_raw_byte
+        return (
+            None,
+            None,
+            None,
+            "unresolved_channel",
+            "missing_channel_byte",
+            channel_raw_byte,
+            None,
+        )
 
     selector_upper_bound = 2 * channel_count if channel_count is not None else None
 
-    if channel_raw_byte % 2 == 0 and (
-        selector_upper_bound is None or 2 <= channel_raw_byte <= selector_upper_bound
+    if (
+        channel_count is not None
+        and channel_raw_byte % 2 == 0
+        and channel_raw_byte != 0
+        and channel_raw_byte <= selector_upper_bound
     ):
-        channel_raw = (channel_raw_byte // 2) + 1
-        if _channel_in_range(channel_raw):
-            return (
-                channel_raw,
-                None,
-                "byte1",
-                "strategy_a_even_selector",
-                None,
-                channel_raw_byte,
+        channel_candidate = (channel_raw_byte // 2) + 1
+        if 0 <= channel_candidate < channel_count:
+            channel_raw, channel_mask = _channel_index_from_mask(
+                channel_candidate, channel_mapping, "roller_module"
             )
+            if channel_raw is not None:
+                return (
+                    channel_raw,
+                    channel_mask,
+                    "byte1",
+                    "even_selector_byte1",
+                    "even_selector_byte1",
+                    channel_raw_byte,
+                    None,
+                )
 
-    selector = channel_raw_byte & 0x7F
-    if selector % 2 == 0 and (
-        selector_upper_bound is None or 2 <= selector <= selector_upper_bound
-    ):
-        channel_raw = (selector // 2) + 1
-        if _channel_in_range(channel_raw):
-            return (
-                channel_raw,
-                None,
-                "byte1_packed",
-                "strategy_b_packed_selector",
-                None,
-                channel_raw_byte,
-            )
-
-    raw_channel_candidates = [
+    nibble_sources = [
         ("byte1_low", _nibble_low(raw_bytes, 1)),
         ("byte2_low", _nibble_low(raw_bytes, 2)),
         ("byte3_low", _nibble_low(raw_bytes, 3)),
+        ("byte4_low", _nibble_low(raw_bytes, 4)),
+        ("byte5_low", _nibble_low(raw_bytes, 5)),
     ]
 
-    channel_candidates = _build_roller_channel_candidates(
-        raw_channel_candidates, channel_count
-    )
+    for source, candidate in nibble_sources:
+        if candidate is None:
+            continue
 
-    channel_raw, channel_mask, channel_source, selection_reason, _ = (
-        _select_roller_channel(channel_candidates, channel_count, channel_mapping)
-    )
-
-    if channel_raw is not None:
-        return (
-            channel_raw,
-            channel_mask,
-            channel_source,
-            "strategy_c_nibble_candidates",
-            selection_reason,
-            channel_raw_byte,
-        )
+        if channel_count is not None and 0 <= candidate < channel_count:
+            channel_raw, channel_mask = _channel_index_from_mask(
+                candidate, channel_mapping, "roller_module"
+            )
+            if channel_raw is not None:
+                return (
+                    channel_raw,
+                    channel_mask,
+                    source,
+                    "nibble_channel",
+                    "nibble_in_range",
+                    channel_raw_byte,
+                    source,
+                )
 
     return (
         None,
         None,
         None,
-        "strategy_unresolved_channel_encoding",
-        selection_reason,
+        "unresolved_channel",
+        "unresolved_channel",
         channel_raw_byte,
+        None,
     )
 
 
@@ -540,33 +520,30 @@ def _calculate_timer_values(module_type, mode_raw, t1_raw, t2_raw, timer_mapping
 
 
 def _select_roller_mode(raw_bytes, mode_mapping):
-    """Pick the first mode nibble that maps to a known roller mode."""
+    """Pick roller mode from deterministic nibble positions."""
 
     candidates = [
         ("byte2_low", _nibble_low(raw_bytes, 2)),
         ("byte3_low", _nibble_low(raw_bytes, 3)),
-        ("byte4_low", _nibble_low(raw_bytes, 4)),
-        ("byte5_low", _nibble_low(raw_bytes, 5)),
     ]
 
     selected_source = None
     selected_value = None
 
-    for source, candidate in candidates:
-        if candidate is None or candidate in {0xE, 0xF}:
-            continue
-        if candidate in mode_mapping:
-            selected_source = source
-            selected_value = candidate
-            break
+    primary_source, primary_candidate = candidates[0]
+    secondary_source, secondary_candidate = candidates[1]
 
-    if selected_source is None:
-        # Default back to the first non-filler candidate even if it is unknown
-        for source, candidate in candidates:
-            if candidate is not None and candidate not in {0xE, 0xF}:
-                selected_source = source
-                selected_value = candidate
-                break
+    if primary_candidate is not None and primary_candidate not in {0xE, 0xF}:
+        selected_source = primary_source
+        selected_value = primary_candidate
+
+    if (
+        (selected_value is None or selected_value not in mode_mapping)
+        and secondary_candidate is not None
+        and secondary_candidate not in {0xE, 0xF}
+    ):
+        selected_source = secondary_source
+        selected_value = secondary_candidate
 
     _LOGGER.debug(
         "Roller mode selection | candidates=%s selected=%s source=%s valid_keys=%s",
@@ -649,88 +626,6 @@ def _select_roller_key(raw_bytes, button_channel_count: int | None, button_addre
         return normalized, source, candidate, candidates
 
     return None, None, None, candidates
-
-
-def _select_roller_channel(
-    channel_candidates: list[tuple[str, int | None, bool]],
-    channel_count: int | None,
-    channel_mapping,
-):
-    selection_reason = "no_candidates"
-    rejection_reason = None
-    channel_raw = None
-    channel_mask = None
-    channel_source = None
-
-    priority = [
-        "byte1_low",
-        "byte1_low_mask7",
-        "byte3_low",
-        "byte3_low_mask7",
-        "byte2_low",
-        "byte2_low_mask7",
-    ]
-
-    rejected_masked_from_invalid: list[tuple[str, int]] = []
-    eligible_candidates: list[tuple[str, int]] = []
-    in_range_candidates: list[tuple[str, int]] = []
-
-    for source, candidate, derived_from_invalid in channel_candidates:
-        if candidate is None:
-            continue
-
-        if derived_from_invalid:
-            rejected_masked_from_invalid.append((source, candidate))
-            continue
-
-        eligible_candidates.append((source, candidate))
-
-        if channel_count is None or 0 <= candidate < channel_count:
-            in_range_candidates.append((source, candidate))
-
-    if in_range_candidates:
-        non_zero_candidates = [
-            candidate for candidate in in_range_candidates if candidate[1] != 0
-        ]
-
-        if non_zero_candidates:
-            ordered = sorted(
-                non_zero_candidates,
-                key=lambda item: priority.index(item[0])
-                if item[0] in priority
-                else len(priority),
-            )
-            channel_source, selected_value = ordered[0]
-            channel_raw, channel_mask = _channel_index_from_mask(
-                selected_value, channel_mapping, "roller_module"
-            )
-            selection_reason = "priority_in_range"
-        elif len(in_range_candidates) == 1 and in_range_candidates[0][1] == 0:
-            channel_source, selected_value = in_range_candidates[0]
-            channel_raw, channel_mask = _channel_index_from_mask(
-                selected_value, channel_mapping, "roller_module"
-            )
-            selection_reason = "priority_in_range"
-            _LOGGER.debug(
-                "roller_channel_zero_selected_reason=only_valid_candidate"
-            )
-        else:
-            selection_reason = "ambiguous_zero_candidates"
-    elif channel_count is None and eligible_candidates:
-        channel_source, selected_value = eligible_candidates[0]
-        channel_raw, channel_mask = _channel_index_from_mask(
-            selected_value, channel_mapping, "roller_module"
-        )
-        selection_reason = "fallback_first_non_null"
-    elif eligible_candidates:
-        selection_reason = "all_candidates_out_of_range"
-
-    if rejected_masked_from_invalid:
-        rejection_reason = f"masked_candidates_from_out_of_range={rejected_masked_from_invalid}"
-        if selection_reason == "no_candidates":
-            selection_reason = "masked_candidates_rejected"
-
-    return channel_raw, channel_mask, channel_source, selection_reason, rejection_reason
 
 
 def _decode_switch(
@@ -948,16 +843,22 @@ def _decode_roller(
         module_address, "roller_module", logical_channel_count, coordinator_get_module_channels
     )
 
-    channel_raw, channel_mask, channel_source, channel_strategy, selection_reason, channel_raw_byte = (
-        _decode_roller_channel(raw_bytes, channel_count, channel_mapping)
-    )
+    (
+        channel_raw,
+        channel_mask,
+        channel_source,
+        channel_strategy,
+        selection_reason,
+        channel_raw_byte,
+        nibble_source,
+    ) = _decode_roller_channel(raw_bytes, channel_count, channel_mapping)
 
     nibble_map = _extract_all_nibbles(raw_bytes)
 
     bytes_with_index = [f"{idx}:0x{byte}" for idx, byte in enumerate(raw_bytes)]
 
     _LOGGER.debug(
-        "Roller byte debug | reversed_chunk=%s bytes=%s key_raw=%s mode_raw=%s t1_raw=%s t2_raw=%s channel_raw_byte=%s decoded_channel=%s strategy=%s selection_reason=%s",
+        "Roller byte debug | reversed_chunk=%s bytes=%s key_raw=%s mode_raw=%s t1_raw=%s t2_raw=%s channel_raw_byte=%s decoded_channel=%s strategy_used=%s selection_reason=%s channel_source=%s selector_byte1=%s selected_nibble_source=%s",
         reversed_chunk_hex or payload_hex,
         bytes_with_index,
         key_raw,
@@ -968,6 +869,9 @@ def _decode_roller(
         channel_raw,
         channel_strategy,
         selection_reason,
+        channel_source,
+        f"0x{channel_raw_byte:02X}" if channel_raw_byte is not None else None,
+        nibble_source,
     )
 
     if channel_raw is None:
@@ -1405,52 +1309,3 @@ def decode_command_payload(
         payload_hex,
         module_address,
     )
-
-
-def _test_roller_channel_selection_from_logs():
-    """Lightweight assertions to guard against masked roller channel rescue."""
-
-    examples = [
-        "0F28B258C977",  # reversed_chunk from shutter.txt
-        "0E38B280EE73",  # reversed_chunk from shutter.txt
-    ]
-
-    module_channel_count = 6
-
-    for reversed_chunk_hex in examples:
-        raw_bytes = [f"{b:02X}" for b in bytes.fromhex(reversed_chunk_hex)]
-        raw_channel_candidates = [
-            ("byte1_low", _nibble_low(raw_bytes, 1)),
-            ("byte2_low", _nibble_low(raw_bytes, 2)),
-            ("byte3_low", _nibble_low(raw_bytes, 3)),
-        ]
-
-        channel_candidates = _build_roller_channel_candidates(
-            raw_channel_candidates, module_channel_count
-        )
-
-        byte1_low = next(
-            candidate for source, candidate, _ in channel_candidates if source == "byte1_low"
-        )
-        byte1_low_mask7 = next(
-            candidate
-            for source, candidate, _ in channel_candidates
-            if source == "byte1_low_mask7"
-        )
-        derived_flag = next(
-            derived
-            for source, _, derived in channel_candidates
-            if source == "byte1_low_mask7"
-        )
-
-        assert byte1_low == 8
-        assert byte1_low_mask7 == 0
-        assert derived_flag is True
-
-        channel_raw, _, channel_source, selection_reason, _ = _select_roller_channel(
-            channel_candidates, module_channel_count, CHANNEL_MAPPING
-        )
-
-        assert channel_source != "byte1_low_mask7"
-        assert channel_raw != 0 or channel_raw is None
-        assert selection_reason != "fallback_first_non_null"
