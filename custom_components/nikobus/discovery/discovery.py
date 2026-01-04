@@ -79,26 +79,36 @@ class NikobusDiscovery:
         self.discovered_devices = {}
         self._coordinator = coordinator
         self._hass = hass
-        self._timeout_seconds = 5.0
+        self._module_timeout_seconds = 5.0
+        self._inventory_timeout_seconds = 2.0
         self._decoders = [
             DimmerDecoder(coordinator),
             SwitchDecoder(coordinator),
             ShutterDecoder(coordinator),
         ]
         self._timeout_task: asyncio.Task | None = None
+        self._inventory_timeout_task: asyncio.Task | None = None
+        self.discovery_stage: str | None = None
+        self._register_scan_queue: list[str] = []
         self.reset_state()
 
-    def reset_state(self):
+    def reset_state(self, *, update_flags: bool = True):
         if self._timeout_task:
             self._timeout_task.cancel()
             self._timeout_task = None
+        if self._inventory_timeout_task:
+            self._inventory_timeout_task.cancel()
+            self._inventory_timeout_task = None
         self._payload_buffer = ""
         self._module_address = None
         self._module_type = None
         self._module_channels: int | None = None
-        self._coordinator.discovery_running = False
-        self._coordinator.discovery_module = False
-        self._coordinator.discovery_module_address = None
+        self._register_scan_queue = []
+        self.discovery_stage = None
+        if update_flags:
+            self._coordinator.discovery_running = False
+            self._coordinator.discovery_module = False
+            self._coordinator.discovery_module_address = None
 
     def normalize_module_address(
         self, address: str, *, source: str, reverse_bus_order: bool = False
@@ -130,10 +140,21 @@ class NikobusDiscovery:
                 return decoder
         return None
 
+    def _is_known_module_address(self, address: str | None) -> bool:
+        normalized = (address or "").upper()
+        return any(
+            normalized in modules for modules in self._coordinator.dict_module_data.values()
+        )
+
     def _cancel_timeout(self) -> None:
         if self._timeout_task:
             self._timeout_task.cancel()
             self._timeout_task = None
+
+    def _cancel_inventory_timeout(self) -> None:
+        if self._inventory_timeout_task:
+            self._inventory_timeout_task.cancel()
+            self._inventory_timeout_task = None
 
     def _schedule_timeout(self) -> None:
         self._cancel_timeout()
@@ -142,20 +163,92 @@ class NikobusDiscovery:
             self._timeout_after(module_address)
         )
 
+    def _schedule_inventory_timeout(self) -> None:
+        self._cancel_inventory_timeout()
+        self._inventory_timeout_task = asyncio.create_task(
+            self._inventory_timeout_after()
+        )
+
     async def _timeout_after(self, module_address: str | None) -> None:
         try:
-            await asyncio.sleep(self._timeout_seconds)
+            await asyncio.sleep(self._module_timeout_seconds)
         except asyncio.CancelledError:
             return
         await self._finalize_discovery(module_address)
 
+    async def _inventory_timeout_after(self) -> None:
+        try:
+            await asyncio.sleep(self._inventory_timeout_seconds)
+        except asyncio.CancelledError:
+            return
+        await self._finalize_inventory_phase()
+
+    def _reset_module_context(self) -> None:
+        self._payload_buffer = ""
+        self._module_address = None
+        self._module_type = None
+        self._module_channels = None
+
     async def _finalize_discovery(self, module_address: str | None = None) -> None:
         self._cancel_timeout()
         resolved_address = (
-            module_address or self._module_address or self._coordinator.discovery_module_address
+            module_address
+            or self._module_address
+            or self._coordinator.discovery_module_address
         )
+        self._coordinator.discovery_module = False
+        self._coordinator.discovery_module_address = None
+        self._reset_module_context()
+
+        if self.discovery_stage == "register_scan" and self._register_scan_queue:
+            await self._start_next_register_scan()
+            return
+
+        await self._complete_discovery_run(resolved_address)
+
+    async def _finalize_inventory_phase(self) -> None:
+        self._cancel_inventory_timeout()
+        await update_module_data(self._hass, self.discovered_devices)
+        await update_button_data(
+            self._hass,
+            self.discovered_devices,
+            KEY_MAPPING,
+            convert_nikobus_address,
+        )
+
+        output_modules = sorted(
+            address
+            for address, device in self.discovered_devices.items()
+            if device.get("category") == "Module"
+            and device.get("module_type")
+            in {"switch_module", "dimmer_module", "roller_module"}
+        )
+
+        self.discovery_stage = "register_scan"
+        self._register_scan_queue = output_modules
+        if output_modules:
+            await self._start_next_register_scan()
+        else:
+            await self._complete_discovery_run(None)
+
+    async def _start_next_register_scan(self) -> None:
+        if not self._register_scan_queue:
+            await self._complete_discovery_run(None)
+            return
+
+        next_module = self._register_scan_queue.pop(0)
+        normalized_address = self.normalize_module_address(
+            next_module, source="register_scan_queue"
+        )
+        _LOGGER.info("Discovery started | module=%s", normalized_address)
+        self._coordinator.discovery_module = True
+        self._coordinator.discovery_module_address = normalized_address
+        await self.query_module_inventory(normalized_address, from_queue=True)
+
+    async def _complete_discovery_run(self, resolved_address: str | None) -> None:
+        self._cancel_inventory_timeout()
+        _LOGGER.info("Discovery finished")
         self.reset_state()
-        _LOGGER.info("Discovery finished | module=%s", resolved_address)
         await _notify_discovery_finished(self)
 
     def _analyze_frame_payload(self, address, payload_and_crc):
@@ -184,7 +277,17 @@ class NikobusDiscovery:
 
         return decoder.analyze_frame_payload(self._payload_buffer, payload_and_crc)
 
-    async def query_module_inventory(self, device_address):
+    async def start_inventory_discovery(self):
+        self.reset_state(update_flags=False)
+        self.discovered_devices = {}
+        self.discovery_stage = "inventory"
+        self._coordinator.discovery_module = False
+        self._coordinator.discovery_module_address = None
+        self._coordinator.discovery_running = True
+        await self._coordinator.nikobus_command.queue_command("#A")
+        self._schedule_inventory_timeout()
+
+    async def query_module_inventory(self, device_address, *, from_queue: bool = False):
         if device_address == "ALL":
             all_addresses = self._coordinator.get_all_module_addresses()
             for addr in all_addresses:
@@ -192,7 +295,7 @@ class NikobusDiscovery:
                 self._coordinator.discovery_running = True
                 self._coordinator.discovery_module = True
                 self._coordinator.discovery_module_address = addr
-                await self.query_module_inventory(addr)
+                await self.query_module_inventory(addr, from_queue=True)
                 while self._coordinator.discovery_module:
                     await asyncio.sleep(0.5)
             self.reset_state()
@@ -202,20 +305,37 @@ class NikobusDiscovery:
             device_address, source="query_module_inventory"
         )
 
+        self.discovery_stage = self.discovery_stage or "register_scan"
         base_command = f"10{normalized_address}"
         self._module_address = normalized_address
 
+        discovered_device = self.discovered_devices.get(normalized_address, {})
+
         if not self._coordinator.discovery_module:
             _LOGGER.info("Discovery started | module=%s", normalized_address)
-            self._coordinator.discovery_running = True
+            if not from_queue:
+                self._coordinator.discovery_running = True
             self._coordinator.discovery_module = True
             self._coordinator.discovery_module_address = normalized_address
 
         if self._module_type is None:
-            self._module_type = self._coordinator.get_module_type(normalized_address)
+            self._module_type = discovered_device.get("module_type") or self._coordinator.get_module_type(
+                normalized_address
+            )
 
-        non_output_modules = {"pc_link", "pc_logic", "feedback_module"}
+        non_output_modules = {"pc_link", "pc_logic", "feedback_module", "other_module"}
         is_output_module = self._module_type not in non_output_modules
+
+        coordinator_channels = (
+            self._coordinator.get_module_channel_count(normalized_address)
+            if self._is_known_module_address(normalized_address)
+            else 0
+        )
+        discovered_channels = discovered_device.get("channels")
+        self._module_channels = next(
+            (count for count in (coordinator_channels, discovered_channels) if count),
+            None,
+        )
 
         if self._coordinator.discovery_module:
             base_command = f"10{normalized_address[2:4] + normalized_address[:2]}"
@@ -243,6 +363,7 @@ class NikobusDiscovery:
 
     async def parse_inventory_response(self, payload):
         try:
+            self.discovery_stage = self.discovery_stage or "inventory"
             if payload.startswith("$0510$"):
                 payload = payload[6:]
             payload = payload.lstrip("$")
@@ -250,7 +371,8 @@ class NikobusDiscovery:
             data_bytes = payload_bytes[2:18] if len(payload_bytes) >= 18 else payload_bytes[2:]
 
             device_type_hex = f"{payload_bytes[7]:02X}"
-            
+            self._schedule_inventory_timeout()
+
             if device_type_hex == "FF":
                 _LOGGER.debug(
                     "Discovery skipped | type=inventory module=%s reason=empty_register",
@@ -259,24 +381,29 @@ class NikobusDiscovery:
                 return
 
             device_info = classify_device_type(device_type_hex, DEVICE_TYPES)
-            category = device_info.get("Category", "Unknown")
-            name = device_info.get("Name", "Unknown")
-            model = device_info.get("Model", "N/A")
-            channels = device_info.get("Channels", 0)
+            category = device_info.get("Category") or "Module"
+            name = device_info.get("Name") or "Unknown"
+            model = device_info.get("Model") or "N/A"
+            channels = device_info.get("Channels", 0) or 0
             slice_end = 13 if category == "Module" else 14
-            converted_address = payload_bytes[11:slice_end][::-1].hex().upper()
+            raw_address = payload_bytes[11:slice_end].hex().upper()
+            converted_address = self.normalize_module_address(
+                raw_address,
+                source="device_address_inventory",
+                reverse_bus_order=True,
+            )
 
-            if category == "Unknown":
+            if device_info.get("Category", "Unknown") == "Unknown":
                 _LOGGER.warning(
                     "Unknown device detected: Type %s at Address %s. "
                     "Please open an issue on https://github.com/fdebrus/Nikobus-HA/issues with this information.",
                     device_type_hex,
                     converted_address,
                 )
-                return
+
+            module_type = get_module_type_from_device_type(device_type_hex)
 
             if converted_address not in self.discovered_devices:
-                module_type = get_module_type_from_device_type(device_type_hex)
                 last_seen = dt_util.now().isoformat()
                 base_device = {
                     "description": name,
@@ -302,7 +429,7 @@ class NikobusDiscovery:
                         "model": model,
                         "channels": channels,
                         "channels_count": channels,
-                        "module_type": get_module_type_from_device_type(device_type_hex),
+                        "module_type": module_type,
                         "discovered": True,
                         "last_discovered": dt_util.now().isoformat(),
                     }
@@ -323,16 +450,6 @@ class NikobusDiscovery:
                 model,
                 converted_address,
             )
-
-            if category == "Module":
-                await update_module_data(self._hass, self.discovered_devices)
-            elif category == "Button":
-                await update_button_data(
-                    self._hass,
-                    self.discovered_devices,
-                    KEY_MAPPING,
-                    convert_nikobus_address,
-                )
         except Exception as e:
             _LOGGER.error("Failed to parse Nikobus payload: %s", e)
             self.reset_state()
@@ -357,9 +474,16 @@ class NikobusDiscovery:
             self._module_address = address
 
             if self._module_type is None:
-                self._module_type = self._coordinator.get_module_type(address)
+                discovered = self.discovered_devices.get(address, {})
+                self._module_type = discovered.get("module_type") or self._coordinator.get_module_type(
+                    address
+                )
 
-            coordinator_channels = self._coordinator.get_module_channel_count(address)
+            coordinator_channels = (
+                self._coordinator.get_module_channel_count(address)
+                if self._is_known_module_address(address)
+                else 0
+            )
             discovered_channels = self.discovered_devices.get(address, {}).get("channels")
             self._module_channels = next(
                 (count for count in (coordinator_channels, discovered_channels) if count),
