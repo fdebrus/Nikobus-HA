@@ -90,6 +90,7 @@ class NikobusDiscovery:
         self._inventory_timeout_task: asyncio.Task | None = None
         self.discovery_stage: str | None = None
         self._register_scan_queue: list[str] = []
+        self._inventory_addresses: set[str] = set()
         self.reset_state()
 
     def reset_state(self, *, update_flags: bool = True):
@@ -104,6 +105,7 @@ class NikobusDiscovery:
         self._module_type = None
         self._module_channels: int | None = None
         self._register_scan_queue = []
+        self._inventory_addresses = set()
         self.discovery_stage = None
         if update_flags:
             self._coordinator.discovery_running = False
@@ -208,6 +210,12 @@ class NikobusDiscovery:
 
     async def _finalize_inventory_phase(self) -> None:
         self._cancel_inventory_timeout()
+        if self.discovery_stage == "inventory_addresses" and self._inventory_addresses:
+            await self._run_inventory_identity_queries()
+            self.discovery_stage = "inventory_identity"
+            self._schedule_inventory_timeout()
+            return
+
         await update_module_data(self._hass, self.discovered_devices)
         await update_button_data(
             self._hass,
@@ -226,10 +234,22 @@ class NikobusDiscovery:
 
         self.discovery_stage = "register_scan"
         self._register_scan_queue = output_modules
+        _LOGGER.info(
+            "PC Link inventory scan finished | discovered=%d",
+            len(self.discovered_devices),
+        )
         if output_modules:
             await self._start_next_register_scan()
         else:
             await self._complete_discovery_run(None)
+
+    async def _run_inventory_identity_queries(self) -> None:
+        for address in sorted(self._inventory_addresses):
+            bus_order_address = address[2:4] + address[:2]
+            for base_command, command_code in (("10", "2E"), ("22", "1E")):
+                payload = f"{base_command}{bus_order_address}{command_code}04"
+                pc_link_command = make_pc_link_inventory_command(payload)
+                await self._coordinator.nikobus_command.queue_command(pc_link_command)
 
     async def _start_next_register_scan(self) -> None:
         if not self._register_scan_queue:
@@ -280,11 +300,25 @@ class NikobusDiscovery:
     async def start_inventory_discovery(self):
         self.reset_state(update_flags=False)
         self.discovered_devices = {}
-        self.discovery_stage = "inventory"
+        self.discovery_stage = "inventory_addresses"
         self._coordinator.discovery_module = False
         self._coordinator.discovery_module_address = None
         self._coordinator.discovery_running = True
+        _LOGGER.info("PC Link inventory scan started")
         await self._coordinator.nikobus_command.queue_command("#A")
+        self._schedule_inventory_timeout()
+
+    def handle_device_address_inventory(self, message: str) -> None:
+        raw_address = (message[3:7] or "").upper()
+        normalized = self.normalize_module_address(
+            raw_address, source="device_address_inventory", reverse_bus_order=True
+        )
+
+        self._inventory_addresses.add(normalized)
+        _LOGGER.debug(
+            "Inventory record | raw=%s normalized=%s", raw_address, normalized
+        )
+        _LOGGER.info("Inventory record | address=%s", normalized)
         self._schedule_inventory_timeout()
 
     async def query_module_inventory(self, device_address, *, from_queue: bool = False):
