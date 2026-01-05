@@ -353,6 +353,9 @@ class NikobusDiscovery:
                 normalized_address,
                 self._module_type,
             )
+            if self.discovery_stage == "inventory":
+                return
+
             await self._finalize_discovery(normalized_address)
             return
 
@@ -364,8 +367,8 @@ class NikobusDiscovery:
     async def parse_inventory_response(self, payload):
         try:
             self.discovery_stage = self.discovery_stage or "inventory"
-            if payload.startswith("$0510$"):
-                payload = payload[6:]
+            if payload.startswith("$") and "$" in payload[1:]:
+                payload = payload.split("$")[-1]
             payload = payload.lstrip("$")
             payload_bytes = bytes.fromhex(payload)
             data_bytes = payload_bytes[2:18] if len(payload_bytes) >= 18 else payload_bytes[2:]

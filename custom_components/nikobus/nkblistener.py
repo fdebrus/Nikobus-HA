@@ -159,6 +159,7 @@ class NikobusEventListener:
         if DEVICE_ADDRESS_INVENTORY in message:
             _LOGGER.debug("Device address inventory: %s", message)
             if discovery_running:
+                self.nikobus_discovery._schedule_inventory_timeout()
                 module_address = self.nikobus_discovery.normalize_module_address(
                     message[3:7],
                     source="device_address_inventory",
