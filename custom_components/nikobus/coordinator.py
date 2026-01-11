@@ -115,7 +115,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
                 # Initialize module state tracking dynamically based on channels
                 for modules in self.dict_module_data.values():
-                    for address, module_info in modules.items():
+                    if isinstance(modules, dict):
+                        module_items = modules.items()
+                    elif isinstance(modules, list):
+                        module_items = (
+                            (module.get("address"), module) for module in modules
+                        )
+                    else:
+                        _LOGGER.warning(
+                            "Unsupported module data type: %s", type(modules)
+                        )
+                        continue
+
+                    for address, module_info in module_items:
+                        if not address:
+                            _LOGGER.warning(
+                                "Skipping module entry without address: %s",
+                                module_info,
+                            )
+                            continue
                         channels = module_info.get("channels", [])
                         self.nikobus_module_states[address] = bytearray(len(channels))
 
