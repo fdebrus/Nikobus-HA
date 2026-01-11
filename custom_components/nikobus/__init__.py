@@ -145,7 +145,7 @@ async def _async_cleanup_orphan_entities(
         and entity.device_id
     }
 
-    for device in dev_reg.devices.values():
+    for device in list(dev_reg.devices.values()):
         if entry.entry_id not in device.config_entries:
             continue
         if hub_identifier in device.identifiers:
