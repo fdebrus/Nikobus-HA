@@ -236,7 +236,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         )
 
         self._phase = PHASE_IDLE
-        self._motion_id = 0
         self._motion_task: Optional[asyncio.Task] = None
         self._fallback_estimator_task: Optional[asyncio.Task] = None
         self._intent_task: Optional[asyncio.Task] = None
@@ -465,6 +464,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                         await self._handle_set_position(intent.target_position)
         except asyncio.CancelledError:
             return
+        finally:
+            self._pending_position = None
 
     async def _handle_set_position(self, target_position: Optional[int]) -> None:
         if target_position is None:
@@ -542,7 +543,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self, direction: str, source: str = "ha", should_send: bool = True
     ) -> None:
         """Enter STARTING and send hardware command if requested."""
-        self._motion_id += 1
         self._direction = direction
         self._movement_source = source
         self._phase = PHASE_STARTING
@@ -609,8 +609,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         self._phase = PHASE_STOPPING
         direction_for_stop = self._direction
-        stop_token = self._motion_id
-        stop_done: Optional[asyncio.Future[bool]] = None
 
         async def _finalize_state() -> None:
             if self._phase != PHASE_STOPPING or stop_token != self._motion_id:
@@ -644,7 +642,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         if send_stop and direction_for_stop:
             try:
-                stop_done = self.hass.loop.create_future()
+                stop_done = loop.create_future()
 
                 def _completion_handler() -> None:
                     async def _run() -> None:
