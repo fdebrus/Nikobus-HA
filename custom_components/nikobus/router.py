@@ -57,8 +57,7 @@ def build_routing(
 
     Routing decisions are centralized to ensure exactly one entity per channel,
     independent of platform setup order. The per-channel entity_type is resolved
-    using (in priority order) explicit entity_type, legacy use_as_* flags, then
-    module defaults.
+    using explicit entity_type then module defaults.
     """
 
     routing: dict[str, list[EntitySpec]] = {"cover": [], "switch": [], "light": []}
@@ -106,11 +105,6 @@ def _resolve_entity_type(module_type: str, channel_info: Mapping[str, Any]) -> s
             explicit_type,
             module_type,
         )
-
-    if channel_info.get("use_as_switch", False):
-        return "switch"
-    if channel_info.get("use_as_light", False):
-        return "light"
 
     if module_type == "roller_module":
         return "cover"

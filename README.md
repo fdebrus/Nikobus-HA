@@ -220,7 +220,7 @@ After installation, an example file is available at `/config/custom_components/n
 - `channels`: Each channel can have a description; keep descriptions unique across modules to avoid duplicate entity names.
 - For buttons with feedback LEDs, set `led_on` and `led_off` addresses (case-sensitive, format like `8AA8FA`). Leave blank if unused.
 - For roller outputs, add `operation_time` (seconds to fully open/close) so the integration can simulate shutter positioning.
-- To expose a roller (cover) output as a standard switch, set `use_as_switch` to `true` for that channel; the integration will create a switch entity that opens on "on" and stops on "off".
+- To expose a roller (cover) output as a standard switch, set `entity_type` to `switch` for that channel; the integration will create a switch entity that opens on "on" and stops on "off".
 - Prefix an unused output description with `not_in_use` to skip creating entities for it.
 
 ### Switch Module Example
@@ -278,7 +278,7 @@ After installation, an example file is available at `/config/custom_components/n
       "model": "05-001-02",
       "address": "9105",
       "channels": [
-        {"description": "R1 Output 1", "operation_time": "40", "led_on": "", "led_off": "", use_as_switch: true},
+        {"description": "R1 Output 1", "operation_time": "40", "led_on": "", "led_off": "", "entity_type": "switch"},
         {"description": "R1 Output 2", "operation_time": "40", "led_on": "", "led_off": ""},
         {"description": "R1 Output 3", "operation_time": "40"},
         {"description": "R1 Output 4", "operation_time": "40"},
