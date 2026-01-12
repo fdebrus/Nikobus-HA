@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from homeassistant.components.cover import (
     CoverEntity,
@@ -23,6 +23,7 @@ from homeassistant.helpers import device_registry as dr
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
+from .router import build_unique_id, get_routing
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,66 +167,35 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up Nikobus cover entities.")
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    roller_modules: Dict[str, Any] = coordinator.dict_module_data.get(
-        "roller_module", {}
-    )
-
     device_registry = dr.async_get(hass)
     cover_entities: list[NikobusCoverEntity] = []
-    switch_entities: list[Dict[str, Any]] = []  # Store switch info for switch.py
+    routing = get_routing(hass, entry, coordinator.dict_module_data)
 
-    for address, cover_module_data in roller_modules.items():
-        module_desc = cover_module_data.get("description", f"Roller Module {address}")
-        module_model = cover_module_data.get("model", "Unknown Roller Model")
-
+    for spec in routing["cover"]:
         _register_nikobus_roller_device(
             device_registry=device_registry,
             entry=entry,
-            module_address=address,
-            module_name=module_desc,
-            module_model=module_model,
+            module_address=spec.address,
+            module_name=spec.module_desc,
+            module_model=spec.module_model,
         )
 
-        for channel_idx, channel_info in enumerate(
-            cover_module_data.get("channels", []), start=1
-        ):
-            if channel_info["description"].startswith("not_in_use"):
-                continue
-
-            use_as_switch = channel_info.get("use_as_switch", False)
-            _LOGGER.debug(
-                f"Processing {module_desc} channel {channel_idx}: use_as_switch={use_as_switch}"
+        operation_time = spec.operation_time or "30"
+        cover_entities.append(
+            NikobusCoverEntity(
+                hass=hass,
+                coordinator=coordinator,
+                address=spec.address,
+                channel=spec.channel,
+                channel_description=spec.channel_description,
+                module_desc=spec.module_desc,
+                module_model=spec.module_model,
+                operation_time=operation_time,
             )
-
-            if use_as_switch:
-                switch_entities.append(
-                    {
-                        "coordinator": coordinator,
-                        "address": address,
-                        "channel": channel_idx,
-                        "channel_description": channel_info["description"],
-                        "module_desc": module_desc,
-                        "module_model": module_model,
-                    }
-                )
-            else:
-                operation_time = channel_info.get("operation_time", "30")
-                cover_entities.append(
-                    NikobusCoverEntity(
-                        hass=hass,
-                        coordinator=coordinator,
-                        address=address,
-                        channel=channel_idx,
-                        channel_description=channel_info["description"],
-                        module_desc=module_desc,
-                        module_model=module_model,
-                        operation_time=operation_time,
-                    )
-                )
+        )
 
     async_add_entities(cover_entities)
     _LOGGER.debug("Added %d Nikobus cover entities.", len(cover_entities))
-    hass.data.setdefault(DOMAIN, {})["switch_entities"] = switch_entities
 
 
 def _register_nikobus_roller_device(
@@ -289,7 +259,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._unsub_button_event: Optional[Any] = None
 
         self._attr_name = channel_description
-        self._attr_unique_id = f"{DOMAIN}_cover_{self._address}_{self._channel}"
+        self._attr_unique_id = build_unique_id(
+            "cover", "cover", self._address, self._channel
+        )
         self._attr_device_class = CoverDeviceClass.SHUTTER
 
         _LOGGER.debug(

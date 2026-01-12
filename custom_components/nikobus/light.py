@@ -5,11 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.light import (
-    LightEntity,
-    ATTR_BRIGHTNESS,
-    ColorMode,
-)
+from homeassistant.components.light import LightEntity, ATTR_BRIGHTNESS, ColorMode
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -18,6 +14,7 @@ from homeassistant.helpers import device_registry as dr
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
+from .router import build_unique_id, get_routing
 from .exceptions import NikobusError
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,54 +29,75 @@ async def async_setup_entry(
     _LOGGER.debug("Setting up Nikobus light entities (modules).")
 
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    dimmer_modules: dict[str, Any] = coordinator.dict_module_data.get(
-        "dimmer_module", {}
-    )
-
     device_registry = dr.async_get(hass)
-    entities: list[NikobusLightEntity] = []
+    entities: list[LightEntity] = []
+    registered_addresses: set[str] = set()
 
-    for address, dimmer_module_data in dimmer_modules.items():
-        module_desc = dimmer_module_data.get("description", f"Dimmer Module {address}")
-        module_model = dimmer_module_data.get("model", "Unknown Dimmer Model")
+    routing = get_routing(hass, entry, coordinator.dict_module_data)
+    for spec in routing["light"]:
+        if spec.address not in registered_addresses:
+            _register_nikobus_module_device(
+                device_registry=device_registry,
+                entry=entry,
+                module_address=spec.address,
+                module_name=spec.module_desc,
+                module_model=spec.module_model,
+            )
+            registered_addresses.add(spec.address)
 
-        _register_nikobus_dimmer_device(
-            device_registry=device_registry,
-            entry=entry,
-            module_address=address,
-            module_name=module_desc,
-            module_model=module_model,
-        )
-
-        for channel_index, channel_info in enumerate(
-            dimmer_module_data.get("channels", []), start=1
-        ):
-            if channel_info["description"].startswith("not_in_use"):
-                continue
-
+        if spec.kind == "dimmer_light":
             entities.append(
                 NikobusLightEntity(
                     coordinator=coordinator,
-                    address=address,
-                    channel=channel_index,
-                    channel_description=channel_info["description"],
-                    module_name=module_desc,
-                    module_model=module_model,
+                    address=spec.address,
+                    channel=spec.channel,
+                    channel_description=spec.channel_description,
+                    module_name=spec.module_desc,
+                    module_model=spec.module_model,
                 )
+            )
+        elif spec.kind == "relay_switch":
+            entities.append(
+                NikobusRelayLightEntity(
+                    coordinator=coordinator,
+                    address=spec.address,
+                    channel=spec.channel,
+                    channel_description=spec.channel_description,
+                    module_name=spec.module_desc,
+                    module_model=spec.module_model,
+                )
+            )
+        elif spec.kind == "cover_binary":
+            entities.append(
+                NikobusCoverLightEntity(
+                    coordinator=coordinator,
+                    address=spec.address,
+                    channel=spec.channel,
+                    channel_description=spec.channel_description,
+                    module_name=spec.module_desc,
+                    module_model=spec.module_model,
+                )
+            )
+        else:
+            _LOGGER.warning(
+                "Unhandled light routing kind '%s' for module %s channel %s.",
+                spec.kind,
+                spec.address,
+                spec.channel,
             )
 
     async_add_entities(entities)
-    _LOGGER.debug("Added %d Nikobus light (dimmer) entities.", len(entities))
+    _LOGGER.debug("Added %d Nikobus light entities.", len(entities))
 
 
-def _register_nikobus_dimmer_device(
+def _register_nikobus_module_device(
     device_registry: dr.DeviceRegistry,
     entry: ConfigEntry,
     module_address: str,
     module_name: str,
     module_model: str,
 ) -> None:
-    """Register a Nikobus dimmer module in the device registry."""
+    """Register a Nikobus module in the device registry."""
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, module_address)},
@@ -113,7 +131,9 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
         self._channel = channel
         self._channel_description = channel_description
 
-        self._attr_unique_id = f"{DOMAIN}_light_{self._address}_{self._channel}"
+        self._attr_unique_id = build_unique_id(
+            "light", "dimmer_light", self._address, self._channel
+        )
         self._attr_name = channel_description
 
         # Supported color modes: brightness
@@ -190,3 +210,171 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
             self._is_on = None
             self._brightness = None
             self.async_write_ha_state()
+
+
+class NikobusRelayLightEntity(NikobusEntity, LightEntity):
+    """On/off light entity that drives a relay switch channel."""
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        address: str,
+        channel: int,
+        channel_description: str,
+        module_name: str,
+        module_model: str,
+    ) -> None:
+        super().__init__(
+            coordinator=coordinator,
+            address=address,
+            name=module_name,
+            model=module_model,
+        )
+        self._address = address
+        self._channel = channel
+        self._channel_description = channel_description
+
+        self._attr_unique_id = build_unique_id(
+            "light", "relay_switch", self._address, self._channel
+        )
+        self._attr_name = channel_description
+        self._attr_supported_color_modes = {ColorMode.ONOFF}
+        self._attr_color_mode = ColorMode.ONOFF
+
+        self._is_on: bool | None = None
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on if self._is_on is not None else self._read_current_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._is_on = None
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self._is_on = True
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to turn on Nikobus light relay (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
+            self._is_on = None
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self._is_on = False
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to turn off Nikobus light relay (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
+            self._is_on = None
+            self.async_write_ha_state()
+
+    def _read_current_state(self) -> bool:
+        try:
+            return self.coordinator.get_switch_state(self._address, self._channel)
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to get relay state for Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
+            return False
+
+
+class NikobusCoverLightEntity(NikobusEntity, LightEntity):
+    """On/off light entity that drives a cover channel as binary output."""
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        address: str,
+        channel: int,
+        channel_description: str,
+        module_name: str,
+        module_model: str,
+    ) -> None:
+        super().__init__(
+            coordinator=coordinator,
+            address=address,
+            name=module_name,
+            model=module_model,
+        )
+        self._address = address
+        self._channel = channel
+        self._channel_description = channel_description
+
+        self._attr_unique_id = build_unique_id(
+            "light", "cover_binary", self._address, self._channel
+        )
+        self._attr_name = channel_description
+        self._attr_supported_color_modes = {ColorMode.ONOFF}
+        self._attr_color_mode = ColorMode.ONOFF
+
+        self._is_on: bool | None = None
+
+    @property
+    def is_on(self) -> bool:
+        return self._is_on if self._is_on is not None else self._read_current_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._is_on = None
+        self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        self._is_on = True
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.api.open_cover(self._address, self._channel)
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to open cover for Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
+            self._is_on = None
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        self._is_on = False
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.api.stop_cover(
+                self._address, self._channel, direction="closing"
+            )
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to stop cover for Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
+            self._is_on = None
+            self.async_write_ha_state()
+
+    def _read_current_state(self) -> bool:
+        try:
+            return self.coordinator.get_cover_state(self._address, self._channel) == 0x01
+        except NikobusError as err:
+            _LOGGER.error(
+                "Failed to get cover state for Nikobus light (addr=%s, channel=%d): %s",
+                self._address,
+                self._channel,
+                err,
+            )
+            return False
