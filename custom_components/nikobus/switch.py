@@ -122,6 +122,17 @@ class NikobusSwitchCoverEntity(NikobusEntity, SwitchEntity):
         )
 
     @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        return {
+            "address": self._address,
+            "channel": self.channel,
+            "channel_description": self.channel_description,
+            "module_description": self._device_name,
+            "module_model": self._device_model,
+        }
+
+    @property
     def is_on(self) -> bool:
         """Return True if the simulated switch (cover open) is on."""
         return self.coordinator.get_cover_state(self.address, self.channel) == 0x01
@@ -183,6 +194,17 @@ class NikobusSwitchEntity(NikobusEntity, SwitchEntity):
     def is_on(self) -> bool:
         """Return True if the switch is on."""
         return self._is_on if self._is_on is not None else self._read_current_state()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        return {
+            "address": self._address,
+            "channel": self._channel,
+            "channel_description": self._channel_description,
+            "module_description": self._device_name,
+            "module_model": self._device_model,
+        }
 
     @callback
     def _handle_coordinator_update(self) -> None:
