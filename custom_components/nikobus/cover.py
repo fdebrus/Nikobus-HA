@@ -513,11 +513,17 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._movement_source = "ha"
         self._target_position = _clamp_position(target_position)
 
+        await self._begin_motion(
+            direction,
+            source="ha",
+            target_position=self._target_position,
+        )
+
         async def completion_handler() -> None:
-            await self._begin_motion(
+            _LOGGER.debug(
+                "Completion received for %s command on %s; motion already started.",
                 direction,
-                source="ha",
-                target_position=self._target_position,
+                self._attr_name,
             )
 
         await self._operate_cover(direction, completion_handler)
