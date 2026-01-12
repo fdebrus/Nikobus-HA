@@ -464,6 +464,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                         await self._handle_set_position(intent.target_position)
         except asyncio.CancelledError:
             return
+        finally:
+            self._pending_position = None
 
     async def _handle_set_position(self, target_position: Optional[int]) -> None:
         if target_position is None:
@@ -609,6 +611,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         direction_for_stop = self._direction
 
         async def _finalize_state() -> None:
+            if self._phase != PHASE_STOPPING or stop_token != self._motion_id:
+                return
             self._position_estimator.stop()
             _safe_cancel(self._motion_task)
             if self._motion_task:
@@ -638,12 +642,31 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         if send_stop and direction_for_stop:
             try:
+                stop_done = loop.create_future()
+
+                def _completion_handler() -> None:
+                    async def _run() -> None:
+                        await _finalize_state()
+                        if stop_done and not stop_done.done():
+                            stop_done.set_result(True)
+
+                    self.hass.async_create_task(_run())
+
                 await self.coordinator.api.stop_cover(
                     self._address,
                     self._channel,
                     direction_for_stop,
-                    completion_handler=_finalize_state,
+                    completion_handler=_completion_handler,
                 )
+                if stop_done:
+                    try:
+                        await asyncio.wait_for(stop_done, timeout=2)
+                    except asyncio.TimeoutError:
+                        _LOGGER.warning(
+                            "Timeout waiting for stop completion on %s; finalizing.",
+                            self._attr_name,
+                        )
+                        await _finalize_state()
             except Exception as exc:
                 _LOGGER.error(
                     "Failed to stop cover %s: %s", self._attr_name, exc, exc_info=True
