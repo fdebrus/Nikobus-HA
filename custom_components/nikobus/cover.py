@@ -159,6 +159,7 @@ def _safe_cancel(task: Optional[asyncio.Task]) -> None:
         return
     task.cancel()
 
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -264,7 +265,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._publish_min_delta: int = 2         # percent points
         self._pending_target_position: int | None = None
         self._coalesce_task: asyncio.Task | None = None
-        self._coalesce_delay = 0.3  # seconds, tune 0.2–0.4
+        self._coalesce_delay = 0.18  # seconds, tuned for HomeKit slider bursts
+        self._scheduled_stop_task: asyncio.Task | None = None
 
         self._unsub_button_event: Optional[Any] = None
 
@@ -386,6 +388,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._coalesce_task = None
         self._pending_target_position = None
 
+        self._cancel_scheduled_stop()
+
         _safe_cancel(self._motion_task)
         if self._motion_task:
             with contextlib.suppress(asyncio.CancelledError):
@@ -436,10 +440,16 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 )
 
     async def async_open_cover(self, **kwargs: Any) -> None:
-        await self._request_cover_motion("opening")
+        self._cancel_scheduled_stop()
+        remaining = max(0, 100 - self._position)
+        runtime = max(0.2, (remaining / 100.0) * self._operation_time + 0.7)
+        await self._start_move("opening", None, runtime)
 
     async def async_close_cover(self, **kwargs: Any) -> None:
-        await self._request_cover_motion("closing")
+        self._cancel_scheduled_stop()
+        remaining = max(0, self._position)
+        runtime = max(0.2, (remaining / 100.0) * self._operation_time + 0.7)
+        await self._start_move("closing", None, runtime)
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         await self._end_motion(send_stop=True)
@@ -458,13 +468,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if target_position is None or self._position == target_position:
             return
 
-        direction = "opening" if target_position > self._position else "closing"
-        await self._request_cover_motion(direction, target_position=target_position)
+        await self._move_to_position(target_position)
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         target_position = kwargs.get(ATTR_POSITION)
         if target_position is None:
             return
+
+        self._cancel_scheduled_stop()
 
         # Clamp just in case
         target_position = max(0, min(100, int(target_position)))
@@ -518,6 +529,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._movement_source = source
                 return
             if source == "nikobus":
+                self._cancel_scheduled_stop()
                 self._target_position = None
             await self._begin_motion(
                 direction,
@@ -526,6 +538,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 button_limit=self._button_operation_time,
             )
         elif new_state == STATE_STOPPED:
+            if source == "nikobus":
+                self._cancel_scheduled_stop()
             await self._end_motion()
         elif new_state == STATE_ERROR:
             _LOGGER.warning("Error state encountered for %s.", self._attr_name)
@@ -535,37 +549,52 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 "Unknown state '%s' encountered for %s.", new_state, self._attr_name
             )
 
-    async def _request_cover_motion(
-        self, direction: str, target_position: Optional[int] = None
-    ) -> None:
-        """Queue a cover command and start motion once executed."""
+    def _cancel_scheduled_stop(self) -> None:
+        """Cancel any scheduled STOP task."""
 
-        if self._in_motion:
-            await self._end_motion(send_stop=self._movement_source == "ha")
+        _safe_cancel(self._scheduled_stop_task)
+        self._scheduled_stop_task = None
+
+    def _schedule_stop(self, runtime: float, direction: str, final_position: Optional[int]) -> None:
+        self._cancel_scheduled_stop()
+
+        async def _stop_after() -> None:
+            try:
+                await asyncio.sleep(runtime)
+            except asyncio.CancelledError:
+                return
+
+            if not self._in_motion or self._direction != direction:
+                return
+
+            await self._end_motion(final_position=final_position, send_stop=True)
+
+        self._scheduled_stop_task = self.hass.async_create_task(_stop_after())
+
+    async def _start_move(
+        self,
+        direction: str,
+        target_position: Optional[int],
+        runtime: Optional[float],
+    ) -> None:
+        if self._in_motion and self._direction:
+            if self._direction == direction:
+                self._movement_source = "ha"
+                self._target_position = _clamp_position(target_position)
+                if runtime is not None:
+                    self._schedule_stop(runtime, direction, target_position)
+                return
+            await self._end_motion(send_stop=True)
 
         self._movement_source = "ha"
         self._target_position = _clamp_position(target_position)
 
-        async def completion_handler() -> None:
-            await self._begin_motion(
-                direction,
-                source="ha",
-                target_position=self._target_position,
-            )
-
-        await self._operate_cover(direction, completion_handler)
-
-    async def _operate_cover(self, direction: str, completion_handler: Any) -> None:
         _LOGGER.debug("Operating cover %s in direction: %s", self._attr_name, direction)
         try:
             if direction == "opening":
-                await self.coordinator.api.open_cover(
-                    self._address, self._channel, completion_handler=completion_handler
-                )
+                await self.coordinator.api.open_cover(self._address, self._channel)
             elif direction == "closing":
-                await self.coordinator.api.close_cover(
-                    self._address, self._channel, completion_handler=completion_handler
-                )
+                await self.coordinator.api.close_cover(self._address, self._channel)
             else:
                 _LOGGER.error(
                     "Invalid direction '%s' for cover %s", direction, self._attr_name
@@ -574,6 +603,40 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             _LOGGER.error(
                 "Failed to operate cover %s: %s", self._attr_name, exc, exc_info=True
             )
+            return
+
+        await self._begin_motion(
+            direction,
+            source="ha",
+            target_position=self._target_position,
+        )
+
+        if runtime is not None:
+            self._schedule_stop(runtime, direction, target_position)
+
+    async def _move_to_position(self, target_position: int) -> None:
+        """Move in a single direction and schedule STOP based on runtime."""
+
+        self._cancel_scheduled_stop()
+        target_position = _clamp_position(target_position)
+        if target_position is None:
+            return
+
+        current_position = self._position
+        if current_position == target_position:
+            if self._in_motion:
+                await self._end_motion(final_position=target_position, send_stop=True)
+            return
+
+        delta_percent = target_position - current_position
+        direction = "opening" if delta_percent > 0 else "closing"
+
+        runtime = abs(delta_percent) / 100.0 * self._operation_time
+        if target_position in (0, 100):
+            runtime += 0.7
+        runtime = max(0.2, runtime)
+
+        await self._start_move(direction, target_position, runtime)
 
     async def _begin_motion(
         self,
@@ -630,6 +693,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         _safe_cancel(self._coalesce_task)
         self._coalesce_task = None
         self._pending_target_position = None
+        self._cancel_scheduled_stop()
 
         if not self._in_motion and not send_stop:
             return
@@ -702,31 +766,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                         "Stopping %s due to button operation timeout.", self._attr_name
                     )
                     await self._end_motion(send_stop=self._movement_source == "ha")
-                    break
-
-                if self._target_position is not None:
-                    if (
-                        self._direction == "opening"
-                        and self._position >= self._target_position
-                        and self._target_position < 100
-                    ) or (
-                        self._direction == "closing"
-                        and self._position <= self._target_position
-                        and self._target_position > 0
-                    ):
-                        await self._end_motion(
-                            final_position=self._target_position,
-                            send_stop=self._movement_source == "ha",
-                        )
-                        break
-
-                if (self._direction == "opening" and self._position >= 100) or (
-                    self._direction == "closing" and self._position <= 0
-                ):
-                    await self._end_motion(
-                        final_position=100 if self._direction == "opening" else 0,
-                        send_stop=self._movement_source == "ha",
-                    )
                     break
 
                 now = time.monotonic()
