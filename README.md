@@ -224,7 +224,7 @@ After installation, an example file is available at `/config/custom_components/n
 - **Required (module level)**: `description`, `model`, `address`, and `channels`.
 - **Required (per channel)**: `description`.
 - **Optional (per channel)**:
-  - `led_on` / `led_off`: Feedback LED addresses (case-sensitive, format like `8AA8FA`). Leave blank if unused.
+  - `led_on` / `led_off`: Feedback LED addresses (case-sensitive, format like `8AA8FA`).
   - `operation_time`: For roller outputs, the time in seconds to fully open/close. If omitted, the cover will still work but uses a default timing, which may reduce position accuracy.
   - `entity_type`: Override the default entity type (see matrix below).
 
