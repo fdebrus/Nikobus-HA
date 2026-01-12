@@ -692,7 +692,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     break
 
                 self.async_write_ha_state()
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
         except asyncio.CancelledError:
             _LOGGER.debug("Motion loop for %s was cancelled.", self._attr_name)
         except Exception as exc:
