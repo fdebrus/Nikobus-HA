@@ -257,6 +257,12 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._in_motion = False
         self._motion_task: Optional[asyncio.Task] = None
         self._last_position_change_time = time.monotonic()
+        # Debounce state publishing during motion (reduces HomeKit event flooding)
+        self._last_published_position: Optional[int] = None
+        self._last_publish_time: float = 0.0
+        self._publish_min_interval: float = 1.0  # seconds
+        self._publish_min_delta: int = 2         # percent points
+
         self._unsub_button_event: Optional[Any] = None
 
         self._attr_name = channel_description
@@ -330,7 +336,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if last_state:
             last_position = last_state.attributes.get(ATTR_POSITION)
             if last_position is not None:
-                self._position = float(last_position)
+                restored = _clamp_position(last_position)
+                if restored is not None:
+                    self._position = restored
+                else:
+                    self._position = 100
                 _LOGGER.debug(
                     "Restored position for '%s' to %s", self._attr_name, self._position
                 )
@@ -622,6 +632,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self.coordinator.set_bytearray_state(
                 self._address, self._channel, STATE_STOPPED
             )
+            # Ensure final state is published even if debounce would suppress it
+            self._last_published_position = None
+            self._last_publish_time = 0.0
+
             self.async_write_ha_state()
 
         if send_stop and direction_for_stop:
@@ -685,7 +699,22 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     )
                     break
 
-                self.async_write_ha_state()
+                now = time.monotonic()
+                pos = int(self._position)
+
+                # Publish only if enough time passed AND enough delta occurred
+                if (
+                    self._last_published_position is None
+                    or (now - self._last_publish_time) >= self._publish_min_interval
+                ):
+                    if (
+                        self._last_published_position is None
+                        or abs(pos - self._last_published_position) >= self._publish_min_delta
+                    ):
+                        self._last_published_position = pos
+                        self._last_publish_time = now
+                        self.async_write_ha_state()
+
                 await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             _LOGGER.debug("Motion loop for %s was cancelled.", self._attr_name)
