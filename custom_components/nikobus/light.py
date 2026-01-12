@@ -150,6 +150,17 @@ class NikobusLightEntity(NikobusEntity, LightEntity):
         return self._is_on if self._is_on is not None else self.brightness > 0
 
     @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        return {
+            "address": self._address,
+            "channel": self._channel,
+            "channel_description": self._channel_description,
+            "module_description": self._device_name,
+            "module_model": self._device_model,
+        }
+
+    @property
     def brightness(self) -> int:
         """Return the brightness of the light (0..255)."""
         if self._brightness is not None:
@@ -247,6 +258,17 @@ class NikobusRelayLightEntity(NikobusEntity, LightEntity):
     def is_on(self) -> bool:
         return self._is_on if self._is_on is not None else self._read_current_state()
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        return {
+            "address": self._address,
+            "channel": self._channel,
+            "channel_description": self._channel_description,
+            "module_description": self._device_name,
+            "module_model": self._device_model,
+        }
+
     @callback
     def _handle_coordinator_update(self) -> None:
         self._is_on = None
@@ -329,6 +351,17 @@ class NikobusCoverLightEntity(NikobusEntity, LightEntity):
     @property
     def is_on(self) -> bool:
         return self._is_on if self._is_on is not None else self._read_current_state()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        return {
+            "address": self._address,
+            "channel": self._channel,
+            "channel_description": self._channel_description,
+            "module_description": self._device_name,
+            "module_model": self._device_model,
+        }
 
     @callback
     def _handle_coordinator_update(self) -> None:

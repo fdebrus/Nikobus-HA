@@ -238,6 +238,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self.hass = hass
         self._address = address
         self._channel = channel
+        self._channel_description = channel_description
         self._description = module_desc
         self._model = module_model
         self._state = STATE_STOPPED
@@ -275,7 +276,17 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
         attrs = super().extra_state_attributes or {}
-        attrs.update({"position": self._position, "state": self._state})
+        attrs.update(
+            {
+                "address": self._address,
+                "channel": self._channel,
+                "channel_description": self._channel_description,
+                "module_description": self._device_name,
+                "module_model": self._device_model,
+                "position": self._position,
+                "state": self._state,
+            }
+        )
         return attrs
 
     @property
