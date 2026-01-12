@@ -278,12 +278,12 @@ After installation, an example file is available at `/config/custom_components/n
       "model": "05-001-02",
       "address": "9105",
       "channels": [
-        {"description": "R1 Output 1", "operation_time": "40", "led_on": "", "led_off": ""},
+        {"description": "R1 Output 1", "operation_time": "40", "led_on": "", "led_off": "", use_as_switch: true},
         {"description": "R1 Output 2", "operation_time": "40", "led_on": "", "led_off": ""},
-        {"description": "R1 Output 3", "operation_time": "40", "led_on": "", "led_off": ""},
-        {"description": "R1 Output 4", "operation_time": "40", "led_on": "", "led_off": ""},
-        {"description": "R1 Output 5", "operation_time": "40", "led_on": "", "led_off": ""},
-        {"description": "R1 Output 6", "operation_time": "40", "led_on": "", "led_off": ""}
+        {"description": "R1 Output 3", "operation_time": "40"},
+        {"description": "R1 Output 4", "operation_time": "40"},
+        {"description": "R1 Output 5", "operation_time": "40"},
+        {"description": "R1 Output 6", "operation_time": "40"}
       ]
     }
   ]
