@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from homeassistant.components.cover import (
     CoverEntity,
@@ -256,12 +256,15 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         self._in_motion = False
         self._motion_task: Optional[asyncio.Task] = None
-        self._last_position_change_time = time.monotonic()
         # Debounce state publishing during motion (reduces HomeKit event flooding)
         self._last_published_position: Optional[int] = None
         self._last_publish_time: float = 0.0
+        self._last_command_time: float = 0.0
         self._publish_min_interval: float = 1.0  # seconds
         self._publish_min_delta: int = 2         # percent points
+        self._pending_target_position: int | None = None
+        self._coalesce_task: asyncio.Task | None = None
+        self._coalesce_delay = 0.3  # seconds, tune 0.2–0.4
 
         self._unsub_button_event: Optional[Any] = None
 
@@ -378,6 +381,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if self._unsub_button_event:
             self._unsub_button_event()
             self._unsub_button_event = None
+    
+        _safe_cancel(self._coalesce_task)
+        self._coalesce_task = None
+        self._pending_target_position = None
 
         _safe_cancel(self._motion_task)
         if self._motion_task:
@@ -437,27 +444,44 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def async_stop_cover(self, **kwargs: Any) -> None:
         await self._end_motion(send_stop=True)
 
+    async def _execute_coalesced_position(self) -> None:
+        scheduled_at = time.monotonic()
+        await asyncio.sleep(self._coalesce_delay)
+
+        # Newer command arrived while we were waiting -> reschedule
+        if self._last_command_time > scheduled_at:
+            self._coalesce_task = self.hass.async_create_task(self._execute_coalesced_position())
+            return
+
+        target_position = self._pending_target_position
+        self._pending_target_position = None
+        if target_position is None or self._position == target_position:
+            return
+
+        direction = "opening" if target_position > self._position else "closing"
+        await self._request_cover_motion(direction, target_position=target_position)
+
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         target_position = kwargs.get(ATTR_POSITION)
         if target_position is None:
             return
 
-        current_time = time.monotonic()
-        if current_time - self._last_position_change_time < 1:
-            _LOGGER.debug(
-                "Skipping position update for %s due to rapid commands.",
-                self._attr_name,
-            )
-            return
+        # Clamp just in case
+        target_position = max(0, min(100, int(target_position)))
 
-        self._last_position_change_time = current_time
-
+        # If already there, ignore
         if self._position == target_position:
-            _LOGGER.debug("Cover %s is already at target position.", self._attr_name)
+            _LOGGER.debug("Cover %s already at target %s.", self._attr_name, target_position)
             return
 
-        direction = "opening" if target_position > self._position else "closing"
-        await self._request_cover_motion(direction, target_position=target_position)
+        # Coalesce: keep the latest target and schedule execution shortly
+        self._pending_target_position = target_position
+
+        if self._coalesce_task and not self._coalesce_task.done():
+            # Task already scheduled; it will pick up the latest pending target
+            return
+
+        self._coalesce_task = self.hass.async_create_task(self._execute_coalesced_position())
 
     async def _process_state_change(self, new_state: int, source: str = "ha") -> None:
         _LOGGER.debug(
@@ -603,6 +627,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     ) -> None:
         """Authoritative entrypoint for ending movement."""
 
+        # Cancel any pending coalesced position update so STOP cannot be followed by a delayed move
+        _safe_cancel(self._coalesce_task)
+        self._coalesce_task = None
+        self._pending_target_position = None
+
         if not self._in_motion and not send_stop:
             return
 
@@ -612,10 +641,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         async def _finalize_state() -> None:
             self._position_estimator.stop()
             _safe_cancel(self._motion_task)
-            if self._motion_task:
+            task = self._motion_task
+            _safe_cancel(task)
+
+            if task and task is not asyncio.current_task():
                 with contextlib.suppress(asyncio.CancelledError):
-                    await self._motion_task
-                self._motion_task = None
+                await task
+
+            self._motion_task = None
 
             estimated_position = _clamp_position(
                 final_position if final_position is not None else self._position_estimator.current_position
