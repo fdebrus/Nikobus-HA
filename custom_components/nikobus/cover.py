@@ -642,7 +642,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         if send_stop and direction_for_stop:
             try:
-                stop_done = loop.create_future()
+                stop_done = asyncio.get_running_loop().create_future()
 
                 def _completion_handler() -> None:
                     async def _run() -> None:
