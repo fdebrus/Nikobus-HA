@@ -251,7 +251,7 @@ After installation, an example file is available at `/config/custom_components/n
       "address": "C9A5",
       "channels": [
         {"description": "S1 Output 1", "led_on": "259B02", "led_off": "659B02"},
-        {"description": "S1 Output 2", "led_on": "", "led_off": ""},
+        {"description": "S1 Output 2", "entity_type": "light"},
         {"description": "S1 Output 3", "led_on": "", "led_off": ""},
         {"description": "S1 Output 4", "led_on": "", "led_off": ""},
         {"description": "S1 Output 5", "led_on": "", "led_off": ""},
@@ -295,7 +295,7 @@ After installation, an example file is available at `/config/custom_components/n
       "model": "05-001-02",
       "address": "9105",
       "channels": [
-        {"description": "R1 Output 1", "operation_time": "40", "led_on": "", "led_off": "", "entity_type": "switch"},
+        {"description": "R1 Output 1", "operation_time": "40", "entity_type": "switch"},
         {"description": "R1 Output 2", "operation_time": "40", "led_on": "", "led_off": ""},
         {"description": "R1 Output 3", "operation_time": "40"},
         {"description": "R1 Output 4", "operation_time": "40"},
