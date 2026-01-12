@@ -469,13 +469,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         # Clamp just in case
         target_position = max(0, min(100, int(target_position)))
 
-        # If already there, ignore
-        if self._position == target_position:
-            _LOGGER.debug("Cover %s already at target %s.", self._attr_name, target_position)
-            return
-
         # Coalesce: keep the latest target and schedule execution shortly
         self._pending_target_position = target_position
+        self._last_command_time = time.monotonic()
 
         if self._coalesce_task and not self._coalesce_task.done():
             # Task already scheduled; it will pick up the latest pending target
@@ -499,9 +495,12 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._attr_name,
                 self._position,
             )
+            self._state = STATE_STOPPED
+            self._previous_state = STATE_STOPPED
             self.coordinator.set_bytearray_state(
                 self._address, self._channel, STATE_STOPPED
             )
+            self.async_write_ha_state()
             return
 
         self._previous_state = new_state
@@ -640,13 +639,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         async def _finalize_state() -> None:
             self._position_estimator.stop()
-            _safe_cancel(self._motion_task)
             task = self._motion_task
             _safe_cancel(task)
-
             if task and task is not asyncio.current_task():
                 with contextlib.suppress(asyncio.CancelledError):
-                await task
+                    await task
 
             self._motion_task = None
 
