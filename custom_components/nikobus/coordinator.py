@@ -529,29 +529,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         known: set[str] = set()
 
         # -----------------------
-        # 1) MODULE-BASED ENTITIES
-        #    - dimmer_module  -> nikobus_light_{address}_{channel}
-        #    - switch_module  -> nikobus_switch_{address}_{channel}
-        #    - roller_module  -> nikobus_cover_{address}_{channel} unless use_as_switch
+        # 1) MODULE-BASED ENTITIES (routed)
         # -----------------------
-        for module_type, modules in self.dict_module_data.items():
-            for address, module_data in modules.items():
-                for index, ch_info in enumerate(module_data.get("channels", []), start=1):
-                    desc = ch_info.get("description", "")
-                    if desc.startswith("not_in_use"):
-                        continue
+        from .router import build_routing, build_unique_id
 
-                    if module_type == "dimmer_module":
-                        known.add(f"{DOMAIN}_light_{address}_{index}")
-                    elif module_type == "switch_module":
-                        known.add(f"{DOMAIN}_switch_{address}_{index}")
-                    elif module_type == "roller_module":
-                        if ch_info.get("use_as_switch", False):
-                            known.add(f"{DOMAIN}_switch_{address}_{index}")
-                        else:
-                            known.add(f"{DOMAIN}_cover_{address}_{index}")
-                    else:
-                        known.add(f"{DOMAIN}_{address}_{index}")
+        routing = build_routing(self.dict_module_data)
+        for specs in routing.values():
+            for spec in specs:
+                known.add(
+                    build_unique_id(spec.domain, spec.kind, spec.address, spec.channel)
+                )
 
         # -----------------------
         # 2) Button sensors

@@ -14,6 +14,7 @@ from homeassistant.helpers import device_registry as dr
 from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
+from .router import build_unique_id, get_routing
 from .exceptions import NikobusError
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,53 +31,49 @@ async def async_setup_entry(
     coordinator: NikobusDataCoordinator = entry.runtime_data
     device_registry = dr.async_get(hass)
     entities: list[SwitchEntity] = []
+    registered_addresses: set[str] = set()
 
-    # Process standard switch_module entities
-    const_switch_modules: dict[str, Any] = coordinator.dict_module_data.get(
-        "switch_module", {}
-    )
-    for address, switch_module_data in const_switch_modules.items():
-        module_desc = switch_module_data.get("description", f"Module {address}")
-        model = switch_module_data.get("model", "Unknown Module Model")
+    routing = get_routing(hass, entry, coordinator.dict_module_data)
+    for spec in routing["switch"]:
+        if spec.address not in registered_addresses:
+            _register_nikobus_module_device(
+                device_registry=device_registry,
+                entry=entry,
+                module_address=spec.address,
+                module_name=spec.module_desc,
+                module_model=spec.module_model,
+            )
+            registered_addresses.add(spec.address)
 
-        _register_nikobus_module_device(
-            device_registry=device_registry,
-            entry=entry,
-            module_address=address,
-            module_name=module_desc,
-            module_model=model,
-        )
-
-        for channel_index, channel_info in enumerate(
-            switch_module_data.get("channels", []), start=1
-        ):
-            if channel_info["description"].startswith("not_in_use"):
-                continue
-
+        if spec.kind == "relay_switch":
             entities.append(
                 NikobusSwitchEntity(
                     coordinator=coordinator,
-                    address=address,
-                    channel=channel_index,
-                    channel_description=channel_info["description"],
-                    module_name=module_desc,
-                    module_model=model,
+                    address=spec.address,
+                    channel=spec.channel,
+                    channel_description=spec.channel_description,
+                    module_name=spec.module_desc,
+                    module_model=spec.module_model,
                 )
             )
-
-    # Process roller_module channels marked with use_as_switch
-    roller_switch_data = hass.data.setdefault(DOMAIN, {}).get("switch_entities", [])
-    for switch_data in roller_switch_data:
-        entities.append(
-            NikobusSwitchCoverEntity(
-                coordinator=switch_data["coordinator"],
-                address=switch_data["address"],
-                channel=switch_data["channel"],
-                channel_description=switch_data["channel_description"],
-                module_desc=switch_data["module_desc"],
-                module_model=switch_data["module_model"],
+        elif spec.kind == "cover_binary":
+            entities.append(
+                NikobusSwitchCoverEntity(
+                    coordinator=coordinator,
+                    address=spec.address,
+                    channel=spec.channel,
+                    channel_description=spec.channel_description,
+                    module_desc=spec.module_desc,
+                    module_model=spec.module_model,
+                )
             )
-        )
+        else:
+            _LOGGER.warning(
+                "Unhandled switch routing kind '%s' for module %s channel %s.",
+                spec.kind,
+                spec.address,
+                spec.channel,
+            )
 
     async_add_entities(entities)
     _LOGGER.debug("Added %d Nikobus switch entities.", len(entities))
@@ -101,7 +98,7 @@ def _register_nikobus_module_device(
 
 
 class NikobusSwitchCoverEntity(NikobusEntity, SwitchEntity):
-    """A switch entity for roller modules using `use_as_switch`."""
+    """A switch entity for cover channels routed as binary switches."""
 
     def __init__(
         self,
@@ -120,7 +117,9 @@ class NikobusSwitchCoverEntity(NikobusEntity, SwitchEntity):
         self.channel_description = channel_description
 
         self._attr_name = f"{module_desc} - {channel_description}"
-        self._attr_unique_id = f"{DOMAIN}_switch_{self.address}_{self.channel}"
+        self._attr_unique_id = build_unique_id(
+            "switch", "cover_binary", self.address, self.channel
+        )
 
     @property
     def is_on(self) -> bool:
@@ -174,7 +173,9 @@ class NikobusSwitchEntity(NikobusEntity, SwitchEntity):
         self._channel = channel
         self._channel_description = channel_description
 
-        self._attr_unique_id = f"{DOMAIN}_switch_{self._address}_{self._channel}"
+        self._attr_unique_id = build_unique_id(
+            "switch", "relay_switch", self._address, self._channel
+        )
         self._attr_name = channel_description
         self._is_on: bool | None = None
 
