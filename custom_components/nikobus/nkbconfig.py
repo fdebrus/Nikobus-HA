@@ -25,7 +25,7 @@ class NikobusConfig:
         """Initialize the configuration handler."""
         self._hass = hass
 
-    async def load_json_data(self, file_name: str, data_type: str) -> Optional[dict]:
+    async def load_json_data(self, file_name: str, data_type: str) -> dict:
         """Load JSON data from a file and transform it based on the data type."""
         file_path = self._hass.config.path(file_name)
         _LOGGER.info("Loading %s data from %s", data_type, file_path)
@@ -35,22 +35,19 @@ class NikobusConfig:
                 data = json.loads(await file.read())
             return self._transform_loaded_data(data, data_type)
 
-        except FileNotFoundError:
+        except FileNotFoundError as err:
             self._handle_file_not_found(file_path, data_type)
+            if data_type in ("scene", "button"):
+                return {}
+            raise NikobusDataError(f"Missing required {data_type} file: {file_path}") from err
 
         except json.JSONDecodeError as err:
-            _LOGGER.error(
-                "Failed to decode JSON in %s file: %s", data_type, err, exc_info=True
-            )
-            raise NikobusDataError(
-                f"Failed to decode JSON in {data_type} file: {err}"
-            ) from err
+            _LOGGER.error("Failed to decode JSON in %s file: %s", data_type, err, exc_info=True)
+            raise NikobusDataError(f"Failed to decode JSON in {data_type} file: {err}") from err
 
         except Exception as err:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
-
-        return None
 
     def _transform_loaded_data(self, data: dict, data_type: str) -> dict:
         """Transform the loaded JSON data based on the data type."""
@@ -81,6 +78,11 @@ class NikobusConfig:
         if data_type == "button":
             _LOGGER.info(
                 "Button configuration file not found: %s. A new file will be created upon discovering the first button.",
+                file_path,
+            )
+        elif data_type == "scene":
+            _LOGGER.info(
+                "Scene configuration file not found: %s. Skipping.",
                 file_path,
             )
         else:
