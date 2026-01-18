@@ -83,6 +83,11 @@ class NikobusConfig:
                 "Button configuration file not found: %s. A new file will be created upon discovering the first button.",
                 file_path,
             )
+        elif data_type == "scene":
+            _LOGGER.info(
+                "Scene configuration file not found: %s. Skipping.",
+                file_path,
+            )
         else:
             raise NikobusDataError(
                 f"{data_type.capitalize()} configuration file not found: {file_path}"
