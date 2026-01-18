@@ -1,7 +1,7 @@
 {
   "domain": "nikobus",
   "name": "Nikobus",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "documentation": "https://github.com/fdebrus/nikobus-ha",
   "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
   "codeowners": ["@fdebrus"],
