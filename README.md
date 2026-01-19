@@ -353,6 +353,16 @@ If a button controls a shutter, set `operation_time` (in seconds) on the button 
 }
 ```
 
+## Protocol
+
+This is a short, repo-aligned excerpt. Full details are in `docs/nikobus-protocol.md`.
+
+- **Transport & framing**: CR-terminated ASCII frames (`\\r`), decoded as Windows-1252. TCP (`<ip>:<port>`) or serial at 9600 baud; parity/stop bits are not specified in code. (`custom_components/nikobus/nkbconnect.py:31-190`, `custom_components/nikobus/const.py:21-27`)
+- **PC-Link `$` frame**: `$ LL PAYLOAD CRC16 CRC8` where `LL = len(PAYLOAD) + 10`. CRC16 (poly `0x1021`, init `0xFFFF`) is over PAYLOAD bytes; CRC8 (poly `0x99`, init `0x00`) is over the ASCII string `\"$\" + LL + PAYLOAD + CRC16`. (`custom_components/nikobus/nkbprotocol.py:9-60`, `custom_components/nikobus/nkblistener.py:76-125`)
+- **Button frames**: `#N<AAAAAA>` without CRC; listener extracts the 6-hex address and fires button events. (`custom_components/nikobus/nkblistener.py:165-181`, `custom_components/nikobus/nkbactuator.py:52-207`)
+- **Output commands**: state reads use `0x12/0x17` (group 1/2); state writes use `0x15/0x16` with 6 channel bytes plus a trailing `0xFF`. (`custom_components/nikobus/nkbcommand.py:86-329`)
+- **Covers**: open=`0x01`, close=`0x02`, stop=`0x00`, with position estimated from `operation_time`. (`custom_components/nikobus/nkbAPI.py:138-206`, `custom_components/nikobus/cover.py:39-744`)
+
 ## How the Integration Works
 
 - **nkbconnect**: Connects Home Assistant to Nikobus over TCP/IP or USB and performs the handshake so commands are echoed on the bus.
