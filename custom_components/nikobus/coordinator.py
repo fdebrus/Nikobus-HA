@@ -1,7 +1,8 @@
 """Coordinator for Nikobus integration."""
 
 import logging
-from datetime import timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -408,14 +409,34 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
 
     async def _handle_ha_button_pressed(self, data) -> None:
         """Handle HA button press events."""
-        address = data.get("address")
+        address = (data.get("address") or "").strip().upper()
         operation_time = data.get("operation_time")
+        if not address:
+            _LOGGER.warning("Received HA button press without an address: %s", data)
+            return
         _LOGGER.debug(
             "HA Button %s pressed with operation_time: %s",
             address,
             operation_time,
         )
         await self.nikobus_command.queue_command(f"#N{address}\r#E1")
+        module_address, channel = self._derive_button_context(address)
+        event_data = {
+            "address": address,
+            "module_address": module_address,
+            "channel": channel,
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "press_id": f"{address}-{uuid.uuid4().hex[:8]}",
+            "state": "pressed",
+            "duration_s": None,
+            "bucket": None,
+            "threshold_s": None,
+            "source": "simulated",
+        }
+        _LOGGER.debug(
+            "Firing simulated nikobus_button_pressed event: %s", event_data
+        )
+        self.hass.bus.async_fire("nikobus_button_pressed", event_data)
 
     async def _handle_nikobus_refreshed(self, data) -> None:
         """Handle Nikobus refreshed events."""
@@ -522,6 +543,35 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             None,
         )
 
+    def _derive_button_context(self, address: str) -> tuple[str | None, int | None]:
+        """Attempt to derive module address and channel information for the button."""
+        button_data = self.dict_button_data.get("nikobus_button", {}).get(address, {})
+        module_address = None
+        channel = None
+
+        impacted_modules = button_data.get("impacted_module") or []
+        for module_info in impacted_modules:
+            mod_address = (module_info.get("address") or "").strip()
+            if mod_address:
+                module_address = mod_address.upper()
+                break
+
+        discovered_links = button_data.get("discovered_link") or []
+        for link in discovered_links:
+            module_address = (
+                module_address
+                or (link.get("module_address") or "").upper()
+                or None
+            )
+            channel_str = link.get("channel") or ""
+            try:
+                channel = int(channel_str.split()[-1])
+                break
+            except (ValueError, IndexError, AttributeError):
+                continue
+
+        return module_address, channel
+
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities
         based on current JSON configuration."""
@@ -540,22 +590,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                     build_unique_id(spec.domain, spec.kind, spec.address, spec.channel)
                 )
 
-        # -----------------------
-        # 2) Button sensors
-        # using: nikobus_button_sensor_{address}
-        # -----------------------
         for button in self.dict_button_data.get("nikobus_button", {}).values():
             addr = button.get("address")
             if addr:
-                known.add(f"{DOMAIN}_button_sensor_{addr}")
-                # -----------------------
-                # 3) Push buttons
-                # using: nikobus_push_button_{address}
-                # -----------------------
                 known.add(f"{DOMAIN}_push_button_{addr}")
 
         # -----------------------
-        # 4) Scenes
+        # 2) Scenes
         # using: nikobus_scene_{scene_id}
         # -----------------------
         scene_list = self.dict_scene_data.get("scene", [])

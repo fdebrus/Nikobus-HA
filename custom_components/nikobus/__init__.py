@@ -10,14 +10,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
-from homeassistant.components import (
-    switch,
-    light,
-    cover,
-    binary_sensor,
-    button,
-    scene,
-)
+from homeassistant.components import button, cover, light, scene, switch
 from .nkbconnect import NikobusConnect
 from .exceptions import NikobusConnectionError
 
@@ -30,7 +23,6 @@ PLATFORMS: Final[list[str]] = [
     cover.DOMAIN,
     switch.DOMAIN,
     light.DOMAIN,
-    binary_sensor.DOMAIN,
     button.DOMAIN,
     scene.DOMAIN,
 ]
@@ -90,6 +82,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
     _LOGGER.info("Nikobus (single-instance) setup complete.")
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate Nikobus config entry to the latest version."""
+    ent_reg = er.async_get(hass)
+    for entity in list(ent_reg.entities.values()):
+        if entity.config_entry_id != entry.entry_id:
+            continue
+        if entity.unique_id and entity.unique_id.startswith(
+            f"{DOMAIN}_button_sensor_"
+        ):
+            _LOGGER.info(
+                "Removing deprecated Nikobus button sensor entity: %s (%s)",
+                entity.entity_id,
+                entity.unique_id,
+            )
+            ent_reg.async_remove(entity.entity_id)
     return True
 
 def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
