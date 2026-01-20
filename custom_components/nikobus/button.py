@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Callable
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, CONF_PRIOR_GEN3
@@ -90,6 +91,13 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         self.discovery_address = discovery_address
         self.discovery_channel = discovery_channel
         self.discovery_key = discovery_key
+        self._last_press_type: str | None = None
+        self._last_press_source: str | None = None
+        self._last_press_timestamp: str | None = None
+        self._last_press_address: str | None = None
+        self._last_press_channel: int | None = None
+        self._last_press_module_address: str | None = None
+        self._unsub_button_events: list[Callable[[], None]] = []
 
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
@@ -112,6 +120,12 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             "address": self.discovery_address,
             "channel": self.discovery_channel,
             "key": self.discovery_key,
+            "last_press_type": self._last_press_type,
+            "last_press_source": self._last_press_source,
+            "last_press_timestamp": self._last_press_timestamp,
+            "last_press_address": self._last_press_address,
+            "last_press_channel": self._last_press_channel,
+            "last_press_module_address": self._last_press_module_address,
         }
 
         if self.impacted_modules_info:
@@ -125,6 +139,26 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     # ---------------------------------------------------------------------
     # Button behaviour
     # ---------------------------------------------------------------------
+
+    async def async_added_to_hass(self) -> None:
+        """Register event listeners for button press updates."""
+        await super().async_added_to_hass()
+        self._unsub_button_events = [
+            self.hass.bus.async_listen(event, self._handle_button_event)
+            for event in (
+                "nikobus_button_pressed",
+                "nikobus_button_released",
+                "nikobus_short_button_pressed",
+                "nikobus_long_button_pressed",
+            )
+        ]
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Remove event listeners."""
+        for unsub in self._unsub_button_events:
+            unsub()
+        self._unsub_button_events = []
+        await super().async_will_remove_from_hass()
 
     async def async_press(self) -> None:
         """Handle button press event."""
@@ -179,3 +213,27 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
                 err,
                 exc_info=True,
             )
+
+    @callback
+    def _handle_button_event(self, event: Any) -> None:
+        """Handle button press event updates."""
+        if event.data.get("address") != self._address:
+            return
+
+        event_type = event.event_type
+        press_type = {
+            "nikobus_short_button_pressed": "short",
+            "nikobus_long_button_pressed": "long",
+            "nikobus_button_released": "release",
+            "nikobus_button_pressed": "press",
+        }.get(event_type, "press")
+
+        self._last_press_type = press_type
+        self._last_press_source = event.data.get("source")
+        self._last_press_timestamp = event.data.get(
+            "ts", datetime.now(timezone.utc).isoformat()
+        )
+        self._last_press_address = event.data.get("address")
+        self._last_press_channel = event.data.get("channel")
+        self._last_press_module_address = event.data.get("module_address")
+        self.async_write_ha_state()

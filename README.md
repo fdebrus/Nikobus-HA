@@ -74,15 +74,16 @@ Before installing:
 - **Feedback Module** `05-207`
   - Can be used for connectivity and for status refresh based on its internal mechanism when combined with PC-Link. Without PC-Link, use a custom refresh interval.
 - **Nikobus Buttons** (physical switches, IR, Feedback, Remote)
+  - Each physical button is represented by a single Home Assistant `button` entity.
   - Button press events can be used as triggers in Home Assistant automations.
   - Buttons with LEDs require LED on/off addresses in each module output configuration.
-  - Virtual buttons can be created in Home Assistant and mapped to Nikobus.
+  - Simulated presses can be triggered via the UI or the `button.press` service.
 - **Home Assistant Scenes**
   - Trigger multiple module/channel updates from one command.
 
 ## Events Fired by the Integration
 
-The integration emits structured Home Assistant bus events for every button press lifecycle:
+The integration emits structured Home Assistant bus events for every button press lifecycle, including simulated presses triggered from Home Assistant:
 
 - Base events: `nikobus_button_pressed` and `nikobus_button_released`.
 - Classification: `nikobus_short_button_pressed` (press duration < 3s) and `nikobus_long_button_pressed` (press duration ≥ 3s). The 3-second threshold is defined as `LONG_PRESS` in `custom_components/nikobus/const.py`.
@@ -102,7 +103,7 @@ state: "pressed"|"released"|"timer"
 duration_s: 1.2           # Seconds between press and release (null for initial press)
 bucket: 1                 # 0/1/2/3 matching duration buckets, otherwise null
 threshold_s: 2            # Timer milestone that fired (1/2/3), otherwise null
-source: "nikobus"
+source: "nikobus"|"simulated"
 ```
 
 You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses are recorded in `nikobus_button_config.json`).
@@ -124,6 +125,41 @@ action:
 ```
 
 Place this YAML in a Home Assistant automation (UI or YAML) as you would for any other event trigger.
+
+### Button Entity Attributes
+
+Each Nikobus button entity exposes diagnostics attributes instead of a separate sensor:
+
+- `last_press_type`: `press`, `short`, `long`, or `release`.
+- `last_press_source`: `nikobus` (physical) or `simulated` (HA press).
+- `last_press_timestamp`: ISO 8601 timestamp (UTC) when the press event was recorded.
+- `last_press_address` / `last_press_channel` / `last_press_module_address`: best-effort metadata from the press event.
+
+### Simulate a Press
+
+Use the UI button entity, or call the `button.press` service directly:
+
+```yaml
+service: button.press
+target:
+  entity_id: button.nikobus_push_button_004e2c
+```
+
+To react to simulated presses, filter on `source: simulated` in your event trigger:
+
+```yaml
+alias: "React to simulated Nikobus press"
+trigger:
+  - platform: event
+    event_type: nikobus_button_pressed
+    event_data:
+      source: simulated
+action:
+  - service: logbook.log
+    data:
+      name: "Nikobus"
+      message: "Simulated press received"
+```
 
 ## Scenes
 
