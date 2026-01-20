@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -101,6 +102,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
 
         self._attr_name = f"Nikobus Push Button {address}"
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
+        self._attr_state = STATE_UNKNOWN
 
         # Option set in the config entry
         self._prior_gen3: bool = config_entry.data.get(
@@ -229,6 +231,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         }.get(event_type, "press")
 
         self._last_press_type = press_type
+        self._attr_state = press_type
         self._last_press_source = event.data.get("source")
         self._last_press_timestamp = event.data.get(
             "ts", datetime.now(timezone.utc).isoformat()
