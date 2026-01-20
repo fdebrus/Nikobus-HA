@@ -78,9 +78,10 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         discovery_key: str,
     ) -> None:
         """Initialize the button entity with data from the Nikobus system configuration."""
+        normalized_address = address.strip().upper()
         super().__init__(
             coordinator=coordinator,
-            address=address,
+            address=normalized_address,
             name=description,
             model=discovery_model or "Push Button",
         )
@@ -100,8 +101,8 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         self._last_press_module_address: str | None = None
         self._unsub_button_events: list[Callable[[], None]] = []
 
-        self._attr_name = f"Nikobus Push Button {address}"
-        self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
+        self._attr_name = f"Nikobus Push Button {normalized_address}"
+        self._attr_unique_id = f"{DOMAIN}_push_button_{normalized_address}"
         self._attr_state = STATE_UNKNOWN
 
         # Option set in the config entry
@@ -219,7 +220,8 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     @callback
     def _handle_button_event(self, event: Any) -> None:
         """Handle button press event updates."""
-        if event.data.get("address") != self._address:
+        event_address = (event.data.get("address") or "").strip().upper()
+        if event_address != self._address:
             return
 
         event_type = event.event_type
@@ -236,7 +238,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         self._last_press_timestamp = event.data.get(
             "ts", datetime.now(timezone.utc).isoformat()
         )
-        self._last_press_address = event.data.get("address")
+        self._last_press_address = event_address
         self._last_press_channel = event.data.get("channel")
         self._last_press_module_address = event.data.get("module_address")
         self.async_write_ha_state()
