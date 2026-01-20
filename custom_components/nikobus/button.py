@@ -153,6 +153,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
                 "nikobus_button_released",
                 "nikobus_short_button_pressed",
                 "nikobus_long_button_pressed",
+                "nikobus_button_operation",
             )
         ]
 
@@ -230,6 +231,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             "nikobus_long_button_pressed": "long",
             "nikobus_button_released": "release",
             "nikobus_button_pressed": "press",
+            "nikobus_button_operation": "press",
         }.get(event_type, "press")
 
         self._last_press_type = press_type
