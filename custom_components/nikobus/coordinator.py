@@ -431,7 +431,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             "duration_s": None,
             "bucket": None,
             "threshold_s": None,
-            "source": "simulated",
+            "source": "ha",
+            "operation_time": operation_time,
         }
         _LOGGER.debug(
             "Firing simulated nikobus_button_pressed event: %s", event_data

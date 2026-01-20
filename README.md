@@ -83,13 +83,14 @@ Before installing:
 
 ## Events Fired by the Integration
 
-The integration emits structured Home Assistant bus events for every button press lifecycle, including simulated presses triggered from Home Assistant:
+The integration emits structured Home Assistant bus events for every button press lifecycle, including presses triggered from Home Assistant:
 
 - Base events: `nikobus_button_pressed` and `nikobus_button_released`.
 - Classification: `nikobus_short_button_pressed` (press duration < 3s) and `nikobus_long_button_pressed` (press duration ≥ 3s). The 3-second threshold is defined as `LONG_PRESS` in `custom_components/nikobus/const.py`.
 - Release-duration buckets (rounded down): `nikobus_button_pressed_0` (< 1s), `nikobus_button_pressed_1` (1–<2s), `nikobus_button_pressed_2` (2–<3s), and `nikobus_button_pressed_3` (≥ 3s).
 - Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively.
 - Post-refresh notification: `nikobus_button_operation` when the integration refreshes impacted modules after the press, including metadata such as the impacted module address/group and configured operation time.
+- Normalized activity event: `nikobus_button_activity` for automations that want enriched context (source, press type, channel/module, impacted modules, timestamps).
 
 All events share the same payload keys so automations can rely on a consistent schema:
 
@@ -103,7 +104,7 @@ state: "pressed"|"released"|"timer"
 duration_s: 1.2           # Seconds between press and release (null for initial press)
 bucket: 1                 # 0/1/2/3 matching duration buckets, otherwise null
 threshold_s: 2            # Timer milestone that fired (1/2/3), otherwise null
-source: "nikobus"|"simulated"
+source: "nikobus"|"ha"
 ```
 
 You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses are recorded in `nikobus_button_config.json`).
@@ -130,10 +131,14 @@ Place this YAML in a Home Assistant automation (UI or YAML) as you would for any
 
 Each Nikobus button entity exposes diagnostics attributes instead of a separate sensor:
 
-- `last_press_type`: `press`, `short`, `long`, or `release`.
-- `last_press_source`: `nikobus` (physical) or `simulated` (HA press).
+- Physical presses update the button entity's `last_pressed` state, so they appear in the History/Logbook just like `button.press` service calls.
+- `last_press_type`: `press`, `short`, or `long` (release/operation events are not recorded by default).
+- `last_press_source`: `nikobus` (physical) or `ha` (HA press).
 - `last_press_timestamp`: ISO 8601 timestamp (UTC) when the press event was recorded.
 - `last_press_address` / `last_press_channel` / `last_press_module_address`: best-effort metadata from the press event.
+- `last_press_event_type` / `last_press_raw`: raw event metadata for debugging.
+- `operation_time`: configured button operation time (when set).
+- `impacted_modules` / `user_impacted_modules`: modules refreshed after the press.
 
 ### Simulate a Press
 
@@ -145,20 +150,20 @@ target:
   entity_id: button.nikobus_push_button_004e2c
 ```
 
-To react to simulated presses, filter on `source: simulated` in your event trigger:
+To react to HA presses, filter on `source: ha` in your event trigger:
 
 ```yaml
-alias: "React to simulated Nikobus press"
+alias: "React to HA-triggered Nikobus press"
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
     event_data:
-      source: simulated
+      source: ha
 action:
   - service: logbook.log
     data:
       name: "Nikobus"
-      message: "Simulated press received"
+      message: "HA press received"
 ```
 
 ## Scenes
