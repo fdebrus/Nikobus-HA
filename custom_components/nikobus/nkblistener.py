@@ -58,6 +58,7 @@ class NikobusEventListener:
         self.nikobus_connection = nikobus_connection
         self.nikobus_discovery = nikobus_discovery
         self.response_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._frame_buffer = ""
 
     async def start(self) -> None:
         """Start the event listener."""
@@ -139,9 +140,10 @@ class NikobusEventListener:
                     _LOGGER.warning("Nikobus connection closed unexpectedly.")
                     break
 
-                message = data.decode("Windows-1252").strip()
-                _LOGGER.debug("Received message: %s", message)
-                self._hass.async_create_task(self.dispatch_message(message))
+                raw = data.decode("Windows-1252", errors="ignore")
+                for message in self._extract_frames(raw):
+                    _LOGGER.debug("Received message: %s", message)
+                    self._hass.async_create_task(self.dispatch_message(message))
 
             except asyncio.TimeoutError:
                 _LOGGER.debug("Read operation timed out. Waiting for next data...")
@@ -155,13 +157,20 @@ class NikobusEventListener:
                 break
 
     async def dispatch_message(self, message: str) -> None:
+        if not message:
+            return
         discovery_running = self._coordinator.discovery_running
         if DEVICE_ADDRESS_INVENTORY in message:
             _LOGGER.debug("Device address inventory: %s", message)
             if discovery_running:
                 await self.nikobus_discovery.query_module_inventory(message[3:7])
             else:
-                await self.nikobus_discovery.process_mode_button_press(message)
+                if hasattr(self.nikobus_discovery, "process_mode_button_press"):
+                    await self.nikobus_discovery.process_mode_button_press(message)
+                else:
+                    _LOGGER.debug(
+                        "No process_mode_button_press handler; ignoring %s", message
+                    )
             return
 
         if not discovery_running:
@@ -252,7 +261,11 @@ class NikobusEventListener:
         else:
 
             if any(message.startswith(inventory) for inventory in DEVICE_INVENTORY):
-                _LOGGER.debug("Device inventory: %s", message)
+                _LOGGER.debug(
+                    "Device inventory (discovery): %s (module=%s)",
+                    message,
+                    self._coordinator.discovery_module_address,
+                )
                 if self._coordinator.discovery_module_address:
                     await self.nikobus_discovery.parse_module_inventory_response(message)
                 else:
@@ -261,6 +274,22 @@ class NikobusEventListener:
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
         await self.response_queue.put(message)
+
+    def _extract_frames(self, raw: str) -> list[str]:
+        """Normalize incoming data and return complete frames."""
+        if not raw:
+            return []
+        cleaned = raw.replace("\x02", "").replace("\x03", "")
+        cleaned = cleaned.replace("\n", "\r")
+        self._frame_buffer += cleaned
+        if "\r" not in self._frame_buffer:
+            return []
+        parts = self._frame_buffer.split("\r")
+        self._frame_buffer = parts.pop()
+        frames = [part.strip() for part in parts if part.strip()]
+        if frames:
+            _LOGGER.debug("Normalized frames: %s", frames)
+        return frames
 
     @staticmethod
     def _extract_inner_message(message: str) -> str:

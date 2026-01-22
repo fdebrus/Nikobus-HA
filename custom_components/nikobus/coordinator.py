@@ -106,6 +106,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 self.dict_module_data = await self.nikobus_config.load_json_data(
                     "nikobus_module_config.json", "module"
                 )
+                discovered_modules = (
+                    await self.nikobus_config.load_optional_json_data(
+                        "nikobus_module_discovered.json", "module"
+                    )
+                )
+                if discovered_modules:
+                    self._merge_discovered_modules(discovered_modules)
                 self.dict_button_data = await self.nikobus_config.load_json_data(
                     "nikobus_button_config.json", "button"
                 ) or {"nikobus_button": {}}
@@ -490,6 +497,27 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
             for modules in self.dict_module_data.values()
             for address in modules.keys()
         ]
+
+    def _merge_discovered_modules(self, discovered_modules: dict) -> None:
+        """Merge discovered module data into the existing module registry."""
+        for module_type, modules in discovered_modules.items():
+            if not isinstance(modules, dict):
+                _LOGGER.debug(
+                    "Skipping discovered module set for %s due to invalid type: %s",
+                    module_type,
+                    type(modules),
+                )
+                continue
+            target = self.dict_module_data.setdefault(module_type, {})
+            for address, module_info in modules.items():
+                if address in target:
+                    continue
+                target[address] = module_info
+                _LOGGER.debug(
+                    "Merged discovered module %s (%s) into registry.",
+                    address,
+                    module_type,
+                )
 
     async def _handle_discovery_finished(self):
         """Reload the config entry after discovery so new devices are applied."""
