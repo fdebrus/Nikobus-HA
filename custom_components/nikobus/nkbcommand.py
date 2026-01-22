@@ -278,6 +278,8 @@ class NikobusCommandHandler:
     ) -> None:
         """Queue a command for processing."""
         _LOGGER.debug("Queueing command: %s", command)
+        if self._coordinator.discovery_running and self._is_discovery_command(command):
+            _LOGGER.debug("Queueing discovery command: %s", command)
         command_item = {
             "command": command,
             "address": address,
@@ -295,6 +297,11 @@ class NikobusCommandHandler:
         except NikobusError as err:
             _LOGGER.error("Failed to send command %s: %s", command, err, exc_info=True)
             raise
+
+    @staticmethod
+    def _is_discovery_command(command: str) -> bool:
+        """Return True when the command is part of discovery."""
+        return command.startswith("#A") or command.startswith("$14")
 
     async def set_output_states(
         self,

@@ -49,6 +49,36 @@ class NikobusConfig:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
 
+    async def load_optional_json_data(self, file_name: str, data_type: str) -> dict:
+        """Load JSON data from a file, returning an empty dict if it does not exist."""
+        file_path = self._hass.config.path(file_name)
+        _LOGGER.debug("Loading optional %s data from %s", data_type, file_path)
+
+        try:
+            async with aio_open(file_path, mode="r") as file:
+                data = json.loads(await file.read())
+            return self._transform_loaded_data(data, data_type)
+        except FileNotFoundError:
+            _LOGGER.debug("Optional %s file not found: %s", data_type, file_path)
+            return {}
+        except json.JSONDecodeError as err:
+            _LOGGER.error(
+                "Failed to decode JSON in optional %s file: %s",
+                data_type,
+                err,
+                exc_info=True,
+            )
+            raise NikobusDataError(
+                f"Failed to decode JSON in optional {data_type} file: {err}"
+            ) from err
+        except Exception as err:
+            _LOGGER.error(
+                "Failed to load optional %s data: %s", data_type, err, exc_info=True
+            )
+            raise NikobusDataError(
+                f"Failed to load optional {data_type} data: {err}"
+            ) from err
+
     def _transform_loaded_data(self, data: dict, data_type: str) -> dict:
         """Transform the loaded JSON data based on the data type."""
         transform_name = _LOAD_TRANSFORMS.get(data_type)
@@ -68,10 +98,54 @@ class NikobusConfig:
 
     def _transform_module_data(self, data: dict) -> dict:
         """Transform module data from a list to a dictionary."""
-        for key in ["switch_module", "dimmer_module", "roller_module"]:
-            if key in data:
-                data[key] = {module["address"]: module for module in data[key]}
+        for key in ["switch_module", "dimmer_module", "roller_module", "other_module"]:
+            if key not in data:
+                continue
+            modules = data[key]
+            if isinstance(modules, list):
+                data[key] = {
+                    module["address"]: self._normalize_module_channels(module)
+                    for module in modules
+                    if module.get("address")
+                }
+            elif isinstance(modules, dict):
+                normalized: dict[str, dict[str, Any]] = {}
+                for address, module in modules.items():
+                    if not isinstance(module, dict):
+                        _LOGGER.warning(
+                            "Skipping module %s with invalid data type: %s",
+                            address,
+                            type(module),
+                        )
+                        continue
+                    module_data = dict(module)
+                    module_data.setdefault("address", address)
+                    normalized[address] = self._normalize_module_channels(module_data)
+                data[key] = normalized
+            else:
+                _LOGGER.warning(
+                    "Unsupported module data type for %s: %s", key, type(modules)
+                )
+                data[key] = {}
         return data
+
+    @staticmethod
+    def _normalize_module_channels(module: dict[str, Any]) -> dict[str, Any]:
+        """Normalize module channel definitions to a list of channel dicts."""
+        channels = module.get("channels", [])
+        if isinstance(channels, int):
+            module["channels"] = [
+                {"description": f"Channel {idx}"} for idx in range(1, channels + 1)
+            ]
+            return module
+        if isinstance(channels, list):
+            module["channels"] = [
+                channel if isinstance(channel, dict) else {"description": str(channel)}
+                for channel in channels
+            ]
+            return module
+        module["channels"] = []
+        return module
 
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:
         """Handle the case where the configuration file is not found."""
