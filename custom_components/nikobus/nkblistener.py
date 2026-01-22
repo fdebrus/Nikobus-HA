@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 
 from custom_components.nikobus.exceptions import NikobusDataError
 from .nkbprotocol import int_to_hex, calc_crc2
+from .discovery.base import InventoryQueryType
 from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRIOR_GEN3,
@@ -266,10 +267,16 @@ class NikobusEventListener:
                     message,
                     self._coordinator.discovery_module_address,
                 )
-                if self._coordinator.discovery_module_address:
-                    await self.nikobus_discovery.parse_module_inventory_response(message)
-                else:
+                if self._should_use_pclink_inventory_parser():
+                    _LOGGER.info(
+                        "PCLINK inventory response parsed with parse_inventory_response"
+                    )
                     await self.nikobus_discovery.parse_inventory_response(message)
+                else:
+                    _LOGGER.info(
+                        "Module inventory response parsed with parse_module_inventory_response"
+                    )
+                    await self.nikobus_discovery.parse_module_inventory_response(message)
                 return
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
@@ -310,3 +317,11 @@ class NikobusEventListener:
             _LOGGER.warning(
                 "Unknown module group identifier: %s", module_group_identifier
             )
+
+    def _should_use_pclink_inventory_parser(self) -> bool:
+        query_type = getattr(self._coordinator, "inventory_query_type", None)
+        if query_type == InventoryQueryType.MODULE:
+            return False
+        if query_type == InventoryQueryType.PC_LINK:
+            return True
+        return self._coordinator.discovery_module_address is None

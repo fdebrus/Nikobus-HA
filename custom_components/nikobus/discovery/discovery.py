@@ -1,7 +1,7 @@
 import asyncio
 import logging
 
-from .base import DecodedCommand
+from .base import DecodedCommand, InventoryQueryType, InventoryResult
 from .dimmer_decoder import DimmerDecoder, EXPECTED_CHUNK_LEN
 from .shutter_decoder import ShutterDecoder
 from .switch_decoder import SwitchDecoder
@@ -111,6 +111,7 @@ class NikobusDiscovery:
             self._coordinator.discovery_running = False
             self._coordinator.discovery_module = False
             self._coordinator.discovery_module_address = None
+            self._coordinator.inventory_query_type = None
 
     def normalize_module_address(
         self, address: str, *, source: str, reverse_bus_order: bool = False
@@ -304,6 +305,7 @@ class NikobusDiscovery:
         self._coordinator.discovery_module = False
         self._coordinator.discovery_module_address = None
         self._coordinator.discovery_running = True
+        self._coordinator.inventory_query_type = InventoryQueryType.PC_LINK
         _LOGGER.info("PC Link inventory scan started")
         _LOGGER.debug("Queueing PC Link inventory command #A")
         await self._coordinator.nikobus_command.queue_command("#A")
@@ -404,6 +406,7 @@ class NikobusDiscovery:
         self.discovery_stage = self.discovery_stage or "register_scan"
         base_command = f"10{normalized_address}"
         self._module_address = normalized_address
+        self._coordinator.inventory_query_type = InventoryQueryType.MODULE
 
         discovered_device = self.discovered_devices.get(normalized_address, {})
 
@@ -460,7 +463,8 @@ class NikobusDiscovery:
             pc_link_command = make_pc_link_inventory_command(partial_hex)
             await self._coordinator.nikobus_command.queue_command(pc_link_command)
 
-    async def parse_inventory_response(self, payload):
+    async def parse_inventory_response(self, payload) -> InventoryResult | None:
+        result = InventoryResult()
         try:
             self.discovery_stage = self.discovery_stage or "inventory"
             if payload.startswith("$") and "$" in payload[1:]:
@@ -477,7 +481,7 @@ class NikobusDiscovery:
                     "Discovery skipped | type=inventory module=%s reason=empty_register",
                     self._module_address,
                 )
-                return
+                return result
 
             device_info = classify_device_type(device_type_hex, DEVICE_TYPES)
             category = device_info.get("Category") or "Module"
@@ -502,37 +506,27 @@ class NikobusDiscovery:
 
             module_type = get_module_type_from_device_type(device_type_hex)
 
-            if converted_address not in self.discovered_devices:
-                last_seen = dt_util.now().isoformat()
-                base_device = {
-                    "description": name,
-                    "discovered_name": name,
-                    "category": category,
-                    "device_type": device_type_hex,
-                    "model": model,
-                    "address": converted_address,
-                    "channels": channels,
-                    "channels_count": channels,
-                    "module_type": module_type,
-                    "discovered": True,
-                    "last_discovered": last_seen,
-                }
-                self.discovered_devices[converted_address] = base_device
+            last_seen = dt_util.now().isoformat()
+            device_entry = {
+                "description": name,
+                "discovered_name": name,
+                "category": category,
+                "device_type": device_type_hex,
+                "model": model,
+                "address": converted_address,
+                "channels": channels,
+                "channels_count": channels,
+                "module_type": module_type,
+                "discovered": True,
+                "last_discovered": last_seen,
+            }
+
+            if category == "Button":
+                result.buttons.append(device_entry)
             else:
-                existing = self.discovered_devices[converted_address]
-                existing.update(
-                    {
-                        "discovered_name": name,
-                        "category": category,
-                        "device_type": device_type_hex,
-                        "model": model,
-                        "channels": channels,
-                        "channels_count": channels,
-                        "module_type": module_type,
-                        "discovered": True,
-                        "last_discovered": dt_util.now().isoformat(),
-                    }
-                )
+                result.modules.append(device_entry)
+
+            self._coordinator.apply_inventory_update(result, self.discovered_devices)
 
             _LOGGER.debug(
                 "Inventory classification | module_address=%s device_type=%s model=%s channels=%s",
@@ -549,9 +543,11 @@ class NikobusDiscovery:
                 model,
                 converted_address,
             )
+            return result
         except Exception as e:
             _LOGGER.error("Failed to parse Nikobus payload: %s", e)
             self.reset_state()
+            return None
 
     async def parse_module_inventory_response(self, message):
         try:
