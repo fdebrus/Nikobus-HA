@@ -106,6 +106,7 @@ class NikobusDiscovery:
         self._module_channels: int | None = None
         self._register_scan_queue = []
         self._inventory_addresses = set()
+        self._inventory_identity_queued: set[str] = set()
         self.discovery_stage = None
         if update_flags:
             self._coordinator.discovery_running = False
@@ -212,7 +213,12 @@ class NikobusDiscovery:
     async def _finalize_inventory_phase(self) -> None:
         self._cancel_inventory_timeout()
         if self.discovery_stage == "inventory_addresses" and self._inventory_addresses:
-            await self._run_inventory_identity_queries()
+            pending_addresses = (
+                self._inventory_addresses - self._inventory_identity_queued
+            )
+            if pending_addresses:
+                await self._run_inventory_identity_queries(pending_addresses)
+                self._inventory_identity_queued.update(pending_addresses)
             self.discovery_stage = "inventory_identity"
             self._schedule_inventory_timeout()
             return
@@ -244,8 +250,8 @@ class NikobusDiscovery:
         else:
             await self._complete_discovery_run(None)
 
-    async def _run_inventory_identity_queries(self) -> None:
-        for address in sorted(self._inventory_addresses):
+    async def _run_inventory_identity_queries(self, addresses: set[str]) -> None:
+        for address in sorted(addresses):
             bus_order_address = address[2:4] + address[:2]
             for base_command, command_code in (("10", "2E"), ("22", "1E")):
                 payload = f"{base_command}{bus_order_address}{command_code}04"
@@ -326,13 +332,24 @@ class NikobusDiscovery:
             raw_address, source="device_address_inventory", reverse_bus_order=True
         )
 
+        is_new = normalized not in self._inventory_addresses
         self._inventory_addresses.add(normalized)
         _LOGGER.debug(
             "Inventory record | raw=%s normalized=%s", raw_address, normalized
         )
         _LOGGER.info("Inventory record | address=%s", normalized)
         self._ensure_pc_link_address(normalized, source="device_address_inventory")
+        if is_new and self.discovery_stage == "inventory_addresses":
+            asyncio.create_task(
+                self._queue_inventory_identity_queries_for_address(normalized)
+            )
         self._schedule_inventory_timeout()
+
+    async def _queue_inventory_identity_queries_for_address(self, address: str) -> None:
+        if address in self._inventory_identity_queued:
+            return
+        await self._run_inventory_identity_queries({address})
+        self._inventory_identity_queued.add(address)
 
     def _ensure_pc_link_address(self, address: str, *, source: str) -> None:
         if not address:
