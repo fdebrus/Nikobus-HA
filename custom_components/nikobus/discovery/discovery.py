@@ -325,6 +325,11 @@ class NikobusDiscovery:
         normalized = self.normalize_module_address(
             raw_address, source="device_address_inventory", reverse_bus_order=True
         )
+        registry_start = start_index + 4
+        registry_end = registry_start + 6
+        registry_raw = ""
+        if len(clean_message) >= registry_end:
+            registry_raw = (clean_message[registry_start:registry_end] or "").upper()
 
         self._inventory_addresses.add(normalized)
         _LOGGER.debug(
@@ -332,6 +337,15 @@ class NikobusDiscovery:
         )
         _LOGGER.info("Inventory record | address=%s", normalized)
         self._ensure_pc_link_address(normalized, source="device_address_inventory")
+        if registry_raw:
+            existing = self.discovered_devices.get(normalized)
+            if existing is not None:
+                existing["registry_address"] = registry_raw
+            _LOGGER.info(
+                "PC Link registry address recorded | address=%s registry=%s",
+                normalized,
+                registry_raw,
+            )
         self._schedule_inventory_timeout()
 
     def _ensure_pc_link_address(self, address: str, *, source: str) -> None:
