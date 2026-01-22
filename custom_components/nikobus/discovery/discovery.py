@@ -13,7 +13,7 @@ from .mapping import (
     get_module_type_from_device_type,
 )
 from .protocol import classify_device_type, convert_nikobus_address, reverse_hex
-from ..const import DEVICE_INVENTORY
+from ..const import DEVICE_ADDRESS_INVENTORY, DEVICE_INVENTORY
 from .fileio import merge_discovered_links, update_button_data, update_module_data
 from ..nkbprotocol import make_pc_link_inventory_command
 from homeassistant.util import dt as dt_util
@@ -305,11 +305,21 @@ class NikobusDiscovery:
         self._coordinator.discovery_module_address = None
         self._coordinator.discovery_running = True
         _LOGGER.info("PC Link inventory scan started")
+        _LOGGER.debug("Queueing PC Link inventory command #A")
         await self._coordinator.nikobus_command.queue_command("#A")
         self._schedule_inventory_timeout()
 
     def handle_device_address_inventory(self, message: str) -> None:
-        raw_address = (message[3:7] or "").upper()
+        clean_message = message.strip("\x02\x03\r\n")
+        marker_index = clean_message.find(DEVICE_ADDRESS_INVENTORY)
+        if marker_index == -1:
+            _LOGGER.debug(
+                "Inventory record ignored | reason=missing_marker message=%s",
+                message,
+            )
+            return
+        start_index = marker_index + len(DEVICE_ADDRESS_INVENTORY)
+        raw_address = (clean_message[start_index : start_index + 4] or "").upper()
         normalized = self.normalize_module_address(
             raw_address, source="device_address_inventory", reverse_bus_order=True
         )
@@ -319,7 +329,59 @@ class NikobusDiscovery:
             "Inventory record | raw=%s normalized=%s", raw_address, normalized
         )
         _LOGGER.info("Inventory record | address=%s", normalized)
+        self._ensure_pc_link_address(normalized, source="device_address_inventory")
         self._schedule_inventory_timeout()
+
+    def _ensure_pc_link_address(self, address: str, *, source: str) -> None:
+        if not address:
+            return
+
+        existing = self.discovered_devices.get(address)
+        if existing and existing.get("module_type") != "pc_link":
+            _LOGGER.debug(
+                "Skipping PC Link address record | address=%s reason=existing_module_type",
+                address,
+            )
+            return
+
+        coordinator_modules = getattr(self._coordinator, "dict_module_data", {}) or {}
+        known_pc_links = coordinator_modules.get("pc_link") or {}
+        if known_pc_links and address not in known_pc_links:
+            _LOGGER.debug(
+                "Skipping PC Link address record | address=%s reason=known_pc_link_present source=%s",
+                address,
+                source,
+            )
+            return
+
+        pc_link_info = DEVICE_TYPES.get("0A", {})
+        name = pc_link_info.get("Name", "PC Link")
+        model = pc_link_info.get("Model", "05-200")
+        last_seen = dt_util.now().isoformat()
+        module_type = get_module_type_from_device_type("0A")
+        base_device = {
+            "description": name,
+            "discovered_name": name,
+            "category": "Module",
+            "device_type": "0A",
+            "model": model,
+            "address": address,
+            "channels": 0,
+            "channels_count": 0,
+            "module_type": module_type,
+            "discovered": True,
+            "last_discovered": last_seen,
+        }
+        if existing:
+            existing.update(base_device)
+        else:
+            self.discovered_devices[address] = base_device
+
+        _LOGGER.info(
+            "PC Link address recorded | address=%s source=%s",
+            address,
+            source,
+        )
 
     async def query_module_inventory(self, device_address, *, from_queue: bool = False):
         if device_address == "ALL":
