@@ -164,7 +164,10 @@ class NikobusEventListener:
         if DEVICE_ADDRESS_INVENTORY in message:
             _LOGGER.debug("Device address inventory: %s", message)
             if discovery_running:
-                await self.nikobus_discovery.query_module_inventory(message[3:7])
+                if self._should_use_pclink_inventory_parser():
+                    self.nikobus_discovery.handle_device_address_inventory(message)
+                else:
+                    await self.nikobus_discovery.query_module_inventory(message[3:7])
             else:
                 if hasattr(self.nikobus_discovery, "process_mode_button_press"):
                     await self.nikobus_discovery.process_mode_button_press(message)
