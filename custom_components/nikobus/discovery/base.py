@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Protocol
 
 
@@ -12,6 +13,17 @@ class DecodedCommand:
     chunk_hex: str | None = None
     payload_hex: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class InventoryQueryType(Enum):
+    PC_LINK = "pc_link_inventory"
+    MODULE = "module_inventory"
+
+
+@dataclass
+class InventoryResult:
+    modules: list[dict[str, Any]] = field(default_factory=list)
+    buttons: list[dict[str, Any]] = field(default_factory=list)
 
 
 class Decoder(Protocol):

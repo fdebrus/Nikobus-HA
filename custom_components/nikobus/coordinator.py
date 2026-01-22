@@ -15,6 +15,7 @@ from .nkblistener import NikobusEventListener
 from .nkbcommand import NikobusCommandHandler
 from .nkbactuator import NikobusActuator
 from .discovery import NikobusDiscovery
+from .discovery.base import InventoryQueryType, InventoryResult
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -69,6 +70,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         self._discovery_running = False
         self._discovery_module = None
         self.discovery_module_address = None
+        self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
 
     def _get_update_interval(self) -> timedelta | None:
@@ -208,7 +210,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 await self.nikobus_discovery.query_module_inventory(module_address)
             else:
                 self._discovery_module = False
-                await self.nikobus_command.queue_command("#A")
+                self.discovery_module_address = None
+                await self.nikobus_discovery.start_inventory_discovery()
         except Exception as e:
             _LOGGER.exception("Error during discovery: %s", e)
             raise
@@ -536,6 +539,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
                 )
 
         self._reload_task = self.hass.async_create_task(_reload_entry())
+
+    def apply_inventory_update(
+        self,
+        inventory_result: InventoryResult,
+        discovered_devices: dict[str, dict],
+    ) -> None:
+        """Apply parsed inventory results to the in-memory discovery cache."""
+        if not inventory_result:
+            return
+
+        for device in inventory_result.modules + inventory_result.buttons:
+            address = (device.get("address") or "").upper()
+            if not address:
+                continue
+            existing = discovered_devices.get(address)
+            if existing:
+                existing.update(device)
+            else:
+                discovered_devices[address] = device
 
     def get_button_channels(self, main_address: str):
         """Return the discovery channels for a given button discovered_info address."""
