@@ -1,8 +1,8 @@
-# Nikobus Protocol Specification (as implemented in this repo)
+# Nikobus Protocol Specification
 
 > **Scope & provenance**: This document describes the exact behavior implemented in this repository. Every statement is traceable to code or constants in the repo. If a detail is not present in the code, it is explicitly marked as “Not specified in this repo.”
 
-## 1) Implementation map (where the protocol is implemented)
+## 1) Implementation map
 
 **Serial connection / transport**
 - `custom_components/nikobus/nkbconnect.py`: IP/Serial transport, CR-terminated read, CR-terminated send, handshake sequence, socket options. (e.g., `read()`, `send()`, `_connect_serial`, `_connect_ip`, `_perform_handshake`) [`custom_components/nikobus/nkbconnect.py:1-215`]
