@@ -331,6 +331,11 @@ class NikobusDiscovery:
         normalized = self.normalize_module_address(
             raw_address, source="device_address_inventory", reverse_bus_order=True
         )
+        registry_start = start_index + 4
+        registry_end = registry_start + 6
+        registry_raw = ""
+        if len(clean_message) >= registry_end:
+            registry_raw = (clean_message[registry_start:registry_end] or "").upper()
 
         is_new = normalized not in self._inventory_addresses
         self._inventory_addresses.add(normalized)
