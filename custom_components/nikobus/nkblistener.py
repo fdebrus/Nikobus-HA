@@ -270,16 +270,39 @@ class NikobusEventListener:
                     message,
                     self._coordinator.discovery_module_address,
                 )
-                if self._should_use_pclink_inventory_parser():
-                    _LOGGER.info(
-                        "PCLINK inventory response parsed with parse_inventory_response"
-                    )
-                    await self.nikobus_discovery.parse_inventory_response(message)
+                matched_header, payload_len = self._inventory_payload_length(message)
+                query_type = getattr(self._coordinator, "inventory_query_type", None)
+                discovery_stage = getattr(self.nikobus_discovery, "discovery_stage", None)
+                relationship_frame = False
+                reasons: list[str] = []
+
+                if query_type == InventoryQueryType.MODULE:
+                    relationship_frame = True
+                    reasons.append("query_type=module")
                 else:
-                    _LOGGER.info(
-                        "Module inventory response parsed with parse_module_inventory_response"
-                    )
+                    if payload_len is not None and payload_len >= 12 and payload_len % 12 == 0:
+                        relationship_frame = True
+                        reasons.append(f"payload_len={payload_len} chunked")
+                    else:
+                        reasons.append(f"payload_len={payload_len}")
+                    if discovery_stage:
+                        reasons.append(f"stage={discovery_stage}")
+
+                parser_name = (
+                    "parse_module_inventory_response"
+                    if relationship_frame
+                    else "parse_inventory_response"
+                )
+                _LOGGER.debug(
+                    "Inventory frame routing | header=%s parser=%s reason=%s",
+                    matched_header,
+                    parser_name,
+                    ", ".join(reasons) if reasons else "unspecified",
+                )
+                if relationship_frame:
                     await self.nikobus_discovery.parse_module_inventory_response(message)
+                else:
+                    await self.nikobus_discovery.parse_inventory_response(message)
                 return
 
         _LOGGER.debug("Adding unknown message to response queue: %s", message)
@@ -308,6 +331,20 @@ class NikobusEventListener:
             second_dollar = message.find("$", 1)
             return message[second_dollar:]
         return message
+
+    def _inventory_payload_length(self, message: str) -> tuple[str | None, int | None]:
+        matched_header = next(
+            (header for header in DEVICE_INVENTORY if message.startswith(header)), None
+        )
+        if not matched_header:
+            return None, None
+        frame_body = message[len(matched_header) :]
+        if len(frame_body) < 4:
+            return matched_header, None
+        payload_and_crc = frame_body[4:]
+        if len(payload_and_crc) <= 6:
+            return matched_header, 0
+        return matched_header, len(payload_and_crc) - 6
 
     def _handle_feedback_refresh(self, message: str) -> None:
         """Handle feedback refresh commands using a mapping for module group identifiers."""

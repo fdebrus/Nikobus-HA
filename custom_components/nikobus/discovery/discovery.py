@@ -246,6 +246,10 @@ class NikobusDiscovery:
             len(self.discovered_devices),
         )
         if output_modules:
+            _LOGGER.info(
+                "PC Link relationship dump started | modules=%d",
+                len(output_modules),
+            )
             await self._start_next_register_scan()
         else:
             await self._complete_discovery_run(None)
@@ -254,9 +258,21 @@ class NikobusDiscovery:
         for address in sorted(addresses):
             bus_order_address = address[2:4] + address[:2]
             for base_command, command_code in (("10", "2E"), ("22", "1E")):
-                payload = f"{base_command}{bus_order_address}{command_code}04"
-                pc_link_command = make_pc_link_inventory_command(payload)
-                await self._coordinator.nikobus_command.queue_command(pc_link_command)
+                _LOGGER.debug(
+                    "PC Link inventory enumeration starting | address=%s command=%s",
+                    address,
+                    command_code,
+                )
+                for key_index in range(0x00, 0x100):
+                    payload = f"{base_command}{bus_order_address}{command_code}{key_index:02X}"
+                    pc_link_command = make_pc_link_inventory_command(payload)
+                    _LOGGER.debug(
+                        "PC Link inventory key queued | address=%s command=%s key=%02X",
+                        address,
+                        command_code,
+                        key_index,
+                    )
+                    await self._coordinator.nikobus_command.queue_command(pc_link_command)
 
     async def _start_next_register_scan(self) -> None:
         if not self._register_scan_queue:
@@ -312,7 +328,7 @@ class NikobusDiscovery:
         self._coordinator.discovery_module_address = None
         self._coordinator.discovery_running = True
         self._coordinator.inventory_query_type = InventoryQueryType.PC_LINK
-        _LOGGER.info("PC Link inventory scan started")
+        _LOGGER.info("PC Link inventory enumeration started")
         _LOGGER.debug("Queueing PC Link inventory command #A")
         await self._coordinator.nikobus_command.queue_command("#A")
         self._schedule_inventory_timeout()
@@ -517,6 +533,12 @@ class NikobusDiscovery:
                 source="device_address_inventory",
                 reverse_bus_order=True,
             )
+            if converted_address == "FFFFFF":
+                _LOGGER.debug(
+                    "Discovery skipped | type=inventory module=%s reason=terminator_address",
+                    self._module_address,
+                )
+                return result
 
             if device_info.get("Category", "Unknown") == "Unknown":
                 _LOGGER.warning(
@@ -527,6 +549,11 @@ class NikobusDiscovery:
                 )
 
             module_type = get_module_type_from_device_type(device_type_hex)
+            if module_type == "pc_link":
+                _LOGGER.info(
+                    "PC Link detected during inventory enumeration | address=%s",
+                    converted_address,
+                )
 
             last_seen = dt_util.now().isoformat()
             device_entry = {
@@ -639,8 +666,18 @@ class NikobusDiscovery:
                 normalized_chunk = chunk.strip().upper()
                 if not normalized_chunk:
                     continue
-                if normalized_chunk == "F" * len(normalized_chunk):
+                _LOGGER.debug(
+                    "Discovery relationship chunk | module=%s chunk=%s",
+                    address,
+                    normalized_chunk,
+                )
+                if normalized_chunk == "FFFFFFFFFFFF":
                     terminator_seen = True
+                    _LOGGER.debug(
+                        "Discovery relationship terminator detected | module=%s chunk=%s",
+                        address,
+                        normalized_chunk,
+                    )
                     continue
                 decoded_commands.extend(
                     decoder.decode(normalized_chunk, module_address=address)
