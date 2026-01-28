@@ -213,11 +213,31 @@ If you rely solely on periodic refresh, Home Assistant may briefly be out of syn
 
 ## Module Configuration
 
-After installation, an example file is available at `/config/custom_components/nikobus/nikobus_module_config.json.default`. Copy it to `/config/nikobus_module_config.json` and adjust it to your setup.
+Initial Discovery & Module Configuration
 
-- `description`: Free text to identify the module (e.g., "Switch Module S1").
-- `model`: The Nikobus reference (e.g., "05-000-02").
-- `channels`: Each channel can have a description; keep descriptions unique across modules to avoid duplicate entity names.
+After installing the integration, you must first run Nikobus Discovery to generate the base configuration file.
+
+1. Run Discovery
+
+In Home Assistant, go to:
+Developer Tools → Actions
+
+Select the Nikobus: Discovery action.
+
+Leave the module address field empty.
+This field is reserved for future functionality and is not required for initial discovery.
+
+Execute the action.
+
+This process creates a skeleton configuration file:
+
+/config/nikobus_module_config.json
+
+This file will contain the detected modules and serves as the foundation for your manual configuration and validation.
+
+2. Edit the Module Configuration File
+
+Open nikobus_module_config.json and complete the module definitions.
 
 **Required vs optional fields**
 
