@@ -160,18 +160,20 @@ async def update_module_data(hass, discovered_devices):
         return channel
 
     def _sanitize_channel(module_type: str, channel: dict, index: int) -> dict:
-        sanitized: dict = {}
-        if isinstance(channel, dict):
-            if "description" in channel:
-                sanitized["description"] = channel.get("description") or ""
-            if module_type == "roller_module" and channel.get("operation_time") is not None:
-                sanitized["operation_time"] = str(channel.get("operation_time"))
+        # Preserve any existing user keys (entity_type, led_on/off, etc.)
+        sanitized: dict = dict(channel) if isinstance(channel, dict) else {}
 
-        if "description" not in sanitized:
-            sanitized["description"] = ""
+        # Normalize / guarantee description
+        sanitized["description"] = (sanitized.get("description") or "").strip()
 
-        if module_type == "roller_module" and "operation_time" not in sanitized:
-            sanitized["operation_time"] = "60"
+        # Normalize / guarantee operation_time only for roller_module
+        if module_type == "roller_module":
+            op = sanitized.get("operation_time", "60")
+            sanitized["operation_time"] = str(op) if op not in (None, "") else "60"
+        else:
+            # If other module types accidentally carry operation_time, keep it or drop it:
+            # safest is to keep it as-is (do nothing), so we don't destroy user data.
+            pass
 
         return sanitized
 
@@ -481,7 +483,20 @@ def _normalize_key(value):
 
 
 async def merge_discovered_links(hass, command_mapping):
-    """Merge discovery command mapping into nikobus_button_config.json."""
+    """Merge discovery command mapping into nikobus_button_config.json.
+
+    Notes:
+        - discovered_links blocks are grouped by module_address only.
+        - Supports command_mapping keys:
+            (push_button_address, key_raw)              [legacy]
+            (push_button_address, key_raw, ir_code)     [IR-aware]
+        - We do NOT persist key/key_raw in discovered_links; key identity is tracked in discovered_info.
+        - For IR receivers, the bus-emitted address is stored in discovered_info[].address.
+          Therefore we must match button entries by:
+            - top-level button["address"] (legacy), OR
+            - any discovered_info[].address (IR / bus identity)
+        - If a button is not found in the JSON, we auto-create a placeholder entry so links are not dropped.
+    """
 
     file_path = hass.config.path("nikobus_button_config.json")
 
@@ -503,33 +518,117 @@ async def merge_discovered_links(hass, command_mapping):
     if not isinstance(buttons, list):
         buttons = []
 
-    address_lookup = {
-        _normalize_address(button.get("address")): button
-        for button in buttons
-        if "address" in button
-    }
+    def _unpack_mapping_key(mapping_key):
+        """Return (push_button_address, key_raw, ir_code)."""
+        if not isinstance(mapping_key, tuple):
+            return mapping_key, None, None
+        if len(mapping_key) == 2:
+            return mapping_key[0], mapping_key[1], None
+        if len(mapping_key) == 3:
+            return mapping_key[0], mapping_key[1], mapping_key[2]
+        return mapping_key[0] if mapping_key else None, None, None
+
+    def _rebuild_address_lookup() -> dict[str, dict]:
+        """Map any resolvable address to its button entry (top-level + discovered_info[].address)."""
+        lookup: dict[str, dict] = {}
+        for button in buttons:
+            if not isinstance(button, dict):
+                continue
+
+            top_addr = _normalize_address(button.get("address"))
+            if top_addr:
+                lookup.setdefault(top_addr, button)
+
+            discovered_info = button.get("discovered_info", [])
+            if isinstance(discovered_info, list):
+                for info in discovered_info:
+                    if not isinstance(info, dict):
+                        continue
+                    di_addr = _normalize_address(info.get("address"))
+                    if di_addr:
+                        lookup.setdefault(di_addr, button)
+
+        return lookup
+
+    def _ensure_button_entry_for_address(
+        address_lookup: dict[str, dict],
+        normalized_address: str,
+        key_raw=None,
+        ir_code=None,
+    ) -> dict:
+        """Return existing button entry or create a placeholder entry for this bus address."""
+        existing = address_lookup.get(normalized_address)
+        if existing:
+            return existing
+
+        # Create placeholder entry so we don't drop discovered_links.
+        # Keep description deterministic and clearly auto-generated.
+        placeholder_info: dict = {
+            "type": "Discovered (links-only)",
+            "address": normalized_address,
+        }
+        # Optional metadata (kept in discovered_info, not in discovered_links)
+        if key_raw is not None:
+            placeholder_info["key_raw"] = str(key_raw)
+        if ir_code:
+            placeholder_info["ir_code"] = ir_code
+
+        new_button = {
+            "description": f"discovered_button #N{normalized_address}",
+            "address": normalized_address,
+            "impacted_module": [{"address": "", "group": ""}],
+            "discovered_info": [placeholder_info],
+            "discovered_links": [],
+        }
+
+        buttons.append(new_button)
+
+        # Make it resolvable immediately
+        address_lookup[normalized_address] = new_button
+        _LOGGER.info("Auto-created button entry for discovered address: %s", normalized_address)
+        return new_button
+
+    address_lookup = _rebuild_address_lookup()
 
     updated_buttons = 0
     links_added = 0
     outputs_added = 0
     any_updates = False
-    matched_addresses = set()
-    unmatched_addresses = set()
+    matched_addresses: set[str] = set()
+    unmatched_addresses: set[str] = set()
 
-    for (push_button_address, key_raw), outputs in command_mapping.items():
+    for mapping_key, outputs in command_mapping.items():
+        push_button_address, key_raw, ir_code_from_key = _unpack_mapping_key(mapping_key)
         if push_button_address is None:
             continue
+
         normalized_address = _normalize_address(push_button_address)
-        button_entry = address_lookup.get(normalized_address)
-        if not button_entry:
-            unmatched_addresses.add(normalized_address)
+        if not normalized_address:
             continue
 
+        if not isinstance(outputs, list) or not outputs:
+            continue
+
+        # IMPORTANT: if not found, create placeholder so merges don't get dropped.
+        button_entry = _ensure_button_entry_for_address(
+            address_lookup,
+            normalized_address,
+            key_raw=key_raw,
+            ir_code=ir_code_from_key,
+        )
+
         discovered_links = button_entry.setdefault("discovered_links", [])
+        if not isinstance(discovered_links, list):
+            discovered_links = []
+            button_entry["discovered_links"] = discovered_links
+
         updated_entry = False
         matched_addresses.add(normalized_address)
 
         for output in outputs:
+            if not isinstance(output, dict):
+                continue
+
             module_address = output.get("module_address")
             if module_address is None:
                 continue
@@ -539,27 +638,34 @@ async def merge_discovered_links(hass, command_mapping):
             t1_val = output.get("t1")
             t2_val = output.get("t2")
             payload_val = output.get("payload")
+
+            # Backward compatible physical identity
             button_address = output.get("button_address")
 
+            # Optional IR identity
+            ir_button_address = output.get("ir_button_address")
+            ir_code = output.get("ir_code") or ir_code_from_key
+
+            # Match block by module_address only (as before)
             matching_block = next(
                 (
                     block
                     for block in discovered_links
-                    if block.get("module_address") == module_address
-                    and _normalize_key(block.get("key")) == key_raw
+                    if isinstance(block, dict) and block.get("module_address") == module_address
                 ),
                 None,
             )
 
             if matching_block is None:
-                matching_block = {
-                    "module_address": module_address,
-                    "key": key_raw,
-                    "outputs": [],
-                }
+                matching_block = {"module_address": module_address, "outputs": []}
                 discovered_links.append(matching_block)
                 links_added += 1
                 updated_entry = True
+
+            existing_outputs = matching_block.get("outputs", [])
+            if not isinstance(existing_outputs, list):
+                existing_outputs = []
+                matching_block["outputs"] = existing_outputs
 
             output_entry = {
                 "channel": channel_number,
@@ -570,22 +676,35 @@ async def merge_discovered_links(hass, command_mapping):
                 "button_address": button_address,
             }
 
+            # Only persist IR fields when present
+            if ir_button_address:
+                output_entry["ir_button_address"] = ir_button_address
+            if ir_code:
+                output_entry["ir_code"] = ir_code
+
+            # Dedupe must include IR identity; otherwise IR variants collapse
             dedupe_key = (
-                output_entry["channel"],
-                output_entry["mode"],
-                output_entry["t1"],
-                output_entry["t2"],
+                output_entry.get("channel"),
+                output_entry.get("mode"),
+                output_entry.get("t1"),
+                output_entry.get("t2"),
+                output_entry.get("ir_code"),
+                output_entry.get("ir_button_address"),
             )
-            existing_outputs = matching_block.get("outputs", [])
+
             existing_keys = {
                 (
                     entry.get("channel"),
                     entry.get("mode"),
                     entry.get("t1"),
                     entry.get("t2"),
+                    entry.get("ir_code"),
+                    entry.get("ir_button_address"),
                 )
                 for entry in existing_outputs
+                if isinstance(entry, dict)
             }
+
             if dedupe_key not in existing_keys:
                 existing_outputs.append(output_entry)
                 matching_block["outputs"] = existing_outputs
@@ -593,28 +712,32 @@ async def merge_discovered_links(hass, command_mapping):
                 updated_entry = True
 
         if updated_entry:
+            # Sort blocks by module address
             discovered_links.sort(
-                key=lambda block: (
-                    block.get("module_address", ""),
-                    _normalize_key(block.get("key"))
-                    if isinstance(_normalize_key(block.get("key")), int)
-                    else float("inf"),
-                )
+                key=lambda block: (block.get("module_address", "") if isinstance(block, dict) else "")
             )
+
             for block in discovered_links:
+                if not isinstance(block, dict):
+                    continue
                 block_outputs = block.get("outputs", [])
+                if not isinstance(block_outputs, list):
+                    block_outputs = []
                 block_outputs.sort(
-                    key=lambda output: (
-                        output.get("channel")
-                        if output.get("channel") is not None
-                        else -1,
-                        output.get("mode", ""),
+                    key=lambda out: (
+                        out.get("channel") if isinstance(out, dict) and out.get("channel") is not None else -1,
+                        out.get("mode", "") if isinstance(out, dict) else "",
+                        (out.get("ir_code", "") or "") if isinstance(out, dict) else "",
+                        (out.get("ir_button_address", "") or "") if isinstance(out, dict) else "",
                     )
                 )
                 block["outputs"] = block_outputs
 
             updated_buttons += 1
             any_updates = True
+        else:
+            # Exists but nothing new (all deduped)
+            pass
 
     if any_updates:
         os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
@@ -643,7 +766,7 @@ async def merge_discovered_links(hass, command_mapping):
             outputs_added,
         )
 
-    if not matched_addresses:
+    if not matched_addresses and unmatched_addresses:
         unmatched_sample = list(unmatched_addresses)[:5]
         _LOGGER.debug(
             "Button config JSON updater found no matching buttons. unmatched_count=%d sample=%s",
@@ -652,4 +775,3 @@ async def merge_discovered_links(hass, command_mapping):
         )
 
     return updated_buttons, links_added, outputs_added
-

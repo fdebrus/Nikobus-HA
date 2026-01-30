@@ -22,17 +22,124 @@ _LOGGER = logging.getLogger(__name__)
 
 DIMMER_EMPTY_RESPONSE_THRESHOLD = 8
 
+# ---------------------------------------------------------------------------
+# IR channel decoding (e.g. 30A=9E4E2C, 30B=DE4E2C, 31A=BE4E2C)
+# ---------------------------------------------------------------------------
+BASE_LOW16 = 0x4E2C
+BASE_HIGH_30A = 0x9E
+BANK_BIT = 0x40
+CHANNEL_STEP = 0x20
+
+
+def _normalize_hex(s: str | None) -> str | None:
+    if not s:
+        return None
+    s = s.strip().upper()
+    if s.startswith("0X"):
+        s = s[2:]
+    s = s.replace(" ", "")
+    return s
+
+
+def decode_ir_channel_code(ir_code_hex: str | None) -> dict | None:
+    """
+    Decode IR channel code like:
+        9E4E2C -> 30A
+        DE4E2C -> 30B
+        BE4E2C -> 31A
+
+    Returns a dict with decoded fields or None if not matching the known pattern.
+    """
+    ir_code_hex = _normalize_hex(ir_code_hex)
+    if not ir_code_hex or len(ir_code_hex) != 6:
+        return None
+
+    try:
+        ir_code = int(ir_code_hex, 16)
+    except ValueError:
+        return None
+
+    high = (ir_code >> 16) & 0xFF
+    low16 = ir_code & 0xFFFF
+
+    # Signature validation (based on observed values)
+    if low16 != BASE_LOW16:
+        return None
+
+    bank = "B" if (high & BANK_BIT) else "A"
+    high_a = high & ~BANK_BIT
+
+    delta = high_a - BASE_HIGH_30A
+    if delta < 0 or (delta % CHANNEL_STEP) != 0:
+        return None
+
+    channel = 30 + (delta // CHANNEL_STEP)
+
+    return {
+        "ir_channel_number": channel,        # e.g. 30, 31, ...
+        "ir_channel_bank": bank,             # "A" or "B"
+        "ir_channel": f"{channel}{bank}",    # "30A"
+        "ir_channel_code": ir_code_hex,      # original 6-hex code
+    }
+
+
+def _extract_ir_candidate(decoded_command: dict) -> str | None:
+    """
+    Try to find a 6-hex IR channel code in decoded metadata, across legacy/new fields.
+    This does NOT derive it from the IR slot address (0D1C81..FF).
+    """
+    for key in (
+        "ir_channel_code",
+        "ir_code",          # if a decoder stores 6-hex here
+        "ir",               # sometimes used as generic
+        "ir_channel",       # might already be "9E4E2C" or "30A"
+    ):
+        val = decoded_command.get(key)
+        if not val:
+            continue
+        val = _normalize_hex(str(val))
+        if not val:
+            continue
+        # Accept only a raw 6-hex code here; "30A" is a label, not a code
+        if len(val) == 6 and all(c in "0123456789ABCDEF" for c in val):
+            return val
+    return None
+
 
 def add_to_command_mapping(command_mapping, decoded_command, module_address):
     """Store decoded command information, allowing one-to-many button mappings."""
     push_button_address = decoded_command.get("push_button_address")
+
+    # Accept legacy/new decoder fields
     key_raw = decoded_command.get("key_raw")
+    if key_raw is None:
+        key_raw = decoded_command.get("key")  # <-- IMPORTANT fallback
+
     if push_button_address is None or key_raw is None:
         return
 
-    mapping_key = (push_button_address, key_raw)
+    # Normalize key to a stable string/int (depending on what your decoders use)
+    # If keys are numeric, this keeps "1" and 1 identical.
+    if isinstance(key_raw, str):
+        key_raw = key_raw.strip()
+        if key_raw.isdigit():
+            key_raw = int(key_raw)
+
+    physical_push, ir_push_addr, ir_push_slot = split_ir_button_address(push_button_address)
+
+    # If the decoder provides a 6-hex IR channel code (e.g. 9E4E2C), decode it to "30A"
+    ir_candidate = _extract_ir_candidate(decoded_command)
+    ir_decoded = decode_ir_channel_code(ir_candidate) if ir_candidate else None
+
+    # Mapping key: prefer logical IR channel label if present; otherwise fall back to slot byte.
+    ir_key = (ir_decoded or {}).get("ir_channel") or ir_push_slot
+    mapping_key = (physical_push, key_raw, ir_key)
     outputs = command_mapping.setdefault(mapping_key, [])
+
     channel_number = decoded_command.get("channel")
+
+    button_address = decoded_command.get("button_address")
+    physical_btn, ir_btn_addr, ir_btn_slot = split_ir_button_address(button_address)
 
     output_definition = {
         "module_address": module_address,
@@ -41,7 +148,19 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
         "t1": decoded_command.get("T1"),
         "t2": decoded_command.get("T2"),
         "payload": decoded_command.get("payload"),
-        "button_address": decoded_command.get("button_address"),
+
+        # button addresses
+        "button_address": physical_btn or physical_push or button_address,
+        "ir_button_address": ir_btn_addr or ir_push_addr,
+
+        # IR slot byte (81..FF). Kept for backward compatibility / diagnostics.
+        "ir_slot": ir_btn_slot or ir_push_slot,
+
+        # True IR channel info (only if decoders provide 6-hex channel code)
+        "ir_channel_code": (ir_decoded or {}).get("ir_channel_code"),
+        "ir_channel": (ir_decoded or {}).get("ir_channel"),
+        "ir_channel_number": (ir_decoded or {}).get("ir_channel_number"),
+        "ir_channel_bank": (ir_decoded or {}).get("ir_channel_bank"),
     }
 
     dedupe_key = (
@@ -50,7 +169,10 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
         output_definition["mode"],
         output_definition["t1"],
         output_definition["t2"],
+        output_definition.get("ir_channel") or output_definition.get("ir_slot"),
+        output_definition.get("ir_button_address"),
     )
+
     existing_keys = {
         (
             entry.get("module_address"),
@@ -58,12 +180,40 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
             entry.get("mode"),
             entry.get("t1"),
             entry.get("t2"),
+            entry.get("ir_channel") or entry.get("ir_slot"),
+            entry.get("ir_button_address"),
         )
         for entry in outputs
     }
 
     if dedupe_key not in existing_keys:
         outputs.append(output_definition)
+
+
+def split_ir_button_address(addr: str | None) -> tuple[str | None, str | None, str | None]:
+    """
+    Nikobus IR receiver: physical device is XXXX80, IR slots appear as XXXX81..XXFF.
+    Returns (physical_addr, ir_slot_addr, ir_slot_byte_hex).
+    Non-IR addresses return (addr, None, None).
+    """
+    if not addr:
+        return None, None, None
+
+    a = addr.strip().upper()
+    if len(a) != 6:
+        return a, None, None
+
+    # Heuristic: your IR receiver family is 0D1Cxx (from your captures).
+    # If you later have other IR bases, generalize this rule.
+    if not a.startswith("0D1C"):
+        return a, None, None
+
+    physical = a[:4] + "80"
+    if a == physical:
+        return physical, None, None
+
+    # Slot byte is the last byte (81..FF)
+    return physical, a, a[-2:]
 
 
 async def _notify_discovery_finished(discovery) -> None:
@@ -108,6 +258,7 @@ class NikobusDiscovery:
         self._inventory_addresses = set()
         self._inventory_identity_queued: set[str] = set()
         self.discovery_stage = None
+        self._pc_link_inventory_terminated = False
         if update_flags:
             self._coordinator.discovery_running = False
             self._coordinator.discovery_module = False
@@ -173,6 +324,9 @@ class NikobusDiscovery:
             self._inventory_timeout_after()
         )
 
+    def _is_pc_link_inventory_terminator(self, converted_address: str, data_bytes: bytes) -> bool:
+        return converted_address == "FFFFFF" or all(b == 0xFF for b in data_bytes)
+
     async def _timeout_after(self, module_address: str | None) -> None:
         try:
             await asyncio.sleep(self._module_timeout_seconds)
@@ -211,18 +365,31 @@ class NikobusDiscovery:
         await self._complete_discovery_run(resolved_address)
 
     async def _finalize_inventory_phase(self) -> None:
+        """Finalize the PC-Link inventory phase.
+
+        Notes:
+        - If we are still in the inventory address collection stage, queue identity/register
+            queries and return (normal staged workflow).
+        - Once inventory is complete, persist discovered inventory into:
+            * nikobus_module_config.json
+            * nikobus_button_config.json
+        - Do NOT automatically start module discovery / relationship dump (register_scan).
+            That must remain a manual process.
+        """
         self._cancel_inventory_timeout()
+
+        # Stage 1: we have inventory addresses but haven't queued identity/register queries yet
         if self.discovery_stage == "inventory_addresses" and self._inventory_addresses:
-            pending_addresses = (
-                self._inventory_addresses - self._inventory_identity_queued
-            )
+            pending_addresses = self._inventory_addresses - self._inventory_identity_queued
             if pending_addresses:
                 await self._run_inventory_identity_queries(pending_addresses)
                 self._inventory_identity_queued.update(pending_addresses)
+
             self.discovery_stage = "inventory_identity"
             self._schedule_inventory_timeout()
             return
 
+        # Stage 2: inventory complete -> persist results
         await update_module_data(self._hass, self.discovered_devices)
         await update_button_data(
             self._hass,
@@ -231,48 +398,42 @@ class NikobusDiscovery:
             convert_nikobus_address,
         )
 
-        output_modules = sorted(
-            address
-            for address, device in self.discovered_devices.items()
-            if device.get("category") == "Module"
-            and device.get("module_type")
-            in {"switch_module", "dimmer_module", "roller_module"}
-        )
-
-        self.discovery_stage = "register_scan"
-        self._register_scan_queue = output_modules
         _LOGGER.info(
             "PC Link inventory scan finished | discovered=%d",
             len(self.discovered_devices),
         )
-        if output_modules:
-            _LOGGER.info(
-                "PC Link relationship dump started | modules=%d",
-                len(output_modules),
-            )
-            await self._start_next_register_scan()
-        else:
-            await self._complete_discovery_run(None)
+        _LOGGER.info(
+            "PC Link inventory phase completed. Module discovery is manual; stopping here."
+        )
+
+        # End discovery here (do not chain into register_scan automatically)
+        await self._complete_discovery_run(None)
+        return
 
     async def _run_inventory_identity_queries(self, addresses: set[str]) -> None:
         for address in sorted(addresses):
+            # `address` is stored normalized (reverse_bus_order=True earlier),
+            # but PC-Link commands must be sent using bus-order.
             bus_order_address = address[2:4] + address[:2]
-            for base_command, command_code in (("10", "2E"), ("22", "1E")):
+
+            _LOGGER.debug(
+                "PC Link inventory enumeration starting | address=%s bus=%s",
+                address,
+                bus_order_address,
+            )
+
+            # A0..FF inclusive => range end must be 0x100
+            for reg in range(0xA0, 0x100):
+                payload = f"10{bus_order_address}{reg:02X}04"
+                pc_link_command = make_pc_link_inventory_command(payload)
+
                 _LOGGER.debug(
-                    "PC Link inventory enumeration starting | address=%s command=%s",
+                    "PC Link inventory key queued | address=%s bus=%s reg=%02X",
                     address,
-                    command_code,
+                    bus_order_address,
+                    reg,
                 )
-                for key_index in range(0x00, 0x100):
-                    payload = f"{base_command}{bus_order_address}{command_code}{key_index:02X}"
-                    pc_link_command = make_pc_link_inventory_command(payload)
-                    _LOGGER.debug(
-                        "PC Link inventory key queued | address=%s command=%s key=%02X",
-                        address,
-                        command_code,
-                        key_index,
-                    )
-                    await self._coordinator.nikobus_command.queue_command(pc_link_command)
+                await self._coordinator.nikobus_command.queue_command(pc_link_command)
 
     async def _start_next_register_scan(self) -> None:
         if not self._register_scan_queue:
@@ -533,11 +694,19 @@ class NikobusDiscovery:
                 source="device_address_inventory",
                 reverse_bus_order=True,
             )
-            if converted_address == "FFFFFF":
-                _LOGGER.debug(
-                    "Discovery skipped | type=inventory module=%s reason=terminator_address",
-                    self._module_address,
+            if self._is_pc_link_inventory_terminator(converted_address, data_bytes):
+                _LOGGER.info(
+                    "PC Link inventory terminator received (FFFF...). Stopping inventory enumeration."
                 )
+                self._pc_link_inventory_terminated = True
+
+                if hasattr(self._coordinator.nikobus_command, "clear_command_queue"):
+                    await self._coordinator.nikobus_command.clear_command_queue()
+
+                self._cancel_inventory_timeout()
+
+                self.discovery_stage = "inventory_identity"
+                await self._finalize_inventory_phase()
                 return result
 
             if device_info.get("Category", "Unknown") == "Unknown":
@@ -707,14 +876,28 @@ class NikobusDiscovery:
     ):
         new_commands = []
         command_mapping = {}
+
         for command in decoded_commands:
             if not isinstance(command, DecodedCommand):
                 continue
+
             decoded = command.metadata or {}
-            if decoded.get("push_button_address") is None:
+
+            # ------------------------------------------------------------------
+            # IR + legacy compatibility:
+            # Some decoders (observed for IR slots like 0D1C81/0D1C9E/...) only
+            # populate button_address and not push_button_address.
+            # Discovery mapping expects push_button_address to be present.
+            # ------------------------------------------------------------------
+            if decoded.get("push_button_address") is None and decoded.get("button_address") is not None:
+                decoded["push_button_address"] = decoded.get("button_address")
+
+            # If we still have no button address at all, skip.
+            if decoded.get("push_button_address") is None and decoded.get("button_address") is None:
                 continue
 
             new_commands.append(decoded)
+
             if module_address:
                 add_to_command_mapping(command_mapping, decoded, module_address)
 
@@ -739,7 +922,6 @@ class NikobusDiscovery:
             links_added,
             outputs_added,
         )
-
 
 def run_decoder_harness(coordinator):
     """Lightweight harness to exercise discovery decoders without full HA runtime."""
