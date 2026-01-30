@@ -453,6 +453,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator):
         _LOGGER.error("Module ID %s not found in module configuration", module_id)
         return 0
 
+    def get_cover_operation_time(self, module_id: str, channel: int, default: float = 30.0) -> float:
+        """Read operation_time from loaded module config (post-transform)."""
+        try:
+            ch = (
+                (self.dict_module_data or {})
+                .get("roller_module", {})
+                .get(str(module_id), {})
+                .get("channels", [])[int(channel) - 1]
+            )
+            ot = (ch or {}).get("operation_time")
+            # config stores it as string e.g. "32" / "00"
+            t = float(ot) if ot is not None else float(default)
+            return float(default) if t <= 0 else t  # treat "00" as not usable
+        except Exception:
+            return float(default)
+
     def get_light_state(self, address: str, channel: int) -> bool:
         """Get the state of a light based on its address and channel."""
         return self.get_bytearray_state(address, channel) != 0x00

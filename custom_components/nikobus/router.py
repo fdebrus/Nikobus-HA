@@ -35,6 +35,33 @@ def build_unique_id(domain: str, kind: str, address: str, channel: int) -> str:
 
     return f"{DOMAIN}_{domain}_{kind}_{address}_{channel}"
 
+def _modules_to_address_map(modules: Any) -> dict[str, Mapping[str, Any]]:
+    """Normalize modules container to {address: module_data}.
+
+    Supports:
+        - dict: {address: module_data}
+        - list: [ {"address": "...", ...}, ... ]
+    """
+    if isinstance(modules, dict):
+        # Ensure values look like mappings; keep as-is for legacy files
+        return {
+            str(addr).upper(): data
+            for addr, data in modules.items()
+            if isinstance(data, Mapping)
+        }
+
+    if isinstance(modules, list):
+        out: dict[str, Mapping[str, Any]] = {}
+        for item in modules:
+            if not isinstance(item, Mapping):
+                continue
+            addr = item.get("address")
+            if not addr:
+                continue
+            out[str(addr).upper()] = item
+        return out
+
+    return {}
 
 def get_routing(
     hass: HomeAssistant, entry: ConfigEntry, dict_module_data: Mapping[str, Any]
@@ -49,7 +76,6 @@ def get_routing(
         entry_data[_ROUTING_CACHE_KEY] = routing
     return routing
 
-
 def build_routing(
     dict_module_data: Mapping[str, Any],
 ) -> dict[str, list[EntitySpec]]:
@@ -63,7 +89,9 @@ def build_routing(
     routing: dict[str, list[EntitySpec]] = {"cover": [], "switch": [], "light": []}
 
     for module_type, modules in dict_module_data.items():
-        for address, module_data in modules.items():
+        modules_map = _modules_to_address_map(modules)
+
+        for address, module_data in modules_map.items():
             module_desc = module_data.get("description", f"Module {address}")
             module_model = module_data.get("model", "Unknown Module Model")
 
@@ -91,7 +119,6 @@ def build_routing(
                 )
 
     return routing
-
 
 def _resolve_entity_type(module_type: str, channel_info: Mapping[str, Any]) -> str:
     """Resolve the desired entity_type for a channel."""

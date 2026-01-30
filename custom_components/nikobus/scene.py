@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
 from typing import Any
 
 from homeassistant.components.scene import Scene
@@ -61,6 +63,7 @@ async def async_setup_entry(
 
         entities.append(
             NikobusSceneEntity(
+                hass=hass,
                 coordinator=coordinator,
                 description=description,
                 scene_id=scene_id,
@@ -116,6 +119,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
 
     def __init__(
         self,
+        hass: HomeAssistant,
         coordinator: NikobusDataCoordinator,
         description: str,
         scene_id: str,
@@ -129,6 +133,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             name=description,
             model="Scene",
         )
+        self.hass = hass
         self._description = description
         self._scene_id = scene_id
         self._impacted_modules_info = impacted_modules_info
@@ -137,6 +142,9 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         self._feedback_leds: list[str] = feedback_leds or []
         if feedback_leds is None:
             _LOGGER.debug("Scene %s: no feedback_led defined.", scene_id)
+
+        # Token guard: module_id -> token for the latest activation affecting that module
+        self._module_tokens: dict[str, str] = {}
 
     @property
     def unique_id(self) -> str:
@@ -183,14 +191,16 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         """Activate the scene by updating only the specified channels while keeping others unchanged.
         Order: send feedback LED/button address first (might toggle a real load), then enforce final state.
         """
-        _LOGGER.debug(
-            "Activating scene: %s (ID: %s)", self._description, self._scene_id
-        )
+        _LOGGER.debug("Activating scene: %s (ID: %s)", self._description, self._scene_id)
 
         # 1) Send feedback LED/button address FIRST
         await self._send_feedback_leds_first()
 
         module_changes: dict[str, bytearray] = {}
+
+        # Roller delayed release bookkeeping (per module)
+        roller_release: dict[str, set[int]] = {}   # module_id -> set(0-based idx)
+        release_delay: dict[str, float] = {}       # module_id -> max(operation_time seconds)
 
         # 2) Build desired channel states
         for module in self._impacted_modules_info:
@@ -199,17 +209,13 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             state = module.get("state")
 
             if not module_id or channel is None:
-                _LOGGER.warning(
-                    "Skipping module with missing ID or channel: %s", module
-                )
+                _LOGGER.warning("Skipping module with missing ID or channel: %s", module)
                 continue
 
             try:
                 channel = int(channel)
             except (ValueError, TypeError):
-                _LOGGER.error(
-                    "Invalid channel number for module %s: %s", module_id, channel
-                )
+                _LOGGER.error("Invalid channel number for module %s: %s", module_id, channel)
                 continue
 
             _LOGGER.debug(
@@ -219,9 +225,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 state,
             )
             module_type = self.coordinator.get_module_type(module_id) or "unknown"
-            _LOGGER.debug(
-                "Detected module type for module %s: %s", module_id, module_type
-            )
+            _LOGGER.debug("Detected module type for module %s: %s", module_id, module_type)
 
             value = _scene_value_to_byte(module_type, state)
             if value is None:
@@ -242,17 +246,25 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             # channels are 1-based in your JSON
             idx = channel - 1
             if idx < 0:
-                _LOGGER.error(
-                    "Invalid channel index for module %s: %s", module_id, channel
-                )
+                _LOGGER.error("Invalid channel index for module %s: %s", module_id, channel)
                 continue
+
             try:
                 module_changes[module_id][idx] = value
             except IndexError:
-                _LOGGER.error(
-                    "Channel %s out of range for module %s", channel, module_id
-                )
+                _LOGGER.error("Channel %s out of range for module %s", channel, module_id)
                 continue
+
+            # Roller: schedule a delayed release to STOP (0x00) after operation_time
+            if module_type == "roller_module" and value in (1, 2):
+                roller_release.setdefault(module_id, set()).add(idx)
+
+                # operation_time comes from coordinator config helper (per channel)
+                ot = self.coordinator.get_cover_operation_time(module_id, channel, default=30.0)
+
+                # In your config, not_in_use channels have "00" -> treat as "do not schedule"
+                if ot > 0:
+                    release_delay[module_id] = max(release_delay.get(module_id, 0.0), ot)
 
         # 3) Push module group updates to enforce final state
         for module_id, channel_states in module_changes.items():
@@ -265,18 +277,14 @@ class NikobusSceneEntity(NikobusEntity, Scene):
 
                 # Update group 1: first 6 channels (or fewer, if module has fewer channels)
                 group1_channels = min(6, num_channels)
-                if any(
-                    channel_states[i] != current_state[i] for i in range(group1_channels)
-                ):
+                if any(channel_states[i] != current_state[i] for i in range(group1_channels)):
                     hex_value = channel_states[:group1_channels].hex()
                     _LOGGER.debug(
                         "Updating group 1 for module %s with values: %s",
                         module_id,
                         hex_value,
                     )
-                    self.coordinator.set_bytearray_group_state(
-                        module_id, group=1, value=hex_value
-                    )
+                    self.coordinator.set_bytearray_group_state(module_id, group=1, value=hex_value)
 
                 # Update group 2: if there are channels beyond the first group
                 if num_channels > 6 and any(
@@ -288,17 +296,11 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                         module_id,
                         hex_value,
                     )
-                    self.coordinator.set_bytearray_group_state(
-                        module_id, group=2, value=hex_value
-                    )
+                    self.coordinator.set_bytearray_group_state(module_id, group=2, value=hex_value)
 
-                _LOGGER.debug(
-                    "Sending updated state to module %s: %s", module_id, channel_states
-                )
+                _LOGGER.debug("Sending updated state to module %s: %s", module_id, channel_states)
                 try:
-                    await self.coordinator.api.set_output_states_for_module(
-                        address=module_id
-                    )
+                    await self.coordinator.api.set_output_states_for_module(address=module_id)
                 except Exception as e:
                     _LOGGER.error(
                         "Failed to set output state for module %s: %s",
@@ -307,6 +309,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                         exc_info=True,
                     )
 
+                # Fire refresh event (keeps your current behaviour)
                 try:
                     await self.coordinator.async_event_handler(
                         "nikobus_refreshed", {"impacted_module_address": module_id}
@@ -318,6 +321,23 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                         e,
                         exc_info=True,
                     )
+
+                # 4) Schedule delayed roller release (token guarded)
+                delay = release_delay.get(module_id)
+                if delay and module_id in roller_release:
+                    token = uuid.uuid4().hex
+                    self._module_tokens[module_id] = token
+
+                    self.hass.async_create_task(
+                        self._delayed_release_rollers(
+                            module_id=module_id,
+                            desired_state=bytearray(channel_states),  # capture phase A desired state
+                            indexes_to_clear=set(roller_release[module_id]),
+                            delay=delay,
+                            token=token,
+                        )
+                    )
+
             except Exception as e:
                 _LOGGER.error(
                     "Scene %s: fatal error while applying module %s: %s",
@@ -326,3 +346,69 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                     e,
                     exc_info=True,
                 )
+
+    async def _delayed_release_rollers(
+        self,
+        module_id: str,
+        desired_state: bytearray,
+        indexes_to_clear: set[int],
+        delay: float,
+        token: str,
+    ) -> None:
+        """After travel time, clear roller command bytes back to STOP (0x00) and resend module state.
+
+        Token guard:
+        - If a newer activation touches the same module, token changes and this release aborts.
+        """
+        await asyncio.sleep(delay)
+
+        # Token guard: abort if a newer activation happened for that module
+        if self._module_tokens.get(module_id) != token:
+            _LOGGER.debug(
+                "Scene %s: aborting delayed roller release for module %s (token superseded).",
+                self._scene_id,
+                module_id,
+            )
+            return
+
+        released = bytearray(desired_state)
+        for idx in indexes_to_clear:
+            if 0 <= idx < len(released):
+                released[idx] = 0x00
+
+        try:
+            num_channels = self.coordinator.get_module_channel_count(module_id)
+            current_state = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
+
+            group1_channels = min(6, num_channels)
+            if any(released[i] != current_state[i] for i in range(group1_channels)):
+                self.coordinator.set_bytearray_group_state(
+                    module_id, group=1, value=released[:group1_channels].hex()
+                )
+
+            if num_channels > 6 and any(
+                released[i] != current_state[i] for i in range(6, num_channels)
+            ):
+                self.coordinator.set_bytearray_group_state(
+                    module_id, group=2, value=released[6:num_channels].hex()
+                )
+
+            _LOGGER.debug(
+                "Scene %s: delayed roller release sending STOP for module %s (delay=%.1fs).",
+                self._scene_id,
+                module_id,
+                delay,
+            )
+            await self.coordinator.api.set_output_states_for_module(address=module_id)
+
+            await self.coordinator.async_event_handler(
+                "nikobus_refreshed", {"impacted_module_address": module_id}
+            )
+        except Exception as e:
+            _LOGGER.error(
+                "Scene %s: failed delayed roller release for module %s: %s",
+                self._scene_id,
+                module_id,
+                e,
+                exc_info=True,
+            )

@@ -1,0 +1,102 @@
+{
+    "switch_module": [
+        {
+            "description": "Switch Module S1",
+            "model": "05-000-02",
+            "address": "C9A5",
+            "channels": [
+                {"description": "S1 Output 1", "led_on":"", "led_off":""},
+                {"description": "S1 Output 2", "led_on":"", "led_off":""},
+                {"description": "S1 Output 3", "led_on":"", "led_off":""},
+                {"description": "S1 Output 4", "led_on":"", "led_off":""},
+                {"description": "S1 Output 5", "led_on":"", "led_off":""},
+                {"description": "S1 Output 6", "led_on":"", "led_off":""},
+                {"description": "S1 Output 7", "led_on":"", "led_off":""},
+                {"description": "S1 Output 8", "led_on":"", "led_off":""},
+                {"description": "S1 Output 9", "led_on":"", "led_off":""},
+                {"description": "S1 Output 10", "led_on":"", "led_off":""},
+                {"description": "S1 Output 11", "led_on":"", "led_off":""},
+                {"description": "S1 Output 12", "led_on":"", "led_off":""}
+            ]
+        },
+        {
+            "description": "Switch Unit S2",
+            "model": "05-002-02",
+            "address": "5B05",
+            "channels": [
+                {"description": "S2 Output 1", "led_on":"", "led_off":""},
+                {"description": "S2 Output 2", "led_on":"", "led_off":""},
+                {"description": "S2 Output 3", "led_on":"", "led_off":""},
+                {"description": "S2 Output 4", "led_on":"", "led_off":""}
+            ]
+        },
+        {
+            "description": "Switch Module S3",
+            "model": "05-000-02",
+            "address": "4707",
+            "channels": [
+                {"description": "S3 Output 1", "led_on":"", "led_off":""},
+                {"description": "S3 Output 2", "led_on":"", "led_off":""},
+                {"description": "S3 Output 3", "led_on":"", "led_off":""},
+                {"description": "S3 Output 4", "led_on":"", "led_off":""},
+                {"description": "S3 Output 5", "led_on":"", "led_off":""},
+                {"description": "S3 Output 6", "led_on":"", "led_off":""},
+                {"description": "S3 Output 7", "led_on":"", "led_off":""},
+                {"description": "S3 Output 8", "led_on":"", "led_off":""},
+                {"description": "S3 Output 9", "led_on":"", "led_off":""},
+                {"description": "S3 Output 10", "led_on":"", "led_off":""},
+                {"description": "S3 Output 11", "led_on":"", "led_off":""},
+                {"description": "S3 Output 12", "led_on":"", "led_off":""}
+            ]
+        }
+    ],
+    "dimmer_module": [
+        {
+            "description": "Dimmer Module D1",
+            "model": "05-007-02",
+            "address": "0E6C",
+            "channels": [
+                {"description": "D1 Output 1", "led_on":"", "led_off":""},
+                {"description": "D1 Output 2", "led_on":"", "led_off":""},
+                {"description": "D1 Output 3", "led_on":"", "led_off":""},
+                {"description": "D1 Output 4", "led_on":"", "led_off":""},
+                {"description": "D1 Output 5", "led_on":"", "led_off":""},
+                {"description": "D1 Output 6", "led_on":"", "led_off":""},
+                {"description": "D1 Output 7", "led_on":"", "led_off":""},
+                {"description": "D1 Output 8", "led_on":"", "led_off":""},
+                {"description": "D1 Output 9", "led_on":"", "led_off":""},
+                {"description": "D1 Output 10", "led_on":"", "led_off":""},
+                {"description": "D1 Output 11", "led_on":"", "led_off":""},
+                {"description": "D1 Output 12", "led_on":"", "led_off":""}
+            ]
+        }
+    ],
+    "roller_module": [
+        {
+            "description": "Rollershutter Module R1",
+            "model": "05-001-02",
+            "address": "9105",
+            "channels": [
+                {"description": "R1 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 2", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 3", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 4", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 5", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R1 Output 6", "operation_time": "40", "led_on":"", "led_off":""}
+            ]
+        },
+        {
+            "description": "Rollershutter Module R2",
+            "model": "05-001-02",
+            "address": "8394",
+            "channels": [
+                {"description": "R2 Output 1", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 2", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 3", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 4", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 5", "operation_time": "40", "led_on":"", "led_off":""},
+                {"description": "R2 Output 6", "operation_time": "40", "led_on":"", "led_off":""}
+            ]
+        }
+    ]
+}
