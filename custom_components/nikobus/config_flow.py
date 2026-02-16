@@ -1,17 +1,14 @@
-"""Config flow for Nikobus integration."""
+"""Config flow for Nikobus integration - Platinum Edition."""
 
 from __future__ import annotations
 
-import ipaddress
 import logging
-import os
-import re
-import socket
 from typing import Any
 
 import voluptuous as vol
-from homeassistant import config_entries, core
-import homeassistant.helpers.config_validation as cv
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 
 from .const import (
     DOMAIN,
@@ -20,176 +17,90 @@ from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRIOR_GEN3,
 )
+from .nkbconnect import NikobusConnect
+from .exceptions import NikobusConnectionError
 
 _LOGGER = logging.getLogger(__name__)
-_SERIAL_REGEX = re.compile(r"^(/dev/tty(USB|S)\d+|/dev/serial/by-id/.+)$")
 
-
-def _build_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
-    """Build the config flow schema with optional defaults."""
+def _get_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
+    """Standardized schema for both setup and reconfiguration."""
     defaults = defaults or {}
-    connection_key = (
-        vol.Required(
-            CONF_CONNECTION_STRING,
-            default=defaults.get(CONF_CONNECTION_STRING, ""),
-        )
-        if CONF_CONNECTION_STRING in defaults
-        else vol.Required(CONF_CONNECTION_STRING)
-    )
-    return vol.Schema(
-        {
-            connection_key: str,
-            vol.Optional(
-                CONF_REFRESH_INTERVAL,
-                default=defaults.get(CONF_REFRESH_INTERVAL, 120),
-            ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
-            vol.Optional(
-                CONF_HAS_FEEDBACK_MODULE,
-                default=defaults.get(CONF_HAS_FEEDBACK_MODULE, False),
-            ): bool,
-            vol.Optional(
-                CONF_PRIOR_GEN3,
-                default=defaults.get(CONF_PRIOR_GEN3, False),
-            ): bool,
-        }
-    )
+    return vol.Schema({
+        vol.Required(CONF_CONNECTION_STRING, default=defaults.get(CONF_CONNECTION_STRING, "")): str,
+        vol.Optional(CONF_REFRESH_INTERVAL, default=defaults.get(CONF_REFRESH_INTERVAL, 120)): vol.All(
+            cv.positive_int, vol.Range(min=60, max=3600)
+        ),
+        vol.Optional(CONF_HAS_FEEDBACK_MODULE, default=defaults.get(CONF_HAS_FEEDBACK_MODULE, False)): bool,
+        vol.Optional(CONF_PRIOR_GEN3, default=defaults.get(CONF_PRIOR_GEN3, False)): bool,
+    })
 
-
-async def async_validate_input(
-    hass: core.HomeAssistant, user_input: dict[str, Any]
-) -> dict[str, str]:
-    """Validate the connection string asynchronously."""
-    connection_string: str = user_input[CONF_CONNECTION_STRING]
-    _LOGGER.debug("Validating connection string: %s", connection_string)
-
-    # IP:Port validation
-    if ":" in connection_string:
-        try:
-            ip_str, port_str = connection_string.split(":", 1)
-            ipaddress.ip_address(ip_str)
-            port = int(port_str)
-            if not (1 <= port <= 65535):
-                _LOGGER.debug("Port %s out of valid range", port)
-                return {"error": "invalid_port"}
-
-            def test_connection() -> None:
-                try:
-                    with socket.create_connection((ip_str, port), timeout=5):
-                        pass
-                except (socket.timeout, ConnectionRefusedError, OSError) as exc:
-                    _LOGGER.debug("Connection test failed: %s", exc)
-                    raise ValueError("connection_unreachable")
-
-            await hass.async_add_executor_job(test_connection)
-            return {"title": f"Nikobus ({connection_string})"}
-
-        except ValueError as exc:
-            _LOGGER.debug("ValueError during IP validation: %s", exc)
-            if str(exc) == "connection_unreachable":
-                return {"error": "connection_unreachable"}
-            return {"error": "invalid_connection"}
-
-    # Serial device validation
-    if _SERIAL_REGEX.match(connection_string):
-        def test_device_access() -> bool:
-            return os.path.exists(connection_string) and os.access(
-                connection_string, os.R_OK | os.W_OK
-            )
-
-        if await hass.async_add_executor_job(test_device_access):
-            return {"title": f"Nikobus ({connection_string})"}
-        _LOGGER.debug("Serial device %s not found or not accessible", connection_string)
-        return {"error": "device_not_found_or_no_access"}
-
-    _LOGGER.debug("Connection string did not match expected patterns")
-    return {"error": "invalid_connection"}
-
+async def validate_nikobus_connection(hass: HomeAssistant, connection_string: str) -> None:
+    """
+    Perform a deep validation of the Nikobus hardware.
+    Checks not just the port, but the actual PC-Link handshake.
+    """
+    connection = NikobusConnect(connection_string)
+    try:
+        # The 'ping' method performs the ATZ / #E1 handshake
+        await connection.ping()
+    except NikobusConnectionError as err:
+        _LOGGER.error("Nikobus handshake failed during validation: %s", err)
+        raise ValueError("cannot_connect") from err
+    finally:
+        await connection.disconnect()
 
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for the Nikobus integration."""
+    """Handle a config flow for Nikobus."""
 
     VERSION = 1
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_POLL
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Handle initial configuration of Nikobus."""
-        if self._get_existing_entry():
-            return self.async_abort(reason="already_configured")
-
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
+        """Handle the initial setup step."""
         errors: dict[str, str] = {}
+
         if user_input is not None:
-            validation = await async_validate_input(self.hass, user_input)
-            if "error" in validation:
-                errors["base"] = validation["error"]
-            else:
-                _LOGGER.debug(
-                    "User input validated successfully with title: %s",
-                    validation["title"],
-                )
+            # Prevent duplicate entries
+            await self.async_set_unique_id(user_input[CONF_CONNECTION_STRING].lower())
+            self._abort_if_unique_id_configured()
+
+            try:
+                await validate_nikobus_connection(self.hass, user_input[CONF_CONNECTION_STRING])
                 return self.async_create_entry(
-                    title=validation["title"], data=user_input
+                    title=f"Nikobus ({user_input[CONF_CONNECTION_STRING]})",
+                    data=user_input
                 )
+            except ValueError:
+                errors["base"] = "cannot_connect"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception during Nikobus validation")
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="user",
-            data_schema=_build_schema(),
-            errors=errors,
+            data_schema=_get_schema(),
+            errors=errors
         )
 
-    async def async_step_import(
-        self, import_config: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Handle YAML import of Nikobus configuration."""
-        if self._get_existing_entry():
-            return self.async_abort(reason="already_configured")
-        return await self.async_step_user(user_input=import_config)
-
-    async def async_step_reconfigure(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Handle reconfiguration of the integration."""
-        existing_entry = self._get_existing_entry()
-        if not existing_entry:
-            return self.async_abort(reason="no_existing_entry")
-
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> config_entries.FlowResult:
+        """Handle reconfiguration of an existing Nikobus entry."""
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         errors: dict[str, str] = {}
+
         if user_input is not None:
-            validation = await async_validate_input(self.hass, user_input)
-            if "error" in validation:
-                errors["base"] = validation["error"]
-            else:
-                return self.async_update_reload_and_abort(
-                    existing_entry,
-                    title=validation["title"],
-                    data={
-                        CONF_CONNECTION_STRING: user_input.get(
-                            CONF_CONNECTION_STRING,
-                            existing_entry.data.get(CONF_CONNECTION_STRING, ""),
-                        ),
-                        CONF_HAS_FEEDBACK_MODULE: user_input.get(
-                            CONF_HAS_FEEDBACK_MODULE,
-                            existing_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False),
-                        ),
-                        CONF_REFRESH_INTERVAL: user_input.get(
-                            CONF_REFRESH_INTERVAL,
-                            existing_entry.data.get(CONF_REFRESH_INTERVAL, 120),
-                        ),
-                        CONF_PRIOR_GEN3: user_input.get(
-                            CONF_PRIOR_GEN3,
-                            existing_entry.data.get(CONF_PRIOR_GEN3, False),
-                        ),
-                    },
-                )
+            try:
+                await validate_nikobus_connection(self.hass, user_input[CONF_CONNECTION_STRING])
+                return self.async_update_reload_and_abort(entry, data=user_input)
+            except ValueError:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                errors["base"] = "unknown"
 
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=_build_schema(existing_entry.data),
-            errors=errors,
+            data_schema=_get_schema(dict(entry.data)),
+            errors=errors
         )
 
-    def _get_existing_entry(self) -> config_entries.ConfigEntry | None:
-        """Get the existing Nikobus config entry if present."""
-        entries = self.hass.config_entries.async_entries(DOMAIN)
-        return entries[0] if entries else None
+    async def async_step_import(self, import_config: dict[str, Any]) -> config_entries.FlowResult:
+        """Handle import from YAML configuration."""
+        return await self.async_step_user(import_config)

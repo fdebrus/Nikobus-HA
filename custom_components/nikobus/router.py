@@ -1,13 +1,13 @@
-"""Entity routing for Nikobus module channels."""
+"""Entity routing and domain mapping for Nikobus module channels."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import Any, Mapping
 
-from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
@@ -18,7 +18,7 @@ _ROUTING_CACHE_KEY = "routing"
 
 @dataclass(frozen=True)
 class EntitySpec:
-    """Route a Nikobus channel to a specific Home Assistant domain and kind."""
+    """Specification for routing a Nikobus channel to a Home Assistant domain."""
 
     domain: str
     kind: str
@@ -31,19 +31,17 @@ class EntitySpec:
 
 
 def build_unique_id(domain: str, kind: str, address: str, channel: int) -> str:
-    """Build a unique_id that includes domain and kind to avoid collisions."""
+    """Build a globally unique ID for a Nikobus entity.
 
+    Includes domain and kind to prevent collisions when the same physical 
+    channel is used differently.
+    """
     return f"{DOMAIN}_{domain}_{kind}_{address}_{channel}"
 
-def _modules_to_address_map(modules: Any) -> dict[str, Mapping[str, Any]]:
-    """Normalize modules container to {address: module_data}.
 
-    Supports:
-        - dict: {address: module_data}
-        - list: [ {"address": "...", ...}, ... ]
-    """
+def _modules_to_address_map(modules: Any) -> dict[str, Mapping[str, Any]]:
+    """Normalize raw module data into a mapping keyed by uppercase address."""
     if isinstance(modules, dict):
-        # Ensure values look like mappings; keep as-is for legacy files
         return {
             str(addr).upper(): data
             for addr, data in modules.items()
@@ -63,29 +61,31 @@ def _modules_to_address_map(modules: Any) -> dict[str, Mapping[str, Any]]:
 
     return {}
 
+
 def get_routing(
     hass: HomeAssistant, entry: ConfigEntry, dict_module_data: Mapping[str, Any]
 ) -> dict[str, list[EntitySpec]]:
-    """Return cached routing data for the config entry."""
-
+    """Retrieve or build the entity routing spec from the cache."""
     domain_data = hass.data.setdefault(DOMAIN, {})
     entry_data = domain_data.setdefault(entry.entry_id, {})
     routing = entry_data.get(_ROUTING_CACHE_KEY)
+    
     if routing is None:
+        _LOGGER.debug("Building entity routing for config entry %s", entry.entry_id)
         routing = build_routing(dict_module_data)
         entry_data[_ROUTING_CACHE_KEY] = routing
+        
     return routing
+
 
 def build_routing(
     dict_module_data: Mapping[str, Any],
 ) -> dict[str, list[EntitySpec]]:
-    """Build routing decisions for all Nikobus modules.
+    """Analyze all modules and assign channels to Home Assistant domains.
 
-    Routing decisions are centralized to ensure exactly one entity per channel,
-    independent of platform setup order. The per-channel entity_type is resolved
-    using explicit entity_type then module defaults.
+    This ensures that each channel results in exactly one entity type, 
+    even if it belongs to a versatile module (like a roller module used for lights).
     """
-
     routing: dict[str, list[EntitySpec]] = {"cover": [], "switch": [], "light": []}
 
     for module_type, modules in dict_module_data.items():
@@ -93,17 +93,23 @@ def build_routing(
 
         for address, module_data in modules_map.items():
             module_desc = module_data.get("description", f"Module {address}")
-            module_model = module_data.get("model", "Unknown Module Model")
+            module_model = module_data.get("model", "Unknown")
 
             for channel_index, channel_info in enumerate(
                 module_data.get("channels", []), start=1
             ):
                 channel_description = channel_info.get("description", "")
+                
+                # Skip channels explicitly marked as unused
                 if channel_description.startswith("not_in_use"):
                     continue
 
                 entity_type = _resolve_entity_type(module_type, channel_info)
                 domain, kind = _map_entity_type(module_type, entity_type)
+
+                if domain not in routing:
+                    _LOGGER.error("Resolved unknown domain '%s' for channel %s", domain, address)
+                    continue
 
                 routing[domain].append(
                     EntitySpec(
@@ -120,23 +126,23 @@ def build_routing(
 
     return routing
 
-def _resolve_entity_type(module_type: str, channel_info: Mapping[str, Any]) -> str:
-    """Resolve the desired entity_type for a channel."""
 
+def _resolve_entity_type(module_type: str, channel_info: Mapping[str, Any]) -> str:
+    """Resolve the specific entity type for a channel based on configuration."""
     explicit_type = channel_info.get("entity_type")
+    
     if explicit_type:
         if _is_supported_entity_type(module_type, explicit_type):
             return explicit_type
         _LOGGER.warning(
-            "Unsupported entity_type '%s' for module '%s'; falling back to defaults.",
+            "Unsupported type '%s' for %s; using hardware default",
             explicit_type,
             module_type,
         )
 
+    # Hardware defaults based on module classification
     if module_type == "roller_module":
         return "cover"
-    if module_type == "switch_module":
-        return "switch"
     if module_type == "dimmer_module":
         return "light"
 
@@ -144,20 +150,19 @@ def _resolve_entity_type(module_type: str, channel_info: Mapping[str, Any]) -> s
 
 
 def _is_supported_entity_type(module_type: str, entity_type: str) -> bool:
-    """Validate entity_type values against module capabilities."""
-
-    if module_type == "roller_module":
-        return entity_type in {"cover", "switch", "light"}
-    if module_type == "switch_module":
-        return entity_type in {"switch", "light"}
-    if module_type == "dimmer_module":
-        return entity_type == "light"
-    return entity_type in {"switch", "light", "cover"}
+    """Verify if a module hardware is capable of supporting an entity type."""
+    capabilities = {
+        "roller_module": {"cover", "switch", "light"},
+        "switch_module": {"switch", "light"},
+        "dimmer_module": {"light"},
+    }
+    
+    allowed = capabilities.get(module_type, {"switch", "light"})
+    return entity_type in allowed
 
 
 def _map_entity_type(module_type: str, entity_type: str) -> tuple[str, str]:
-    """Map module type + entity_type to domain and semantic control kind."""
-
+    """Map the Nikobus configuration to a Home Assistant domain and internal kind."""
     if module_type == "dimmer_module":
         return "light", "dimmer_light"
 

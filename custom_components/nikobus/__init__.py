@@ -1,4 +1,4 @@
-"""The Nikobus integration."""
+"""The Nikobus integration - Platinum Edition."""
 from __future__ import annotations
 
 import logging
@@ -9,7 +9,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.components import (
     switch,
     light,
@@ -18,10 +18,8 @@ from homeassistant.components import (
     button,
     scene,
 )
-from .nkbconnect import NikobusConnect
-from .exceptions import NikobusConnectionError
 
-from .const import DOMAIN, CONF_CONNECTION_STRING
+from .const import DOMAIN
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,36 +38,30 @@ HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up the Nikobus integration from a config entry (single-instance)."""
+    """Set up the Nikobus integration (single-instance) without redundant handshakes."""
     _LOGGER.debug("Starting setup of Nikobus (single-instance)")
 
-    try:
-        connection = NikobusConnect(entry.data[CONF_CONNECTION_STRING])
-        await connection.ping()
-    except NikobusConnectionError as err:
-        _LOGGER.warning("Nikobus interface not ready: %s", err)
-        raise ConfigEntryNotReady from err   
-
-    # Create and store the coordinator (which may start the event listener)
+    # 1. Initialize the coordinator immediately
     coordinator = NikobusDataCoordinator(hass, entry)
     entry.runtime_data = coordinator
 
-    # Attempt to connect the coordinator
+    # 2. Connect once. If this fails, the handshake or hardware is unavailable.
     try:
         await coordinator.connect()
-    except HomeAssistantError as err:
-        _LOGGER.error("Error connecting to Nikobus: %s", err)
-        raise ConfigEntryNotReady from err
+    except Exception as err:
+        _LOGGER.error("Could not establish Nikobus connection: %s", err)
+        raise ConfigEntryNotReady(f"Nikobus hardware not responding: {err}") from err
 
     _register_hub_device(hass, entry)
 
+    # 3. Register Discovery Service
     async def handle_module_discovery(call: ServiceCall) -> None:
-        """Manually trigger device discovery."""
+        """Manually trigger device discovery via the coordinator's discovery engine."""
         module_address = (call.data.get("module_address", "") or "").strip().upper()
-        _LOGGER.info(
-            "Starting manual Nikobus discovery with module_address: %s", module_address
-        )
-        await coordinator.discover_devices(module_address)
+        _LOGGER.info("Starting manual Nikobus discovery for: %s", module_address or "All Modules")
+        # Optimization: Use the discovery object directly
+        if coordinator.nikobus_discovery:
+            await coordinator.nikobus_discovery.start_discovery(module_address)
 
     if not hass.services.has_service(DOMAIN, "query_module_inventory"):
         hass.services.async_register(
@@ -79,26 +71,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SCAN_MODULE_SCHEMA,
         )
 
-    # Forward the setup to all configured platforms.
+    # 4. Forward setup to platforms
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         _LOGGER.debug("Successfully forwarded setup to Nikobus platforms")
     except Exception as err:
-        _LOGGER.error("Error forwarding setup to Nikobus platforms: %s", err)
+        _LOGGER.error("Error forwarding setup: %s", err)
         return False
 
+    # 5. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
-    _LOGGER.info("Nikobus (single-instance) setup complete.")
+    _LOGGER.info("Nikobus integration setup complete.")
     return True
 
 def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Register the Nikobus bridge (hub) as a device in Home Assistant."""
+    """Register the Nikobus bridge (hub) as a device."""
     device_registry = dr.async_get(hass)
-    if device_registry.async_get_device(identifiers={(DOMAIN, HUB_IDENTIFIER)}):
-        _LOGGER.debug("Nikobus hub device already exists in registry.")
-        return
-
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, HUB_IDENTIFIER)},
@@ -106,82 +95,46 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
         name="Nikobus Bridge",
         model="PC-Link Bridge",
     )
-    _LOGGER.debug("Nikobus hub registered in Home Assistant device registry.")
 
 async def _async_cleanup_orphan_entities(
     hass: HomeAssistant, entry: ConfigEntry, coordinator: NikobusDataCoordinator
 ) -> None:
-    """Remove entities & devices that no longer exist in current Nikobus config."""
+    """Remove entities and devices that no longer exist in the Nikobus configuration."""
     ent_reg = er.async_get(hass)
     dev_reg = dr.async_get(hass)
 
     valid_entity_ids = coordinator.get_known_entity_unique_ids()
-    _LOGGER.debug("Valid Nikobus entity IDs: %s", valid_entity_ids)
-
+    
+    # Remove orphan entities
     entities = [
-        entity
-        for entity in ent_reg.entities.values()
+        entity for entity in ent_reg.entities.values()
         if entity.config_entry_id == entry.entry_id and entity.platform == DOMAIN
     ]
-
     for entity in entities:
         if entity.unique_id not in valid_entity_ids:
-            _LOGGER.warning(
-                "Removing orphan Nikobus entity: %s (unique_id=%s)",
-                entity.entity_id,
-                entity.unique_id,
-            )
             ent_reg.async_remove(entity.entity_id)
 
-    # Rebuild after entity removals
-    ent_reg = er.async_get(hass)
+    # Remove orphan devices (except the hub)
     hub_identifier = (DOMAIN, HUB_IDENTIFIER)
-
     devices_with_entities = {
-        entity.device_id
-        for entity in ent_reg.entities.values()
-        if entity.config_entry_id == entry.entry_id
-        and entity.platform == DOMAIN
-        and entity.device_id
+        entity.device_id for entity in ent_reg.entities.values()
+        if entity.config_entry_id == entry.entry_id and entity.device_id
     }
 
     for device in list(dev_reg.devices.values()):
-        if entry.entry_id not in device.config_entries:
-            continue
-        if hub_identifier in device.identifiers:
-            continue
-        if device.id not in devices_with_entities:
-            _LOGGER.warning(
-                "Removing orphan Nikobus device: %s (id=%s, identifiers=%s)",
-                device.name,
-                device.id,
-                device.identifiers,
-            )
-            dev_reg.async_remove_device(device.id)
-
+        if entry.entry_id in device.config_entries and hub_identifier not in device.identifiers:
+            if device.id not in devices_with_entities:
+                dev_reg.async_remove_device(device.id)
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload the single Nikobus integration entry."""
-    _LOGGER.debug("Unloading Nikobus (single-instance)")
+    """Unload the integration and stop background tasks."""
     coordinator = entry.runtime_data
-
-    # Cancel the scheduled discovery if it exists.
-    if hasattr(coordinator, "remove_listener"):
-        coordinator.remove_listener()
-
-    if coordinator and hasattr(coordinator, "stop"):
-        try:
-            await coordinator.stop()
-        except Exception as err:
-            _LOGGER.error("Error stopping Nikobus coordinator: %s", err)
+    if coordinator:
+        await coordinator.stop()
 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    if not unload_ok:
-        _LOGGER.error("Failed to unload Nikobus platforms.")
-        return False
-
+    
     if hass.services.has_service(DOMAIN, "query_module_inventory"):
         hass.services.async_remove(DOMAIN, "query_module_inventory")
 
-    _LOGGER.info("Nikobus integration fully unloaded.")
-    return True
+    return unload_ok
