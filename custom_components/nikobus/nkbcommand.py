@@ -49,6 +49,15 @@ class NikobusCommandHandler:
             self._command_task.cancel()
             self._command_task = None
 
+    def _drain_queue(self) -> None:
+        """Clear all pending messages from the listener queue."""
+        while not self.nikobus_listener.response_queue.empty():
+            try:
+                self.nikobus_listener.response_queue.get_nowait()
+                self.nikobus_listener.response_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
     async def process_commands(self) -> None:
         """Process commands sequentially from the queue."""
         _LOGGER.info("Nikobus Command Processor active.")
@@ -93,6 +102,8 @@ class NikobusCommandHandler:
         wait_ack = f"$05{command[3:5]}"
         wait_answer = f"{prefix}{swapped_addr}"
 
+        self._drain_queue()
+        
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 await self.nikobus_connection.send(command)
