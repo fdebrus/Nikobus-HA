@@ -73,6 +73,40 @@ class NikobusConnect:
         self._is_connected = False
         _LOGGER.info("Nikobus connection closed.")
 
+    async def ping(self) -> bool:
+        """Perform a connection handshake with the PC-Link."""
+        from .const import COMMANDS_HANDSHAKE, EXPECTED_HANDSHAKE_RESPONSE
+        
+        if not self._is_connected:
+            await self.connect()
+        
+        try:
+            _LOGGER.debug("Starting full Nikobus handshake...")
+            for cmd in COMMANDS_HANDSHAKE:
+                await self.send(cmd)
+                # Small delay to let the PC-Link process each command
+                await asyncio.sleep(0.2) 
+            
+            _LOGGER.info("Nikobus handshake completed successfully.")
+            return True
+        except Exception as err:
+            _LOGGER.error("Handshake failed: %s", err)
+            raise NikobusConnectionError(f"Handshake failed: {err}") from err
+
+    async def ping(self) -> bool:
+        if not self._is_connected:
+            await self.connect()
+        
+        try:
+            # Send #E1 command (enable feedback) 
+            # This is the standard command to verify PC-Link responsiveness.
+            await self.send("#E1")
+            _LOGGER.debug("Nikobus handshake (#E1) successful.")
+            return True
+        except Exception as err:
+            _LOGGER.error("Nikobus handshake failed: %s", err)
+            raise NikobusConnectionError(f"Hardware not responding: {err}") from err
+
     async def send(self, command: str) -> None:
         """Send a command string to the bus with thread-safe locking."""
         if not self._is_connected or not self._writer:

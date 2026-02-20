@@ -207,3 +207,8 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             # Standard Nikobus command for button trigger
             cmd = f"#N{addr}\r#E1"
             await self.coordinator.nikobus_command.queue_command(cmd)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Stateless scene: Ignore general coordinator updates."""
+        pass

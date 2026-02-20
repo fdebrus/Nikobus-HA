@@ -125,7 +125,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             await self.nikobus_command.start()
             await self.nikobus_listener.start()
 
-            await self.async_refresh()
         except Exception as err:
             _LOGGER.exception("Failed to initialize Nikobus components: %s", err)
             raise HomeAssistantError(f"Initialization error: {err}") from err
@@ -141,16 +140,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
                     channels = info.get("channels", [])
                     self.nikobus_module_states[address] = bytearray(len(channels))
 
-    async def _async_update_data(self) -> bool:
+    async def _async_update_data(self) -> None:
         """Refresh latest data from the Nikobus system via polling."""
         if self._discovery_running:
-            return False
+            return None
 
         try:
             for module_type in MODULE_TYPES:
                 if module_type in self.dict_module_data:
                     await self._refresh_module_type(self.dict_module_data[module_type])
-            return True
+            return None
         except NikobusDataError as err:
             _LOGGER.error("Error fetching Nikobus data: %s", err)
             raise UpdateFailed(f"Data refresh failed: {err}") from err
@@ -172,6 +171,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
                 self.nikobus_module_states[address] = bytearray.fromhex(state_hex)
             except ValueError:
                 self.nikobus_module_states[address] = bytearray(chan_count)
+
+            await self.async_event_handler(
+                "nikobus_refreshed",
+                {"impacted_module_address": address},
+            )
 
     async def process_feedback_data(self, group: int, data: str) -> None:
         """Handle incoming feedback module data strings."""

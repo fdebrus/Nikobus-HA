@@ -36,16 +36,17 @@ PLATFORMS: Final[list[str]] = [
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
 HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration (single-instance) without redundant handshakes."""
     _LOGGER.debug("Starting setup of Nikobus (single-instance)")
 
-    # 1. Initialize the coordinator immediately
+    # 1. Initialize the coordinator
+    # We create the object but ensure it doesn't broadcast data prematurely.
     coordinator = NikobusDataCoordinator(hass, entry)
     entry.runtime_data = coordinator
 
-    # 2. Connect once. If this fails, the handshake or hardware is unavailable.
+    # 2. Connect and prepare internal buffers.
+    # Note: Ensure you have removed 'await self.async_refresh()' from coordinator.connect()
     try:
         await coordinator.connect()
     except Exception as err:
@@ -59,7 +60,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Manually trigger device discovery via the coordinator's discovery engine."""
         module_address = (call.data.get("module_address", "") or "").strip().upper()
         _LOGGER.info("Starting manual Nikobus discovery for: %s", module_address or "All Modules")
-        # Optimization: Use the discovery object directly
         if coordinator.nikobus_discovery:
             await coordinator.nikobus_discovery.start_discovery(module_address)
 
@@ -71,7 +71,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             SCAN_MODULE_SCHEMA,
         )
 
-    # 4. Forward setup to platforms
+    # 4. Forward setup to platforms FIRST
+    # This allows entities to be created and register their dispatcher listeners.
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         _LOGGER.debug("Successfully forwarded setup to Nikobus platforms")
@@ -79,11 +80,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Error forwarding setup: %s", err)
         return False
 
-    # 5. Clean up stale entities
+    # 5. Trigger the first refresh
+    # Since platforms are loaded, entities will correctly receive the "Targeted update signal".
+    _LOGGER.debug("Performing initial Nikobus data synchronization")
+    await coordinator.async_config_entry_first_refresh()
+
+    # 6. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
     _LOGGER.info("Nikobus integration setup complete.")
     return True
+
 
 def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Register the Nikobus bridge (hub) as a device."""
