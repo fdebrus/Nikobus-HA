@@ -6,38 +6,28 @@
                 "description": "Voer uw verbindingsgegevens in.",
                 "data": {
                     "connection_string": "IP-adres:Poort of Serieel apparaat",
-                    "has_feedback_module": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?"
+                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
+                    "has_feedbackmodule": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
+                    "prior_gen3": "Is de PC-Link ouder dan Gen 3?"
                 }
             },
-            "options": {
-                "title": "Nikobus",
-                "description": "Stel uw verversingsinterval in",
+            "reconfigure": {
+                "title": "Nikobus herconfigureren",
+                "description": "Werk uw verbindingsgegevens bij.",
                 "data": {
-                    "refresh_interval": "Verversingsinterval in seconden (60-3600)"
+                    "connection_string": "IP-adres:Poort of Serieel apparaat",
+                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
+                    "has_feedbackmodule": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
+                    "prior_gen3": "Is de PC-Link ouder dan Gen 3?"
                 }
             }
         },
         "error": {
-            "base": {
-                "title": "Fout",
-                "description": "Er is een fout opgetreden, probeer het opnieuw."
-            },
-            "invalid_connection": "Ongeldige verbindingsreeks.",
-            "invalid_input": "Ongeldige invoer, controleer uw gegevens.",
-            "device_not_found_or_no_access": "Serieel apparaat niet gevonden of geen toegang."
-        }
-    },
-    "options": {
-        "step": {
-            "config": {
-                "title": "Nikobus",
-                "description": "Configuratie bijwerken",
-                "data": {
-                    "connection_string": "IP-adres:Poort of Serieel apparaat",
-                    "has_feedback_module": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
-                    "refresh_interval": "Verversingsinterval in seconden (60-3600)"
-                }
-            }
+            "cannot_connect": "Kan geen verbinding maken met de Nikobus PC-Link",
+            "unknown": "Er is een onverwachte fout opgetreden"
+        },
+        "abort": {
+            "already_configured": "Deze verbindingsreeks is al geconfigureerd."
         }
     }
 }

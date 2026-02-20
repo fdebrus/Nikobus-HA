@@ -6,38 +6,28 @@
                 "description": "Please enter your connectivity details.",
                 "data": {
                     "connection_string": "IP address:Port or Serial device",
-                    "has_feedback_module": "Feedback Module installed and connected over PC-Link ?"
+                    "refresh_interval": "Refresh interval in seconds (60-3600)",
+                    "has_feedbackmodule": "Feedback Module installed and connected over PC-Link ?",
+                    "prior_gen3": "PC-Link is older than Gen 3?"
                 }
             },
-            "options": {
-                "title": "Nikobus",
-                "description": "Set your refresh interval",
+            "reconfigure": {
+                "title": "Reconfigure Nikobus",
+                "description": "Update your connectivity details.",
                 "data": {
-                    "refresh_interval": "Refresh interval in seconds (60-3600)"
+                    "connection_string": "IP address:Port or Serial device",
+                    "refresh_interval": "Refresh interval in seconds (60-3600)",
+                    "has_feedbackmodule": "Feedback Module installed and connected over PC-Link ?",
+                    "prior_gen3": "PC-Link is older than Gen 3?"
                 }
             }
         },
         "error": {
-            "base": {
-                "title": "Error",
-                "description": "An error has occurred, please try again."
-            },
-            "invalid_connection": "Invalid connection string.",
-            "invalid_input": "Invalid input, please check your data.",
-            "device_not_found_or_no_access": "Serial device not found or no access."
-        }
-    },
-    "options": {
-        "step": {
-            "config": {
-                "title": "Nikobus",
-                "description": "Update configuration",
-                "data": {
-                    "connection_string": "IP address:Port or Serial device",
-                    "has_feedback_module": "Feedback Module installed and connected over PC-Link ?",
-                    "refresh_interval": "Refresh interval in seconds (60-3600)"
-                }
-            }
+            "cannot_connect": "Failed to connect to Nikobus PC-Link",
+            "unknown": "Unexpected error occurred"
+        },
+        "abort": {
+            "already_configured": "This connection string is already configured."
         }
     }
 }
