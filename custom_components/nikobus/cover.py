@@ -172,7 +172,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 _LOGGER.info("External stop detected for %s", self.name)
                 self.hass.async_create_task(self._stop(send_stop=False))
 
-        self.async_write_ha_state()
+        super()._handle_coordinator_update()
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""

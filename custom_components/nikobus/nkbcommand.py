@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import Any, Callable, Awaitable
 
@@ -79,9 +80,11 @@ class NikobusCommandHandler:
                         # Fire-and-forget triggers (like button presses)
                         await self.send_command(command)
                     
-                    # FIXED: Only await the handler if it is not None
+                    # FIXED: Check if the handler result is awaitable to avoid NoneType errors
                     if handler is not None:
-                        await handler()
+                        res = handler()
+                        if inspect.isawaitable(res):
+                            await res
 
                 except Exception as err:
                     _LOGGER.error("Command failed: %s | Error: %s", command, err)
