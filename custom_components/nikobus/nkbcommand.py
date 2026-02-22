@@ -196,9 +196,10 @@ class NikobusCommandHandler:
                 completion_handler=completion_handler,
             )
 
-    async def get_output_state(self, address: str, group: int) -> str:
+    async def get_output_state(self, address: str, group: int | str) -> str:
         """Queues a status request for a specific group (1 or 2)."""
-        cmd_code = 0x12 if group == 1 else 0x17
+        # FIX: Ensure group is cast to integer in case config passes it as a string
+        cmd_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(cmd_code, address)
         
         future = self._coordinator.hass.loop.create_future()

@@ -84,10 +84,36 @@ class NikobusEventListener:
         """Normalize and extract frames from serial data."""
         cleaned = raw.replace("\x02", "").replace("\x03", "").replace("\n", "\r")
         self._frame_buffer += cleaned
-        if "\r" not in self._frame_buffer: return []
+        if "\r" not in self._frame_buffer: 
+            return []
+        
         parts = self._frame_buffer.split("\r")
         self._frame_buffer = parts.pop()
-        return [p.strip() for p in parts if p.strip()]
+        
+        extracted = []
+        for p in parts:
+            p = p.strip()
+            if p:
+                # Use the new helper method to handle concatenated $ frames
+                extracted.extend(self._split_protocol_frames(p))
+                
+        return extracted
+
+    def _split_protocol_frames(self, frame: str) -> list[str]:
+        """Split concatenated PC-Link frames while preserving the $ prefix."""
+        if "$" not in frame:
+            return [frame]
+
+        parts = frame.split("$")
+        result = []
+
+        # Catch anything before the first $ (e.g., a mashed #N frame)
+        if parts[0]:
+            result.append(parts[0])
+
+        # Re-attach the $ to the rest of the frames
+        result.extend(f"${p}" for p in parts[1:] if p)
+        return result
 
     async def dispatch_message(self, message: str) -> None:
         """Route messages based on frame content."""
@@ -106,8 +132,8 @@ class NikobusEventListener:
                 return
 
             if any(message.startswith(cmd) for cmd in COMMAND_PROCESSED):
-                if self.validate_crc(message):
-                    await self.response_queue.put(message)
+                # FIX: ACKs ($05xx) do not have a CRC or length field, queue them directly
+                await self.response_queue.put(message)
                 return
 
             if self._has_feedback_module:
@@ -118,8 +144,8 @@ class NikobusEventListener:
                 if message.startswith(FEEDBACK_MODULE_ANSWER):
                     if self.validate_crc(message):
                         await self._feedback_callback(self._module_group, message)
-                        # FIX: Forward to queue so commands awaiting this answer don't time out
-                        await self.response_queue.put(message) 
+                        # Ensure commands awaiting this answer can see it
+                        await self.response_queue.put(message)
                     return
 
             if any(message.startswith(r) for r in MANUAL_REFRESH_COMMAND):
@@ -134,19 +160,19 @@ class NikobusEventListener:
         await self.response_queue.put(message)
 
     def validate_crc(self, message: str) -> bool:
-        """FIXED: Refined Nikobus CRC and Length validation."""
         if message.count("$") > 1:
             return self.validate_crc(message[message.find("$", 1):])
+
+        if len(message) == 5 and message.startswith("$05"):
+            return True
 
         try:
             total_len_hex = message[1:3]
             expected_total = int(total_len_hex, 16)
             
-            # FIXED: Nikobus length field is total chars after '$' + 1
+            # Nikobus length field is total chars after '$' + 1
             if len(message) != expected_total - 1:
                 _LOGGER.error("Length mismatch: %s vs actual %d (frame: %s)", total_len_hex, len(message)-1, message)
-                # Note: If frames continue to fail, you can temporarily return True 
-                # to debug the payload, but keep this check for stability.
                 return False
 
             payload_with_crc16 = message[:-2]
