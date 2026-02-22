@@ -24,13 +24,15 @@ async def async_setup_entry(
     """Set up Nikobus button entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
     
-    # Retrieve buttons from the coordinator's loaded configuration
+    if not coordinator.dict_button_data:
+        return
+
     buttons = coordinator.dict_button_data.get("nikobus_button", {})
     
-    async_add_entities([
+    async_add_entities(
         NikobusButtonEntity(coordinator, addr, data)
         for addr, data in buttons.items()
-    ])
+    )
 
 
 class NikobusButtonEntity(NikobusEntity, ButtonEntity):
@@ -44,12 +46,8 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     ) -> None:
         """Initialize the button entity."""
         
-        # FIXED: Robust name handling to prevent "UndefinedType._singleton" logs
-        raw_description = data.get("description")
-        if not raw_description or str(raw_description) == "UndefinedType._singleton":
-            name = f"Button {address}"
-        else:
-            name = str(raw_description)
+        raw_desc = str(data.get("description", ""))
+        name = raw_desc if raw_desc and "UndefinedType" not in raw_desc else f"Button {address}"
 
         super().__init__(
             coordinator=coordinator, 

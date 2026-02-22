@@ -16,15 +16,14 @@ def calc_crc1(data: str) -> int:
     return crc & 0xFFFF
 
 
-def calc_crc1_ack(data: str) -> int:
-    crc = 0x0000
-    # Process every two hex digits (one byte)
-    for j in range(len(data) // 2):
-        crc ^= int(data[j * 2 : (j + 1) * 2], 16) << 8
+def calc_crc1(data: str) -> int:
+    """Calculate CRC-16/ANSI X3.28 (CRC-16-IBM) using native byte conversion."""
+    crc = 0xFFFF
+    for byte in bytes.fromhex(data):
+        crc ^= (byte << 8)
         for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) if (crc >> 15) & 1 else (crc << 1)
-            crc &= 0xFFFF
-    return crc
+            crc = (crc << 1) ^ 0x1021 if (crc >> 15) & 1 else (crc << 1)
+    return crc & 0xFFFF
 
 
 def calc_crc2(data: str) -> int:
@@ -50,11 +49,8 @@ def append_crc2(data: str) -> str:
 def make_pc_link_command(func: int, addr: str, args: bytes | None = None) -> str:
     """Construct a PC link command with the specified function, address, and optional arguments."""
     addr_int = int(addr, 16)
-    data = (
-        int_to_hex(func, 2)
-        + int_to_hex((addr_int >> 0) & 0xFF, 2)
-        + int_to_hex((addr_int >> 8) & 0xFF, 2)
-    )
+    # Convert func (1 byte) + Little-Endian addr (2 bytes) directly to hex
+    data = int_to_hex(func, 2) + addr_int.to_bytes(2, byteorder='little').hex().upper()
     if args:
         data += args.hex().upper()
     return append_crc2(f"${int_to_hex(len(data) + 10, 2)}{append_crc1(data)}")

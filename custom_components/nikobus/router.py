@@ -15,6 +15,13 @@ _LOGGER = logging.getLogger(__name__)
 
 _ROUTING_CACHE_KEY = "routing"
 
+# CLEANUP: Move static capabilities to module level so they are only created once in memory
+_CAPABILITIES = {
+    "roller_module": {"cover", "switch", "light"},
+    "switch_module": {"switch", "light"},
+    "dimmer_module": {"light"},
+}
+
 
 @dataclass(frozen=True)
 class EntitySpec:
@@ -49,16 +56,13 @@ def _modules_to_address_map(modules: Any) -> dict[str, Mapping[str, Any]]:
         }
 
     if isinstance(modules, list):
-        out: dict[str, Mapping[str, Any]] = {}
-        for item in modules:
-            if not isinstance(item, Mapping):
-                continue
-            addr = item.get("address")
-            if not addr:
-                continue
-            out[str(addr).upper()] = item
-        return out
-
+        return {
+            str(item.get("address")).upper(): item 
+            for item in modules 
+            if isinstance(item, Mapping) and item.get("address")
+        }
+        
+    # CLEANUP: Crucial fallback to prevent AttributeError crash on .items() later
     return {}
 
 
@@ -151,13 +155,8 @@ def _resolve_entity_type(module_type: str, channel_info: Mapping[str, Any]) -> s
 
 def _is_supported_entity_type(module_type: str, entity_type: str) -> bool:
     """Verify if a module hardware is capable of supporting an entity type."""
-    capabilities = {
-        "roller_module": {"cover", "switch", "light"},
-        "switch_module": {"switch", "light"},
-        "dimmer_module": {"light"},
-    }
-    
-    allowed = capabilities.get(module_type, {"switch", "light"})
+    # Uses the module-level constant we defined at the top
+    allowed = _CAPABILITIES.get(module_type, {"switch", "light"})
     return entity_type in allowed
 
 

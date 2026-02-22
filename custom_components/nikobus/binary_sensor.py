@@ -30,24 +30,20 @@ async def async_setup_entry(
 ) -> None:
     """Set up Nikobus button sensor entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    entities: list[NikobusButtonBinarySensor] = []
 
     if not coordinator.dict_button_data:
         return
 
-    # Extract button data from the coordinator's button configuration
     buttons = coordinator.dict_button_data.get("nikobus_button", {})
 
-    for button_address, button_data in buttons.items():
-        entities.append(
-            NikobusButtonBinarySensor(
-                coordinator=coordinator,
-                address=button_address,
-                description=button_data.get("description", f"Button {button_address}"),
-            )
+    async_add_entities(
+        NikobusButtonBinarySensor(
+            coordinator=coordinator,
+            address=address,
+            description=data.get("description", f"Button {address}"),
         )
-
-    async_add_entities(entities)
+        for address, data in buttons.items()
+    )
 
 
 class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
@@ -70,19 +66,13 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         self._attr_name = description
         self._attr_unique_id = f"{DOMAIN}_button_{address}"
         
-        # Internal state management for the "pressed" pulse
-        self._is_pressed = False
+        self._attr_is_on = False
         self._reset_timer_cancel: Any | None = None
-
-    @property
-    def is_on(self) -> bool:
-        """Return true if the button is currently in a 'pressed' state."""
-        return self._is_pressed
 
     @property
     def state(self) -> str:
         """Override to return 'pressed' if on, else 'idle'."""
-        return "pressed" if self.is_on else "idle"
+        return "pressed" if self._attr_is_on else "idle"
 
     async def async_added_to_hass(self) -> None:
         """Register event listeners when added to Home Assistant."""
@@ -101,7 +91,7 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
 
         _LOGGER.debug("Button %s pressed", self._address)
         
-        self._is_pressed = True
+        self._attr_is_on = True
         self.async_write_ha_state()
 
         # Cancel any existing timer before starting a new one
@@ -116,7 +106,7 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
     @callback
     def _reset_state(self, _: datetime) -> None:
         """Reset the sensor state to 'idle'."""
-        self._is_pressed = False
+        self._attr_is_on = False
         self._reset_timer_cancel = None
         self.async_write_ha_state()
 

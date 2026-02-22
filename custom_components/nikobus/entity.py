@@ -42,8 +42,10 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return shared state attributes for Nikobus entities."""
+        """Return shared state attributes safely without mutating parents."""
+        parent_attrs = super().extra_state_attributes or {}
         return {
+            **parent_attrs,
             "nikobus_module_address": self._address,
             "nikobus_module_model": self._device_model,
         }
@@ -57,19 +59,6 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
             async_dispatcher_connect(self.hass, signal, self._handle_coordinator_update)
         )
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """
-        Handle targeted refresh triggered by the coordinator dispatcher.
-        """
-        # _LOGGER.debug(
-        #    "Targeted refresh received for %s | ID: %s | Address: %s", 
-        #    self.name, 
-        #    self.unique_id, 
-        #    self._address
-        #)
-        self.async_write_ha_state()
-
 
 def device_entry_diagnostics(device: dr.DeviceEntry) -> Dict[str, Any]:
     """Return diagnostics data for a Nikobus device entry."""
@@ -78,5 +67,6 @@ def device_entry_diagnostics(device: dr.DeviceEntry) -> Dict[str, Any]:
         "name": device.name,
         "model": device.model,
         "manufacturer": device.manufacturer,
-        "identifiers": sorted(list(device.identifiers)),
+        # CLEANUP: sorted() natively returns a list, no need to cast it first
+        "identifiers": sorted(device.identifiers),
     }

@@ -238,15 +238,13 @@ class NikobusActuator:
         
         module_addr = impacted[0].get("address") if impacted else (links[0].get("module_address") if links else None)
         channel = None
-        if links:
-            try: channel = int(links[0].get("channel", "").split()[-1])
-            except (ValueError, IndexError): pass
+        if links and (ch_str := links[0].get("channel")):
+            # Extract digits from string safely (e.g. "Channel 12" -> 12)
+            parts = ch_str.split()
+            channel = int(parts[-1]) if parts and parts[-1].isdigit() else None
             
         return (module_addr.upper() if module_addr else None, channel)
 
     def _get_bucket(self, duration: float) -> int:
         """Map press duration to a discrete bucket (0-3)."""
-        if duration < 1: return 0
-        if duration < 2: return 1
-        if duration < 3: return 2
-        return 3
+        return min(int(duration), 3)

@@ -123,18 +123,18 @@ class NikobusCommandHandler:
         raise NikobusTimeoutError(f"No response for {command} after max retries.")
 
     async def _wait_for_response(self, wait_ack: str, wait_answer: str) -> str | None:
-        """Monitor the listener queue for specific hex patterns."""
-        start_time = self._coordinator.hass.loop.time()
-
-        while (self._coordinator.hass.loop.time() - start_time) < COMMAND_ACK_WAIT_TIMEOUT:
-            try:
-                msg = await asyncio.wait_for(self.nikobus_listener.response_queue.get(), timeout=1.0)
+        """Monitor the listener queue for specific hex patterns using native asyncio timeouts."""
+        async def _get_message():
+            while True:
+                msg = await self.nikobus_listener.response_queue.get()
                 if wait_answer in msg:
                     idx = msg.find(wait_answer) + len(wait_answer) + 2
                     return msg[idx : idx + 12]
-            except asyncio.TimeoutError:
-                continue
-        return None
+
+        try:
+            return await asyncio.wait_for(_get_message(), timeout=COMMAND_ACK_WAIT_TIMEOUT)
+        except asyncio.TimeoutError:
+            return None
 
     async def queue_command(
         self,

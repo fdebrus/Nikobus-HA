@@ -161,11 +161,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             chan_count = len(channels)
             groups = (1,) if chan_count <= 6 else (1, 2)
             
-            group_states = []
-            for group in groups:
-                state = await self.nikobus_command.get_output_state(address, group) or ""
-                group_states.append(state)
-            
+            group_states = [
+                (await self.nikobus_command.get_output_state(address, g) or "") 
+                for g in groups
+            ]
             state_hex = "".join(group_states).ljust(chan_count * 2, "0")
             try:
                 self.nikobus_module_states[address] = bytearray.fromhex(state_hex)

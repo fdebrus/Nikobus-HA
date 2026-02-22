@@ -29,8 +29,8 @@ async def async_setup_entry(
     """Set up Nikobus switch entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
     device_registry = dr.async_get(hass)
-    entities: list[SwitchEntity] = []
     registered_addresses: set[str] = set()
+    entities: list[SwitchEntity] = []
 
     routing = get_routing(hass, entry, coordinator.dict_module_data)
     
@@ -68,7 +68,8 @@ class NikobusBaseSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
     """Base class for Nikobus switch entities with hybrid update logic."""
 
     def __init__(
-        self, coordinator, address, channel, description, module_name, module_model
+        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize the switch base."""
         super().__init__(coordinator, address, module_name, module_model)
@@ -83,16 +84,16 @@ class NikobusBaseSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return entity specific state attributes."""
-        attrs = super().extra_state_attributes or {}
-        attrs.update({
+        """Return entity specific state attributes safely."""
+        parent_attrs = super().extra_state_attributes or {}
+        return {
+            **parent_attrs,
             "nikobus_address": self._address,
             "channel": self._channel,
             "channel_description": self._channel_description,
             "module_description": self._module_description,
             "module_model": self._module_model,
-        })
-        return attrs
+        }
 
     async def async_added_to_hass(self) -> None:
         """Register listeners and restore state."""
@@ -106,13 +107,13 @@ class NikobusBaseSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Override base to invalidate cache."""
+        """Invalidate cache when hardware data is received."""
         self._is_on = None
         super()._handle_coordinator_update()
 
     @callback
     def _handle_nikobus_event(self, event: Any) -> None:
-        """Handle physical button operation events (Instant path)."""
+        """Handle physical button operation events."""
         if str(event.data.get("impacted_module_address")) != str(self._address):
             return
         
@@ -123,46 +124,84 @@ class NikobusBaseSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
 class NikobusRelaySwitchEntity(NikobusBaseSwitch):
     """Standard Nikobus relay-based on/off switch."""
 
-    def __init__(self, *args) -> None:
+    def __init__(
+        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        description: str, module_name: str, module_model: str
+    ) -> None:
         """Initialize relay switch."""
-        super().__init__(*args)
+        super().__init__(coordinator, address, channel, description, module_name, module_model)
         self._attr_unique_id = build_unique_id("switch", "relay_switch", self._address, self._channel)
 
     @property
     def is_on(self) -> bool:
-        """Return true if relay is closed."""
+        """Return optimistic state if set, else coordinator state."""
+        if self._is_on is not None:
+            return self._is_on
         return self.coordinator.get_switch_state(self._address, self._channel)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Close relay."""
-        await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        """Close relay with optimistic UI update and error fallback."""
+        self._is_on = True
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Open relay."""
-        await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        """Open relay with optimistic UI update and error fallback."""
+        self._is_on = False
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err
 
 
 class NikobusCoverSwitchEntity(NikobusBaseSwitch):
     """Binary switch entity driving a cover channel."""
 
-    def __init__(self, *args) -> None:
+    def __init__(
+        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        description: str, module_name: str, module_model: str
+    ) -> None:
         """Initialize cover-as-switch."""
-        super().__init__(*args)
+        super().__init__(coordinator, address, channel, description, module_name, module_model)
         self._attr_unique_id = build_unique_id("switch", "cover_binary", self._address, self._channel)
 
     @property
     def is_on(self) -> bool:
-        """Return true if cover is in 'open' state (acting as ON)."""
+        """Return optimistic state if set, else coordinator state."""
+        if self._is_on is not None:
+            return self._is_on
         return self.coordinator.get_cover_state(self._address, self._channel) == 0x01
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Trigger 'Open' on cover module to turn switch on."""
-        await self.coordinator.api.open_cover(self._address, self._channel)
+        """Trigger 'Open' on cover module with optimistic UI update and error fallback."""
+        self._is_on = True
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.open_cover(self._address, self._channel)
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Trigger 'Stop/Close' on cover module to turn switch off."""
-        await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+        """Trigger 'Stop/Close' on cover module with optimistic UI update and error fallback."""
+        self._is_on = False
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err

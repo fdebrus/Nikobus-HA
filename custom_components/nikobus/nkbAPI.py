@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Callable
 
@@ -23,13 +24,14 @@ class NikobusAPI:
         self._hass = hass
         self._coordinator = coordinator
 
-    def _get_channel_info(self, module_key: str, address: str, channel: int) -> dict | None:
-        """Safely retrieve channel metadata."""
+    def _get_channel_info(self, module_key: str, address: str, channel: int) -> dict:
+        """Safely retrieve channel metadata and always return a dict."""
         module_data = self._coordinator.dict_module_data.get(module_key, {})
         try:
-            return module_data.get(address, {}).get("channels", [])[channel - 1]
-        except (IndexError, KeyError):
-            return None
+            chan = module_data.get(address, {}).get("channels", [])[channel - 1]
+            return chan if chan else {}
+        except (IndexError, KeyError, TypeError):
+            return {}
 
     async def _send_bus_command(self, bus_addr: str, completion_handler: Callable | None = None) -> None:
         """Helper to send a standard Nikobus bus trigger (#N...#E1)."""
@@ -46,13 +48,10 @@ class NikobusAPI:
         cmd_key: str, 
         completion_handler: Callable | None = None
     ) -> None:
-        """
-        Unified dispatcher for all module actions.
-        Implements optimistic updates for instant UI response.
-        """
+        """Unified dispatcher for all module actions."""
         self._coordinator.set_bytearray_state(address, channel, target_state)
         chan_info = self._get_channel_info(module_key, address, channel)
-        bus_cmd = chan_info.get(cmd_key) if chan_info else None
+        bus_cmd = chan_info.get(cmd_key)
 
         try:
             if bus_cmd:
@@ -79,28 +78,41 @@ class NikobusAPI:
     #### DIMMERS
     async def turn_on_light(self, address: str, channel: int, brightness: int, completion_handler: Callable | None = None) -> None:
         """Turn on a dimmer output to a specific brightness."""
-        # For dimmers, we often send the bus trigger (led_on) first to wake the module, then the brightness
-        self._coordinator.set_bytearray_state(address, channel, brightness)
+        # Get current state to decide if we need to wake the wall LED
+        current_brightness = self._coordinator.get_light_brightness(address, channel)
         chan_info = self._get_channel_info("dimmer_module", address, channel)
         
-        if brightness > 0 and (led_on := chan_info.get("led_on") if chan_info else None):
-             await self._send_bus_command(led_on)
+        try:
+            # Only send simulated button press if the light is currently OFF.
+            # This turns on the wall LED without interfering with existing brightness adjustments.
+            if current_brightness == 0 and (led_on := chan_info.get("led_on")):
+                await self._send_bus_command(led_on)
 
-        await self._coordinator.nikobus_command.set_output_state(
-            address, channel, brightness, completion_handler=completion_handler
-        )
+            # Force the exact target brightness
+            await self._coordinator.nikobus_command.set_output_state(
+                address, channel, brightness, completion_handler=completion_handler
+            )
+            self._coordinator.set_bytearray_state(address, channel, brightness)
+            
+        except NikobusError as err:
+            _LOGGER.error("API Dimmer Action failed for %s: %s", address, err)
+            raise
 
     async def turn_off_light(self, address: str, channel: int, completion_handler: Callable | None = None) -> None:
         """Turn off a dimmer output."""
-        self._coordinator.set_bytearray_state(address, channel, STATE_OFF)
         chan_info = self._get_channel_info("dimmer_module", address, channel)
         
-        if led_off := chan_info.get("led_off") if chan_info else None:
-            await self._send_bus_command(led_off)
+        try:
+            if led_off := chan_info.get("led_off"):
+                await self._send_bus_command(led_off)
 
-        await self._coordinator.nikobus_command.set_output_state(
-            address, channel, STATE_OFF, completion_handler=completion_handler
-        )
+            await self._coordinator.nikobus_command.set_output_state(
+                address, channel, STATE_OFF, completion_handler=completion_handler
+            )
+            self._coordinator.set_bytearray_state(address, channel, STATE_OFF)
+        except NikobusError as err:
+            _LOGGER.error("API Dimmer Action failed for %s: %s", address, err)
+            raise
 
     #### COVERS
     async def open_cover(self, address: str, channel: int, completion_handler: Callable | None = None) -> None:
@@ -118,12 +130,15 @@ class NikobusAPI:
         
         # Decide which stop command to send based on current direction
         cmd_key = "led_on" if direction == "opening" else "led_off"
-        bus_cmd = chan_info.get(cmd_key) if chan_info else None
-
-        if bus_cmd:
-            await self._send_bus_command(bus_cmd, completion_handler)
-        else:
-            await self._coordinator.nikobus_command.set_output_state(address, channel, STATE_OFF, completion_handler)
+        
+        try:
+            if bus_cmd := chan_info.get(cmd_key):
+                await self._send_bus_command(bus_cmd, completion_handler)
+            else:
+                await self._coordinator.nikobus_command.set_output_state(address, channel, STATE_OFF, completion_handler)
+        except NikobusError as err:
+            _LOGGER.error("API Cover Action failed for %s: %s", address, err)
+            raise
 
     async def set_output_states_for_module(self, address: str, completion_handler: Callable | None = None) -> None:
         """Batch update all output states for a specific module."""

@@ -24,6 +24,10 @@ STATE_CLOSE = 0x02
 STATE_ON = 0xFF
 STATE_OFF = 0x00
 
+_STATE_MAPPING = {
+    "switch_module": {"on": STATE_ON, "off": STATE_OFF, "true": STATE_ON, "false": STATE_OFF},
+    "roller_module": {"open": STATE_OPEN, "close": STATE_CLOSE, "stop": STATE_STOPPED}
+}
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -185,12 +189,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 return None
 
         clean_state = str(state).lower()
-        mapping = {
-            "switch_module": {"on": STATE_ON, "off": STATE_OFF, "true": STATE_ON, "false": STATE_OFF},
-            "roller_module": {"open": STATE_OPEN, "close": STATE_CLOSE, "stop": STATE_STOPPED}
-        }
-        
-        return mapping.get(module_type or "", {}).get(clean_state)
+        return _STATE_MAPPING.get(module_type or "", {}).get(clean_state)
 
     def _normalize_feedback_leds(self, value: Any) -> list[str]:
         """Ensure feedback LEDs are a list of cleaned strings."""

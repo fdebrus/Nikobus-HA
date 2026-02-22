@@ -29,8 +29,8 @@ async def async_setup_entry(
     """Set up Nikobus light entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
     device_registry = dr.async_get(hass)
-    entities: list[LightEntity] = []
     registered_addresses: set[str] = set()
+    entities: list[LightEntity] = []
 
     routing = get_routing(hass, entry, coordinator.dict_module_data)
     
@@ -75,7 +75,8 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
     """Base class for Nikobus light entities with hybrid update logic."""
 
     def __init__(
-        self, coordinator, address, channel, description, module_name, module_model
+        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize the light base."""
         super().__init__(coordinator, address, module_name, module_model)
@@ -90,16 +91,16 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
 
     @property
     def extra_state_attributes(self) -> Dict[str, Any]:
-        """Return entity specific state attributes."""
-        attrs = super().extra_state_attributes or {}
-        attrs.update({
+        """Return entity specific state attributes safely."""
+        parent_attrs = super().extra_state_attributes or {}
+        return {
+            **parent_attrs,
             "nikobus_address": self._address,
             "channel": self._channel,
             "channel_description": self._channel_description,
             "module_description": self._module_description,
             "module_model": self._module_model,
-        })
-        return attrs
+        }
 
     async def async_added_to_hass(self) -> None:
         """Register listeners and restore state."""
@@ -113,13 +114,13 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Override base to invalidate cache before writing state."""
-        self._is_on = None  # Force fresh read from coordinator
+        """Invalidate optimistic cache when coordinator gets true hardware data."""
+        self._is_on = None  
         super()._handle_coordinator_update()
 
     @callback
     def _handle_nikobus_event(self, event: Any) -> None:
-        """Handle physical button operation events (Instant path)."""
+        """Handle physical button operation events."""
         if str(event.data.get("impacted_module_address")) != str(self._address):
             return
         
@@ -130,82 +131,162 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
 class NikobusDimmerEntity(NikobusBaseLight):
     """Nikobus dimmer light entity."""
 
-    def __init__(self, *args) -> None:
+    def __init__(
+        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        description: str, module_name: str, module_model: str
+    ) -> None:
         """Initialize dimmer."""
-        super().__init__(*args)
+        super().__init__(coordinator, address, channel, description, module_name, module_model)
         self._attr_unique_id = build_unique_id("light", "dimmer_light", self._address, self._channel)
         self._attr_supported_color_modes = {ColorMode.BRIGHTNESS}
         self._attr_color_mode = ColorMode.BRIGHTNESS
+        
+        # Add tracker for optimistic slider updates
+        self._optimistic_brightness: int | None = None
 
     @property
     def is_on(self) -> bool:
-        """Return true if light is on."""
+        """Return optimistic state if set, else coordinator state."""
+        if self._is_on is not None:
+            return self._is_on
         return self.brightness > 0
 
     @property
     def brightness(self) -> int:
-        """Return current brightness 0..255 from coordinator."""
+        """Return optimistic brightness if set, else 0..255 from coordinator."""
+        if self._optimistic_brightness is not None:
+            return self._optimistic_brightness
         return self.coordinator.get_light_brightness(self._address, self._channel)
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Invalidate optimistic caches when coordinator gets true hardware data."""
+        self._optimistic_brightness = None
+        super()._handle_coordinator_update()
+
+    @callback
+    def _handle_nikobus_event(self, event: Any) -> None:
+        """Handle physical button operation events."""
+        if str(event.data.get("impacted_module_address")) == str(self._address):
+            self._optimistic_brightness = None
+        super()._handle_nikobus_event(event)
+
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn on the dimmer."""
-        brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
-        await self.coordinator.api.turn_on_light(self._address, self._channel, brightness)
-        self.async_write_ha_state()
+        """Turn on the dimmer with optimistic UI update and error fallback."""
+        self._is_on = True
+        target_brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
+        self._optimistic_brightness = target_brightness
+        self.async_write_ha_state() 
+        
+        try:
+            await self.coordinator.api.turn_on_light(self._address, self._channel, target_brightness)
+        except Exception as err:
+            self._is_on = None
+            self._optimistic_brightness = None
+            self.async_write_ha_state()
+            raise err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off the dimmer."""
-        await self.coordinator.api.turn_off_light(self._address, self._channel)
-        self.async_write_ha_state()
+        """Turn off the dimmer with optimistic UI update and error fallback."""
+        self._is_on = False
+        self._optimistic_brightness = None
+        self.async_write_ha_state() 
+        
+        try:
+            await self.coordinator.api.turn_off_light(self._address, self._channel)
+        except Exception as err:
+            # Revert UI state on failure
+            self._is_on = None
+            self._optimistic_brightness = None
+            self.async_write_ha_state()
+            raise err
 
 
 class NikobusRelayEntity(NikobusBaseLight):
     """Nikobus relay-based on/off light."""
 
-    def __init__(self, *args) -> None:
+    def __init__(
+        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        description: str, module_name: str, module_model: str
+    ) -> None:
         """Initialize relay."""
-        super().__init__(*args)
+        super().__init__(coordinator, address, channel, description, module_name, module_model)
         self._attr_unique_id = build_unique_id("light", "relay_switch", self._address, self._channel)
         self._attr_supported_color_modes = {ColorMode.ONOFF}
         self._attr_color_mode = ColorMode.ONOFF
 
     @property
     def is_on(self) -> bool:
-        """Return true if relay is closed."""
+        """Return optimistic state if set, else coordinator state."""
+        if self._is_on is not None:
+            return self._is_on
         return self.coordinator.get_switch_state(self._address, self._channel)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Close relay."""
-        await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        """Close relay with optimistic UI update and error fallback."""
+        self._is_on = True
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Open relay."""
-        await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        """Open relay with optimistic UI update and error fallback."""
+        self._is_on = False
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err
 
 
 class NikobusCoverLightEntity(NikobusBaseLight):
     """Cover channel used as a binary light switch."""
 
-    def __init__(self, *args) -> None:
+    def __init__(
+        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        description: str, module_name: str, module_model: str
+    ) -> None:
         """Initialize cover-as-light."""
-        super().__init__(*args)
+        super().__init__(coordinator, address, channel, description, module_name, module_model)
         self._attr_unique_id = build_unique_id("light", "cover_binary", self._address, self._channel)
         self._attr_supported_color_modes = {ColorMode.ONOFF}
         self._attr_color_mode = ColorMode.ONOFF
 
     @property
     def is_on(self) -> bool:
-        """Return true if cover is open (acting as ON)."""
+        """Return optimistic state if set, else coordinator state."""
+        if self._is_on is not None:
+            return self._is_on
         return self.coordinator.get_cover_state(self._address, self._channel) == 0x01
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn light on via cover open command."""
-        await self.coordinator.api.open_cover(self._address, self._channel)
+        """Turn light on via cover open command with optimistic UI update and error fallback."""
+        self._is_on = True
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.open_cover(self._address, self._channel)
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn light off via cover stop/close command."""
-        await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+        """Turn light off via cover stop command with optimistic UI update and error fallback."""
+        self._is_on = False
         self.async_write_ha_state()
+        
+        try:
+            await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise err
