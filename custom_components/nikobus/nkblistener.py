@@ -118,6 +118,8 @@ class NikobusEventListener:
                 if message.startswith(FEEDBACK_MODULE_ANSWER):
                     if self.validate_crc(message):
                         await self._feedback_callback(self._module_group, message)
+                        # FIX: Forward to queue so commands awaiting this answer don't time out
+                        await self.response_queue.put(message) 
                     return
 
             if any(message.startswith(r) for r in MANUAL_REFRESH_COMMAND):
