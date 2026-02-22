@@ -203,4 +203,4 @@ class NikobusCommandHandler:
         
         future = self._coordinator.hass.loop.create_future()
         await self.queue_command(command, address, future=future)
-        return await asyncio.wait_for(future, timeout=5.0)
+        return await asyncio.wait_for(future, timeout=16.0)

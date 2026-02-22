@@ -9,6 +9,7 @@ from typing import Any, Dict
 
 from homeassistant.components.cover import (
     ATTR_POSITION,
+    ATTR_CURRENT_POSITION,
     CoverDeviceClass,
     CoverEntity,
     CoverEntityFeature,
@@ -149,7 +150,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         """Run when entity about to be added to hass."""
         await super().async_added_to_hass()
         if last_state := await self.async_get_last_state():
-            if (pos := last_state.attributes.get(ATTR_POSITION)) is not None:
+            if (pos := last_state.attributes.get(ATTR_CURRENT_POSITION)) is not None:
                 self._position = float(pos)
 
         self.async_on_remove(

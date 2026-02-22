@@ -61,15 +61,13 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
     def _handle_coordinator_update(self) -> None:
         """
         Handle targeted refresh triggered by the coordinator dispatcher.
-        
-        PLATINUM LOGGING: Standardized across all platforms (Light, Switch, Cover).
         """
-        _LOGGER.debug(
-            "Targeted refresh received for %s | ID: %s | Address: %s", 
-            self.name, 
-            self.unique_id, 
-            self._address
-        )
+        # _LOGGER.debug(
+        #    "Targeted refresh received for %s | ID: %s | Address: %s", 
+        #    self.name, 
+        #    self.unique_id, 
+        #    self._address
+        #)
         self.async_write_ha_state()
 
 

@@ -124,7 +124,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 if op_time > 0:
                     module_task = roller_tasks.setdefault(module_id, {"indexes": set(), "delay": 0})
                     module_task["indexes"].add(idx)
-                    module_task["delay"] = max(module_task["delay"], op_time)
+                    module_task["delay"] = max(module_task["delay"], op_time + 3.0)
 
         # 3. Commit updates to hardware
         for module_id, final_state in module_updates.items():
