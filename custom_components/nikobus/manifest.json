@@ -1,15 +1,9 @@
 {
   "domain": "nikobus",
   "name": "Nikobus",
-  "version": "0.8.0",
+  "version": "1.0.0",
   "documentation": "https://github.com/fdebrus/nikobus-ha",
-  "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
-  "codeowners": ["@fdebrus"],
-  "config_flow": true,
-  "requirements": [
-    "aiofiles>=25.1.0",
-    "pyserial-asyncio-fast>=0.16"
-  ],
-  "iot_class": "local_polling",
-  "loggers": ["nikobus"]
+  "requirements": ["nikobusconnect==1.0.0"],
+  "dependencies": [],
+  "codeowners": ["@fdebrus"]
 }

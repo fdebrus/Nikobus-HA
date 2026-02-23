@@ -10,6 +10,9 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
+# Import from the new PyPI library
+from nikobusconnect import NikobusConnect
+
 from .const import (
     DOMAIN,
     CONF_CONNECTION_STRING,
@@ -17,8 +20,6 @@ from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRIOR_GEN3,
 )
-from .nkbconnect import NikobusConnect
-from .exceptions import NikobusConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,15 +37,15 @@ def _get_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
 
 async def validate_nikobus_connection(hass: HomeAssistant, connection_string: str) -> None:
     """
-    Perform a deep validation of the Nikobus hardware.
-    Checks not just the port, but the actual PC-Link handshake.
+    Perform validation of the Nikobus hardware.
+    Checks connection and performs the mandatory handshake.
     """
     connection = NikobusConnect(connection_string)
     try:
-        # The 'ping' method performs the ATZ / #E1 handshake
-        await connection.ping()
-    except NikobusConnectionError as err:
-        _LOGGER.error("Nikobus handshake failed during validation: %s", err)
+        # connect() in 1.0.0 handles the full handshake logic
+        await connection.connect()
+    except Exception as err:
+        _LOGGER.error("Nikobus connection failed during validation: %s", err)
         raise ValueError("cannot_connect") from err
     finally:
         await connection.disconnect()
@@ -100,7 +101,3 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=_get_schema(dict(entry.data)),
             errors=errors
         )
-
-    async def async_step_import(self, import_config: dict[str, Any]) -> config_entries.FlowResult:
-        """Handle import from YAML configuration."""
-        return await self.async_step_user(import_config)
