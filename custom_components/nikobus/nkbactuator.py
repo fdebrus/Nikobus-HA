@@ -202,22 +202,40 @@ class NikobusActuator:
 
             async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id):
                 try:
-                    # Pause briefly to allow hardware relays to settle
-                    delay = DIMMER_DELAY if m_addr in self._dict_module_data.get("dimmer_module", {}) else REFRESH_DELAY
-                    await asyncio.sleep(delay)
+                    # Check if the impacted module is a dimmer
+                    is_dimmer = m_addr in self._dict_module_data.get("dimmer_module", {})
+                    
+                    # ==========================================
+                    # STEP 1: Immediate UI Update (Skip for dimmers to avoid mid-fade states)
+                    # ==========================================
+                    if not is_dimmer:
+                        await asyncio.sleep(0.3)
+                        
+                        try:
+                            new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
+                            if new_state:
+                                self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
+                                await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
+                        except Exception as err:
+                            # If the bus is busy, just ignore it. Step 2 will catch the final state anyway.
+                            _LOGGER.debug("Quick fetch failed for %s, waiting for delayed fetch: %s", m_addr, err)
 
-                    # Fetch fresh state from the bus
+                    # ==========================================
+                    # STEP 2: Delayed Check for Settled State
+                    # ==========================================
+                    if is_dimmer:
+                        # Dimmers need their full fade time before we check the state
+                        await asyncio.sleep(DIMMER_DELAY)
+                    else:
+                        # Relays/Covers subtract the 0.3s we already waited in Step 1
+                        await asyncio.sleep(max(0, REFRESH_DELAY - 0.3))
+
                     new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
                     if new_state:
                         self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
-                        
-                        # Targeted Signal: Only notify entities on this specific module address
-                        await self._coordinator.async_event_handler(
-                            "nikobus_refreshed", 
-                            {"impacted_module_address": m_addr}
-                        )
+                        await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
 
-                    # Fire rich operation event for complex entities (like Covers)
+                    # Fire the rich event for covers/complex entities
                     self._fire_event(
                         BUTTON_OPERATION_EVENT,
                         PressState(button_address.upper(), 0, 0, m_press_id, m_addr, None),
@@ -229,8 +247,10 @@ class NikobusActuator:
                             "impacted_module_group": m_group,
                         }
                     )
+
                 except asyncio.CancelledError:
-                    pass # Task was cancelled by a newer button press, fail silently
+                    # A new button press canceled this task. Exit cleanly.
+                    return 
                 except Exception as err:
                     _LOGGER.error("Error refreshing module %s: %s", m_addr, err)
 

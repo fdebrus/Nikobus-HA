@@ -186,9 +186,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         
         # If the cover is actively moving, immediately pause the internal calculation 
         # to prevent position drift while we wait for the bus to answer.
-        if self._state != STATE_STOPPED and self._motion_task:
-            self._motion_task.cancel()
-            self._motion_task = None
+        if self._state != STATE_STOPPED:
+            if self._motion_task:
+                self._motion_task.cancel()
+                self._motion_task = None
+            
+            self._state = STATE_STOPPED
+            self._target_position = None
+            self.coordinator.set_bytearray_state(self._address, self._channel, STATE_STOPPED)
             self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs: Any) -> None:
