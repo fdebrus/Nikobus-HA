@@ -132,7 +132,7 @@ class NikobusCommandHandler:
                     return msg[idx : idx + 12]
 
         try:
-            return await asyncio.wait_for(_get_message(), timeout=2.0)
+            return await asyncio.wait_for(_get_message(), timeout=1.0)
         except asyncio.TimeoutError:
             return None
 
@@ -203,4 +203,4 @@ class NikobusCommandHandler:
         
         future = self._coordinator.hass.loop.create_future()
         await self.queue_command(command, address, future=future)
-        return await asyncio.wait_for(future, timeout=8.0)
+        return await asyncio.wait_for(future, timeout=4.0)
