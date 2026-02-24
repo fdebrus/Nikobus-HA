@@ -65,6 +65,13 @@ async def async_setup_entry(
             via_device=(DOMAIN, HUB_IDENTIFIER),
         )
 
+        # Parse UP time, fallback to default
+        op_time_up = float(spec.operation_time or DEFAULT_OPERATION_TIME)
+        
+        # Safely parse DOWN time, fallback to UP time if not provided in config
+        op_time_down_raw = getattr(spec, "operation_time_down", None)
+        op_time_down = float(op_time_down_raw) if op_time_down_raw else op_time_up
+
         entities.append(
             NikobusCoverEntity(
                 coordinator,
@@ -73,7 +80,8 @@ async def async_setup_entry(
                 spec.channel_description,
                 spec.module_desc,
                 spec.module_model,
-                float(spec.operation_time or DEFAULT_OPERATION_TIME),
+                op_time_up,
+                op_time_down,
             )
         )
 
@@ -99,14 +107,18 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         description: str,
         module_desc: str,
         model: str,
-        op_time: float,
+        op_time_up: float,
+        op_time_down: float,
     ) -> None:
         """Initialize the cover entity."""
         super().__init__(coordinator, address, module_desc, model)
         self._address = address
         self._channel = channel
         self._channel_description = description
-        self._op_time = op_time
+        
+        # Store separate timers for up and down
+        self._op_time_up = op_time_up
+        self._op_time_down = op_time_down
         
         self._attr_name = description
         self._attr_unique_id = build_unique_id("cover", "cover", address, channel)
@@ -120,7 +132,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._start_time: float | None = None
         self._start_pos: float | None = None
         self._movement_source = "ha"
-        self._current_run_limit: float = op_time
+        self._current_run_limit: float = op_time_up
 
     @property
     def current_cover_position(self) -> int:
@@ -184,8 +196,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if str(event.data.get("module_address")) != str(self._address):
             return
         
-        # If the cover is actively moving, immediately pause the internal calculation 
-        # to prevent position drift while we wait for the bus to answer.
         if self._state != STATE_STOPPED:
             if self._motion_task:
                 self._motion_task.cancel()
@@ -242,7 +252,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
         self._start_time = time.monotonic()
         self._start_pos = self._position
-        self._current_run_limit = float(limit_time) if limit_time else (self._op_time + COVER_MOVEMENT_BUFFER)
+        
+        # Determine the correct operation time based on travel direction
+        active_op_time = self._op_time_up if direction == "opening" else self._op_time_down
+        self._current_run_limit = float(limit_time) if limit_time else (active_op_time + COVER_MOVEMENT_BUFFER)
         
         self._motion_task = self.hass.async_create_task(self._motion_loop())
         self.async_write_ha_state()
@@ -252,7 +265,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         try:
             while self._state in (STATE_OPENING, STATE_CLOSING):
                 elapsed = time.monotonic() - self._start_time
-                progress = (elapsed / self._op_time) * 100
+                
+                # Fetch the appropriate timer for current movement calculation
+                active_op_time = self._op_time_up if self._state == STATE_OPENING else self._op_time_down
+                progress = (elapsed / active_op_time) * 100
                 
                 if self._state == STATE_OPENING:
                     self._position = min(100.0, self._start_pos + progress)
