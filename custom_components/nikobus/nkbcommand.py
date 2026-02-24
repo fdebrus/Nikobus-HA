@@ -132,7 +132,7 @@ class NikobusCommandHandler:
                     return msg[idx : idx + 12]
 
         try:
-            return await asyncio.wait_for(_get_message(), timeout=COMMAND_ACK_WAIT_TIMEOUT)
+            return await asyncio.wait_for(_get_message(), timeout=2.0)
         except asyncio.TimeoutError:
             return None
 
@@ -198,10 +198,9 @@ class NikobusCommandHandler:
 
     async def get_output_state(self, address: str, group: int | str) -> str:
         """Queues a status request for a specific group (1 or 2)."""
-        # FIX: Ensure group is cast to integer in case config passes it as a string
         cmd_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(cmd_code, address)
         
         future = self._coordinator.hass.loop.create_future()
         await self.queue_command(command, address, future=future)
-        return await asyncio.wait_for(future, timeout=16.0)
+        return await asyncio.wait_for(future, timeout=8.0)

@@ -41,6 +41,7 @@ DEFAULT_OPERATION_TIME = 30.0
 
 # Event Constants
 EVENT_BUTTON_OPERATION = "nikobus_button_operation"
+EVENT_BUTTON_PRESS = "nikobus_button_pressed"
 
 
 async def async_setup_entry(
@@ -156,6 +157,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self.async_on_remove(
             self.hass.bus.async_listen(EVENT_BUTTON_OPERATION, self._handle_nikobus_event)
         )
+        self.async_on_remove(
+            self.hass.bus.async_listen(EVENT_BUTTON_PRESS, self._handle_button_pressed)
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -174,6 +178,18 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self.hass.async_create_task(self._stop(send_stop=False))
 
         super()._handle_coordinator_update()
+
+    async def _handle_button_pressed(self, event: Any) -> None:
+        """Optimistically freeze motion position when any linked physical button is pressed."""
+        if str(event.data.get("module_address")) != str(self._address):
+            return
+        
+        # If the cover is actively moving, immediately pause the internal calculation 
+        # to prevent position drift while we wait for the bus to answer.
+        if self._state != STATE_STOPPED and self._motion_task:
+            self._motion_task.cancel()
+            self._motion_task = None
+            self.async_write_ha_state()
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the cover."""

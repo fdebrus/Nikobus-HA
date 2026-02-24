@@ -82,6 +82,16 @@ class NikobusActuator:
         # Fire immediate press event for Binary Sensors
         self._fire_event(EVENT_BUTTON_PRESSED, state, state_value="pressed", duration=None)
 
+        # NEW: Trigger module state synchronization IMMEDIATELY upon press
+        press_context = {
+            "press_id": state.press_id,
+            "duration_s": 0.0,
+            "module_address": state.module_address,
+            "channel": state.channel,
+            "bucket": 0,
+        }
+        self._hass.async_create_task(self.button_discovery(state.address, press_context=press_context))
+
     def _start_timer_tasks(self, state: PressState) -> None:
         """Initialize tasks for long-press duration thresholds."""
         for duration in BUTTON_TIMER_THRESHOLDS:
@@ -175,42 +185,57 @@ class NikobusActuator:
         
         impacted_modules = button_data.get("impacted_module", [])
         
+        # Initialize the tracker for pending refresh tasks
+        if not hasattr(self, "_module_refresh_tasks"):
+            self._module_refresh_tasks = {}
+
         for module_info in impacted_modules:
             addr = module_info.get("address")
             group = module_info.get("group")
             if not addr or not group:
                 continue
 
-            # Pause briefly to allow hardware relays to settle
-            delay = DIMMER_DELAY if addr in self._dict_module_data.get("dimmer_module", {}) else REFRESH_DELAY
-            await asyncio.sleep(delay)
+            # Debouncer: Cancel any pending refresh for this specific module/group combo
+            cache_key = f"{addr}_{group}"
+            if cache_key in self._module_refresh_tasks:
+                self._module_refresh_tasks[cache_key].cancel()
 
-            try:
-                # Fetch fresh state from the bus
-                new_state = await self._coordinator.nikobus_command.get_output_state(addr, group)
-                if new_state:
-                    self._coordinator.set_bytearray_group_state(addr, group, new_state)
-                    
-                    # Targeted Signal: Only notify entities on this specific module address
-                    await self._coordinator.async_event_handler(
-                        "nikobus_refreshed", 
-                        {"impacted_module_address": addr}
+            async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id):
+                try:
+                    # Pause briefly to allow hardware relays to settle
+                    delay = DIMMER_DELAY if m_addr in self._dict_module_data.get("dimmer_module", {}) else REFRESH_DELAY
+                    await asyncio.sleep(delay)
+
+                    # Fetch fresh state from the bus
+                    new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
+                    if new_state:
+                        self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
+                        
+                        # Targeted Signal: Only notify entities on this specific module address
+                        await self._coordinator.async_event_handler(
+                            "nikobus_refreshed", 
+                            {"impacted_module_address": m_addr}
+                        )
+
+                    # Fire rich operation event for complex entities (like Covers)
+                    self._fire_event(
+                        BUTTON_OPERATION_EVENT,
+                        PressState(button_address.upper(), 0, 0, m_press_id, m_addr, None),
+                        state_value="released",
+                        duration=(press_context or {}).get("duration_s"),
+                        extra={
+                            "button_operation_time": m_op_time,
+                            "impacted_module_address": m_addr,
+                            "impacted_module_group": m_group,
+                        }
                     )
+                except asyncio.CancelledError:
+                    pass # Task was cancelled by a newer button press, fail silently
+                except Exception as err:
+                    _LOGGER.error("Error refreshing module %s: %s", m_addr, err)
 
-                # Fire rich operation event for complex entities (like Covers)
-                self._fire_event(
-                    BUTTON_OPERATION_EVENT,
-                    PressState(button_address.upper(), 0, 0, press_id, addr, None),
-                    state_value="released",
-                    duration=(press_context or {}).get("duration_s"),
-                    extra={
-                        "button_operation_time": op_time,
-                        "impacted_module_address": addr,
-                        "impacted_module_group": group,
-                    }
-                )
-            except Exception as err:
-                _LOGGER.error("Error refreshing module %s: %s", addr, err)
+            # Schedule the newly requested refresh
+            self._module_refresh_tasks[cache_key] = self._hass.async_create_task(_refresh_task())
 
     def _fire_event(self, event_type: str, state: PressState, **kwargs) -> None:
         """Helper to fire standardized Nikobus events."""
