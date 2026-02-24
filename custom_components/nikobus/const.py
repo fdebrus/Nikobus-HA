@@ -45,6 +45,14 @@ LONG_PRESS: Final[float] = 3.0  # Long press duration threshold in seconds
 BUTTON_TIMER_THRESHOLDS: Final[tuple[int, int, int]] = (1, 2, 3)
 
 # =============================================================================
+# Covers
+# =============================================================================
+DEFAULT_COVER_ASSUMED_STATE: Final[bool] = False
+DEFAULT_COVER_MOVEMENT_BUFFER: Final[float] = 3.0
+DEFAULT_COVER_DEBOUNCE_DELAY: Final[float] = 0.3
+DEFAULT_COVER_OPERATION_TIME: Final[float] = 30.0
+
+# =============================================================================
 # Listener
 # =============================================================================
 BUTTON_COMMAND_PREFIX: Final[str] = "#N"

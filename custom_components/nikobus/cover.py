@@ -20,7 +20,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers import device_registry as dr
 
-from .const import DOMAIN, BRAND
+from .const import (
+    DOMAIN, 
+    BRAND,
+    DEFAULT_COVER_ASSUMED_STATE,
+    DEFAULT_COVER_MOVEMENT_BUFFER,
+    DEFAULT_COVER_DEBOUNCE_DELAY,
+    DEFAULT_COVER_OPERATION_TIME
+)
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import build_unique_id, get_routing
@@ -34,11 +41,6 @@ HUB_IDENTIFIER = "nikobus_hub"
 STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
-
-# Configuration Constants
-COVER_MOVEMENT_BUFFER = 3.0
-DEBOUNCE_DELAY = 0.3
-DEFAULT_OPERATION_TIME = 30.0
 
 # Event Constants
 EVENT_BUTTON_OPERATION = "nikobus_button_operation"
@@ -54,6 +56,12 @@ async def async_setup_entry(
     device_registry = dr.async_get(hass)
     routing = get_routing(hass, entry, coordinator.dict_module_data)
 
+    # Retrieve user configuration, falling back to defaults if not set
+    op_time_up_config = entry.options.get("cover_default_operation_time", DEFAULT_COVER_OPERATION_TIME)
+    assumed_state_config = entry.options.get("cover_assumed_state", DEFAULT_COVER_ASSUMED_STATE)
+    movement_buffer_config = entry.options.get("cover_movement_buffer", DEFAULT_COVER_MOVEMENT_BUFFER)
+    debounce_delay_config = entry.options.get("cover_debounce_delay", DEFAULT_COVER_DEBOUNCE_DELAY)
+
     entities = []
     for spec in routing["cover"]:
         device_registry.async_get_or_create(
@@ -66,7 +74,7 @@ async def async_setup_entry(
         )
 
         # Parse UP time, fallback to default
-        op_time_up = float(spec.operation_time or DEFAULT_OPERATION_TIME)
+        op_time_up = float(spec.operation_time or op_time_up_config)
         
         # Safely parse DOWN time, fallback to UP time if not provided
         op_time_down_raw = getattr(spec, "operation_time_down", None)
@@ -82,6 +90,9 @@ async def async_setup_entry(
                 spec.module_model,
                 op_time_up,
                 op_time_down,
+                assumed_state_config,
+                movement_buffer_config,
+                debounce_delay_config,
             )
         )
 
@@ -109,6 +120,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         model: str,
         op_time_up: float,
         op_time_down: float,
+        assumed_state_config: bool,
+        movement_buffer: float,
+        debounce_delay: float,
     ) -> None:
         """Initialize the cover entity."""
         super().__init__(coordinator, address, module_desc, model)
@@ -119,6 +133,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._attr_name = description
         self._attr_unique_id = build_unique_id("cover", "cover", address, channel)
         
+        # User configurations
+        self._attr_assumed_state = assumed_state_config
+        self._movement_buffer = movement_buffer
+        self._debounce_delay = debounce_delay
+
         # Delegate math to the Travel Calculator helper
         self._calculator = NikobusTravelCalculator(op_time_up, op_time_down)
         
@@ -133,8 +152,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
     @property
     def assumed_state(self) -> bool:
-        """Return True because covers can be stopped midway and position is calculated via time."""
-        return True
+        """Return user customized assumed state configuration."""
+        return self._attr_assumed_state
 
     @property
     def current_cover_position(self) -> int:
@@ -230,7 +249,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._coalesce_task.cancel()
 
         async def _debounced_move() -> None:
-            await asyncio.sleep(DEBOUNCE_DELAY)
+            await asyncio.sleep(self._debounce_delay)
             direction = "opening" if target > self._position else "closing"
             await self._request_move(direction, target)
 
@@ -259,7 +278,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         
         # Determine the correct limit
         active_op_time = self._calculator.time_up if direction == "opening" else self._calculator.time_down
-        self._current_run_limit = float(limit_time) if limit_time else (active_op_time + COVER_MOVEMENT_BUFFER)
+        self._current_run_limit = float(limit_time) if limit_time else (active_op_time + self._movement_buffer)
         
         self._motion_task = self.hass.async_create_task(self._motion_loop())
         self.async_write_ha_state()
