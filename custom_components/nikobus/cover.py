@@ -24,6 +24,7 @@ from .const import DOMAIN, BRAND
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import build_unique_id, get_routing
+from .nkbtravelcalculator import NikobusTravelCalculator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +43,6 @@ DEFAULT_OPERATION_TIME = 30.0
 # Event Constants
 EVENT_BUTTON_OPERATION = "nikobus_button_operation"
 EVENT_BUTTON_PRESS = "nikobus_button_pressed"
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -68,7 +68,7 @@ async def async_setup_entry(
         # Parse UP time, fallback to default
         op_time_up = float(spec.operation_time or DEFAULT_OPERATION_TIME)
         
-        # Safely parse DOWN time, fallback to UP time if not provided in config
+        # Safely parse DOWN time, fallback to UP time if not provided
         op_time_down_raw = getattr(spec, "operation_time_down", None)
         op_time_down = float(op_time_down_raw) if op_time_down_raw else op_time_up
 
@@ -116,12 +116,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._channel = channel
         self._channel_description = description
         
-        # Store separate timers for up and down
-        self._op_time_up = op_time_up
-        self._op_time_down = op_time_down
-        
         self._attr_name = description
         self._attr_unique_id = build_unique_id("cover", "cover", address, channel)
+        
+        # Delegate math to the Travel Calculator helper
+        self._calculator = NikobusTravelCalculator(op_time_up, op_time_down)
         
         self._position: float = 100.0
         self._state = STATE_STOPPED
@@ -129,10 +128,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._motion_task: asyncio.Task | None = None
         self._coalesce_task: asyncio.Task | None = None
         
-        self._start_time: float | None = None
-        self._start_pos: float | None = None
         self._movement_source = "ha"
         self._current_run_limit: float = op_time_up
+
+    @property
+    def assumed_state(self) -> bool:
+        """Return True because covers can be stopped midway and position is calculated via time."""
+        return True
 
     @property
     def current_cover_position(self) -> int:
@@ -165,6 +167,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if last_state := await self.async_get_last_state():
             if (pos := last_state.attributes.get(ATTR_CURRENT_POSITION)) is not None:
                 self._position = float(pos)
+                self._calculator.set_position(self._position)
 
         self.async_on_remove(
             self.hass.bus.async_listen(EVENT_BUTTON_OPERATION, self._handle_nikobus_event)
@@ -201,6 +204,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._motion_task.cancel()
                 self._motion_task = None
             
+            self._calculator.stop()
+            self._position = self._calculator.current_position()
             self._state = STATE_STOPPED
             self._target_position = None
             self.coordinator.set_bytearray_state(self._address, self._channel, STATE_STOPPED)
@@ -250,11 +255,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._motion_task.cancel()
 
         self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
-        self._start_time = time.monotonic()
-        self._start_pos = self._position
+        self._calculator.start_travel(direction)
         
-        # Determine the correct operation time based on travel direction
-        active_op_time = self._op_time_up if direction == "opening" else self._op_time_down
+        # Determine the correct limit
+        active_op_time = self._calculator.time_up if direction == "opening" else self._calculator.time_down
         self._current_run_limit = float(limit_time) if limit_time else (active_op_time + COVER_MOVEMENT_BUFFER)
         
         self._motion_task = self.hass.async_create_task(self._motion_loop())
@@ -263,24 +267,18 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def _motion_loop(self) -> None:
         """Loop to calculate position based on time."""
         try:
+            start_time = time.monotonic()
             while self._state in (STATE_OPENING, STATE_CLOSING):
-                elapsed = time.monotonic() - self._start_time
+                elapsed = time.monotonic() - start_time
                 
-                # Fetch the appropriate timer for current movement calculation
-                active_op_time = self._op_time_up if self._state == STATE_OPENING else self._op_time_down
-                progress = (elapsed / active_op_time) * 100
-                
-                if self._state == STATE_OPENING:
-                    self._position = min(100.0, self._start_pos + progress)
-                else:
-                    self._position = max(0.0, self._start_pos - progress)
+                self._position = self._calculator.current_position()
 
                 if elapsed >= self._current_run_limit or self._should_stop():
                     await self._stop(send_stop=(self._movement_source == "ha"))
                     break
 
                 self.async_write_ha_state()
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.15)
         except asyncio.CancelledError:
             pass
 
@@ -297,6 +295,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if self._motion_task:
             self._motion_task.cancel()
             self._motion_task = None
+
+        self._calculator.stop()
+        self._position = self._calculator.current_position()
 
         if send_stop and self._state != STATE_STOPPED:
             dir_cmd = "opening" if self._state == STATE_OPENING else "closing"
