@@ -189,6 +189,8 @@ class NikobusActuator:
         if not hasattr(self, "_module_refresh_tasks"):
             self._module_refresh_tasks = {}
 
+        _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted_modules))
+
         for module_info in impacted_modules:
             addr = module_info.get("address")
             group = module_info.get("group")
@@ -198,6 +200,7 @@ class NikobusActuator:
             # Debouncer: Cancel any pending refresh for this specific module/group combo
             cache_key = f"{addr}_{group}"
             if cache_key in self._module_refresh_tasks:
+                _LOGGER.debug("[%s] Canceling previous pending refresh for %s (Group %s)", press_id, addr, group)
                 self._module_refresh_tasks[cache_key].cancel()
 
             async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id):
@@ -206,34 +209,40 @@ class NikobusActuator:
                     is_dimmer = m_addr in self._dict_module_data.get("dimmer_module", {})
                     
                     # ==========================================
-                    # STEP 1: Immediate UI Update (Skip for dimmers to avoid mid-fade states)
+                    # STEP 1: Immediate UI Update (Skip for dimmers)
                     # ==========================================
                     if not is_dimmer:
+                        _LOGGER.debug("[%s] Step 1: Immediate refresh for %s (Group %s)", m_press_id, m_addr, m_group)
                         await asyncio.sleep(0.3)
                         
                         try:
                             new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
                             if new_state:
+                                # FIXED: Removed .hex() because new_state is already a hex string
+                                _LOGGER.debug("[%s] Step 1 Success for %s: %s", m_press_id, m_addr, new_state)
                                 self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
                                 await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
                         except Exception as err:
-                            # If the bus is busy, just ignore it. Step 2 will catch the final state anyway.
-                            _LOGGER.debug("Quick fetch failed for %s, waiting for delayed fetch: %s", m_addr, err)
+                            _LOGGER.debug("[%s] Step 1 Quick fetch failed for %s: %s", m_press_id, m_addr, err)
 
                     # ==========================================
                     # STEP 2: Delayed Check for Settled State
                     # ==========================================
-                    if is_dimmer:
-                        # Dimmers need their full fade time before we check the state
-                        await asyncio.sleep(DIMMER_DELAY)
-                    else:
-                        # Relays/Covers subtract the 0.3s we already waited in Step 1
-                        await asyncio.sleep(max(0, REFRESH_DELAY - 0.3))
+                    delay = DIMMER_DELAY if is_dimmer else max(0, REFRESH_DELAY - 0.3)
+                    _LOGGER.debug("[%s] Step 2: Waiting %.1fs for settled state on %s", m_press_id, delay, m_addr)
+                    
+                    await asyncio.sleep(delay)
 
+                    _LOGGER.debug("[%s] Step 2: Requesting final state for %s (Group %s)", m_press_id, m_addr, m_group)
                     new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
+                    
                     if new_state:
+                        # FIXED: Removed .hex() here as well
+                        _LOGGER.debug("[%s] Step 2 Success for %s: %s", m_press_id, m_addr, new_state)
                         self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
                         await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
+                    else:
+                        _LOGGER.warning("[%s] Step 2: Module %s returned empty state", m_press_id, m_addr)
 
                     # Fire the rich event for covers/complex entities
                     self._fire_event(
@@ -249,10 +258,14 @@ class NikobusActuator:
                     )
 
                 except asyncio.CancelledError:
-                    # A new button press canceled this task. Exit cleanly.
+                    _LOGGER.debug("[%s] Refresh task for %s was cancelled by a newer press", m_press_id, m_addr)
                     return 
                 except Exception as err:
-                    _LOGGER.error("Error refreshing module %s: %s", m_addr, err)
+                    _LOGGER.error("[%s] Error refreshing module %s (Group %s): %s", m_press_id, m_addr, m_group, err)
+                finally:
+                    # Clean up the task reference when done
+                    if self._module_refresh_tasks.get(cache_key) == asyncio.current_task():
+                        self._module_refresh_tasks.pop(cache_key, None)
 
             # Schedule the newly requested refresh
             self._module_refresh_tasks[cache_key] = self._hass.async_create_task(_refresh_task())
