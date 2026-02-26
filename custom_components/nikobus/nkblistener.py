@@ -88,14 +88,13 @@ class NikobusEventListener:
         if "\r" not in self._frame_buffer: 
             return []
         
-        # Cleanly unpack: everything except the last item goes to 'frames', last item goes to 'buffer'
         *frames, self._frame_buffer = self._frame_buffer.split("\r")
         
         extracted = []
         for frame in frames:
             if frame := frame.strip():
-                # Split right before every '$' and keep non-empty chunks
-                extracted.extend(f for f in re.split(r'(?=\$)', frame) if f)
+                # FIX: Split at every '$' OR '#' to handle collisions
+                extracted.extend(f for f in re.split(r'(?=[$#])', frame) if f)
                 
         return extracted
 
@@ -109,14 +108,14 @@ class NikobusEventListener:
             return
 
         if not discovery_running:
+            # Handle button press but DO NOT return, 
+            # in case this message is a collision containing other data.
             if BUTTON_COMMAND_PREFIX in message:
                 idx = message.find(BUTTON_COMMAND_PREFIX)
                 if idx != -1:
                     await self._actuator.handle_button_press(message[idx+2:idx+8])
-                return
 
             if any(message.startswith(cmd) for cmd in COMMAND_PROCESSED):
-                # ACKs ($05xx) do not have a CRC or length field, queue them directly
                 await self.response_queue.put(message)
                 return
 
