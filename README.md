@@ -204,10 +204,10 @@ Open nikobus_module_config.json and complete the module definitions.
 **Required vs optional fields**
 
 - **Required (module level)**: `description`, `model`, `address`, and `channels`.
-- **Required (per channel)**: `description`.
+- **Required (per channel)**: `description`. `operation_time_up`
 - **Optional (per channel)**:
   - `led_on` / `led_off`: Feedback LED addresses (case-sensitive, format like `8AA8FA`).
-  - `operation_time`: For roller outputs, the time in seconds to fully open/close. If omitted, the cover will still work but uses a default timing, which may reduce position accuracy.
+  - `operation_time_down`: For roller outputs, the time in seconds to fully close. If omitted, will default to `operation_time_up`, which may reduce position accuracy.
   - `entity_type`: Override the default entity type (see matrix below).
 
 **Entity type by module**
@@ -277,12 +277,12 @@ Open nikobus_module_config.json and complete the module definitions.
       "model": "05-001-02",
       "address": "9105",
       "channels": [
-        {"description": "R1 Output 1", "operation_time": "40", "entity_type": "switch"},
-        {"description": "R1 Output 2", "operation_time": "40", "led_on": "", "led_off": ""},
-        {"description": "R1 Output 3", "operation_time": "40"},
-        {"description": "R1 Output 4", "operation_time": "40"},
-        {"description": "R1 Output 5", "operation_time": "40"},
-        {"description": "R1 Output 6", "operation_time": "40"}
+        {"description": "R1 Output 1", "operation_time_up": "40", "entity_type": "switch"},
+        {"description": "R1 Output 2", "operation_time_up": "40", "led_on": "", "led_off": ""},
+        {"description": "R1 Output 3", "operation_time_up": "40"},
+        {"description": "R1 Output 4", "operation_time_up": "40"},
+        {"description": "R1 Output 5", "operation_time_up": "40"},
+        {"description": "R1 Output 6", "operation_time_up": "40", "operation_time_down": "38"}
       ]
     }
   ]
