@@ -254,6 +254,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             _LOGGER.debug("Global broadcast refresh triggered")
             self.async_update_listeners()
 
+    def get_cover_operation_time(self, module_id: str, channel: int, direction: str = "up", default: float = 30.0) -> float:
+        """Fetch travel time for a shutter channel based on direction ('up' or 'down')."""
+        try:
+            mod = self.dict_module_data.get("roller_module", {}).get(module_id, {})
+            # Ensure channel index is valid
+            channels = mod.get("channels", [])
+            ch = channels[int(channel) - 1]
+        
+            # Determine which key to look for
+            key = f"operation_time_{direction}"
+            ot = ch.get(key)
+        
+            return float(ot) if ot and float(ot) > 0 else default
+        except (IndexError, ValueError, KeyError):
+            return default
+
     def get_module_type(self, module_id: str) -> str | None:
         """Return the hardware type of the specified module."""
         for m_type, modules in self.dict_module_data.items():
@@ -267,16 +283,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             if data := modules.get(module_id):
                 return len(data.get("channels", []))
         return 0
-
-    def get_cover_operation_time(self, module_id: str, channel: int, default: float = 30.0) -> float:
-        """Fetch travel time for a shutter channel."""
-        try:
-            mod = self.dict_module_data.get("roller_module", {}).get(module_id, {})
-            ch = mod.get("channels", [])[int(channel) - 1]
-            ot = ch.get("operation_time")
-            return float(ot) if ot and float(ot) > 0 else default
-        except (IndexError, ValueError):
-            return default
 
     def get_light_brightness(self, addr: str, ch: int) -> int: return self.get_bytearray_state(addr, ch)
     def get_switch_state(self, addr: str, ch: int) -> bool: return self.get_bytearray_state(addr, ch) == 0xFF

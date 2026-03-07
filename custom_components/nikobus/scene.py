@@ -124,10 +124,14 @@ class NikobusSceneEntity(NikobusEntity, Scene):
 
             # Track rollers that need a timed stop
             if module_type == "roller_module" and byte_val in (STATE_OPEN, STATE_CLOSE):
-                op_time = self.coordinator.get_cover_operation_time(module_id, chan_num)
+                # Determine direction based on the state being sent
+                direction = "up" if byte_val == STATE_OPEN else "down"
+                op_time = self.coordinator.get_cover_operation_time(module_id, chan_num, direction=direction)
+    
                 if op_time > 0:
                     module_task = roller_tasks.setdefault(module_id, {"indexes": set(), "delay": 0})
                     module_task["indexes"].add(idx)
+                    # Use the specific direction's time + buffer
                     module_task["delay"] = max(module_task["delay"], op_time + 3.0)
 
         # 3. Commit updates to hardware
