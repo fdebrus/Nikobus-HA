@@ -197,38 +197,38 @@ class NikobusActuator:
             if not addr or not group:
                 continue
 
-            # Determine if this specific module is a dimmer or cover BEFORE debouncing
+            # Determine if this specific module is a dimmer BEFORE debouncing
             is_dimmer = addr in self._dict_module_data.get("dimmer_module", {})
-            # Check for standard Nikobus cover names (roller_module or cover_module)
-            is_cover = addr in self._dict_module_data.get("roller_module", {}) or addr in self._dict_module_data.get("cover_module", {})
             
-            requires_long_press = is_dimmer or is_cover
+            # Since covers are impulse (click to start/stop), they act like switches.
+            # Only dimmers strictly require waiting for the full long-press release.
+            requires_long_press = is_dimmer
             
             # Identify if this is the exact instant the button was pressed down
             is_initial_press = press_context is not None and press_context.get("duration_s") == 0.0
 
             if requires_long_press and is_initial_press:
-                # For dimmers and covers, we MUST wait until the button is fully released before starting any timers.
+                # For dimmers, we MUST wait until the button is fully released before starting any timers.
                 # Otherwise, we cause bus collisions while the button is still being held down.
-                _LOGGER.debug("[%s] Ignoring initial press for Dimmer/Cover %s (Group %s). Waiting for release.", press_id, addr, group)
+                _LOGGER.debug("[%s] Ignoring initial press for Dimmer %s (Group %s). Waiting for release.", press_id, addr, group)
                 continue
 
             # Hybrid Debouncer: Smart handling based on module type
             cache_key = f"{addr}_{group}"
             if cache_key in self._module_refresh_tasks:
                 if requires_long_press:
-                    # Last-to-Fire: Dimmers and Covers need to wait for the final release to settle
-                    _LOGGER.debug("[%s] Canceling previous pending refresh for Dimmer/Cover %s (Group %s)", press_id, addr, group)
+                    # Last-to-Fire: Dimmers need to wait for the final release to settle
+                    _LOGGER.debug("[%s] Canceling previous pending refresh for Dimmer %s (Group %s)", press_id, addr, group)
                     self._module_refresh_tasks[cache_key].cancel()
                 else:
-                    # First-to-Fire: Relays should trigger instantly and ignore bus chatter
-                    _LOGGER.debug("[%s] Refresh for Relay %s (Group %s) already in progress. Ignoring duplicate.", press_id, addr, group)
+                    # First-to-Fire: Relays and Covers should trigger instantly and ignore bus chatter
+                    _LOGGER.debug("[%s] Refresh for Relay/Cover %s (Group %s) already in progress. Ignoring duplicate.", press_id, addr, group)
                     continue
 
             async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id, m_requires_long_press=requires_long_press):
                 try:
                     # ==========================================
-                    # STEP 1: Immediate UI Update (Skip for dimmers & covers)
+                    # STEP 1: Immediate UI Update (Skip for dimmers)
                     # ==========================================
                     if not m_requires_long_press:
                         _LOGGER.debug("[%s] Step 1: Immediate refresh for %s (Group %s)", m_press_id, m_addr, m_group)
