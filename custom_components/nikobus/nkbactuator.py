@@ -197,38 +197,49 @@ class NikobusActuator:
             if not addr or not group:
                 continue
 
-            # Determine if this specific module is a dimmer BEFORE debouncing
+            # Determine if this specific module is a dimmer or cover BEFORE debouncing
             is_dimmer = addr in self._dict_module_data.get("dimmer_module", {})
+            # Check for standard Nikobus cover names (roller_module or cover_module)
+            is_cover = addr in self._dict_module_data.get("roller_module", {}) or addr in self._dict_module_data.get("cover_module", {})
+            
+            requires_long_press = is_dimmer or is_cover
             
             # Identify if this is the exact instant the button was pressed down
             is_initial_press = press_context is not None and press_context.get("duration_s") == 0.0
 
-            if is_dimmer and is_initial_press:
-                # For dimmers, we MUST wait until the button is fully released before starting any timers.
+            if requires_long_press and is_initial_press:
+                # For dimmers and covers, we MUST wait until the button is fully released before starting any timers.
                 # Otherwise, we cause bus collisions while the button is still being held down.
-                _LOGGER.debug("[%s] Ignoring initial press for Dimmer %s (Group %s). Waiting for release.", press_id, addr, group)
+                _LOGGER.debug("[%s] Ignoring initial press for Dimmer/Cover %s (Group %s). Waiting for release.", press_id, addr, group)
                 continue
 
             # Hybrid Debouncer: Smart handling based on module type
             cache_key = f"{addr}_{group}"
             if cache_key in self._module_refresh_tasks:
-                if is_dimmer:
-                    # Last-to-Fire: Dimmers need to wait for the final release to settle
-                    _LOGGER.debug("[%s] Canceling previous pending refresh for Dimmer %s (Group %s)", press_id, addr, group)
+                if requires_long_press:
+                    # Last-to-Fire: Dimmers and Covers need to wait for the final release to settle
+                    _LOGGER.debug("[%s] Canceling previous pending refresh for Dimmer/Cover %s (Group %s)", press_id, addr, group)
                     self._module_refresh_tasks[cache_key].cancel()
                 else:
                     # First-to-Fire: Relays should trigger instantly and ignore bus chatter
                     _LOGGER.debug("[%s] Refresh for Relay %s (Group %s) already in progress. Ignoring duplicate.", press_id, addr, group)
                     continue
 
-            async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id, m_is_dimmer=is_dimmer):
+            async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id, m_requires_long_press=requires_long_press):
                 try:
                     # ==========================================
-                    # STEP 1: Immediate UI Update (Skip for dimmers)
+                    # STEP 1: Immediate UI Update (Skip for dimmers & covers)
                     # ==========================================
-                    if not m_is_dimmer:
+                    if not m_requires_long_press:
                         _LOGGER.debug("[%s] Step 1: Immediate refresh for %s (Group %s)", m_press_id, m_addr, m_group)
                         await asyncio.sleep(0.3)
+                        
+                        # Bus Clearance Check
+                        # If the user is STILL holding the button after 0.3s, the bus is flooded.
+                        # We must abort this fetch to prevent a timeout collision. The release event will handle it later.
+                        if button_address.upper() in self._press_states:
+                            _LOGGER.debug("[%s] Button still held. Aborting Step 1 to prevent collision. Deferring to release event.", m_press_id)
+                            return
                         
                         try:
                             new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
@@ -242,7 +253,7 @@ class NikobusActuator:
                     # ==========================================
                     # STEP 2: Delayed Check for Settled State
                     # ==========================================
-                    delay = DIMMER_DELAY if m_is_dimmer else max(0, REFRESH_DELAY - 0.3)
+                    delay = DIMMER_DELAY if m_requires_long_press else max(0, REFRESH_DELAY - 0.3)
                     _LOGGER.debug("[%s] Step 2: Waiting %.1fs for settled state on %s", m_press_id, delay, m_addr)
                     
                     await asyncio.sleep(delay)

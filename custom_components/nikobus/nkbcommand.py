@@ -1,4 +1,4 @@
-"""Nikobus Command Handler - Platinum Edition (Await Fix)."""
+"""Nikobus Command Handler."""
 
 from __future__ import annotations
 
@@ -11,14 +11,16 @@ from .nkbprotocol import make_pc_link_command, calculate_group_number
 from .const import (
     COMMAND_EXECUTION_DELAY,
     COMMAND_ACK_WAIT_TIMEOUT,
+    COMMAND_ANSWER_WAIT_TIMEOUT,
     MAX_ATTEMPTS,
 )
-from .exceptions import NikobusSendError, NikobusTimeoutError
+from .exceptions import NikobusError, NikobusSendError, NikobusTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class NikobusCommandHandler:
-    """Handles sequential command processing for the Nikobus PC-Link."""
+    """Handles command processing for Nikobus."""
 
     def __init__(
         self,
@@ -33,153 +35,326 @@ class NikobusCommandHandler:
         self._running: bool = False
         self._command_task: asyncio.Task | None = None
         self._command_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        
+        self._command_completion_handlers: dict[str, Callable[[], Awaitable[None]]] = {}
+
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
         self.nikobus_module_states = nikobus_module_states
 
     async def start(self) -> None:
-        """Start the consumer loop."""
+        """Start the command processing loop."""
         self._running = True
-        self._command_task = self._coordinator.hass.loop.create_task(self.process_commands())
+        loop = self._coordinator.hass.loop
+        self._command_task = loop.create_task(self.process_commands())
 
     async def stop(self) -> None:
-        """Stop the command loop and clear tasks."""
+        """Stop the command processing loop."""
         self._running = False
         if self._command_task:
             self._command_task.cancel()
+            try:
+                await self._command_task
+            except asyncio.CancelledError:
+                _LOGGER.info("Command processing task was cancelled.")
             self._command_task = None
 
-    def _drain_queue(self) -> None:
-        """Clear all pending messages from the listener queue."""
-        while not self.nikobus_listener.response_queue.empty():
+    async def clear_command_queue(self) -> None:
+        """Clear all pending commands in the queue."""
+        while True:
             try:
-                self.nikobus_listener.response_queue.get_nowait()
-                self.nikobus_listener.response_queue.task_done()
+                self._command_queue.get_nowait()
+                self._command_queue.task_done()
             except asyncio.QueueEmpty:
                 break
 
     async def process_commands(self) -> None:
-        """Process commands sequentially from the queue."""
-        _LOGGER.info("Nikobus Command Processor active.")
+        """Process commands from the queue."""
+        _LOGGER.info("Nikobus Command Processing starting.")
         while self._running:
             try:
-                item = await self._command_queue.get()
-                command = item["command"]
-                address = item.get("address")
-                future = item.get("future")
-                handler = item.get("completion_handler")
+                command_item = await self._command_queue.get()
+                command = command_item["command"]
+                address = command_item.get("address")
+                future: asyncio.Future | None = command_item.get("future")
+                completion_handler: Callable[[], Awaitable[None]] | None = (
+                    command_item.get("completion_handler")
+                )
+
+                _LOGGER.debug("Dequeued command: %s", command)
+                _LOGGER.debug(
+                    "Processing command: %s with address: %s", command, address
+                )
 
                 try:
-                    if address:
-                        # Status requests or batch updates require waiting for an answer
+                    if not address:
+                        await self.send_command(command)
+                        if completion_handler and callable(completion_handler):
+                            _LOGGER.debug("Calling completion handler for command without address")
+                            res = completion_handler()
+                            if inspect.isawaitable(res):
+                                await res
+                    else:
                         result = await self.send_command_get_answer(command, address)
                         if future and not future.done():
                             future.set_result(result)
-                    else:
-                        # Fire-and-forget triggers (like button presses)
-                        await self.send_command(command)
-                    
-                    # FIXED: Check if the handler result is awaitable to avoid NoneType errors
-                    if handler is not None:
-                        res = handler()
-                        if inspect.isawaitable(res):
-                            await res
-
+                        if completion_handler and callable(completion_handler):
+                            _LOGGER.debug("Calling completion handler")
+                            res = completion_handler()
+                            if inspect.isawaitable(res):
+                                await res
                 except Exception as err:
-                    _LOGGER.error("Command failed: %s | Error: %s", command, err)
+                    _LOGGER.error(
+                        "Error processing command %s: %s", command, err, exc_info=True
+                    )
                     if future and not future.done():
                         future.set_exception(err)
                 finally:
                     self._command_queue.task_done()
 
                 await asyncio.sleep(COMMAND_EXECUTION_DELAY)
+            except Exception as err:
+                _LOGGER.error(
+                    "Error in command processing loop: %s", err, exc_info=True
+                )
 
-            except Exception as loop_err:
-                _LOGGER.error("Critical error in command loop: %s", loop_err)
+    async def get_output_state(self, address: str, group: int) -> str:
+        """Get the output state of a module."""
+        _LOGGER.debug("Getting output state - Address: %s, Group: %s", address, group)
+        command_code = 0x12 if int(group) == 1 else 0x17
+        command = make_pc_link_command(command_code, address)
+        future = self._coordinator.hass.loop.create_future()
+        await self.queue_command(command, address, future=future)
+        return await asyncio.wait_for(future, timeout=COMMAND_ACK_WAIT_TIMEOUT)
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
-        """Sends hex packet and waits for ACK and Status Answer."""
-        swapped_addr = f"{address[2:]}{address[:2]}"
-        prefix = "$0EFF" if command.startswith("$1E") else "$1C"
-        wait_ack = f"$05{command[3:5]}"
-        wait_answer = f"{prefix}{swapped_addr}"
+        """Send a command and wait for an answer from the Nikobus system."""
+        _LOGGER.debug(
+            "Sending command %s to address %s, waiting for answer", command, address
+        )
+        wait_ack, wait_answer = self._prepare_ack_and_answer_signals(command, address)
+        state = await self._wait_for_ack_and_answer(command, wait_ack, wait_answer)
+        if state is None:
+            raise NikobusTimeoutError(
+                f"Failed to receive state for command '{command}' after {MAX_ATTEMPTS} attempts."
+            )
+        return state
 
-        self._drain_queue()
-        
+    def _prepare_ack_and_answer_signals(
+        self, command: str, address: str
+    ) -> tuple[str, str]:
+        """
+        Prepare the acknowledgment and answer signals based on the command prefix.
+        For example, command "$1E..." produces ACK="$05XX" and answer signal using a mapped prefix.
+        """
+        command_prefix = command[:3]
+        command_part = command[3:5]
+        ack_signal = f"$05{command_part}"
+
+        prefix_mapping = {
+            "$1E": "$0EFF",
+            "$05": "$1C",
+            "$10": "$1C",
+        }
+        answer_prefix = prefix_mapping.get(command_prefix, "$1C")
+        answer_signal = f"{answer_prefix}{address[2:]}{address[:2]}"
+
+        _LOGGER.debug(
+            "Prepared signals: ACK=%s, ANSWER=%s, COMMAND=%s, ADDRESS=%s",
+            ack_signal,
+            answer_signal,
+            command,
+            address,
+        )
+        return ack_signal, answer_signal
+
+    async def _wait_for_ack_and_answer(
+        self, command: str, wait_ack: str, wait_answer: str
+    ) -> str:
+        """Wait for an acknowledgment and answer from the Nikobus system with retries."""
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 await self.nikobus_connection.send(command)
-                _LOGGER.debug("[%d/%d] Waiting for ACK %s and Answer %s", attempt, MAX_ATTEMPTS, wait_ack, wait_answer)
-                
-                state = await self._wait_for_response(wait_ack, wait_answer)
-                if state:
+                _LOGGER.debug(
+                    "Attempt %d/%d waiting for ACK: %s, ANSWER: %s",
+                    attempt,
+                    MAX_ATTEMPTS,
+                    wait_ack,
+                    wait_answer,
+                )
+                state = await self._wait_for_ack_and_answer_state(wait_ack, wait_answer)
+                if state is not None:
+                    _LOGGER.debug("Received valid state from device.")
                     return state
-            except (NikobusSendError, NikobusTimeoutError):
+            except (NikobusSendError, NikobusTimeoutError) as err:
+                _LOGGER.warning("Attempt %d error: %s", attempt, err, exc_info=True)
                 if attempt == MAX_ATTEMPTS:
                     raise
-                _LOGGER.warning("Bus busy (Attempt %d). Retrying...", attempt)
+            except Exception as err:
+                _LOGGER.error(
+                    "Unhandled exception on attempt %d: %s", attempt, err, exc_info=True
+                )
+                if attempt == MAX_ATTEMPTS:
+                    raise NikobusError(f"Unhandled exception: {err}") from err
+        raise NikobusTimeoutError(
+            f"Failed to receive ACK and state for command '{command}' after {MAX_ATTEMPTS} attempts."
+        )
+
+    async def _wait_for_ack_and_answer_state(
+        self, wait_ack: str, wait_answer: str
+    ) -> str | None:
+        """Wait for both acknowledgment and answer signals, then extract the state."""
+        ack_received = False
+        answer_received = False
+        state: str | None = None
+        loop = self._coordinator.hass.loop
+        end_time = loop.time() + COMMAND_ACK_WAIT_TIMEOUT
+
+        while loop.time() < end_time:
+            try:
+                remaining = end_time - loop.time()
+                message = await asyncio.wait_for(
+                    self.nikobus_listener.response_queue.get(),
+                    timeout=min(COMMAND_ANSWER_WAIT_TIMEOUT, remaining),
+                )
+                _LOGGER.debug("Message received: %s", message)
+                if wait_ack in message:
+                    _LOGGER.debug("ACK received")
+                    ack_received = True
+                if wait_answer in message:
+                    _LOGGER.debug("Answer received")
+                    state = self._parse_state_from_message(message, wait_answer)
+                    answer_received = True
+                if ack_received and answer_received:
+                    return state
+            except asyncio.TimeoutError:
+                _LOGGER.debug("Timeout while waiting for ACK/Answer")
+                break
+            except Exception as err:
+                _LOGGER.error(
+                    "Error while waiting for messages: %s", err, exc_info=True
+                )
+                raise NikobusError(f"Error while waiting for messages: {err}") from err
+
+        return None
+
+    def _parse_state_from_message(self, message: str, answer_signal: str) -> str:
+        """Parse and return the state from a received message."""
+        state_index = message.find(answer_signal) + len(answer_signal) + 2
+        return message[state_index : state_index + 12]
+
+    async def set_output_state(
+        self,
+        address: str,
+        channel: int,
+        value: int,
+        completion_handler: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        """Constructs a group command to set a single channel, batching rapid requests from HomeKit."""
+        _LOGGER.debug(
+            "Setting output state - Address: %s, Channel: %d, Value: %d",
+            address, channel, value
+        )
+        group = calculate_group_number(channel)
         
-        raise NikobusTimeoutError(f"No response for {command} after max retries.")
+        # 1. Immediately update the coordinator's memory to fix the Race Condition
+        current_bytes = self._coordinator.get_bytearray_group_state(address, group)
+        current_bytes[(channel - 1) % 6] = value
+        
+        # 2. Setup caching for the debouncer
+        cache_key = f"{address}_{group}"
+        
+        if not hasattr(self, "_batch_tasks"):
+            self._batch_tasks = {}
+            self._batch_handlers = {}
+            
+        # Accumulate HA completion handlers so the UI updates for all covers simultaneously
+        if cache_key not in self._batch_handlers:
+            self._batch_handlers[cache_key] = []
+        if completion_handler:
+            self._batch_handlers[cache_key].append(completion_handler)
+            
+        # 3. If a command is already waiting to be sent to this module, cancel it to extend the wait timer
+        if cache_key in self._batch_tasks:
+            self._batch_tasks[cache_key].cancel()
 
-    async def _wait_for_response(self, wait_ack: str, wait_answer: str) -> str | None:
-        """Monitor the listener queue for specific hex patterns using native asyncio timeouts."""
-        async def _get_message():
-            while True:
-                msg = await self.nikobus_listener.response_queue.get()
-                if wait_answer in msg:
-                    idx = msg.find(wait_answer) + len(wait_answer) + 2
-                    return msg[idx : idx + 12]
+        async def _commit_task():
+            try:
+                # Wait 400ms to catch all simultaneous commands from the HomeKit avalanche
+                await asyncio.sleep(0.4)
+                
+                # Grab the handlers and clear the list for next time
+                handlers = self._batch_handlers.pop(cache_key, [])
+                
+                # Fetch the final unified state of all covers (e.g. ON, ON, ON)
+                final_bytes = self._coordinator.get_bytearray_group_state(address, group)
+                cmd_code = 0x15 if group == 1 else 0x16
+                payload = final_bytes[:6] + bytearray([0xFF])
+                
+                # Construct ONE command with all channels updated at once
+                command = make_pc_link_command(cmd_code, address, payload)
+                
+                # Wrap all the accumulated UI updates into one function
+                async def _run_handlers():
+                    for h in handlers:
+                        res = h()
+                        if inspect.isawaitable(res):
+                            await res
+                            
+                # Put this SINGLE master command onto your existing Queue
+                await self.queue_command(command, address, completion_handler=_run_handlers)
+                _LOGGER.debug("Batched command successfully queued for module %s.", address)
+                
+            except asyncio.CancelledError:
+                # A newer command came in from the avalanche; this timer is silently cancelled
+                pass
+            finally:
+                # Clean up the task registry
+                if self._batch_tasks.get(cache_key) == asyncio.current_task():
+                    self._batch_tasks.pop(cache_key, None)
 
-        try:
-            return await asyncio.wait_for(_get_message(), timeout=1.0)
-        except asyncio.TimeoutError:
-            return None
+        # 4. Schedule the batched commit
+        self._batch_tasks[cache_key] = self._coordinator.hass.loop.create_task(_commit_task())
+
+    async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
+        """Prepare the bytearray values for a command using the latest coordinator state."""
+        return self._coordinator.get_bytearray_group_state(address, group)[
+            :6
+        ] + bytearray([0xFF])
 
     async def queue_command(
         self,
         command: str,
         address: str | None = None,
-        future: asyncio.Future | None = None,
-        completion_handler: Callable | None = None,
+        future: asyncio.Future[str] | None = None,
+        completion_handler: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
-        """Public method to add a command to the bus queue."""
-        await self._command_queue.put({
+        """Queue a command for processing."""
+        _LOGGER.debug("Queueing command: %s", command)
+        command_item = {
             "command": command,
             "address": address,
             "future": future,
             "completion_handler": completion_handler,
-        })
+        }
+        await self._command_queue.put(command_item)
+        _LOGGER.debug("Command queued: %s", command)
 
     async def send_command(self, command: str) -> None:
-        """Low-level direct send."""
+        """Send a command to the Nikobus system."""
+        _LOGGER.debug("Sending command: %s", command)
         try:
             await self.nikobus_connection.send(command)
-        except Exception as err:
-            raise NikobusSendError(f"Direct send failed: {err}")
-
-    async def set_output_state(self, address: str, channel: int, value: int, completion_handler: Callable | None = None) -> None:
-        """Constructs a group command to set a single channel."""
-        group = calculate_group_number(channel)
-        cmd_code = 0x15 if group == 1 else 0x16
-
-        current_bytes = self._coordinator.get_bytearray_group_state(address, group)
-        current_bytes[(channel - 1) % 6] = value
-        
-        payload = current_bytes[:6] + bytearray([0xFF])
-        command = make_pc_link_command(cmd_code, address, payload)
-        
-        await self.queue_command(command, address, completion_handler=completion_handler)
+        except NikobusError as err:
+            _LOGGER.error("Failed to send command %s: %s", command, err, exc_info=True)
+            raise
 
     async def set_output_states(
         self,
         address: str,
         completion_handler: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
-        """Sets all 6 (or 12) output states for a module at once."""
-        _LOGGER.debug("Batch update for module %s", address)
-        
-        # Group 1 (Channels 1-6)
+        """Prepare and queue the output states for a module."""
+        _LOGGER.debug("Preparing to set output states for module %s", address)
         channel_states = self.nikobus_module_states[address][:6] + bytearray([0xFF])
         await self.queue_command(
             make_pc_link_command(0x15, address, channel_states),
@@ -187,20 +362,13 @@ class NikobusCommandHandler:
             completion_handler=completion_handler,
         )
 
-        # Group 2 (Channels 7-12) if it exists
+        # If the module has more than 6 channels, send a second group command.
         if self._coordinator.get_module_channel_count(address) > 6:
-            channel_states = self.nikobus_module_states[address][6:12] + bytearray([0xFF])
+            channel_states = self.nikobus_module_states[address][6:12] + bytearray(
+                [0xFF]
+            )
             await self.queue_command(
                 make_pc_link_command(0x16, address, channel_states),
                 address,
                 completion_handler=completion_handler,
             )
-
-    async def get_output_state(self, address: str, group: int | str) -> str:
-        """Queues a status request for a specific group (1 or 2)."""
-        cmd_code = 0x12 if int(group) == 1 else 0x17
-        command = make_pc_link_command(cmd_code, address)
-        
-        future = self._coordinator.hass.loop.create_future()
-        await self.queue_command(command, address, future=future)
-        return await asyncio.wait_for(future, timeout=15.0)
