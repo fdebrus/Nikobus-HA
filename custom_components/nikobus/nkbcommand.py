@@ -171,6 +171,15 @@ class NikobusCommandHandler:
         self, command: str, wait_ack: str, wait_answer: str
     ) -> str:
         """Wait for an acknowledgment and answer from the Nikobus system with retries."""
+        
+        # Flush the listener queue of old stale messages before sending
+        while not self.nikobus_listener.response_queue.empty():
+            try:
+                self.nikobus_listener.response_queue.get_nowait()
+                self.nikobus_listener.response_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
+
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 await self.nikobus_connection.send(command)
@@ -249,71 +258,32 @@ class NikobusCommandHandler:
         value: int,
         completion_handler: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
-        """Constructs a group command to set a single channel, batching rapid requests from HomeKit."""
+        """Sets a single channel state and queues the command instantly."""
         _LOGGER.debug(
             "Setting output state - Address: %s, Channel: %d, Value: %d",
             address, channel, value
         )
         group = calculate_group_number(channel)
         
-        # 1. Immediately update the coordinator's memory to fix the Race Condition
+        # 1. Update the coordinator's memory synchronously.
+        # This ensures that if Siri fires 5 commands in 5 milliseconds, 
+        # each subsequent command inherently includes the state of the previous ones.
         current_bytes = self._coordinator.get_bytearray_group_state(address, group)
         current_bytes[(channel - 1) % 6] = value
         
-        # 2. Setup caching for the debouncer
-        cache_key = f"{address}_{group}"
+        # 2. Build the payload using this newly updated state
+        cmd_code = 0x15 if group == 1 else 0x16
+        payload = current_bytes[:6] + bytearray([0xFF])
         
-        if not hasattr(self, "_batch_tasks"):
-            self._batch_tasks = {}
-            self._batch_handlers = {}
-            
-        # Accumulate HA completion handlers so the UI updates for all covers simultaneously
-        if cache_key not in self._batch_handlers:
-            self._batch_handlers[cache_key] = []
-        if completion_handler:
-            self._batch_handlers[cache_key].append(completion_handler)
-            
-        # 3. If a command is already waiting to be sent to this module, cancel it to extend the wait timer
-        if cache_key in self._batch_tasks:
-            self._batch_tasks[cache_key].cancel()
-
-        async def _commit_task():
-            try:
-                # Wait 400ms to catch all simultaneous commands from the HomeKit avalanche
-                await asyncio.sleep(0.4)
-                
-                # Grab the handlers and clear the list for next time
-                handlers = self._batch_handlers.pop(cache_key, [])
-                
-                # Fetch the final unified state of all covers (e.g. ON, ON, ON)
-                final_bytes = self._coordinator.get_bytearray_group_state(address, group)
-                cmd_code = 0x15 if group == 1 else 0x16
-                payload = final_bytes[:6] + bytearray([0xFF])
-                
-                # Construct ONE command with all channels updated at once
-                command = make_pc_link_command(cmd_code, address, payload)
-                
-                # Wrap all the accumulated UI updates into one function
-                async def _run_handlers():
-                    for h in handlers:
-                        res = h()
-                        if inspect.isawaitable(res):
-                            await res
-                            
-                # Put this SINGLE master command onto your existing Queue
-                await self.queue_command(command, address, completion_handler=_run_handlers)
-                _LOGGER.debug("Batched command successfully queued for module %s.", address)
-                
-            except asyncio.CancelledError:
-                # A newer command came in from the avalanche; this timer is silently cancelled
-                pass
-            finally:
-                # Clean up the task registry
-                if self._batch_tasks.get(cache_key) == asyncio.current_task():
-                    self._batch_tasks.pop(cache_key, None)
-
-        # 4. Schedule the batched commit
-        self._batch_tasks[cache_key] = self._coordinator.hass.loop.create_task(_commit_task())
+        # 3. Bake the final string command immediately
+        command = make_pc_link_command(cmd_code, address, payload)
+        
+        # 4. Put it in the queue. The existing `process_commands` loop will handle it
+        # and enforce the necessary pause using COMMAND_EXECUTION_DELAY.
+        await self.queue_command(
+            command, address, completion_handler=completion_handler
+        )
+        _LOGGER.debug("Command successfully queued for module %s, channel %d.", address, channel)
 
     async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
         """Prepare the bytearray values for a command using the latest coordinator state."""
