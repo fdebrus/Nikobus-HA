@@ -42,6 +42,7 @@ HUB_IDENTIFIER = "nikobus_hub"
 STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
+STATE_ERROR = 0x03  # Catches logic engine conflicts
 
 # Event Constants
 EVENT_BUTTON_OPERATION = "nikobus_button_operation"
@@ -177,10 +178,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes, merging with parent attributes."""
-        # This pulls the address and model from entity.py
         parent_attrs = super().extra_state_attributes or {}
-    
-        # This adds cover-only attributes
         return {
             **parent_attrs,
             "operation_time_up": self._calculator.time_up,
@@ -209,14 +207,20 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         """React to state changes on the Nikobus bus."""
         new_bus_state = self.coordinator.get_cover_state(self._address, self._channel)
 
-        if new_bus_state != STATE_STOPPED and self._state == STATE_STOPPED:
+        if new_bus_state == self._state:
+            super()._handle_coordinator_update()
+            return
+
+        # Handle the 0x03 Error State by aggressively stopping
+        if new_bus_state == STATE_ERROR:
+            _LOGGER.debug("Nikobus cover %s reported error state (0x03). Forcing stop to recover.", self._address)
+            self.hass.async_create_task(self._stop(send_stop=True, force_api=True))
+        elif new_bus_state == STATE_STOPPED:
+            self.hass.async_create_task(self._stop(send_stop=False))
+        else:
             direction = "opening" if new_bus_state == STATE_OPENING else "closing"
             self._movement_source = "nikobus"
             self._start_motion_logic(direction)
-
-        elif new_bus_state == STATE_STOPPED and self._state != STATE_STOPPED:
-            if self._movement_source == "nikobus":
-                self.hass.async_create_task(self._stop(send_stop=False))
 
         super()._handle_coordinator_update()
 
@@ -226,16 +230,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             return
 
         if self._state != STATE_STOPPED:
-            if self._motion_task:
-                self._motion_task.cancel()
-                self._motion_task = None
-
-            self._calculator.stop()
-            self._position = self._calculator.current_position()
-            self._state = STATE_STOPPED
-            self._target_position = None
-            self.coordinator.set_bytearray_state(self._address, self._channel, STATE_STOPPED)
-            self.async_write_ha_state()
+            # Send a stop command to the bus if HA was driving the cover
+            # This intercepts the button press and prevents the 0x03 collision
+            send_stop = (self._movement_source == "ha")
+            await self._stop(send_stop=send_stop)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open cover command."""
@@ -264,6 +262,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
     async def _request_move(self, direction: str, target: int | None = None) -> None:
         """Execute movement via the API."""
+        
+        # Motor protection & Nikobus logic sync: Stop before reversing
+        if self._state != STATE_STOPPED:
+            current_direction = "opening" if self._state == STATE_OPENING else "closing"
+            if current_direction != direction:
+                await self._stop(send_stop=True)
+                await asyncio.sleep(0.5) # Give the motor and bus time to settle
+
         self._movement_source = "ha"
         self._target_position = target
 
@@ -320,7 +326,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             return self._target_position is not None and self._position <= self._target_position
         return False
 
-    async def _stop(self, send_stop: bool = False) -> None:
+    async def _stop(self, send_stop: bool = False, force_api: bool = False) -> None:
         """Stop movement and finalize position."""
         if self._motion_task:
             self._motion_task.cancel()
@@ -329,7 +335,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._calculator.stop()
         self._position = self._calculator.current_position()
 
-        if send_stop and self._state != STATE_STOPPED:
+        if send_stop and (self._state != STATE_STOPPED or force_api):
             dir_cmd = "opening" if self._state == STATE_OPENING else "closing"
             await self.coordinator.api.stop_cover(
                 self._address, self._channel, dir_cmd, lambda: None
@@ -346,13 +352,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             return
 
         new_bus_state = self.coordinator.get_cover_state(self._address, self._channel)
-        if new_bus_state == self._state and self._state == STATE_STOPPED:
+        
+        if new_bus_state == self._state:
             return
 
         if new_bus_state in (STATE_OPENING, STATE_CLOSING):
-            if self._state == STATE_STOPPED:
-                self._movement_source = "nikobus"
-                direction = "opening" if new_bus_state == STATE_OPENING else "closing"
-                self._start_motion_logic(direction, event.data.get("button_operation_time"))
-        elif new_bus_state == STATE_STOPPED and self._state != STATE_STOPPED:
+            self._movement_source = "nikobus"
+            direction = "opening" if new_bus_state == STATE_OPENING else "closing"
+            self._start_motion_logic(direction, event.data.get("button_operation_time"))
+        elif new_bus_state == STATE_STOPPED:
             await self._stop(send_stop=False)

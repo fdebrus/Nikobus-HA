@@ -68,8 +68,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
         self.nikobus_command: NikobusCommandHandler | None = None
         self.nikobus_discovery: NikobusDiscovery | None = None
 
-        self._discovery_running = False
-        self._discovery_module = None
+        self.discovery_running = False
+        self.discovery_module = None
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
@@ -142,7 +142,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
 
     async def _async_update_data(self) -> None:
         """Refresh latest data from the Nikobus system via polling."""
-        if self._discovery_running:
+        if self.discovery_running:
             return None
 
         try:
@@ -331,7 +331,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
 
     async def _handle_discovery_finished(self) -> None:
         """Reload config entry once discovery is complete."""
-        self._discovery_running = False
+        self.discovery_running = False
         if self._reload_task and not self._reload_task.done():
             return
         async def _reload():

@@ -59,9 +59,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_module_discovery(call: ServiceCall) -> None:
         """Manually trigger device discovery via the coordinator's discovery engine."""
         module_address = (call.data.get("module_address", "") or "").strip().upper()
-        _LOGGER.info("Starting manual Nikobus discovery for: %s", module_address or "All Modules")
-        if coordinator.nikobus_discovery:
-            await coordinator.nikobus_discovery.start_discovery(module_address)
+        
+        if not module_address:
+            _LOGGER.info("Starting manual Nikobus PC-Link inventory discovery (#A)")
+            if coordinator.nikobus_discovery:
+                await coordinator.nikobus_discovery.start_inventory_discovery()
+        else:
+            _LOGGER.info("Starting manual Nikobus discovery for module: %s", module_address)
+            if coordinator.nikobus_discovery:
+                await coordinator.nikobus_discovery.query_module_inventory(module_address)
 
     if not hass.services.has_service(DOMAIN, "query_module_inventory"):
         hass.services.async_register(

@@ -12,7 +12,7 @@ from .const import (
     COMMAND_PROCESSED,
     CONF_HAS_FEEDBACK_MODULE,
     DEVICE_ADDRESS_INVENTORY,
-    DEVICE_INVENTORY,
+    DEVICE_INVENTORY_ANSWER,
     FEEDBACK_MODULE_ANSWER,
     FEEDBACK_REFRESH_COMMAND,
     MANUAL_REFRESH_COMMAND,
@@ -136,7 +136,7 @@ class NikobusEventListener:
                     await self.response_queue.put(message)
                 return
         else:
-            if any(message.startswith(inv) for inv in DEVICE_INVENTORY):
+            if any(message.startswith(inv) for inv in DEVICE_INVENTORY_ANSWER):
                 await self._handle_discovery_frame(message)
                 return
 

@@ -62,7 +62,7 @@ FEEDBACK_MODULE_ANSWER: Final[str] = "$1C"
 MANUAL_REFRESH_COMMAND: Final[tuple[str, str]] = ("$0512", "$0517")
 COMMAND_PROCESSED: Final[tuple[str, str]] = ("$0515", "$0516")
 DEVICE_ADDRESS_INVENTORY: Final[str] = "$18"
-DEVICE_INVENTORY: Final[tuple[str, str]] = ("$0510$2E", "$0522$1E")
+DEVICE_INVENTORY_ANSWER: Final[tuple[str, str]] = ("$2E", "$1E")
 
 # =============================================================================
 # Command Execution
