@@ -247,7 +247,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
         # Targeted update for the specific module address using Dispatcher
         if address := data.get("impacted_module_address"):
             signal = f"{DOMAIN}_update_{address}"
-            _LOGGER.debug("Targeted update signal sent for module: %s", address)
             async_dispatcher_send(self.hass, signal)
         else:
             # Broadcast to everyone as a fallback
