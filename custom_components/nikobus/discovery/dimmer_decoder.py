@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..const import DEVICE_INVENTORY
 from .base import DecodedCommand
 from .mapping import DIMMER_MODE_MAPPING
 from .protocol import (

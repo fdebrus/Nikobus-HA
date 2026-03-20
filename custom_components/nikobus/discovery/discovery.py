@@ -13,7 +13,7 @@ from .mapping import (
     get_module_type_from_device_type,
 )
 from .protocol import classify_device_type, convert_nikobus_address, reverse_hex
-from ..const import DEVICE_ADDRESS_INVENTORY, DEVICE_INVENTORY
+from ..const import DEVICE_ADDRESS_INVENTORY, DEVICE_INVENTORY_ANSWER
 from .fileio import merge_discovered_links, update_button_data, update_module_data
 from ..nkbprotocol import make_pc_link_inventory_command
 from homeassistant.util import dt as dt_util
@@ -303,12 +303,14 @@ class NikobusDiscovery:
 
     def _cancel_timeout(self) -> None:
         if self._timeout_task:
-            self._timeout_task.cancel()
+            if asyncio.current_task() is not self._timeout_task:
+                self._timeout_task.cancel()
             self._timeout_task = None
 
     def _cancel_inventory_timeout(self) -> None:
         if self._inventory_timeout_task:
-            self._inventory_timeout_task.cancel()
+            if asyncio.current_task() is not self._inventory_timeout_task:
+                self._inventory_timeout_task.cancel()
             self._inventory_timeout_task = None
 
     def _schedule_timeout(self) -> None:
@@ -325,7 +327,7 @@ class NikobusDiscovery:
         )
 
     def _is_pc_link_inventory_terminator(self, converted_address: str, data_bytes: bytes) -> bool:
-        return converted_address == "FFFFFF" or all(b == 0xFF for b in data_bytes)
+        return converted_address == "FFFFFF" or (bool(data_bytes) and all(b == 0xFF for b in data_bytes))
 
     async def _timeout_after(self, module_address: str | None) -> None:
         try:
@@ -339,7 +341,12 @@ class NikobusDiscovery:
             await asyncio.sleep(self._inventory_timeout_seconds)
         except asyncio.CancelledError:
             return
-        await self._finalize_inventory_phase()
+        
+        try:
+            await self._finalize_inventory_phase()
+        except Exception as err:
+            _LOGGER.error("CRITICAL ERROR in _finalize_inventory_phase: %s", err, exc_info=True)
+            self.reset_state()
 
     def _reset_module_context(self) -> None:
         self._payload_buffer = ""
@@ -359,49 +366,59 @@ class NikobusDiscovery:
         self._reset_module_context()
 
         if self.discovery_stage == "register_scan" and self._register_scan_queue:
+            # Let the bus breathe before scanning the next module
+            await asyncio.sleep(1.0)
             await self._start_next_register_scan()
             return
 
         await self._complete_discovery_run(resolved_address)
 
     async def _finalize_inventory_phase(self) -> None:
-        """Finalize the PC-Link inventory phase.
-
-        Notes:
-        - If we are still in the inventory address collection stage, queue identity/register
-            queries and return (normal staged workflow).
-        - Once inventory is complete, persist discovered inventory into:
-            * nikobus_module_config.json
-            * nikobus_button_config.json
-        - Do NOT automatically start module discovery / relationship dump (register_scan).
-            That must remain a manual process.
-        """
+        """Finalize the PC-Link inventory phase."""
         self._cancel_inventory_timeout()
+        _LOGGER.debug("Entering _finalize_inventory_phase. Stage: %s", self.discovery_stage)
 
         # Stage 1: we have inventory addresses but haven't queued identity/register queries yet
         if self.discovery_stage == "inventory_addresses" and self._inventory_addresses:
             pending_addresses = self._inventory_addresses - self._inventory_identity_queued
             if pending_addresses:
+                _LOGGER.debug("Found pending inventory addresses, queuing identity queries.")
                 await self._run_inventory_identity_queries(pending_addresses)
                 self._inventory_identity_queued.update(pending_addresses)
-
-            self.discovery_stage = "inventory_identity"
-            self._schedule_inventory_timeout()
-            return
+                self.discovery_stage = "inventory_identity"
+                self._schedule_inventory_timeout()
+                return
+            else:
+                _LOGGER.debug("No pending inventory addresses. Moving directly to Stage 2.")
+                self.discovery_stage = "inventory_identity"
 
         # Stage 2: inventory complete -> persist results
-        await update_module_data(self._hass, self.discovered_devices)
-        await update_button_data(
-            self._hass,
-            self.discovered_devices,
-            KEY_MAPPING,
-            convert_nikobus_address,
-        )
+        _LOGGER.debug("Starting file IO updates for module and button data.")
+        try:
+            await update_module_data(self._hass, self.discovered_devices)
+            _LOGGER.debug("Finished update_module_data.")
+            await update_button_data(
+                self._hass,
+                self.discovered_devices,
+                KEY_MAPPING,
+                convert_nikobus_address,
+            )
+            _LOGGER.debug("Finished update_button_data.")
+        except Exception as io_err:
+            _LOGGER.error("File IO error during inventory finalization: %s", io_err, exc_info=True)
+            raise io_err
 
         _LOGGER.info(
             "PC Link inventory scan finished | discovered=%d",
             len(self.discovered_devices),
         )
+        
+        import json
+        _LOGGER.debug(
+            "DUMP OF DISCOVERED DEVICES:\n%s",
+            json.dumps(self.discovered_devices, indent=2)
+        )
+
         _LOGGER.info(
             "PC Link inventory phase completed. Module discovery is manual; stopping here."
         )
@@ -437,6 +454,7 @@ class NikobusDiscovery:
 
     async def _start_next_register_scan(self) -> None:
         if not self._register_scan_queue:
+            _LOGGER.info("All modules in queue have been scanned.")
             await self._complete_discovery_run(None)
             return
 
@@ -444,7 +462,12 @@ class NikobusDiscovery:
         normalized_address = self.normalize_module_address(
             next_module, source="register_scan_queue"
         )
-        _LOGGER.info("Discovery started | module=%s", normalized_address)
+        _LOGGER.info(
+            "Discovery started | module=%s (Remaining in queue: %d)", 
+            normalized_address, 
+            len(self._register_scan_queue)
+        )
+        self._coordinator.discovery_running = True
         self._coordinator.discovery_module = True
         self._coordinator.discovery_module_address = normalized_address
         await self.query_module_inventory(normalized_address, from_queue=True)
@@ -586,16 +609,23 @@ class NikobusDiscovery:
 
     async def query_module_inventory(self, device_address, *, from_queue: bool = False):
         if device_address == "ALL":
-            all_addresses = self._coordinator.get_all_module_addresses()
-            for addr in all_addresses:
-                _LOGGER.info("Discovery started | module=%s", addr)
-                self._coordinator.discovery_running = True
-                self._coordinator.discovery_module = True
-                self._coordinator.discovery_module_address = addr
-                await self.query_module_inventory(addr, from_queue=True)
-                while self._coordinator.discovery_module:
-                    await asyncio.sleep(0.5)
-            self.reset_state()
+            all_addresses = []
+            dict_data = getattr(self._coordinator, "dict_module_data", {})
+            for module_type, modules in dict_data.items():
+                if module_type not in ("pc_link", "pc_logic", "feedback_module", "other_module"):
+                    for module in modules:
+                        if "address" in module:
+                            all_addresses.append(module["address"])
+            
+            if not all_addresses:
+                _LOGGER.warning("No output modules found in config to scan.")
+                self.reset_state()
+                return
+
+            _LOGGER.info("Starting sequential discovery queue for ALL output modules: %s", all_addresses)
+            self.discovery_stage = "register_scan"
+            self._register_scan_queue = all_addresses
+            await self._start_next_register_scan()
             return
 
         normalized_address = self.normalize_module_address(
@@ -670,10 +700,20 @@ class NikobusDiscovery:
                 payload = payload.split("$")[-1]
             payload = payload.lstrip("$")
             payload_bytes = bytes.fromhex(payload)
-            data_bytes = payload_bytes[2:18] if len(payload_bytes) >= 18 else payload_bytes[2:]
+            
+            # --- FIX 1: The data payload starts at byte 3 ---
+            data_bytes = payload_bytes[3:19] if len(payload_bytes) >= 19 else payload_bytes[3:]
+
+            self._schedule_inventory_timeout()
+
+            # --- FIX 2: Just skip the empty register, DO NOT abort the scan! ---
+            if self._is_pc_link_inventory_terminator("", data_bytes):
+                _LOGGER.debug(
+                    "Empty PC Link registry block (FFFF...) detected. Skipping to next."
+                )
+                return result
 
             device_type_hex = f"{payload_bytes[7]:02X}"
-            self._schedule_inventory_timeout()
 
             if device_type_hex == "FF":
                 _LOGGER.debug(
@@ -694,20 +734,16 @@ class NikobusDiscovery:
                 source="device_address_inventory",
                 reverse_bus_order=True,
             )
-            if self._is_pc_link_inventory_terminator(converted_address, data_bytes):
-                _LOGGER.info(
-                    "PC Link inventory terminator received (FFFF...). Stopping inventory enumeration."
+
+            # --- FIX: Skip deleted or uninitialized memory slots ---
+            if converted_address in ("FFFF", "FFFFFF"):
+                _LOGGER.debug(
+                    "Discovery skipped | reason=deleted_or_empty_address address=%s type=%s",
+                    converted_address,
+                    device_type_hex
                 )
-                self._pc_link_inventory_terminated = True
-
-                if hasattr(self._coordinator.nikobus_command, "clear_command_queue"):
-                    await self._coordinator.nikobus_command.clear_command_queue()
-
-                self._cancel_inventory_timeout()
-
-                self.discovery_stage = "inventory_identity"
-                await self._finalize_inventory_phase()
                 return result
+            # -------------------------------------------------------
 
             if device_info.get("Category", "Unknown") == "Unknown":
                 _LOGGER.warning(
@@ -744,7 +780,8 @@ class NikobusDiscovery:
             else:
                 result.modules.append(device_entry)
 
-            self._coordinator.apply_inventory_update(result, self.discovered_devices)
+            # Store device directly
+            self.discovered_devices[converted_address] = device_entry
 
             _LOGGER.debug(
                 "Inventory classification | module_address=%s device_type=%s model=%s channels=%s",
@@ -768,9 +805,15 @@ class NikobusDiscovery:
             return None
 
     async def parse_module_inventory_response(self, message):
+        # --- Route PC-Link frames to the correct parser ---
+        if self._coordinator.inventory_query_type == InventoryQueryType.PC_LINK:
+            await self.parse_inventory_response(message)
+            return
+        # --------------------------------------------------
+
         try:
             matched_header = next(
-                (h for h in DEVICE_INVENTORY if message.startswith(h)), None
+                (h for h in DEVICE_INVENTORY_ANSWER if message.startswith(h)), None
             )
             if not matched_header:
                 return
@@ -830,7 +873,6 @@ class NikobusDiscovery:
             self._payload_buffer = analysis["remainder"]
 
             decoded_commands: list[DecodedCommand] = []
-            terminator_seen = False
             for chunk in analysis["chunks"]:
                 normalized_chunk = chunk.strip().upper()
                 if not normalized_chunk:
@@ -841,13 +883,14 @@ class NikobusDiscovery:
                     normalized_chunk,
                 )
                 if normalized_chunk == "FFFFFFFFFFFF":
-                    terminator_seen = True
                     _LOGGER.debug(
-                        "Discovery relationship terminator detected | module=%s chunk=%s",
+                        "Discovery relationship empty chunk detected | module=%s chunk=%s",
                         address,
                         normalized_chunk,
                     )
+                    # Just skip the empty chunk, do NOT abort the scan!
                     continue
+                    
                 decoded_commands.extend(
                     decoder.decode(normalized_chunk, module_address=address)
                 )
@@ -855,14 +898,8 @@ class NikobusDiscovery:
             if decoded_commands:
                 await self._handle_decoded_commands(address, decoded_commands)
 
-            completion_detected = False
-            if terminator_seen and not self._payload_buffer:
-                completion_detected = True
-
+            # --- FIX: Never abort early. Let the 5-second inactivity timeout finalize the scan ---
             if not self._coordinator.discovery_module:
-                completion_detected = True
-
-            if completion_detected:
                 await self._finalize_discovery(address)
             else:
                 self._schedule_timeout()

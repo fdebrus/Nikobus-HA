@@ -22,10 +22,10 @@ DESCRIPTION_PREFIX = {
     "switch_module": "switch_module_s",
     "dimmer_module": "dimmer_module_d",
     "roller_module": "roller_module_r",
-    "pc_link": "pc_link_pcl",
-    "pc_logic": "pc_logic_log",
-    "feedback_module": "feedback_module_fb",
-    "other_module": "other_module_oth",
+    "pc_link": "pc_link_",
+    "pc_logic": "pc_logic_",
+    "feedback_module": "feedback_module_",
+    "other_module": "other_module_",
 }
 
 
@@ -41,9 +41,9 @@ def _inline_channels(json_text: str) -> str:
             return False
 
         inner = block_lines[1:-1]
-        if len(inner) > 2:
-            return False
-
+        
+        # We removed the length restriction here so that objects with 
+        # multiple keys (like shutters) still inline perfectly!
         return not any("{" in line or "}" in line for line in inner)
 
     lines = json_text.splitlines()
@@ -156,7 +156,7 @@ async def update_module_data(hass, discovered_devices):
     def _default_channel(module_type: str, index: int) -> dict:
         channel = {"description": f"not_in_use output_{index}"}
         if module_type == "roller_module":
-            channel["operation_time"] = "60"
+            channel["operation_time_up"] = "30"
         return channel
 
     def _sanitize_channel(module_type: str, channel: dict, index: int) -> dict:
@@ -166,12 +166,12 @@ async def update_module_data(hass, discovered_devices):
         # Normalize / guarantee description
         sanitized["description"] = (sanitized.get("description") or "").strip()
 
-        # Normalize / guarantee operation_time only for roller_module
+        # Normalize / guarantee operation_time_up only for roller_module
         if module_type == "roller_module":
-            op = sanitized.get("operation_time", "60")
-            sanitized["operation_time"] = str(op) if op not in (None, "") else "60"
+            op = sanitized.get("operation_time_up", "30")
+            sanitized["operation_time_up"] = str(op) if op not in (None, "") else "60"
         else:
-            # If other module types accidentally carry operation_time, keep it or drop it:
+            # If other module types accidentally carry operation_time_up, keep it or drop it:
             # safest is to keep it as-is (do nothing), so we don't destroy user data.
             pass
 
@@ -192,7 +192,7 @@ async def update_module_data(hass, discovered_devices):
             else:
                 sanitized_channel = {"description": ""}
                 if module_type == "roller_module":
-                    sanitized_channel["operation_time"] = "60"
+                    sanitized_channel["operation_time_up"] = "30"
 
             sanitized_channels.append(sanitized_channel)
 
@@ -201,7 +201,8 @@ async def update_module_data(hass, discovered_devices):
     def _sanitize_discovered_info(info: dict | None) -> dict:
         info = info or {}
         sanitized: dict = {}
-        for key in ("name", "device_type", "channels_count", "last_discovered"):
+        # Removed "last_discovered" from allowed keys
+        for key in ("name", "device_type", "channels_count"):
             if key not in info:
                 continue
             value = info.get(key)
@@ -247,11 +248,13 @@ async def update_module_data(hass, discovered_devices):
             "description": description,
             "model": model,
             "address": address,
-            "discovered_info": discovered_info,
         }
 
         if channels_list:
             canonical["channels"] = channels_list
+            
+        # Append discovered_info at the bottom
+        canonical["discovered_info"] = discovered_info
 
         return canonical
 
@@ -278,15 +281,10 @@ async def update_module_data(hass, discovered_devices):
         return candidate
 
     def _refresh_discovered_info(channels_count: int, device: dict) -> dict:
-        timestamp = (
-            device.get("last_discovered")
-            or device.get("last_seen")
-            or dt_util.now().isoformat()
-        )
+        # Removed last_discovered injection
         discovery_info = {
             "name": device.get("discovered_name") or device.get("description", ""),
             "device_type": device.get("device_type"),
-            "last_discovered": timestamp,
         }
         if channels_count > 0:
             discovery_info["channels_count"] = channels_count
@@ -341,13 +339,16 @@ async def update_module_data(hass, discovered_devices):
             "description": description,
             "model": model_value,
             "address": address,
-            "discovered_info": discovered_info,
         }
 
         if channels_count > 0:
             updated_module["channels"] = _build_channels(
                 module_type, channels, channels_count
             )
+            
+        # Append discovered_info at the bottom    
+        updated_module["discovered_info"] = discovered_info
+        
         module_lookup[address] = updated_module
 
     # Rebuild inventory lists with canonical ordering and sanitization
@@ -495,7 +496,7 @@ async def merge_discovered_links(hass, command_mapping):
           Therefore we must match button entries by:
             - top-level button["address"] (legacy), OR
             - any discovered_info[].address (IR / bus identity)
-        - If a button is not found in the JSON, we auto-create a placeholder entry so links are not dropped.
+        - If a button is not found in the JSON, it is skipped to prevent ghost/garbage buttons.
     """
 
     file_path = hass.config.path("nikobus_button_config.json")
@@ -529,7 +530,7 @@ async def merge_discovered_links(hass, command_mapping):
         return mapping_key[0] if mapping_key else None, None, None
 
     def _rebuild_address_lookup() -> dict[str, dict]:
-        """Map any resolvable address to its button entry (top-level + discovered_info[].address)."""
+        """Map any resolvable address to its button entry."""
         lookup: dict[str, dict] = {}
         for button in buttons:
             if not isinstance(button, dict):
@@ -545,8 +546,21 @@ async def merge_discovered_links(hass, command_mapping):
                     if not isinstance(info, dict):
                         continue
                     di_addr = _normalize_address(info.get("address"))
-                    if di_addr:
-                        lookup.setdefault(di_addr, button)
+                    if not di_addr:
+                        continue
+                        
+                    lookup.setdefault(di_addr, button)
+                    
+                    # --- FIX: Link the secondary MAC address for 8-channel switches ---
+                    channels = info.get("channels")
+                    if channels == 8 and len(di_addr) == 6:
+                        try:
+                            base_int = int(di_addr, 16)
+                            shifted_addr = f"{(base_int + 1):06X}"
+                            lookup.setdefault(shifted_addr, button)
+                        except ValueError:
+                            pass
+                    # ------------------------------------------------------------------
 
         return lookup
 
@@ -555,38 +569,18 @@ async def merge_discovered_links(hass, command_mapping):
         normalized_address: str,
         key_raw=None,
         ir_code=None,
-    ) -> dict:
-        """Return existing button entry or create a placeholder entry for this bus address."""
+    ) -> dict | None:
+        """Return existing button entry, or drop it if it's a ghost/garbage."""
         existing = address_lookup.get(normalized_address)
         if existing:
             return existing
 
-        # Create placeholder entry so we don't drop discovered_links.
-        # Keep description deterministic and clearly auto-generated.
-        placeholder_info: dict = {
-            "type": "Discovered (links-only)",
-            "address": normalized_address,
-        }
-        # Optional metadata (kept in discovered_info, not in discovered_links)
-        if key_raw is not None:
-            placeholder_info["key_raw"] = str(key_raw)
-        if ir_code:
-            placeholder_info["ir_code"] = ir_code
-
-        new_button = {
-            "description": f"discovered_button #N{normalized_address}",
-            "address": normalized_address,
-            "impacted_module": [{"address": "", "group": ""}],
-            "discovered_info": [placeholder_info],
-            "discovered_links": [],
-        }
-
-        buttons.append(new_button)
-
-        # Make it resolvable immediately
-        address_lookup[normalized_address] = new_button
-        _LOGGER.info("Auto-created button entry for discovered address: %s", normalized_address)
-        return new_button
+        # --- FIX: Do not create phantom buttons for ghost links or garbage memory ---
+        _LOGGER.debug(
+            "Ignored ghost link or garbage memory chunk for unknown button: %s", 
+            normalized_address
+        )
+        return None
 
     address_lookup = _rebuild_address_lookup()
 
@@ -609,13 +603,17 @@ async def merge_discovered_links(hass, command_mapping):
         if not isinstance(outputs, list) or not outputs:
             continue
 
-        # IMPORTANT: if not found, create placeholder so merges don't get dropped.
+        # IMPORTANT: if not found, drop it to avoid ghost buttons.
         button_entry = _ensure_button_entry_for_address(
             address_lookup,
             normalized_address,
             key_raw=key_raw,
             ir_code=ir_code_from_key,
         )
+
+        if button_entry is None:
+            unmatched_addresses.add(normalized_address)
+            continue
 
         discovered_links = button_entry.setdefault("discovered_links", [])
         if not isinstance(discovered_links, list):
