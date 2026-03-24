@@ -217,7 +217,7 @@ Open nikobus_module_config.json and complete the module definitions.
 | Module key | Default entity_type | Allowed entity_type values | Notes |
 | --- | --- | --- | --- |
 | `switch_module` | `switch` | `switch`, `light` | Useful when you want a switch output to show up as a light. |
-| `dimmer_module` | `light` | `light` | Dimmers are always exposed as lights. |
+| `dimmer_module` | `light` | | Dimmers are always exposed as lights. |
 | `roller_module` | `cover` | `cover`, `switch`, `light` | `switch` maps to open on "on" and stop on "off". |
 
 - Prefix an unused output description with `not_in_use` to skip creating entities for it.
