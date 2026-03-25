@@ -79,7 +79,7 @@ async def async_setup_entry(
         op_time_up = float(getattr(spec, "operation_time_up", DEFAULT_COVER_OPERATION_TIME))
         
         # Get DOWN time from config, fallback to UP time if not specifically defined
-        op_time_down = float(getattr(spec, "operation_time_down", op_time_up))
+        op_time_down = float(getattr(spec, "operation_time_down", None) or op_time_up)
 
         entities.append(
             NikobusCoverEntity(
