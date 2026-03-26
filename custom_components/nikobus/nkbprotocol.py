@@ -9,16 +9,6 @@ def int_to_hex(value: int, digits: int) -> str:
 def calc_crc1(data: str) -> int:
     """Calculate CRC-16/ANSI X3.28 (CRC-16-IBM) for the given data."""
     crc = 0xFFFF
-    for j in range(len(data) // 2):
-        crc ^= int(data[j * 2 : (j + 1) * 2], 16) << 8
-        for _ in range(8):
-            crc = (crc << 1) ^ 0x1021 if (crc >> 15) & 1 else crc << 1
-    return crc & 0xFFFF
-
-
-def calc_crc1(data: str) -> int:
-    """Calculate CRC-16/ANSI X3.28 (CRC-16-IBM) using native byte conversion."""
-    crc = 0xFFFF
     for byte in bytes.fromhex(data):
         crc ^= (byte << 8)
         for _ in range(8):
