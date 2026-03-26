@@ -51,6 +51,7 @@ class NikobusActuator:
         self._debounce_time_ms = 150
         self._press_states: Dict[str, PressState] = {}
         self._last_press_context: Dict[str, Dict[str, Any]] = {}
+        self._module_refresh_tasks: Dict[str, asyncio.Task] = {}
 
     async def handle_button_press(self, address: str) -> None:
         """Handle incoming button frames with debounce and duration tracking."""
@@ -185,10 +186,6 @@ class NikobusActuator:
         
         impacted_modules = button_data.get("impacted_module", [])
         
-        # Initialize the tracker for pending refresh tasks
-        if not hasattr(self, "_module_refresh_tasks"):
-            self._module_refresh_tasks = {}
-
         _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted_modules))
 
         for module_info in impacted_modules:
