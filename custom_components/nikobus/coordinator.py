@@ -169,6 +169,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             try:
                 self.nikobus_module_states[address] = bytearray.fromhex(state_hex)
             except ValueError:
+                _LOGGER.warning(
+                    "Module %s returned invalid hex state %r — resetting to zero",
+                    address,
+                    state_hex,
+                )
                 self.nikobus_module_states[address] = bytearray(chan_count)
 
             await self.async_event_handler(
