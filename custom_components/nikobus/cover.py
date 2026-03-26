@@ -42,9 +42,11 @@ HUB_IDENTIFIER = "nikobus_hub"
 def _parse_operation_time(value: Any, fallback: float, label: str, address: str) -> float:
     """Parse and validate a cover operation time value.
 
-    Returns the parsed float if it is a positive number, otherwise logs a
-    warning and returns ``fallback``.
+    ``None`` means the field was not configured — silently returns ``fallback``.
+    Any other value that is not a positive number logs a warning before falling back.
     """
+    if value is None:
+        return fallback
     try:
         t = float(value)
         if t > 0:
@@ -98,13 +100,13 @@ async def async_setup_entry(
         )
 
         op_time_up = _parse_operation_time(
-            getattr(spec, "operation_time_up", None),
+            spec.operation_time_up,
             DEFAULT_COVER_OPERATION_TIME,
             "operation_time_up",
             spec.address,
         )
         op_time_down = _parse_operation_time(
-            getattr(spec, "operation_time_down", None),
+            spec.operation_time_down,
             op_time_up,
             "operation_time_down",
             spec.address,
