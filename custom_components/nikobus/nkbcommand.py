@@ -34,7 +34,7 @@ class NikobusCommandHandler:
         self._coordinator = coordinator
         self._running: bool = False
         self._command_task: asyncio.Task | None = None
-        self._command_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        self._command_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
         self._command_completion_handlers: dict[str, Callable[[], Awaitable[None]]] = {}
 
         self.nikobus_connection = nikobus_connection
