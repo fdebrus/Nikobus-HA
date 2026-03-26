@@ -46,7 +46,7 @@ class NikobusEventListener:
 
         self._running = False
         self._listener_task: asyncio.Task | None = None
-        self.response_queue: asyncio.Queue[str] = asyncio.Queue()
+        self.response_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
         self._frame_buffer = ""
         self._module_group = 1
         self._has_feedback_module: bool = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
@@ -116,7 +116,10 @@ class NikobusEventListener:
                     await self._actuator.handle_button_press(message[idx+2:idx+8])
 
             if any(message.startswith(cmd) for cmd in COMMAND_PROCESSED):
-                await self.response_queue.put(message)
+                try:
+                    self.response_queue.put_nowait(message)
+                except asyncio.QueueFull:
+                    _LOGGER.warning("Response queue full — dropping bus message: %s", message)
                 return
 
             if self._has_feedback_module:
@@ -128,19 +131,28 @@ class NikobusEventListener:
                     if self.validate_crc(message):
                         await self._feedback_callback(self._module_group, message)
                         # Ensure commands awaiting this answer can see it
-                        await self.response_queue.put(message)
+                        try:
+                            self.response_queue.put_nowait(message)
+                        except asyncio.QueueFull:
+                            _LOGGER.warning("Response queue full — dropping bus message: %s", message)
                     return
 
             if any(message.startswith(r) for r in MANUAL_REFRESH_COMMAND):
                 if self.validate_crc(message) and not message.startswith(BUTTON_COMMAND_PREFIX):
-                    await self.response_queue.put(message)
+                    try:
+                        self.response_queue.put_nowait(message)
+                    except asyncio.QueueFull:
+                        _LOGGER.warning("Response queue full — dropping bus message: %s", message)
                 return
         else:
             if any(message.startswith(inv) for inv in DEVICE_INVENTORY_ANSWER):
                 await self._handle_discovery_frame(message)
                 return
 
-        await self.response_queue.put(message)
+        try:
+            self.response_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            _LOGGER.warning("Response queue full — dropping bus message: %s", message)
 
     def validate_crc(self, message: str) -> bool:
         if message.count("$") > 1:

@@ -236,7 +236,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
         if address not in self.nikobus_module_states:
             return
         state = self.nikobus_module_states[address]
-        new_values = bytearray.fromhex(value)
+        try:
+            new_values = bytearray.fromhex(value)
+        except ValueError:
+            _LOGGER.warning(
+                "set_bytearray_group_state: invalid hex %r for module %s — ignoring",
+                value,
+                address,
+            )
+            return
         if int(group) == 1:
             limit = min(6, len(state))
             state[0:limit] = new_values[:limit]

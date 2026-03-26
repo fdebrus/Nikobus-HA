@@ -180,9 +180,12 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         stop_state = bytearray(state)
         for idx in indexes:
             stop_state[idx] = STATE_STOPPED
-            
+
         _LOGGER.debug("Timed stop for rollers on module %s", module_id)
-        await self._apply_module_state(module_id, stop_state)
+        try:
+            await self._apply_module_state(module_id, stop_state)
+        except Exception as err:
+            _LOGGER.error("Failed to send timed stop for module %s: %s", module_id, err)
 
     def _state_to_byte(self, module_type: str | None, state: Any) -> int | None:
         """Convert friendly state strings/values to Nikobus bytes."""
