@@ -40,16 +40,15 @@ class NikobusAPI:
         )
 
     async def _dispatch_action(
-        self, 
-        module_key: str, 
-        address: str, 
-        channel: int, 
-        target_state: int, 
-        cmd_key: str, 
+        self,
+        module_key: str,
+        address: str,
+        channel: int,
+        target_state: int,
+        cmd_key: str,
         completion_handler: Callable | None = None
     ) -> None:
         """Unified dispatcher for all module actions."""
-        self._coordinator.set_bytearray_state(address, channel, target_state)
         chan_info = self._get_channel_info(module_key, address, channel)
         bus_cmd = chan_info.get(cmd_key)
 
@@ -65,6 +64,9 @@ class NikobusAPI:
         except NikobusError as err:
             _LOGGER.error("API Action failed for %s: %s", address, err)
             raise
+
+        # Update in-memory state only after the command is successfully queued
+        self._coordinator.set_bytearray_state(address, channel, target_state)
 
     #### SWITCHES
     async def turn_on_switch(self, address: str, channel: int, completion_handler: Callable | None = None) -> None:
@@ -125,12 +127,11 @@ class NikobusAPI:
 
     async def stop_cover(self, address: str, channel: int, direction: str, completion_handler: Callable | None = None) -> None:
         """Stop cover movement."""
-        self._coordinator.set_bytearray_state(address, channel, STATE_OFF)
         chan_info = self._get_channel_info("roller_module", address, channel)
-        
+
         # Decide which stop command to send based on current direction
         cmd_key = "led_on" if direction == "opening" else "led_off"
-        
+
         try:
             if bus_cmd := chan_info.get(cmd_key):
                 await self._send_bus_command(bus_cmd, completion_handler)
@@ -139,6 +140,9 @@ class NikobusAPI:
         except NikobusError as err:
             _LOGGER.error("API Cover Action failed for %s: %s", address, err)
             raise
+
+        # Update in-memory state only after the command is successfully queued
+        self._coordinator.set_bytearray_state(address, channel, STATE_OFF)
 
     async def set_output_states_for_module(self, address: str, completion_handler: Callable | None = None) -> None:
         """Batch update all output states for a specific module."""
