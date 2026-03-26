@@ -417,7 +417,7 @@ async def update_button_data(hass, discovered_devices, key_mapping, convert_niko
         for idx, key in enumerate(keys, start=1):
             if key in mapping:
                 add_value = int(mapping[key], 16)
-                new_nibble_value = original_nibble + add_value
+                new_nibble_value = (original_nibble + add_value) & 0xF
                 new_nibble_hex = f"{new_nibble_value:X}"
                 updated_addr = new_nibble_hex + converted_address[1:]
                 channels_data[f"channel_{idx}"] = {

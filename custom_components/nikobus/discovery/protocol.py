@@ -150,7 +150,7 @@ def get_push_button_address(
     except Exception:
         return None, button_address
 
-    new_nibble_value = original_nibble + add_value
+    new_nibble_value = (original_nibble + add_value) & 0xF
     new_nibble_hex = f"{new_nibble_value:X}"
     final_push_button_address = new_nibble_hex + push_button_address[1:]
 

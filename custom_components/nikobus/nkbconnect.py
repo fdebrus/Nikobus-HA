@@ -135,8 +135,8 @@ class NikobusConnect:
             data = await self._reader.readuntil(b'\r')
             return data
         except asyncio.LimitOverrunError:
-            # Buffer full, read whatever is there to clear it
-            await self._reader.read(1024)
+            _LOGGER.error("Read buffer overrun — disconnecting")
+            await self.disconnect()
             raise NikobusReadError("Buffer overrun")
         except (OSError, asyncio.IncompleteReadError) as err:
             _LOGGER.error("Read failed: %s", err)
