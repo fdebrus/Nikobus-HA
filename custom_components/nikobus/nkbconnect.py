@@ -56,7 +56,7 @@ class NikobusConnect:
             try:
                 await self._handshake()
             except Exception:
-                self._is_connected = False
+                await self.disconnect()
                 raise
 
         except (OSError, asyncio.TimeoutError) as err:
