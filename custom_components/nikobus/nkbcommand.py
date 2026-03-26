@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from typing import Any, Callable, Awaitable
+from typing import TYPE_CHECKING, Any, Callable, Awaitable
+
+from homeassistant.core import HomeAssistant
 
 from .nkbprotocol import make_pc_link_command, calculate_group_number
 from .const import (
@@ -16,6 +18,11 @@ from .const import (
 )
 from .exceptions import NikobusError, NikobusSendError, NikobusTimeoutError
 
+if TYPE_CHECKING:
+    from .nkbconnect import NikobusConnect
+    from .nkblistener import NikobusEventListener
+    from .coordinator import NikobusDataCoordinator
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -24,10 +31,10 @@ class NikobusCommandHandler:
 
     def __init__(
         self,
-        hass: Any,
-        coordinator: Any,
-        nikobus_connection: Any,
-        nikobus_listener: Any,
+        hass: HomeAssistant,
+        coordinator: NikobusDataCoordinator,
+        nikobus_connection: NikobusConnect,
+        nikobus_listener: NikobusEventListener,
         nikobus_module_states: dict[str, bytearray],
     ) -> None:
         """Initialize the command handler."""
