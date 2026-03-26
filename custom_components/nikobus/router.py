@@ -63,7 +63,10 @@ def _modules_to_address_map(modules: Any) -> dict[str, Mapping[str, Any]]:
             if isinstance(item, Mapping) and item.get("address")
         }
         
-    # CLEANUP: Crucial fallback to prevent AttributeError crash on .items() later
+    _LOGGER.warning(
+        "_modules_to_address_map received unexpected type %s — no entities will be created for this module group",
+        type(modules).__name__,
+    )
     return {}
 
 
