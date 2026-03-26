@@ -53,7 +53,11 @@ class NikobusConnect:
             
             self._is_connected = True
             _LOGGER.info("Connected to Nikobus on %s", self._connection_string)
-            await self._handshake()
+            try:
+                await self._handshake()
+            except Exception:
+                self._is_connected = False
+                raise
 
         except (OSError, asyncio.TimeoutError) as err:
             self._is_connected = False
