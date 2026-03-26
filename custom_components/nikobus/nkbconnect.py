@@ -53,11 +53,26 @@ class NikobusConnect:
             
             self._is_connected = True
             _LOGGER.info("Connected to Nikobus on %s", self._connection_string)
-            
+            await self._handshake()
+
         except (OSError, asyncio.TimeoutError) as err:
             self._is_connected = False
             _LOGGER.error("Failed to connect to %s: %s", self._connection_string, err)
             raise NikobusConnectionError(f"Connection failed: {err}") from err
+
+    async def _handshake(self) -> None:
+        """Perform the full modem init + handshake sequence once after connecting."""
+        from .const import COMMANDS_HANDSHAKE
+
+        _LOGGER.debug("Starting Nikobus handshake...")
+        try:
+            for cmd in COMMANDS_HANDSHAKE:
+                await self.send(cmd)
+                await asyncio.sleep(0.2)
+            _LOGGER.info("Nikobus handshake completed successfully.")
+        except Exception as err:
+            _LOGGER.error("Handshake failed: %s", err)
+            raise NikobusConnectionError(f"Handshake failed: {err}") from err
 
     async def disconnect(self) -> None:
         """Close the connection and cleanup resources."""
@@ -72,26 +87,6 @@ class NikobusConnect:
         self._writer = None
         self._is_connected = False
         _LOGGER.info("Nikobus connection closed.")
-
-    async def ping(self) -> bool:
-        """Perform a connection handshake with the PC-Link."""
-        from .const import COMMANDS_HANDSHAKE, EXPECTED_HANDSHAKE_RESPONSE
-        
-        if not self._is_connected:
-            await self.connect()
-        
-        try:
-            _LOGGER.debug("Starting full Nikobus handshake...")
-            for cmd in COMMANDS_HANDSHAKE:
-                await self.send(cmd)
-                # Small delay to let the PC-Link process each command
-                await asyncio.sleep(0.2) 
-            
-            _LOGGER.info("Nikobus handshake completed successfully.")
-            return True
-        except Exception as err:
-            _LOGGER.error("Handshake failed: %s", err)
-            raise NikobusConnectionError(f"Handshake failed: {err}") from err
 
     async def ping(self) -> bool:
         if not self._is_connected:
