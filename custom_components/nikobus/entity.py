@@ -41,6 +41,11 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         )
 
     @property
+    def available(self) -> bool:
+        """Return True only when the coordinator is healthy and the connection is live."""
+        return super().available and self.coordinator.nikobus_connection.is_connected
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return shared state attributes safely."""
         return {
