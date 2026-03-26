@@ -228,8 +228,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
     @callback
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
         """Manually update a specific channel in the state buffer."""
-        if address in self.nikobus_module_states:
-            self.nikobus_module_states[address][channel - 1] = value
+        state = self.nikobus_module_states.get(address)
+        if state and 0 < channel <= len(state):
+            state[channel - 1] = value
 
     def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
         """Safely update a module group from a hex string."""
