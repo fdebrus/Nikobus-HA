@@ -79,6 +79,10 @@ class NikobusEventListener:
                 continue
             except Exception as err:
                 _LOGGER.error("Listener loop error: %s", err)
+                if not self._connection.is_connected:
+                    _LOGGER.warning("Connection lost — listener loop exiting.")
+                    self._running = False
+                    break
                 await asyncio.sleep(1)
 
     def _extract_frames(self, raw: str) -> list[str]:

@@ -613,9 +613,11 @@ class NikobusDiscovery:
             dict_data = getattr(self._coordinator, "dict_module_data", {})
             for module_type, modules in dict_data.items():
                 if module_type not in ("pc_link", "pc_logic", "feedback_module", "other_module"):
-                    for module in modules:
-                        if "address" in module:
-                            all_addresses.append(module["address"])
+                    module_iter = modules.values() if isinstance(modules, dict) else modules
+                    for module in module_iter:
+                        addr = module.get("address") if isinstance(module, dict) else None
+                        if addr:
+                            all_addresses.append(addr)
             
             if not all_addresses:
                 _LOGGER.warning("No output modules found in config to scan.")

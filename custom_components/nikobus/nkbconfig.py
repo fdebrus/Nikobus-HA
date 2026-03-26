@@ -232,12 +232,9 @@ class NikobusConfig:
 
     def _transform_button_data_for_writing(self, data: dict) -> dict:
         """Transform button data from a dictionary back to a list for saving."""
-        button_data_list = [
-            {
-                "description": details["description"],
-                "address": address,
-                "impacted_module": details["impacted_module"],
-            }
-            for address, details in data.get("nikobus_button", {}).items()
-        ]
+        button_data_list = []
+        for address, details in data.get("nikobus_button", {}).items():
+            entry = dict(details)
+            entry["address"] = address
+            button_data_list.append(entry)
         return {"nikobus_button": button_data_list}

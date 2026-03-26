@@ -16,6 +16,7 @@ from .protocol import (
     get_push_button_address,
     reverse_hex,
 )
+from ..const import DEVICE_INVENTORY_ANSWER as DEVICE_INVENTORY
 
 _LOGGER = logging.getLogger(__name__)
 
