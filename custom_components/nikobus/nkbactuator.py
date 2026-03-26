@@ -177,7 +177,12 @@ class NikobusActuator:
                 "impacted_module": [{"address": "", "group": ""}],
             }
             self._dict_button_data.setdefault("nikobus_button", {})[address] = new_button
-            await self._coordinator.nikobus_config.write_json_data("nikobus_button_config.json", "button", self._dict_button_data)
+            try:
+                await self._coordinator.nikobus_config.write_json_data(
+                    "nikobus_button_config.json", "button", self._dict_button_data
+                )
+            except Exception as err:
+                _LOGGER.warning("Failed to persist discovered button %s to config: %s", address, err)
 
     async def process_button_modules(self, button_data: Dict[str, Any], button_address: str, press_context: Optional[Dict[str, Any]]) -> None:
         """Refresh states for specific modules impacted by this button."""
