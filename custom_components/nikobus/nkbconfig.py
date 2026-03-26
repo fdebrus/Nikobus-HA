@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from typing import Any, Callable, Dict, Optional
 
 from aiofiles import open as aio_open
@@ -168,11 +169,13 @@ class NikobusConfig:
         """Write data to a JSON file, transforming it into a list format if necessary."""
         file_path = self._hass.config.path(file_name)
 
+        tmp_path = file_path + ".tmp"
         try:
             transformed_data = self._transform_data_for_writing(data_type, data)
-            async with aio_open(file_path, "w") as file:
-                json_data = json.dumps(transformed_data, indent=4)
+            json_data = json.dumps(transformed_data, indent=4)
+            async with aio_open(tmp_path, "w") as file:
                 await file.write(json_data)
+            os.replace(tmp_path, file_path)
 
         except IOError as err:
             _LOGGER.error(
@@ -182,6 +185,7 @@ class NikobusConfig:
                 err,
                 exc_info=True,
             )
+            self._cleanup_tmp(tmp_path)
             raise NikobusDataError(
                 f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}"
             ) from err
@@ -193,6 +197,7 @@ class NikobusConfig:
                 err,
                 exc_info=True,
             )
+            self._cleanup_tmp(tmp_path)
             raise NikobusDataError(
                 f"Failed to serialize {data_type} data to JSON: {err}"
             ) from err
@@ -205,9 +210,18 @@ class NikobusConfig:
                 err,
                 exc_info=True,
             )
+            self._cleanup_tmp(tmp_path)
             raise NikobusDataError(
                 f"Unexpected error writing {data_type} data to file {file_name}: {err}"
             ) from err
+
+    @staticmethod
+    def _cleanup_tmp(tmp_path: str) -> None:
+        """Remove a leftover .tmp file, ignoring errors."""
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
     def _transform_data_for_writing(self, data_type: str, data: dict) -> dict:
         """Transform the data for writing based on the data type."""
