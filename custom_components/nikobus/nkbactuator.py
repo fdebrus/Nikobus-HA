@@ -212,18 +212,14 @@ class NikobusActuator:
                 # Otherwise, we cause bus collisions while the button is still being held down.
                 _LOGGER.debug("[%s] Ignoring initial press for Dimmer %s (Group %s). Waiting for release.", press_id, addr, group)
                 continue
-
-            # Hybrid Debouncer: Smart handling based on module type
+            
+            # Debouncer
             cache_key = f"{addr}_{group}"
             if cache_key in self._module_refresh_tasks:
-                if requires_long_press:
-                    # Last-to-Fire: Dimmers need to wait for the final release to settle
-                    _LOGGER.debug("[%s] Canceling previous pending refresh for Dimmer %s (Group %s)", press_id, addr, group)
-                    self._module_refresh_tasks[cache_key].cancel()
-                else:
-                    # First-to-Fire: Relays and Covers should trigger instantly and ignore bus chatter
-                    _LOGGER.debug("[%s] Refresh for Relay/Cover %s (Group %s) already in progress. Ignoring duplicate.", press_id, addr, group)
-                    continue
+                # This resets the delay timer so HA waits for all rapid button presses
+                # to finish before making the final state fetch.
+                _LOGGER.debug("[%s] Canceling previous pending refresh for %s (Group %s)", press_id, addr, group)
+                self._module_refresh_tasks[cache_key].cancel()
 
             async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id, m_requires_long_press=requires_long_press):
                 try:
