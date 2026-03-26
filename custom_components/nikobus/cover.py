@@ -38,6 +38,28 @@ _LOGGER = logging.getLogger(__name__)
 
 HUB_IDENTIFIER = "nikobus_hub"
 
+
+def _parse_operation_time(value: Any, fallback: float, label: str, address: str) -> float:
+    """Parse and validate a cover operation time value.
+
+    Returns the parsed float if it is a positive number, otherwise logs a
+    warning and returns ``fallback``.
+    """
+    try:
+        t = float(value)
+        if t > 0:
+            return t
+    except (TypeError, ValueError):
+        pass
+    _LOGGER.warning(
+        "Cover %s: invalid %s %r — must be a positive number. Using default %.1fs.",
+        address,
+        label,
+        value,
+        fallback,
+    )
+    return fallback
+
 # Nikobus Internal States
 STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
@@ -75,11 +97,18 @@ async def async_setup_entry(
             via_device=(DOMAIN, HUB_IDENTIFIER),
         )
 
-        # Get UP time from config, fallback to global constant
-        op_time_up = float(getattr(spec, "operation_time_up", DEFAULT_COVER_OPERATION_TIME))
-        
-        # Get DOWN time from config, fallback to UP time if not specifically defined
-        op_time_down = float(getattr(spec, "operation_time_down", None) or op_time_up)
+        op_time_up = _parse_operation_time(
+            getattr(spec, "operation_time_up", None),
+            DEFAULT_COVER_OPERATION_TIME,
+            "operation_time_up",
+            spec.address,
+        )
+        op_time_down = _parse_operation_time(
+            getattr(spec, "operation_time_down", None),
+            op_time_up,
+            "operation_time_down",
+            spec.address,
+        )
 
         entities.append(
             NikobusCoverEntity(
