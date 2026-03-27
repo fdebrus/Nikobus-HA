@@ -130,8 +130,13 @@ class NikobusCommandHandler:
         command_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(command_code, address)
         future = self._coordinator.hass.loop.create_future()
-        await self.queue_command(command, address, future=future)
-        return await asyncio.wait_for(future, timeout=COMMAND_ACK_WAIT_TIMEOUT)
+        try:
+            await self.queue_command(command, address, future=future)
+            return await asyncio.wait_for(future, timeout=COMMAND_ACK_WAIT_TIMEOUT)
+        except (asyncio.CancelledError, asyncio.TimeoutError):
+            if not future.done():
+                future.cancel()
+            raise
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
         """Send a command and wait for an answer from the Nikobus system."""
