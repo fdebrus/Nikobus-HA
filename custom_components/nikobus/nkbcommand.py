@@ -240,10 +240,16 @@ class NikobusCommandHandler:
                 if wait_ack in message:
                     _LOGGER.debug("ACK received")
                     ack_received = True
-                if wait_answer in message:
+                min_answer_len = len(wait_answer) + 2 + 12
+                if wait_answer in message and len(message) >= min_answer_len:
                     _LOGGER.debug("Answer received")
                     state = self._parse_state_from_message(message, wait_answer)
                     answer_received = True
+                elif wait_answer in message:
+                    _LOGGER.debug(
+                        "Ignoring short message matching answer signal (len=%d, need>=%d): %s",
+                        len(message), min_answer_len, message,
+                    )
                 if ack_received and answer_received:
                     return state
             except asyncio.TimeoutError:
