@@ -233,6 +233,16 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self.hass.bus.async_listen(EVENT_BUTTON_PRESS, self._handle_button_pressed)
         )
 
+        def _cancel_cover_tasks() -> None:
+            if self._motion_task:
+                self._motion_task.cancel()
+                self._motion_task = None
+            if self._coalesce_task:
+                self._coalesce_task.cancel()
+                self._coalesce_task = None
+
+        self.async_on_remove(_cancel_cover_tasks)
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """React to state changes on the Nikobus bus."""

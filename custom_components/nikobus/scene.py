@@ -87,6 +87,15 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         # Guard against overlapping roller release tasks
         self._module_tokens: dict[str, str] = {}
 
+    async def async_added_to_hass(self) -> None:
+        """Register cleanup of pending roller-stop tasks on removal."""
+        await super().async_added_to_hass()
+
+        def _cancel_roller_tasks() -> None:
+            self._module_tokens.clear()
+
+        self.async_on_remove(_cancel_roller_tasks)
+
     async def async_activate(self, **kwargs: Any) -> None:
         """Activate the scene by setting multiple module channels."""
         _LOGGER.info("Activating Nikobus scene: %s", self.name)

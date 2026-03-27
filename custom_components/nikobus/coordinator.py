@@ -193,7 +193,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
 
             if group == 1:
                 self.nikobus_module_states[address][:6] = bytearray.fromhex(state_raw)
-            elif group == 2:
+            elif group == 2 and len(self.nikobus_module_states[address]) >= 12:
                 self.nikobus_module_states[address][6:] = bytearray.fromhex(state_raw)
 
             # Signal only entities on this specific module address
