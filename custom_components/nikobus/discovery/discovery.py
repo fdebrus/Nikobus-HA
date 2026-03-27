@@ -316,13 +316,13 @@ class NikobusDiscovery:
     def _schedule_timeout(self) -> None:
         self._cancel_timeout()
         module_address = self._module_address
-        self._timeout_task = asyncio.create_task(
+        self._timeout_task = self._hass.async_create_task(
             self._timeout_after(module_address)
         )
 
     def _schedule_inventory_timeout(self) -> None:
         self._cancel_inventory_timeout()
-        self._inventory_timeout_task = asyncio.create_task(
+        self._inventory_timeout_task = self._hass.async_create_task(
             self._inventory_timeout_after()
         )
 
@@ -545,7 +545,7 @@ class NikobusDiscovery:
         _LOGGER.info("Inventory record | address=%s", normalized)
         self._ensure_pc_link_address(normalized, source="device_address_inventory")
         if is_new and self.discovery_stage == "inventory_addresses":
-            asyncio.create_task(
+            self._hass.async_create_task(
                 self._queue_inventory_identity_queries_for_address(normalized)
             )
         self._schedule_inventory_timeout()
