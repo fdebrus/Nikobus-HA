@@ -1,4 +1,4 @@
-"""Nikobus Button Press Events Handling - Platinum Edition."""
+"""Nikobus Button Press Events Handling"""
 
 import asyncio
 import logging
@@ -145,19 +145,25 @@ class NikobusActuator:
         for task in state.timer_tasks.values():
             task.cancel()
         
-        self._fire_event("nikobus_button_released", state, state_value="released", duration=press_duration)
+        bucket = self._get_bucket(press_duration)
+        
+        # 1. Base Release Event
+        self._fire_event("nikobus_button_released", state, state_value="released", duration=press_duration, bucket=bucket)
+
+        # 2. Classification Event (Short vs Long)
+        event_name = "nikobus_short_button_pressed" if press_duration < SHORT_PRESS else "nikobus_long_button_pressed"
+        self._fire_event(event_name, state, state_value="released", duration=press_duration, bucket=bucket)
+
+        # 3. Explicit Bucket Event (0, 1, 2, 3)
+        self._fire_event(f"nikobus_button_pressed_{bucket}", state, state_value="released", duration=press_duration, bucket=bucket)
 
         press_context = {
             "press_id": state.press_id,
             "duration_s": press_duration,
             "module_address": state.module_address,
             "channel": state.channel,
-            "bucket": self._get_bucket(press_duration),
+            "bucket": bucket,
         }
-
-        # Fire classification events (Short vs Long)
-        event_name = "nikobus_short_button_pressed" if press_duration < SHORT_PRESS else "nikobus_long_button_pressed"
-        self._fire_event(event_name, state, state_value="released", duration=press_duration)
 
         # Trigger module state synchronization
         self._hass.async_create_task(self.button_discovery(state.address, press_context=press_context))
@@ -191,6 +197,9 @@ class NikobusActuator:
         
         impacted_modules = button_data.get("impacted_module", [])
         
+        if not hasattr(self, "_module_refresh_tasks"):
+            self._module_refresh_tasks = {}
+
         _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted_modules))
 
         for module_info in impacted_modules:
@@ -211,6 +220,7 @@ class NikobusActuator:
             # ==========================================
             # 1. Fire Event IMMEDIATELY for HA Automations
             # ==========================================
+            # 4. Post-refresh notification (nikobus_button_operation)
             self._fire_event(
                 BUTTON_OPERATION_EVENT,
                 PressState(button_address.upper(), 0, 0, press_id, addr, None),
@@ -286,7 +296,7 @@ class NikobusActuator:
             self._module_refresh_tasks[cache_key] = self._hass.async_create_task(_refresh_task())
 
     def _fire_event(self, event_type: str, state: PressState, **kwargs) -> None:
-        """Helper to fire standardized Nikobus events."""
+        """Helper to fire standardized Nikobus events and log them."""
         payload = {
             "address": state.address,
             "module_address": state.module_address,
@@ -301,6 +311,9 @@ class NikobusActuator:
         if extra := kwargs.get("extra"):
             payload.update(extra)
             
+        # Log the event exactly as it is fired to the Home Assistant bus
+        _LOGGER.debug("[%s] Firing HA Event: %s | Payload: %s", state.press_id, event_type, payload)
+        
         self._hass.bus.async_fire(event_type, payload)
 
     def _derive_button_context(self, address: str) -> Tuple[Optional[str], Optional[int]]:
