@@ -347,7 +347,11 @@ class NikobusCommandHandler:
     ) -> None:
         """Prepare and queue the output states for a module."""
         _LOGGER.debug("Preparing to set output states for module %s", address)
-        channel_states = self.nikobus_module_states[address][:6] + bytearray([0xFF])
+        state = self.nikobus_module_states.get(address)
+        if state is None:
+            _LOGGER.warning("Cannot set output states — module %s not in state buffer", address)
+            return
+        channel_states = state[:6] + bytearray([0xFF])
         await self.queue_command(
             make_pc_link_command(0x15, address, channel_states),
             address,
@@ -356,9 +360,7 @@ class NikobusCommandHandler:
 
         # If the module has more than 6 channels, send a second group command.
         if self._coordinator.get_module_channel_count(address) > 6:
-            channel_states = self.nikobus_module_states[address][6:12] + bytearray(
-                [0xFF]
-            )
+            channel_states = state[6:12] + bytearray([0xFF])
             await self.queue_command(
                 make_pc_link_command(0x16, address, channel_states),
                 address,
