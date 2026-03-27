@@ -289,7 +289,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             mod = self.dict_module_data.get("roller_module", {}).get(module_id, {})
             # Ensure channel index is valid
             channels = mod.get("channels", [])
-            ch = channels[int(channel) - 1]
+            ch_idx = int(channel) - 1
+            if ch_idx < 0 or ch_idx >= len(channels):
+                return default
+            ch = channels[ch_idx]
         
             # Determine which key to look for
             key = f"operation_time_{direction}"

@@ -169,8 +169,9 @@ class NikobusEventListener:
             _LOGGER.warning("Response queue full — dropping bus message: %s", message)
 
     def validate_crc(self, message: str) -> bool:
-        if message.count("$") > 1:
-            return self.validate_crc(message[message.find("$", 1):])
+        # Iteratively advance to the last '$' in the frame to handle collisions
+        while message.count("$") > 1:
+            message = message[message.find("$", 1):]
 
         # ACKs ($05xx) do not have a CRC or payload to validate
         if len(message) == 5 and message.startswith("$05"):
