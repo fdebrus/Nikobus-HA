@@ -215,11 +215,13 @@ class NikobusActuator:
                 _LOGGER.debug("[%s] Ignoring initial press for Dimmer %s (Group %s). Waiting for release.", press_id, addr, group)
                 continue
             
-            # Debouncer
-            cache_key = f"{addr}_{group}"
+            # Debouncer: Smart handling based on module type
+            cache_key = f"{button_address}_{addr}_{group}"
             if cache_key in self._module_refresh_tasks:
-                # This resets the delay timer so HA waits for all rapid button presses
-                # to finish before making the final state fetch.
+                # Always use Last-to-Fire: cancel the previous pending refresh.
+                # This ensures HA waits for the physical RELEASE of the button 
+                # (and prevents rapid presses from sticking in a stale state)
+                # before querying the hardware.
                 _LOGGER.debug("[%s] Canceling previous pending refresh for %s (Group %s)", press_id, addr, group)
                 self._module_refresh_tasks[cache_key].cancel()
 
