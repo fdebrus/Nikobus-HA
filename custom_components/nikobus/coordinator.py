@@ -305,6 +305,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
 
     async def stop(self) -> None:
         """Shut down background tasks and disconnect."""
+        if self._reload_task and not self._reload_task.done():
+            self._reload_task.cancel()
+            try:
+                await self._reload_task
+            except asyncio.CancelledError:
+                pass
+            self._reload_task = None
         if self.nikobus_listener:
             await self.nikobus_listener.stop()
         if self.nikobus_command:

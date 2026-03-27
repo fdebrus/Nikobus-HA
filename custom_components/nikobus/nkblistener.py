@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any, Callable
 
+_FRAME_SPLIT_RE = re.compile(r'(?=[$#])')
+
 from .const import (
     BUTTON_COMMAND_PREFIX,
     COMMAND_PROCESSED,
@@ -51,6 +53,19 @@ class NikobusEventListener:
         self._module_group = 1
         self._has_feedback_module: bool = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
 
+    def _enqueue_response(self, message: str) -> None:
+        """Add a message to the response queue, dropping the oldest if full."""
+        try:
+            self.response_queue.put_nowait(message)
+        except asyncio.QueueFull:
+            try:
+                self.response_queue.get_nowait()
+                self.response_queue.task_done()
+            except asyncio.QueueEmpty:
+                pass
+            self.response_queue.put_nowait(message)
+            _LOGGER.warning("Response queue was full — dropped oldest message to make room")
+
     async def start(self) -> None:
         """Start the background listening task."""
         self._running = True
@@ -62,6 +77,10 @@ class NikobusEventListener:
         self._running = False
         if self._listener_task:
             self._listener_task.cancel()
+            try:
+                await self._listener_task
+            except asyncio.CancelledError:
+                pass
             self._listener_task = None
 
     async def _listen_loop(self) -> None:
@@ -98,7 +117,7 @@ class NikobusEventListener:
         for frame in frames:
             if frame := frame.strip():
                 # FIX: Split at every '$' OR '#' to handle collisions
-                extracted.extend(f for f in re.split(r'(?=[$#])', frame) if f)
+                extracted.extend(f for f in _FRAME_SPLIT_RE.split(frame) if f)
                 
         return extracted
 
@@ -120,10 +139,7 @@ class NikobusEventListener:
                     await self._actuator.handle_button_press(message[idx+2:idx+8])
 
             if any(message.startswith(cmd) for cmd in COMMAND_PROCESSED):
-                try:
-                    self.response_queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    _LOGGER.warning("Response queue full — dropping bus message: %s", message)
+                self._enqueue_response(message)
                 return
 
             if self._has_feedback_module:
@@ -135,18 +151,12 @@ class NikobusEventListener:
                     if self.validate_crc(message):
                         await self._feedback_callback(self._module_group, message)
                         # Ensure commands awaiting this answer can see it
-                        try:
-                            self.response_queue.put_nowait(message)
-                        except asyncio.QueueFull:
-                            _LOGGER.warning("Response queue full — dropping bus message: %s", message)
+                        self._enqueue_response(message)
                     return
 
             if any(message.startswith(r) for r in MANUAL_REFRESH_COMMAND):
                 if self.validate_crc(message) and not message.startswith(BUTTON_COMMAND_PREFIX):
-                    try:
-                        self.response_queue.put_nowait(message)
-                    except asyncio.QueueFull:
-                        _LOGGER.warning("Response queue full — dropping bus message: %s", message)
+                    self._enqueue_response(message)
                 return
         else:
             if any(message.startswith(inv) for inv in DEVICE_INVENTORY_ANSWER):
@@ -180,7 +190,7 @@ class NikobusEventListener:
             calculated_crc8 = int_to_hex(calc_crc2(payload_with_crc16), 2)
             
             return calculated_crc8.upper() == expected_crc8.upper()
-        except Exception:
+        except (ValueError, IndexError, AttributeError):
             return False
 
     async def _handle_inventory(self, msg: str, discovery: bool) -> None:

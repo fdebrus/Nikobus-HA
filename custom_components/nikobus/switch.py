@@ -68,7 +68,7 @@ class NikobusBaseSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
     """Base class for Nikobus switch entities with hybrid update logic."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int,
         description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize the switch base."""
@@ -125,7 +125,7 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
     """Standard Nikobus relay-based on/off switch."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int,
         description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize relay switch."""
@@ -168,7 +168,7 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
     """Binary switch entity driving a cover channel."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int,
         description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize cover-as-switch."""

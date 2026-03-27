@@ -106,6 +106,12 @@ def build_routing(
             for channel_index, channel_info in enumerate(
                 module_data.get("channels", []), start=1
             ):
+                if not isinstance(channel_info, Mapping):
+                    _LOGGER.warning(
+                        "Channel %d for module %s is not a dict — skipping",
+                        channel_index, address,
+                    )
+                    continue
                 channel_description = channel_info.get("description", "")
                 
                 # Skip channels explicitly marked as unused
