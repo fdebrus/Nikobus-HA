@@ -199,7 +199,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             if address not in self.nikobus_module_states:
                 self.nikobus_module_states[address] = bytearray(12)
 
-            if group == 1:
+            if group == 1 and len(self.nikobus_module_states[address]) >= 6:
                 self.nikobus_module_states[address][:6] = bytearray.fromhex(state_raw)
             elif group == 2 and len(self.nikobus_module_states[address]) >= 12:
                 self.nikobus_module_states[address][6:] = bytearray.fromhex(state_raw)
@@ -258,9 +258,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
         if int(group) == 1:
             limit = min(6, len(state))
             state[0:limit] = new_values[:limit]
-        elif int(group) == 2 and len(state) > 6:
-            limit = min(6, len(state) - 6)
-            state[6 : 6 + limit] = new_values[:limit]
+        elif int(group) == 2:
+            if len(state) > 6:
+                limit = min(6, len(state) - 6)
+                state[6 : 6 + limit] = new_values[:limit]
+            else:
+                _LOGGER.warning(
+                    "set_bytearray_group_state: module %s has only %d bytes — group 2 update ignored",
+                    normalized,
+                    len(state),
+                )
 
     async def async_event_handler(self, event: str, data: dict[str, Any]) -> None:
         """Dispatch events and trigger targeted entity updates."""
