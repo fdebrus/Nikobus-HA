@@ -255,7 +255,11 @@ class NikobusCommandHandler:
 
     def _parse_state_from_message(self, message: str, answer_signal: str) -> str:
         """Parse and return the state from a received message."""
-        state_index = message.find(answer_signal) + len(answer_signal) + 2
+        idx = message.find(answer_signal)
+        if idx == -1:
+            _LOGGER.warning("Answer signal %s not found in message: %s", answer_signal, message)
+            return ""
+        state_index = idx + len(answer_signal) + 2
         return message[state_index : state_index + 12]
 
     async def set_output_state(
@@ -291,12 +295,6 @@ class NikobusCommandHandler:
             command, address, completion_handler=completion_handler
         )
         _LOGGER.debug("Command successfully queued for module %s, channel %d.", address, channel)
-
-    async def _prepare_values_for_command(self, address: str, group: int) -> bytearray:
-        """Prepare the bytearray values for a command using the latest coordinator state."""
-        return self._coordinator.get_bytearray_group_state(address, group)[
-            :6
-        ] + bytearray([0xFF])
 
     async def queue_command(
         self,
