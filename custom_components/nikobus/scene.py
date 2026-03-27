@@ -136,7 +136,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             except (ValueError, TypeError):
                 _LOGGER.warning("Scene channel number %r is not a valid integer — skipping", chan_num)
                 continue
-            if 0 <= idx < 12:
+            if 0 <= idx < len(module_updates[module_id]):
                 module_updates[module_id][idx] = byte_val
 
             # Track rollers that need a timed stop
