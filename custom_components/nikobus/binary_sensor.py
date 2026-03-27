@@ -83,6 +83,13 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
             self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_button_event)
         )
 
+        def _cancel_reset_timer() -> None:
+            if self._reset_timer_cancel:
+                self._reset_timer_cancel()
+                self._reset_timer_cancel = None
+
+        self.async_on_remove(_cancel_reset_timer)
+
     @callback
     def _handle_button_event(self, event: Any) -> None:
         """Handle button press events from the Nikobus bus."""

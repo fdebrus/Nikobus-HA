@@ -36,6 +36,8 @@ class NikobusTravelCalculator:
 
         elapsed = time.monotonic() - self._start_time
         active_time = self.time_up if self._direction == 1 else self.time_down
+        if active_time <= 0:
+            return self.position
         progress = (elapsed / active_time) * 100
 
         if self._direction == 1:
