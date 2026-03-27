@@ -70,6 +70,5 @@ def device_entry_diagnostics(device: dr.DeviceEntry) -> Dict[str, Any]:
         "name": device.name,
         "model": device.model,
         "manufacturer": device.manufacturer,
-        # CLEANUP: sorted() natively returns a list, no need to cast it first
         "identifiers": sorted(device.identifiers),
     }

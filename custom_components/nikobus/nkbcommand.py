@@ -286,14 +286,15 @@ class NikobusCommandHandler:
             address, channel, value
         )
         group = calculate_group_number(channel)
-        
-        # 1. Update the coordinator's memory synchronously.
-        # This ensures that if Siri fires 5 commands in 5 milliseconds, 
-        # each subsequent command inherently includes the state of the previous ones.
+
+        # 1. Persist the new value into the coordinator's state buffer immediately.
+        # get_bytearray_group_state() returns a copy, so we must write back via
+        # set_bytearray_state() to ensure rapid successive commands each see the
+        # cumulative state of all previous ones.
+        self._coordinator.set_bytearray_state(address, channel, value)
         current_bytes = self._coordinator.get_bytearray_group_state(address, group)
-        current_bytes[(channel - 1) % 6] = value
-        
-        # 2. Build the payload using this newly updated state
+
+        # 2. Build the payload using this updated state
         cmd_code = 0x15 if group == 1 else 0x16
         payload = current_bytes[:6] + bytearray([0xFF])
         
@@ -347,7 +348,7 @@ class NikobusCommandHandler:
     ) -> None:
         """Prepare and queue the output states for a module."""
         _LOGGER.debug("Preparing to set output states for module %s", address)
-        state = self.nikobus_module_states.get(address)
+        state = self.nikobus_module_states.get(str(address).upper())
         if state is None:
             _LOGGER.warning("Cannot set output states — module %s not in state buffer", address)
             return
