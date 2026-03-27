@@ -265,7 +265,13 @@ class NikobusCommandHandler:
             _LOGGER.warning("Answer signal %s not found in message: %s", answer_signal, message)
             return ""
         state_index = idx + len(answer_signal) + 2
-        return message[state_index : state_index + 12]
+        state = message[state_index : state_index + 12]
+        if len(state) < 12:
+            _LOGGER.warning(
+                "State data truncated (%d/12 chars) in message: %s", len(state), message
+            )
+            return ""
+        return state
 
     async def set_output_state(
         self,
