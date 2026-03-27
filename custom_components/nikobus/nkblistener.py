@@ -163,10 +163,7 @@ class NikobusEventListener:
                 await self._handle_discovery_frame(message)
                 return
 
-        try:
-            self.response_queue.put_nowait(message)
-        except asyncio.QueueFull:
-            _LOGGER.warning("Response queue full — dropping bus message: %s", message)
+        self._enqueue_response(message)
 
     def validate_crc(self, message: str) -> bool:
         # Iteratively advance to the last '$' in the frame to handle collisions
