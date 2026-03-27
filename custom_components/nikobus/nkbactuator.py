@@ -52,6 +52,26 @@ class NikobusActuator:
         self._press_states: Dict[str, PressState] = {}
         self._last_press_context: Dict[str, Dict[str, Any]] = {}
         self._module_refresh_tasks: Dict[str, asyncio.Task] = {}
+        # Reverse map: led_on/led_off bus address -> (module_address, group)
+        self._led_to_module: Dict[str, Tuple[str, str]] = self._build_led_command_map()
+
+    def _build_led_command_map(self) -> Dict[str, Tuple[str, str]]:
+        """Build a reverse lookup from led_on/led_off bus addresses to (module, group)."""
+        result: Dict[str, Tuple[str, str]] = {}
+        for modules in self._dict_module_data.values():
+            module_map = modules if isinstance(modules, dict) else {}
+            for address, module_data in module_map.items():
+                if not isinstance(module_data, dict):
+                    continue
+                for idx, channel in enumerate(module_data.get("channels", []), start=1):
+                    if not isinstance(channel, dict):
+                        continue
+                    group = "1" if idx <= 6 else "2"
+                    for key in ("led_on", "led_off"):
+                        cmd = channel.get(key, "").upper()
+                        if cmd:
+                            result[cmd] = (address.upper(), group)
+        return result
 
     async def handle_button_press(self, address: str) -> None:
         """Handle incoming button frames with debounce and duration tracking."""
@@ -169,6 +189,15 @@ class NikobusActuator:
 
         if button_data:
             await self.process_button_modules(button_data, address, press_context)
+        elif module_match := self._led_to_module.get(address.upper()):
+            # This address is a led_on/led_off bus command for a known module channel.
+            # Refresh that module group so HA state reflects the physical change.
+            module_addr, group = module_match
+            _LOGGER.debug(
+                "Button %s matches LED command for module %s group %s — refreshing state",
+                address, module_addr, group,
+            )
+            await self._refresh_module_from_led_press(module_addr, group)
         else:
             # Auto-discovery for unconfigured buttons
             new_button = {
@@ -183,6 +212,20 @@ class NikobusActuator:
                 )
             except Exception as err:
                 _LOGGER.warning("Failed to persist discovered button %s to config: %s", address, err)
+
+    async def _refresh_module_from_led_press(self, module_addr: str, group: str) -> None:
+        """Fetch and apply current state for a module triggered by a physical LED button."""
+        try:
+            new_state = await self._coordinator.nikobus_command.get_output_state(module_addr, group)
+            if new_state:
+                self._coordinator.set_bytearray_group_state(module_addr, group, new_state)
+                await self._coordinator.async_event_handler(
+                    "nikobus_refreshed", {"impacted_module_address": module_addr}
+                )
+        except Exception as err:
+            _LOGGER.debug(
+                "LED-triggered refresh for module %s group %s failed: %s", module_addr, group, err
+            )
 
     async def process_button_modules(self, button_data: Dict[str, Any], button_address: str, press_context: Optional[Dict[str, Any]]) -> None:
         """Refresh states for specific modules impacted by this button."""
