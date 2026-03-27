@@ -138,7 +138,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             for address, info in module_items:
                 if address:
                     channels = info.get("channels", [])
-                    self.nikobus_module_states[address] = bytearray(len(channels))
+                    self.nikobus_module_states[str(address).upper()] = bytearray(len(channels))
 
     async def _async_update_data(self) -> None:
         """Refresh latest data from the Nikobus system via polling."""
@@ -157,35 +157,36 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
     async def _refresh_module_type(self, modules_dict: dict[str, Any]) -> None:
         """Poll the bus for each module address in a collection."""
         for address, module_data in modules_dict.items():
+            normalized = str(address).upper()
             channels = module_data.get("channels", [])
             chan_count = len(channels)
             groups = (1,) if chan_count <= 6 else (1, 2)
-            
+
             group_states = [
-                (await self.nikobus_command.get_output_state(address, g) or "") 
+                (await self.nikobus_command.get_output_state(normalized, g) or "")
                 for g in groups
             ]
             state_hex = "".join(group_states).ljust(chan_count * 2, "0")
             try:
-                self.nikobus_module_states[address] = bytearray.fromhex(state_hex)
+                self.nikobus_module_states[normalized] = bytearray.fromhex(state_hex)
             except ValueError:
                 _LOGGER.warning(
                     "Module %s returned invalid hex state %r — resetting to zero",
-                    address,
+                    normalized,
                     state_hex,
                 )
-                self.nikobus_module_states[address] = bytearray(chan_count)
+                self.nikobus_module_states[normalized] = bytearray(chan_count)
 
             await self.async_event_handler(
                 "nikobus_refreshed",
-                {"impacted_module_address": address},
+                {"impacted_module_address": normalized},
             )
 
     async def process_feedback_data(self, group: int, data: str) -> None:
         """Handle incoming feedback module data strings."""
         try:
             addr_raw = data[3:7]
-            address = addr_raw[2:] + addr_raw[:2]
+            address = (addr_raw[2:] + addr_raw[:2]).upper()
             state_raw = data[9:21]
 
             if address not in self.nikobus_module_states:
@@ -207,7 +208,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
     @callback
     def get_bytearray_state(self, address: str, channel: int) -> int:
         """Return raw byte state for a channel index."""
-        state = self.nikobus_module_states.get(address)
+        state = self.nikobus_module_states.get(str(address).upper())
         if state and 0 < channel <= len(state):
             return state[channel - 1]
         return 0
@@ -216,7 +217,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
     def get_bytearray_group_state(self, address: str, group: int) -> bytearray:
         """Retrieve current 6-byte group state for commands."""
         group = int(group)
-        state = self.nikobus_module_states.get(address)
+        state = self.nikobus_module_states.get(str(address).upper())
         if not state:
             return bytearray(6)
         if group == 1:
@@ -228,22 +229,23 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
     @callback
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
         """Manually update a specific channel in the state buffer."""
-        state = self.nikobus_module_states.get(address)
+        state = self.nikobus_module_states.get(str(address).upper())
         if state and 0 < channel <= len(state):
             state[channel - 1] = value
 
     def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
         """Safely update a module group from a hex string."""
-        if address not in self.nikobus_module_states:
+        normalized = str(address).upper()
+        if normalized not in self.nikobus_module_states:
             return
-        state = self.nikobus_module_states[address]
+        state = self.nikobus_module_states[normalized]
         try:
             new_values = bytearray.fromhex(value)
         except ValueError:
             _LOGGER.warning(
                 "set_bytearray_group_state: invalid hex %r for module %s — ignoring",
                 value,
-                address,
+                normalized,
             )
             return
         if int(group) == 1:
@@ -347,6 +349,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
         self.discovery_running = False
         if self._reload_task and not self._reload_task.done():
             return
-        async def _reload():
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+
+        async def _reload() -> None:
+            try:
+                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            except Exception as err:
+                _LOGGER.error("Failed to reload config entry after discovery: %s", err)
+
         self._reload_task = self.hass.async_create_task(_reload())

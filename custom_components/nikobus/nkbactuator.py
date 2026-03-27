@@ -194,8 +194,8 @@ class NikobusActuator:
         _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted_modules))
 
         for module_info in impacted_modules:
-            addr = module_info.get("address")
-            group = module_info.get("group")
+            addr = (module_info.get("address") or "").upper()
+            group = module_info.get("group", "")
             if not addr or not group:
                 continue
 
