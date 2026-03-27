@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from .mapping import CHANNEL_MAPPING, KEY_MAPPING_MODULE
 
@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 class DecoderContext:
     """Shared context passed to all decoder functions."""
 
-    coordinator: any
+    coordinator: Any
     module_address: str | None
     module_channel_count: int | None
 
