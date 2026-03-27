@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any, Callable
 
+_FRAME_SPLIT_RE = re.compile(r'(?=[$#])')
+
 from .const import (
     BUTTON_COMMAND_PREFIX,
     COMMAND_PROCESSED,
@@ -98,7 +100,7 @@ class NikobusEventListener:
         for frame in frames:
             if frame := frame.strip():
                 # FIX: Split at every '$' OR '#' to handle collisions
-                extracted.extend(f for f in re.split(r'(?=[$#])', frame) if f)
+                extracted.extend(f for f in _FRAME_SPLIT_RE.split(frame) if f)
                 
         return extracted
 

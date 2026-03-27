@@ -75,7 +75,7 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
     """Base class for Nikobus light entities with hybrid update logic."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int,
         description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize the light base."""
@@ -132,7 +132,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
     """Nikobus dimmer light entity."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int,
         description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize dimmer."""
@@ -206,7 +206,7 @@ class NikobusRelayEntity(NikobusBaseLight):
     """Nikobus relay-based on/off light."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int,
         description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize relay."""
@@ -251,7 +251,7 @@ class NikobusCoverLightEntity(NikobusBaseLight):
     """Cover channel used as a binary light switch."""
 
     def __init__(
-        self, coordinator: NikobusDataCoordinator, address: str, channel: str, 
+        self, coordinator: NikobusDataCoordinator, address: str, channel: int,
         description: str, module_name: str, module_model: str
     ) -> None:
         """Initialize cover-as-light."""

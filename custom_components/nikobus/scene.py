@@ -86,6 +86,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         
         # Guard against overlapping roller release tasks
         self._module_tokens: dict[str, str] = {}
+        self._roller_stop_tasks: list[asyncio.Task] = []
 
     async def async_added_to_hass(self) -> None:
         """Register cleanup of pending roller-stop tasks on removal."""
@@ -93,6 +94,9 @@ class NikobusSceneEntity(NikobusEntity, Scene):
 
         def _cancel_roller_tasks() -> None:
             self._module_tokens.clear()
+            for task in self._roller_stop_tasks:
+                task.cancel()
+            self._roller_stop_tasks.clear()
 
         self.async_on_remove(_cancel_roller_tasks)
 
@@ -108,7 +112,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
 
         # 2. Build the state map for all impacted modules
         for channel_info in self._channels:
-            module_id = channel_info.get("module_id")
+            module_id = (channel_info.get("module_id") or "").upper()
             chan_num = channel_info.get("channel")
             state = channel_info.get("state")
 
@@ -127,7 +131,11 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 module_updates[module_id] = bytearray(current)
 
             # Update specific channel (0-indexed)
-            idx = int(chan_num) - 1
+            try:
+                idx = int(chan_num) - 1
+            except (ValueError, TypeError):
+                _LOGGER.warning("Scene channel number %r is not a valid integer — skipping", chan_num)
+                continue
             if 0 <= idx < 12:
                 module_updates[module_id][idx] = byte_val
 
@@ -152,10 +160,14 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 task_info = roller_tasks[module_id]
                 token = uuid.uuid4().hex
                 self._module_tokens[module_id] = token
-                self.hass.async_create_task(
+                task = self.hass.async_create_task(
                     self._delayed_roller_stop(
                         module_id, final_state, task_info["indexes"], task_info["delay"], token
                     )
+                )
+                self._roller_stop_tasks.append(task)
+                task.add_done_callback(
+                    lambda t: self._roller_stop_tasks.remove(t) if t in self._roller_stop_tasks else None
                 )
 
     async def _apply_module_state(self, module_id: str, state: bytearray) -> None:
