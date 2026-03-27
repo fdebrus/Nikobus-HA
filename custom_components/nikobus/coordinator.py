@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
@@ -185,7 +186,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
     async def process_feedback_data(self, group: int, data: str) -> None:
         """Handle incoming feedback module data strings."""
         try:
+            if len(data) < 21:
+                _LOGGER.warning("Feedback frame too short (%d chars) — ignoring: %s", len(data), data)
+                return
             addr_raw = data[3:7]
+            if len(addr_raw) != 4:
+                _LOGGER.warning("Feedback frame has malformed address field — ignoring: %s", data)
+                return
             address = (addr_raw[2:] + addr_raw[:2]).upper()
             state_raw = data[9:21]
 
