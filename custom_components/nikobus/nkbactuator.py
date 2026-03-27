@@ -83,7 +83,7 @@ class NikobusActuator:
         # Fire immediate press event for Binary Sensors
         self._fire_event(EVENT_BUTTON_PRESSED, state, state_value="pressed", duration=None)
 
-        # NEW: Trigger module state synchronization IMMEDIATELY upon press
+        # Trigger module state synchronization IMMEDIATELY upon press
         press_context = {
             "press_id": state.press_id,
             "duration_s": 0.0,
@@ -233,58 +233,16 @@ class NikobusActuator:
                 self._module_refresh_tasks[cache_key].cancel()
 
             # ==========================================
-            # 3. Delayed State Fetch Task
+            # 3. Delayed State Fetch Task (UI Update Only)
             # ==========================================
-            async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id, m_requires_long_press=requires_long_press):
+            async def _refresh_task(m_addr=addr, m_group=group, m_press_id=press_id, m_requires_long_press=requires_long_press):
                 try:
-                    if not m_requires_long_press:
-                        _LOGGER.debug("[%s] Step 1: Immediate refresh for %s (Group %s)", m_press_id, m_addr, m_group)
-                        await asyncio.sleep(0.3)
-                        
-                        if button_address.upper() in self._press_states:
-                            _LOGGER.debug("[%s] Button still held. Aborting Step 1 to prevent collision. Deferring to release event.", m_press_id)
-                            return
-                        
-                        try:
-                            new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
-                            if new_state:
-                                self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
-                                await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
-                        except Exception as err:
-                            _LOGGER.debug("[%s] Step 1 Quick fetch failed for %s: %s", m_press_id, m_addr, err)
-
-                    delay = DIMMER_DELAY if m_requires_long_press else max(0, REFRESH_DELAY - 0.3)
-                    await asyncio.sleep(delay)
-
-                    new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
-                    
-                    if new_state:
-                        self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
-                        await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
-
-                except asyncio.CancelledError:
-                    _LOGGER.debug("[%s] Refresh task for %s was cancelled by a newer press", m_press_id, m_addr)
-                    return 
-                except Exception as err:
-                    _LOGGER.error("[%s] Error refreshing module %s (Group %s): %s", m_press_id, m_addr, m_group, err)
-                finally:
-                    if self._module_refresh_tasks.get(cache_key) == asyncio.current_task():
-                        self._module_refresh_tasks.pop(cache_key, None)
-
-            self._module_refresh_tasks[cache_key] = self._hass.async_create_task(_refresh_task())
-
-            async def _refresh_task(m_addr=addr, m_group=group, m_op_time=op_time, m_press_id=press_id, m_requires_long_press=requires_long_press):
-                try:
-                    # ==========================================
                     # STEP 1: Immediate UI Update (Skip for dimmers)
-                    # ==========================================
                     if not m_requires_long_press:
                         _LOGGER.debug("[%s] Step 1: Immediate refresh for %s (Group %s)", m_press_id, m_addr, m_group)
                         await asyncio.sleep(0.3)
                         
                         # Bus Clearance Check
-                        # If the user is STILL holding the button after 0.3s, the bus is flooded.
-                        # We must abort this fetch to prevent a timeout collision. The release event will handle it later.
                         if button_address.upper() in self._press_states:
                             _LOGGER.debug("[%s] Button still held. Aborting Step 1 to prevent collision. Deferring to release event.", m_press_id)
                             return
@@ -298,9 +256,7 @@ class NikobusActuator:
                         except Exception as err:
                             _LOGGER.debug("[%s] Step 1 Quick fetch failed for %s: %s", m_press_id, m_addr, err)
 
-                    # ==========================================
                     # STEP 2: Delayed Check for Settled State
-                    # ==========================================
                     delay = DIMMER_DELAY if m_requires_long_press else max(0, REFRESH_DELAY - 0.3)
                     _LOGGER.debug("[%s] Step 2: Waiting %.1fs for settled state on %s", m_press_id, delay, m_addr)
                     
@@ -315,19 +271,6 @@ class NikobusActuator:
                         await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
                     else:
                         _LOGGER.warning("[%s] Step 2: Module %s returned empty state", m_press_id, m_addr)
-
-                    # Fire the rich event for covers/complex entities
-                    self._fire_event(
-                        BUTTON_OPERATION_EVENT,
-                        PressState(button_address.upper(), 0, 0, m_press_id, m_addr, None),
-                        state_value="released",
-                        duration=(press_context or {}).get("duration_s"),
-                        extra={
-                            "button_operation_time": m_op_time,
-                            "impacted_module_address": m_addr,
-                            "impacted_module_group": m_group,
-                        }
-                    )
 
                 except asyncio.CancelledError:
                     _LOGGER.debug("[%s] Refresh task for %s was cancelled by a newer press", m_press_id, m_addr)
