@@ -44,6 +44,10 @@ class NikobusCommandHandler:
         self._command_task: asyncio.Task | None = None
         self._command_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
         self._command_completion_handlers: dict[str, Callable[[], Awaitable[None]]] = {}
+        # Keyed by "ADDRESS_group" — resolved directly by the feedback callback so
+        # get_output_state returns as soon as the PCLink echoes the response rather
+        # than waiting for the queue-polling path to complete (restores 0.7.x behaviour).
+        self._pending_get_futures: dict[str, asyncio.Future[str]] = {}
 
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
@@ -120,6 +124,8 @@ class NikobusCommandHandler:
         command_code = 0x12 if int(group) == 1 else 0x17
         command = make_pc_link_command(command_code, address)
         future = self._coordinator.hass.loop.create_future()
+        key = f"{address.upper()}_{group}"
+        self._pending_get_futures[key] = future
         try:
             await self.queue_command(command, address, future=future)
             return await asyncio.wait_for(future, timeout=COMMAND_ACK_WAIT_TIMEOUT)
@@ -127,6 +133,25 @@ class NikobusCommandHandler:
             if not future.done():
                 future.cancel()
             raise
+        finally:
+            self._pending_get_futures.pop(key, None)
+
+    def resolve_pending_get(self, address: str, group: int, state: str) -> None:
+        """Resolve a pending get_output_state future directly from the feedback callback.
+
+        Called by the coordinator's process_feedback_data when the PCLink module
+        echoes a $1C… response.  This restores the 0.7.x fast-path: get_output_state
+        returns as soon as the frame arrives rather than waiting for the queue-polling
+        loop to pick it up, which could stall for up to COMMAND_POST_ACK_ANSWER_TIMEOUT
+        under bus contention.
+        """
+        key = f"{address.upper()}_{group}"
+        future = self._pending_get_futures.get(key)
+        if future and not future.done():
+            _LOGGER.debug(
+                "Feedback fast-path: resolving pending GET for %s group %s", address, group
+            )
+            future.set_result(state)
 
     async def send_command_get_answer(self, command: str, address: str) -> str:
         """Send a command and wait for an answer from the Nikobus system."""
