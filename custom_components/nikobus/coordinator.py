@@ -197,7 +197,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
             state_raw = data[9:21]
 
             if address not in self.nikobus_module_states:
-                self.nikobus_module_states[address] = bytearray(12)
+                _LOGGER.debug("Feedback frame for unconfigured module %s — ignored", address)
+                return
 
             if group == 1 and len(self.nikobus_module_states[address]) >= 6:
                 self.nikobus_module_states[address][:6] = bytearray.fromhex(state_raw)
