@@ -50,7 +50,13 @@ class NikobusEventListener:
         self._listener_task: asyncio.Task | None = None
         self.response_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
         self._frame_buffer = ""
-        self._module_group = 1
+        # Per-address dict: maps module address → last queried group (1 or 2).
+        # Replaces the single _module_group int that was vulnerable to corruption
+        # when a foreign device on the same bus (e.g. a second PC-Link or another
+        # controller) sent its own $1012/$1017 echoes — those would overwrite the
+        # shared variable before HA's matching $1C response arrived, causing
+        # process_feedback_data to be called with the wrong group number.
+        self._last_query_group: dict[str, int] = {}
         self._has_feedback_module: bool = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
 
     def _enqueue_response(self, message: str) -> None:
@@ -156,7 +162,13 @@ class NikobusEventListener:
             if any(message.startswith(r) for r in FEEDBACK_REFRESH_COMMAND):
                 if self._has_feedback_module:
                     gid = message[3:5]
-                    self._module_group = {"12": 1, "17": 2}.get(gid, 1)
+                    group = {"12": 1, "17": 2}.get(gid, 1)
+                    # Extract address from the GET-command echo (little-endian at [5:9])
+                    # and store the group so the matching $1C response is attributed
+                    # to the correct group even if foreign bus traffic intervenes.
+                    if len(message) >= 9:
+                        addr = (message[7:9] + message[5:7]).upper()
+                        self._last_query_group[addr] = group
                 return
 
             if message.startswith(FEEDBACK_MODULE_ANSWER):
@@ -165,10 +177,14 @@ class NikobusEventListener:
                 # from modules HA knows about; foreign ones are noise that can
                 # delay the ACK/ANSWER wait loop by a full COMMAND_ANSWER_WAIT_TIMEOUT.
                 if self.validate_crc(message):
-                    if self._has_feedback_module:
-                        await self._feedback_callback(self._module_group, message)
                     if len(message) >= 7:
                         addr = (message[5:7] + message[3:5]).upper()
+                        if self._has_feedback_module:
+                            # Look up which group was last queried for this specific
+                            # address.  Defaults to 1 so single-group modules still
+                            # work if the echo was never seen (e.g. missed frame).
+                            group = self._last_query_group.get(addr, 1)
+                            await self._feedback_callback(group, message)
                         if addr in self._coordinator.nikobus_module_states:
                             self._enqueue_response(message)
                 return
