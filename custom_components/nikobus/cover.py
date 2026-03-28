@@ -405,13 +405,39 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._calculator.stop()
         self._position = self._calculator.current_position()
 
+        # Commit STATE_STOPPED immediately so any coordinator events that fire
+        # during the async stop-command round-trip see a consistent stopped state,
+        # preventing spurious _start_motion_logic calls from stale bus reads.
+        self._state = STATE_STOPPED
+        self._target_position = None
+        self.coordinator.set_bytearray_state(self._address, self._channel, STATE_STOPPED)
+
         if send_stop and (stopped_state != STATE_STOPPED or force_api):
             dir_cmd = "opening" if stopped_state == STATE_OPENING else "closing"
             t0 = time.monotonic()
+
+            # Measure the REAL bus round-trip via the completion handler so we
+            # can correct the position for the brief opposing-relay (0x03) pulse.
+            # stop_cover() returns as soon as the command is enqueued (no yield),
+            # so time.monotonic() after the await would always read ~0 ms.
+            ack_future: asyncio.Future[None] = self.coordinator.hass.loop.create_future()
+
+            async def _on_ack() -> None:
+                if not ack_future.done():
+                    ack_future.set_result(None)
+
             await self.coordinator.api.stop_cover(
-                self._address, self._channel, dir_cmd, lambda: None
+                self._address, self._channel, dir_cmd, _on_ack
             )
-            round_trip = time.monotonic() - t0
+            try:
+                await asyncio.wait_for(asyncio.shield(ack_future), timeout=2.0)
+                round_trip = time.monotonic() - t0
+            except asyncio.TimeoutError:
+                _LOGGER.debug(
+                    "Cover %s: stop-command ACK timeout — skipping position correction",
+                    self._address,
+                )
+                round_trip = 0.0
 
             # During the VALUE=0 round-trip the Nikobus motor-protection (0x03)
             # briefly activates the opposing relay, physically moving the cover
@@ -420,10 +446,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._position = min(100.0, self._position + round_trip * (100.0 / self._calculator.time_up))
             elif stopped_state == STATE_OPENING and self._calculator.time_down > 0:
                 self._position = max(0.0, self._position - round_trip * (100.0 / self._calculator.time_down))
+            _LOGGER.debug(
+                "Cover %s: stop complete — direction=%s round_trip=%.3fs corrected_position=%.1f",
+                self._address, stopped_state, round_trip, self._position,
+            )
 
-        self._state = STATE_STOPPED
-        self._target_position = None
-        self.coordinator.set_bytearray_state(self._address, self._channel, STATE_STOPPED)
         self.async_write_ha_state()
 
     async def _handle_nikobus_event(self, event: Any) -> None:
