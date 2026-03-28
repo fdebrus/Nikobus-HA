@@ -252,10 +252,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             super()._handle_coordinator_update()
             return
 
-        # Handle the 0x03 Error State by aggressively stopping
+        # 0x03 = hardware motor-protection state: both open and close outputs
+        # briefly active simultaneously as a braking mechanism. The module
+        # auto-clears to VALUE=0; HA must not send any command in response.
+        # Just freeze tracking — the next coordinator refresh will confirm 0x00.
         if new_bus_state == STATE_ERROR:
-            _LOGGER.debug("Nikobus cover %s reported error state (0x03). Forcing stop to recover.", self._address)
-            self.hass.async_create_task(self._stop(send_stop=True, force_api=True))
+            _LOGGER.debug("Cover %s: hardware motor-protection (0x03) observed — waiting for auto-clear.", self._address)
+            self.hass.async_create_task(self._stop(send_stop=False))
         elif new_bus_state == STATE_STOPPED:
             self.hass.async_create_task(self._stop(send_stop=False))
         else:
@@ -266,28 +269,22 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     async def _handle_button_pressed(self, event: Any) -> None:
-        """Send VALUE=0 to preempt the hardware 0x03 error state on button press.
+        """Cancel HA motion tracking when a linked Nikobus button is pressed.
 
-        When a physical button is pressed while the cover is moving, Nikobus
-        hardware activates the opposing direction briefly as a braking mechanism
-        (open=0x01 while close=0x02 is still active → VALUE=3 = 0x03 error).
-        If HA reads the module state before this transient clears, it sees 0x03
-        and triggers noisy error-recovery.
+        When the user presses a physical Nikobus button during movement, HA must
+        not send any command back to the bus. Nikobus handles the stop internally
+        (motor-protection: activates the opposing direction momentarily to brake,
+        then auto-clears to VALUE=0). HA's role is observer only.
 
-        Sending VALUE=0 (stop) immediately preempts the 0x03 state: the hardware
-        receives the explicit stop before the actuator's Step-1 GET runs.
-
-        Previously this stop took up to 5 seconds because #N<button> frames were
-        being enqueued in the response queue, blocking the ACK wait loop on every
-        #N iteration. That root cause is now fixed in dispatch_message (nkblistener):
-        button frames are discarded from the response queue after handling, so the
-        $05xx ACK arrives within ~0.5 s and the queue is never blocked.
+        Cancel the motion task so position tracking stops and HA state is written
+        as STOPPED. The actuator's Step-1 GET (~300 ms later) will confirm the
+        actual hardware state and _handle_coordinator_update will resync if needed.
         """
         if str(event.data.get("module_address")) != str(self._address):
             return
 
         if self._state != STATE_STOPPED:
-            await self._stop(send_stop=True)
+            await self._stop(send_stop=False)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open cover command."""
