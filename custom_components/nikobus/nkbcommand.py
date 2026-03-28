@@ -185,15 +185,16 @@ class NikobusCommandHandler:
     ) -> str:
         """Wait for an acknowledgment and answer from the Nikobus system with retries."""
         
-        # Flush the listener queue of old stale messages before sending
-        while not self.nikobus_listener.response_queue.empty():
-            try:
-                self.nikobus_listener.response_queue.get_nowait()
-                self.nikobus_listener.response_queue.task_done()
-            except asyncio.QueueEmpty:
-                break
-
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            # Flush stale messages before each attempt — a failed previous attempt
+            # may have left non-matching frames (foreign bus traffic, #N button
+            # frames on old firmware) in the queue that would delay the next try.
+            while not self.nikobus_listener.response_queue.empty():
+                try:
+                    self.nikobus_listener.response_queue.get_nowait()
+                    self.nikobus_listener.response_queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
             try:
                 await self.nikobus_connection.send(command)
                 _LOGGER.debug(
