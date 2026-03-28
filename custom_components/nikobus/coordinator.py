@@ -205,6 +205,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             elif group == 2 and len(self.nikobus_module_states[address]) >= 12:
                 self.nikobus_module_states[address][6:] = bytearray.fromhex(state_raw)
 
+            # Fast-path: if get_output_state is waiting for this module/group, resolve
+            # its future immediately so it returns without waiting for the queue-polling
+            # timeout.  This restores 0.7.x behaviour for feedback-module users.
+            if self.nikobus_command:
+                self.nikobus_command.resolve_pending_get(address, group, state_raw)
+
             # Signal only entities on this specific module address
             await self.async_event_handler(
                 "nikobus_refreshed",
