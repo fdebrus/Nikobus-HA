@@ -17,6 +17,7 @@ from homeassistant.components import (
     binary_sensor,
     button,
     scene,
+    sensor,
 )
 
 from .const import DOMAIN, HUB_IDENTIFIER
@@ -31,6 +32,7 @@ PLATFORMS: Final[list[str]] = [
     binary_sensor.DOMAIN,
     button.DOMAIN,
     scene.DOMAIN,
+    sensor.DOMAIN,
 ]
 
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})

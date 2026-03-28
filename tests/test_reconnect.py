@@ -38,6 +38,8 @@ def _make_coordinator():
     coord._stopping = False
     coord._reconnect_task = None
     coord._reload_task = None
+    coord._last_connected = None
+    coord._reconnect_attempts = 0
     coord.discovery_running = False
     coord.dict_module_data = {}
     coord.nikobus_module_states = {}
@@ -132,7 +134,8 @@ class TestReconnectLoop(unittest.IsolatedAsyncioTestCase):
         coord.nikobus_command.start.assert_called_once()
         coord.nikobus_listener.start.assert_called_once()
         coord._async_update_data.assert_called_once()
-        coord.async_update_listeners.assert_called_once()
+        # Called once for "reconnecting" state, once for "connected" state after success.
+        self.assertEqual(coord.async_update_listeners.call_count, 2)
 
     async def test_retries_after_connection_failure(self):
         coord = _make_coordinator()
