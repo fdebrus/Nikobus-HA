@@ -159,6 +159,19 @@ class NikobusCommandHandler:
             "Sending command %s to address %s, waiting for answer", command, address
         )
         wait_ack, wait_answer = self._prepare_ack_and_answer_signals(command, address)
+
+        # For GET commands ($1012 = group 1, $1017 = group 2), tell the listener
+        # which group is about to be queried so that the feedback callback can
+        # attribute the matching $1C response to the correct group.  This is
+        # required because many PC-Link firmware variants do not echo HA's own
+        # bus commands back on the serial port, leaving the echo-based
+        # _last_query_group dict empty and causing all responses to default to
+        # group 1 — which corrupts the state buffer of 12-channel modules.
+        gid = command[3:5] if len(command) >= 5 else ""
+        if gid in ("12", "17"):
+            self.nikobus_listener.set_pending_query_group(
+                address.upper(), 1 if gid == "12" else 2
+            )
         state = await self._wait_for_ack_and_answer(command, wait_ack, wait_answer)
         if state is None:
             raise NikobusTimeoutError(

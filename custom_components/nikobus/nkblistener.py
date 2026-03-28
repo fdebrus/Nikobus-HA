@@ -59,6 +59,19 @@ class NikobusEventListener:
         self._last_query_group: dict[str, int] = {}
         self._has_feedback_module: bool = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
 
+    def set_pending_query_group(self, addr: str, group: int) -> None:
+        """Record which group is about to be queried for an address.
+
+        Called by the command layer immediately before it sends a $1012/$1017
+        GET command so that the feedback callback can attribute the matching
+        $1C response to the correct group.  This is necessary because many
+        PC-Link firmware variants do NOT echo HA's own bus commands back on
+        the serial port, leaving _last_query_group empty so it would fall back
+        to the default group 1 for every response — corrupting state for any
+        module with more than 6 channels when a Group 2 query is made.
+        """
+        self._last_query_group[addr] = group
+
     def _enqueue_response(self, message: str) -> None:
         """Add a message to the response queue, dropping the oldest if full."""
         try:
