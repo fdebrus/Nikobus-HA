@@ -69,7 +69,9 @@ class NikobusEventListener:
     async def start(self) -> None:
         """Start the background listening task."""
         self._running = True
-        self._listener_task = self._hass.async_create_task(self._listen_loop())
+        self._listener_task = self._hass.async_create_background_task(
+            self._listen_loop(), name="nikobus_listen_loop"
+        )
         _LOGGER.info("Nikobus Event Listener started.")
 
     async def stop(self) -> None:
