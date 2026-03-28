@@ -1,6 +1,6 @@
 import importlib.util
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 HA_AVAILABLE = importlib.util.find_spec("homeassistant") is not None
@@ -39,7 +39,9 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
                     discovered_devices[device["address"]] = device
 
         self.coordinator = FakeCoordinator()
-        self.discovery = NikobusDiscovery(object(), self.coordinator)
+        hass = MagicMock()
+        hass.async_create_task = MagicMock(return_value=MagicMock())
+        self.discovery = NikobusDiscovery(hass, self.coordinator)
 
     async def test_parse_pclink_inventory_response_populates_modules_and_buttons(self):
         module_payload = _build_inventory_payload(0x01, b"\x12\x34")
@@ -97,7 +99,7 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
         self.discovery._module_type = "switch_module"
         self.discovery._decoders = [FakeDecoder()]
 
-        message = "$0510$2E1234ABCD"
+        message = "$2E1234ABCD"
         with patch(
             "custom_components.nikobus.discovery.discovery.merge_discovered_links",
             _fake_merge,
@@ -106,6 +108,10 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
             self.discovery._cancel_timeout()
 
         mapping = self.discovery._decoded_buffer["command_mapping"]
-        self.assertIn(("AA0000", 1), mapping)
-        output = mapping[("AA0000", 1)][0]
+        # Key is (push_button_address, channel, ir_slot) — match on first two components
+        matching_key = next(
+            (k for k in mapping if k[0] == "AA0000" and k[1] == 1), None
+        )
+        self.assertIsNotNone(matching_key, f"Expected key starting with ('AA0000', 1) in {list(mapping)}")
+        output = mapping[matching_key][0]
         self.assertEqual(output["module_address"], "3412")
