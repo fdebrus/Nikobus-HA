@@ -51,7 +51,9 @@ class NikobusCommandHandler:
     async def start(self) -> None:
         """Start the command processing loop."""
         self._running = True
-        self._command_task = self._coordinator.hass.async_create_task(self.process_commands())
+        self._command_task = self._coordinator.hass.async_create_background_task(
+            self.process_commands(), name="nikobus_command_loop"
+        )
 
     async def stop(self) -> None:
         """Stop the command processing loop."""
