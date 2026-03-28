@@ -159,19 +159,19 @@ class NikobusEventListener:
                     self._module_group = {"12": 1, "17": 2}.get(gid, 1)
                 return
 
-            if self._has_feedback_module:
-                if message.startswith(FEEDBACK_MODULE_ANSWER):
-                    if self.validate_crc(message):
+            if message.startswith(FEEDBACK_MODULE_ANSWER):
+                # $1C… frames are GET-state responses — from HA's own queries
+                # or from other controllers on the same bus.  Only enqueue frames
+                # from modules HA knows about; foreign ones are noise that can
+                # delay the ACK/ANSWER wait loop by a full COMMAND_ANSWER_WAIT_TIMEOUT.
+                if self.validate_crc(message):
+                    if self._has_feedback_module:
                         await self._feedback_callback(self._module_group, message)
-                        # Only enqueue responses for known modules so the command
-                        # handler can correlate its own pending GET with this frame.
-                        # Foreign bus traffic (other devices polling unrelated modules)
-                        # must NOT be enqueued — it is noise for any pending command.
-                        if len(message) >= 7:
-                            addr = (message[5:7] + message[3:5]).upper()
-                            if addr in self._coordinator.nikobus_module_states:
-                                self._enqueue_response(message)
-                    return
+                    if len(message) >= 7:
+                        addr = (message[5:7] + message[3:5]).upper()
+                        if addr in self._coordinator.nikobus_module_states:
+                            self._enqueue_response(message)
+                return
 
             if any(message.startswith(r) for r in MANUAL_REFRESH_COMMAND):
                 if self.validate_crc(message) and not message.startswith(BUTTON_COMMAND_PREFIX):
