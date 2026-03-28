@@ -69,7 +69,7 @@ DEVICE_INVENTORY_ANSWER: Final[tuple[str, str]] = ("$2E", "$1E")
 # =============================================================================
 # Command Execution
 # =============================================================================
-COMMAND_EXECUTION_DELAY: Final[float] = 0.7  # Delay between command executions
+COMMAND_EXECUTION_DELAY: Final[float] = 0.15  # Delay between command executions (OH1 uses 50 ms; 150 ms gives the bus a safe clearing window)
 COMMAND_ACK_WAIT_TIMEOUT: Final[int] = 15   # Outer deadline for the whole ACK+ANSWER wait
 COMMAND_ANSWER_WAIT_TIMEOUT: Final[int] = 5  # Pre-ACK: how long to wait for the ACK itself
 COMMAND_POST_ACK_ANSWER_TIMEOUT: Final[float] = 1.5  # Post-ACK: data should follow ACK quickly

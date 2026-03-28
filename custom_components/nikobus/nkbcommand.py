@@ -48,6 +48,12 @@ class NikobusCommandHandler:
         # get_output_state returns as soon as the PCLink echoes the response rather
         # than waiting for the queue-polling path to complete (restores 0.7.x behaviour).
         self._pending_get_futures: dict[str, asyncio.Future[str]] = {}
+        # Tracks "ADDRESS_group" keys for GET commands currently sitting in the
+        # command queue (not yet being processed).  Used by queue_command to suppress
+        # duplicate GETs for the same module/group: the new caller's future is already
+        # registered in _pending_get_futures and will be resolved by the existing
+        # command's feedback fast-path, so no second bus round-trip is needed.
+        self._queued_get_keys: set[str] = set()
 
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
@@ -70,6 +76,7 @@ class NikobusCommandHandler:
             if not future.done():
                 future.cancel()
         self._pending_get_futures.clear()
+        self._queued_get_keys.clear()
         if self._command_task:
             self._command_task.cancel()
             try:
@@ -92,6 +99,15 @@ class NikobusCommandHandler:
                 )
 
                 _LOGGER.debug("Processing command: %s with address: %s", command, address)
+
+                # Release dedup lock as soon as the command is dequeued so that
+                # any new GET for the same module/group arriving during the bus
+                # round-trip is queued normally rather than suppressed.
+                gid = command[3:5] if len(command) >= 5 else ""
+                if gid in ("12", "17") and address:
+                    self._queued_get_keys.discard(
+                        f"{address.upper()}_{'1' if gid == '12' else '2'}"
+                    )
 
                 try:
                     if not address:
@@ -374,6 +390,25 @@ class NikobusCommandHandler:
     ) -> None:
         """Queue a command for processing."""
         _LOGGER.debug("Queueing command: %s", command)
+
+        # Suppress duplicate GET commands for the same module/group while an
+        # identical GET is already sitting in the queue (not yet dispatched).
+        # The new caller's future is already stored in _pending_get_futures by
+        # get_output_state(); the existing command's feedback fast-path will
+        # resolve it when the bus response arrives, so no extra round-trip is
+        # needed.  The dedup key is cleared the moment the command is dequeued
+        # (before the bus round-trip) so GETs arriving during the round-trip
+        # are queued normally.
+        gid = command[3:5] if len(command) >= 5 else ""
+        if gid in ("12", "17") and address:
+            dedup_key = f"{address.upper()}_{'1' if gid == '12' else '2'}"
+            if dedup_key in self._queued_get_keys:
+                _LOGGER.debug(
+                    "Suppressing duplicate GET for %s (already queued)", dedup_key
+                )
+                return
+            self._queued_get_keys.add(dedup_key)
+
         command_item = {
             "command": command,
             "address": address,
