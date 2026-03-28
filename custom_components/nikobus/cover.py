@@ -268,18 +268,23 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def _handle_button_pressed(self, event: Any) -> None:
         """Cancel HA motion tracking when a linked button is pressed.
 
-        Do NOT send a stop command here. When a physical button is pressed while
-        a cover is moving, Nikobus hardware reverses the motor direction. Sending
-        VALUE=0 (stop) to fight that reversal takes 5+ seconds to be ACKed, during
-        which the cover moves further in the reversed direction. The result is HA's
-        position estimate being badly out of sync with reality.
+        Nikobus hardware stops the motor immediately when a physical button is
+        pressed during cover movement (motor-protection behaviour). The cover is
+        already at VALUE=0 by the time HA sees the #N<button> frame.
 
-        Instead, cancel our motion task and let the coordinator refresh (fired by
-        the actuator ~300 ms later) resync the actual hardware state:
-        - If hardware reports VALUE=1/2 (reversed): _handle_coordinator_update will
-          call _start_motion_logic() in the new direction from the current position.
-        - If hardware reports VALUE=0 (stopped): _handle_coordinator_update will
-          call _stop(send_stop=False) to settle state.
+        Do NOT send a redundant VALUE=0 stop command here. The previous code did,
+        and that command was stuck waiting for an ACK for up to 5 seconds because
+        the #N<button> frames arriving in the response queue prevented the expected
+        $05xx ACK from being matched on the first attempt (timeout → retry).
+        During those 5 seconds the entire command queue was blocked: any subsequent
+        open/close issued from HA would queue behind the redundant stop and appear
+        to hang, making HA look out of sync.
+
+        Instead, just cancel our motion task and let the coordinator refresh (fired
+        by the actuator ~300 ms later) confirm VALUE=0 from the hardware:
+        - _handle_coordinator_update sees STATE_STOPPED == STATE_STOPPED → no-op,
+          state and position remain as frozen by _stop().
+        The command queue is free immediately for the next user action.
         """
         if str(event.data.get("module_address")) != str(self._address):
             return
