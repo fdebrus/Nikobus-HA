@@ -63,6 +63,13 @@ class NikobusCommandHandler:
     async def stop(self) -> None:
         """Stop the command processing loop."""
         self._running = False
+        # Cancel any futures that are still waiting for a bus response so that
+        # callers (e.g. get_output_state) don't hang for COMMAND_ACK_WAIT_TIMEOUT
+        # (15 s) during HA shutdown.
+        for future in list(self._pending_get_futures.values()):
+            if not future.done():
+                future.cancel()
+        self._pending_get_futures.clear()
         if self._command_task:
             self._command_task.cancel()
             try:
