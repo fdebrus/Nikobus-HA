@@ -445,6 +445,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._position = min(100.0, self._position + round_trip * (100.0 / self._calculator.time_up))
             elif stopped_state == STATE_OPENING and self._calculator.time_down > 0:
                 self._position = max(0.0, self._position - round_trip * (100.0 / self._calculator.time_down))
+
+            # Sync the calculator's internal position to the corrected value so
+            # any subsequent start_travel() resumes from the right point.
+            self._calculator.set_position(self._position)
             _LOGGER.debug(
                 "Cover %s: stop complete — direction=%s round_trip=%.3fs corrected_position=%.1f",
                 self._address, stopped_state, round_trip, self._position,
