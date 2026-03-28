@@ -266,31 +266,28 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     async def _handle_button_pressed(self, event: Any) -> None:
-        """Cancel HA motion tracking when a linked button is pressed.
+        """Send VALUE=0 to preempt the hardware 0x03 error state on button press.
 
-        Nikobus hardware stops the motor immediately when a physical button is
-        pressed during cover movement (motor-protection behaviour). The cover is
-        already at VALUE=0 by the time HA sees the #N<button> frame.
+        When a physical button is pressed while the cover is moving, Nikobus
+        hardware activates the opposing direction briefly as a braking mechanism
+        (open=0x01 while close=0x02 is still active → VALUE=3 = 0x03 error).
+        If HA reads the module state before this transient clears, it sees 0x03
+        and triggers noisy error-recovery.
 
-        Do NOT send a redundant VALUE=0 stop command here. The previous code did,
-        and that command was stuck waiting for an ACK for up to 5 seconds because
-        the #N<button> frames arriving in the response queue prevented the expected
-        $05xx ACK from being matched on the first attempt (timeout → retry).
-        During those 5 seconds the entire command queue was blocked: any subsequent
-        open/close issued from HA would queue behind the redundant stop and appear
-        to hang, making HA look out of sync.
+        Sending VALUE=0 (stop) immediately preempts the 0x03 state: the hardware
+        receives the explicit stop before the actuator's Step-1 GET runs.
 
-        Instead, just cancel our motion task and let the coordinator refresh (fired
-        by the actuator ~300 ms later) confirm VALUE=0 from the hardware:
-        - _handle_coordinator_update sees STATE_STOPPED == STATE_STOPPED → no-op,
-          state and position remain as frozen by _stop().
-        The command queue is free immediately for the next user action.
+        Previously this stop took up to 5 seconds because #N<button> frames were
+        being enqueued in the response queue, blocking the ACK wait loop on every
+        #N iteration. That root cause is now fixed in dispatch_message (nkblistener):
+        button frames are discarded from the response queue after handling, so the
+        $05xx ACK arrives within ~0.5 s and the queue is never blocked.
         """
         if str(event.data.get("module_address")) != str(self._address):
             return
 
         if self._state != STATE_STOPPED:
-            await self._stop(send_stop=False)
+            await self._stop(send_stop=True)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open cover command."""

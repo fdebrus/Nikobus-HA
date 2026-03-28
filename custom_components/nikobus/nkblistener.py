@@ -133,12 +133,18 @@ class NikobusEventListener:
             return
 
         if not discovery_running:
-            # Handle button press but DO NOT return, 
-            # in case this message is a collision containing other data.
+            # Handle button press and return immediately.
+            # _extract_frames already splits the raw stream at every '$' and '#',
+            # so a button frame (#N…) dispatched here never contains embedded
+            # command-response data. Enqueuing #N frames in the response queue
+            # adds noise that blocks ACK waits in send_command_get_answer for
+            # as long as the button is held (each #N frame consumes one iteration
+            # of the wait loop, delaying the real $05xx ACK by up to 5 seconds).
             if BUTTON_COMMAND_PREFIX in message:
                 idx = message.find(BUTTON_COMMAND_PREFIX)
                 if idx != -1:
                     await self._actuator.handle_button_press(message[idx+2:idx+8])
+                return
 
             if any(message.startswith(cmd) for cmd in COMMAND_PROCESSED):
                 self._enqueue_response(message)
