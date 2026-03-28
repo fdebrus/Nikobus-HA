@@ -47,7 +47,7 @@ Before installing:
 The integration emits structured Home Assistant bus events for every button press lifecycle:
 
 - Base events: `nikobus_button_pressed` and `nikobus_button_released`.
-- Classification: `nikobus_short_button_pressed` (press duration < 3s) and `nikobus_long_button_pressed` (press duration ≥ 3s). The 3-second threshold is defined as `LONG_PRESS` in `custom_components/nikobus/const.py`.
+- Classification: `nikobus_short_button_pressed` (press duration < 1s) and `nikobus_long_button_pressed` (press duration ≥ 1s). The 1-second threshold is defined as `SHORT_PRESS` in `custom_components/nikobus/const.py`.
 - Release-duration buckets (rounded down): `nikobus_button_pressed_0` (< 1s), `nikobus_button_pressed_1` (1–<2s), `nikobus_button_pressed_2` (2–<3s), and `nikobus_button_pressed_3` (≥ 3s).
 - Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively.
 - Post-refresh notification: `nikobus_button_operation` when the integration refreshes impacted modules after the press, including metadata such as the impacted module address/group and configured operation time.
@@ -155,6 +155,8 @@ If you rely solely on periodic refresh, Home Assistant may briefly be out of syn
 - Direct serial/USB connection, e.g., `/dev/ttyUSB0`.
 - Network bridge, e.g., `192.168.2.50:9999`, if the Nikobus installation is remote from the HA host.
 
+If the connection drops for any reason, the integration will automatically attempt to reconnect using exponential back-off (retrying after 5 s, 10 s, 20 s, up to a maximum of 60 s between attempts). Entities will appear unavailable until the connection is restored, then return to their current state without requiring an HA restart.
+
 ![TCP bridge example 1](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
 ![TCP bridge example 2](https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8)
 ![TCP bridge example 3](https://github.com/fdebrus/Nikobus-HA/assets/33791533/498e5a0f-ab75-4d29-9988-884015fbf05a)
@@ -175,36 +177,25 @@ If you rely solely on periodic refresh, Home Assistant may briefly be out of syn
 
 ## Module Configuration
 
-Initial Discovery & Module Configuration
+### Initial Discovery & Module Configuration
 
 After installing the integration, you must first run Nikobus Discovery to generate the base configuration file.
 
-1. Run Discovery
+#### 1. Run Discovery
 
-In Home Assistant, go to:
-Developer Tools → Actions
+In Home Assistant, go to **Developer Tools → Actions**, select the **Nikobus: Discovery** action, leave the module address field empty (reserved for future use), and execute.
 
-Select the Nikobus: Discovery action.
+This creates a skeleton configuration file at `/config/nikobus_module_config.json` containing the detected modules, which serves as the foundation for your manual configuration.
 
-Leave the module address field empty.
-This field is reserved for future functionality and is not required for initial discovery.
+#### 2. Edit the Module Configuration File
 
-Execute the action.
-
-This process creates a skeleton configuration file:
-
-/config/nikobus_module_config.json
-
-This file will contain the detected modules and serves as the foundation for your manual configuration and validation.
-
-2. Edit the Module Configuration File
-
-Open nikobus_module_config.json and complete the module definitions.
+Open `nikobus_module_config.json` and complete the module definitions.
 
 **Required vs optional fields**
 
 - **Required (module level)**: `description`, `model`, `address`, and `channels`.
-- **Required (per channel)**: `description`. `operation_time_up`
+- **Required (per channel)**: `description`.
+- **Required (per channel, roller modules only)**: `operation_time_up`.
 - **Optional (per channel)**:
   - `led_on` / `led_off`: Feedback LED addresses (case-sensitive, format like `8AA8FA`).
   - `operation_time_down`: For roller outputs, the time in seconds to fully close. If omitted, will default to `operation_time_up`, which may reduce position accuracy.
@@ -291,11 +282,11 @@ Open nikobus_module_config.json and complete the module definitions.
 
 ## Button Configuration
 
-When you press a Nikobus button for the first time, the integration discovers it and creates/updates `nikobus_button_config.json` in your Home Assistant `/config` directory. After discovery, manually edit each button entry to list the impacted modules so state refreshes immediately after a press.
+When you press a Nikobus button for the first time, the integration discovers it and creates (or appends to) `nikobus_button_config.json` in your Home Assistant `/config` directory. After discovery, manually edit each button entry to list the impacted modules so state refreshes immediately after a press.
 
 - For 12-output modules, groups 1–6 map to module group 1; groups 7–12 map to module group 2. Six-output modules use group 1 only.
 - You can map a single button to multiple modules.
-- Restart Home Assistant after edits so the integration reloads the mappings.
+- After editing the file, reload the integration via **Settings → Devices & Services → Nikobus → Reload** (a full HA restart is not required).
 
 ### Discovered Button Example
 
