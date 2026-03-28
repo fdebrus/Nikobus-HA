@@ -180,6 +180,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         self._movement_source = "ha"
         self._current_run_limit: float = op_time_up
+        self._error_recovery_task: asyncio.Task | None = None
 
     @property
     def current_cover_position(self) -> int:
@@ -240,6 +241,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             if self._coalesce_task:
                 self._coalesce_task.cancel()
                 self._coalesce_task = None
+            if self._error_recovery_task:
+                self._error_recovery_task.cancel()
+                self._error_recovery_task = None
 
         self.async_on_remove(_cancel_cover_tasks)
 
@@ -252,13 +256,26 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             super()._handle_coordinator_update()
             return
 
-        # 0x03 = hardware motor-protection state: both open and close outputs
-        # briefly active simultaneously as a braking mechanism. The module
-        # auto-clears to VALUE=0; HA must not send any command in response.
-        # Just freeze tracking — the next coordinator refresh will confirm 0x00.
+        # 0x03 = hardware motor-protection (both relay outputs active simultaneously).
+        # Cause depends on who initiated movement:
+        #   "ha"      — HA wrote the relay directly; Nikobus didn't track the motion.
+        #               Actively send VALUE=0 to clear the braking state quickly.
+        #   "nikobus" — Nikobus initiated; hardware auto-clears cleanly. Observer-only;
+        #               schedule a follow-up refresh to catch the 0x00 transition.
         if new_bus_state == STATE_ERROR:
-            _LOGGER.debug("Cover %s: hardware motor-protection (0x03) observed — waiting for auto-clear.", self._address)
-            self.hass.async_create_task(self._stop(send_stop=False))
+            if self._movement_source == "ha":
+                _LOGGER.debug("Cover %s: motor-protection (0x03) after HA-initiated move — sending VALUE=0 to clear.", self._address)
+                # force_api=True because _state may already be STOPPED from _handle_button_pressed
+                self.hass.async_create_task(self._stop(send_stop=True, force_api=True))
+            else:
+                _LOGGER.debug("Cover %s: motor-protection (0x03) after Nikobus-initiated move — waiting for auto-clear.", self._address)
+                self.hass.async_create_task(self._stop(send_stop=False))
+                if not self._error_recovery_task or self._error_recovery_task.done():
+                    async def _await_error_clear() -> None:
+                        await asyncio.sleep(2.5)
+                        _LOGGER.debug("Cover %s: re-polling after motor-protection delay.", self._address)
+                        await self.coordinator.async_request_refresh()
+                    self._error_recovery_task = self.hass.async_create_task(_await_error_clear())
         elif new_bus_state == STATE_STOPPED:
             self.hass.async_create_task(self._stop(send_stop=False))
         else:
@@ -269,22 +286,22 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     async def _handle_button_pressed(self, event: Any) -> None:
-        """Cancel HA motion tracking when a linked Nikobus button is pressed.
+        """Handle a physical Nikobus button press during cover movement.
 
-        When the user presses a physical Nikobus button during movement, HA must
-        not send any command back to the bus. Nikobus handles the stop internally
-        (motor-protection: activates the opposing direction momentarily to brake,
-        then auto-clears to VALUE=0). HA's role is observer only.
+        When HA initiated movement ("ha"), send VALUE=0 immediately so the
+        module exits motor-protection (0x03) quickly — Nikobus doesn't track
+        HA-initiated motion so it generates an atypical braking pulse; actively
+        clearing the relay minimises the reversal to the bus round-trip (~0.5s).
 
-        Cancel the motion task so position tracking stops and HA state is written
-        as STOPPED. The actuator's Step-1 GET (~300 ms later) will confirm the
-        actual hardware state and _handle_coordinator_update will resync if needed.
+        When Nikobus initiated movement ("nikobus"), stay observer-only — the
+        hardware handles the stop cleanly and will auto-clear 0x03 on its own.
         """
         if str(event.data.get("module_address")) != str(self._address):
             return
 
         if self._state != STATE_STOPPED:
-            await self._stop(send_stop=False)
+            send_stop = (self._movement_source == "ha")
+            await self._stop(send_stop=send_stop)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open cover command."""
