@@ -5,18 +5,20 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple, Any
 
 from homeassistant.core import HomeAssistant
 from .exceptions import NikobusTimeoutError
-from .const import BUTTON_TIMER_THRESHOLDS, DIMMER_DELAY, REFRESH_DELAY, SHORT_PRESS
+from .const import (
+    BUTTON_TIMER_THRESHOLDS,
+    DIMMER_DELAY,
+    EVENT_BUTTON_OPERATION,
+    EVENT_BUTTON_PRESSED,
+    REFRESH_DELAY,
+    SHORT_PRESS,
+)
 
 _LOGGER = logging.getLogger(__name__)
-
-# Event Constants
-BUTTON_OPERATION_EVENT = "nikobus_button_operation"
-EVENT_BUTTON_PRESSED = "nikobus_button_pressed"
 
 
 @dataclass
@@ -218,7 +220,7 @@ class NikobusActuator:
             # ==========================================
             # 4. Post-refresh notification (nikobus_button_operation)
             self._fire_event(
-                BUTTON_OPERATION_EVENT,
+                EVENT_BUTTON_OPERATION,
                 PressState(button_address.upper(), 0, 0, press_id, addr, None),
                 state_value="released",
                 duration=(press_context or {}).get("duration_s"),

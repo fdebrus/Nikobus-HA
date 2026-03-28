@@ -56,17 +56,17 @@ class NikobusAPI:
             if bus_cmd:
                 _LOGGER.debug("Sending bus trigger for %s: %s", address, bus_cmd)
                 await self._send_bus_command(bus_cmd, completion_handler)
+                # set_output_state is not called in the bus path, so update state explicitly.
+                self._coordinator.set_bytearray_state(address, channel, target_state)
             else:
                 _LOGGER.debug("Setting output state for %s chan %d to %s", address, channel, hex(target_state))
+                # set_output_state already calls set_bytearray_state internally.
                 await self._coordinator.nikobus_command.set_output_state(
                     address, channel, target_state, completion_handler=completion_handler
                 )
         except NikobusError as err:
             _LOGGER.error("API Action failed for %s: %s", address, err)
             raise
-
-        # Update in-memory state only after the command is successfully queued
-        self._coordinator.set_bytearray_state(address, channel, target_state)
 
     #### SWITCHES
     async def turn_on_switch(self, address: str, channel: int, completion_handler: Callable | None = None) -> None:
@@ -90,12 +90,11 @@ class NikobusAPI:
             if current_brightness == 0 and (led_on := chan_info.get("led_on")):
                 await self._send_bus_command(led_on)
 
-            # Force the exact target brightness
+            # Force the exact target brightness.
+            # set_output_state calls set_bytearray_state internally.
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, brightness, completion_handler=completion_handler
             )
-            self._coordinator.set_bytearray_state(address, channel, brightness)
-            
         except NikobusError as err:
             _LOGGER.error("API Dimmer Action failed for %s: %s", address, err)
             raise
@@ -108,10 +107,10 @@ class NikobusAPI:
             if led_off := chan_info.get("led_off"):
                 await self._send_bus_command(led_off)
 
+            # set_output_state calls set_bytearray_state internally.
             await self._coordinator.nikobus_command.set_output_state(
                 address, channel, STATE_OFF, completion_handler=completion_handler
             )
-            self._coordinator.set_bytearray_state(address, channel, STATE_OFF)
         except NikobusError as err:
             _LOGGER.error("API Dimmer Action failed for %s: %s", address, err)
             raise
@@ -135,14 +134,13 @@ class NikobusAPI:
         try:
             if bus_cmd := chan_info.get(cmd_key):
                 await self._send_bus_command(bus_cmd, completion_handler)
+                self._coordinator.set_bytearray_state(address, channel, STATE_OFF)
             else:
+                # set_output_state calls set_bytearray_state internally.
                 await self._coordinator.nikobus_command.set_output_state(address, channel, STATE_OFF, completion_handler)
         except NikobusError as err:
             _LOGGER.error("API Cover Action failed for %s: %s", address, err)
             raise
-
-        # Update in-memory state only after the command is successfully queued
-        self._coordinator.set_bytearray_state(address, channel, STATE_OFF)
 
     async def set_output_states_for_module(self, address: str, completion_handler: Callable | None = None) -> None:
         """Batch update all output states for a specific module."""

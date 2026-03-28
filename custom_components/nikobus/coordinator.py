@@ -36,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
 
 
-class NikobusDataCoordinator(DataUpdateCoordinator[bool]):
+class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
 
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:

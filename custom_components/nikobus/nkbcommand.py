@@ -66,15 +66,6 @@ class NikobusCommandHandler:
                 _LOGGER.info("Command processing task was cancelled.")
             self._command_task = None
 
-    async def clear_command_queue(self) -> None:
-        """Clear all pending commands in the queue."""
-        while True:
-            try:
-                self._command_queue.get_nowait()
-                self._command_queue.task_done()
-            except asyncio.QueueEmpty:
-                break
-
     async def process_commands(self) -> None:
         """Process commands from the queue."""
         _LOGGER.info("Nikobus Command Processing starting.")
@@ -88,10 +79,7 @@ class NikobusCommandHandler:
                     command_item.get("completion_handler")
                 )
 
-                _LOGGER.debug("Dequeued command: %s", command)
-                _LOGGER.debug(
-                    "Processing command: %s with address: %s", command, address
-                )
+                _LOGGER.debug("Processing command: %s with address: %s", command, address)
 
                 try:
                     if not address:
@@ -239,6 +227,7 @@ class NikobusCommandHandler:
                     self.nikobus_listener.response_queue.get(),
                     timeout=min(COMMAND_ANSWER_WAIT_TIMEOUT, remaining),
                 )
+                self.nikobus_listener.response_queue.task_done()
                 _LOGGER.debug("Message received: %s", message)
                 if wait_ack in message:
                     _LOGGER.debug("ACK received")
@@ -366,15 +355,18 @@ class NikobusCommandHandler:
         if state is None:
             _LOGGER.warning("Cannot set output states — module %s not in state buffer", address)
             return
+        has_second_group = self._coordinator.get_module_channel_count(address) > 6
         channel_states = state[:6] + bytearray([0xFF])
         await self.queue_command(
             make_pc_link_command(0x15, address, channel_states),
             address,
-            completion_handler=completion_handler,
+            # Only fire the completion handler on the last queued command so it
+            # fires exactly once per set_output_states call.
+            completion_handler=None if has_second_group else completion_handler,
         )
 
         # If the module has more than 6 channels, send a second group command.
-        if self._coordinator.get_module_channel_count(address) > 6:
+        if has_second_group:
             channel_states = state[6:12] + bytearray([0xFF])
             await self.queue_command(
                 make_pc_link_command(0x16, address, channel_states),

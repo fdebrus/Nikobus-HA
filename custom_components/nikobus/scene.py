@@ -179,7 +179,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         
         # Update Group 2 (7-12) if applicable
         if num_chans > 6:
-            self.coordinator.set_bytearray_group_state(module_id, 2, state[6:num_chans].hex())
+            self.coordinator.set_bytearray_group_state(module_id, 2, state[6:12].hex())
 
         await self.coordinator.api.set_output_states_for_module(address=module_id)
         
