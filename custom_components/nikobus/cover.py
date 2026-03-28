@@ -266,15 +266,26 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     async def _handle_button_pressed(self, event: Any) -> None:
-        """Freeze position if a linked button is pressed."""
+        """Cancel HA motion tracking when a linked button is pressed.
+
+        Do NOT send a stop command here. When a physical button is pressed while
+        a cover is moving, Nikobus hardware reverses the motor direction. Sending
+        VALUE=0 (stop) to fight that reversal takes 5+ seconds to be ACKed, during
+        which the cover moves further in the reversed direction. The result is HA's
+        position estimate being badly out of sync with reality.
+
+        Instead, cancel our motion task and let the coordinator refresh (fired by
+        the actuator ~300 ms later) resync the actual hardware state:
+        - If hardware reports VALUE=1/2 (reversed): _handle_coordinator_update will
+          call _start_motion_logic() in the new direction from the current position.
+        - If hardware reports VALUE=0 (stopped): _handle_coordinator_update will
+          call _stop(send_stop=False) to settle state.
+        """
         if str(event.data.get("module_address")) != str(self._address):
             return
 
         if self._state != STATE_STOPPED:
-            # Send a stop command to the bus if HA was driving the cover
-            # This intercepts the button press and prevents the 0x03 collision
-            send_stop = (self._movement_source == "ha")
-            await self._stop(send_stop=send_stop)
+            await self._stop(send_stop=False)
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open cover command."""
