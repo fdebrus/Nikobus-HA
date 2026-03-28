@@ -368,10 +368,21 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
             # Connection re-established — restart the subsystems.
             try:
-                # Drain any stale entries from the command queue.
+                # Drain stale entries from the command queue.
                 while not self.nikobus_command._command_queue.empty():
                     try:
                         self.nikobus_command._command_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+                self.nikobus_command._queued_get_keys.clear()
+
+                # Clear listener state that became invalid while disconnected:
+                # partial frame, stale group-tracking, stale ACK/response frames.
+                self.nikobus_listener._frame_buffer = ""
+                self.nikobus_listener._last_query_group.clear()
+                while not self.nikobus_listener.response_queue.empty():
+                    try:
+                        self.nikobus_listener.response_queue.get_nowait()
                     except asyncio.QueueEmpty:
                         break
 
