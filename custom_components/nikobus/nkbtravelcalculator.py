@@ -18,10 +18,19 @@ class NikobusTravelCalculator:
         """Manually set the current known position."""
         self.position = position
 
-    def start_travel(self, direction: str) -> None:
-        """Mark the start of travel and record start position/time."""
+    def start_travel(self, direction: str, latency: float = 0.0) -> None:
+        """Mark the start of travel and record start position/time.
+
+        ``latency`` is how many seconds the cover has *already* been moving
+        before this method is called (e.g. actuator detection delay for
+        Nikobus-initiated moves).  The start time is backdated so that
+        ``current_position()`` immediately returns the correct in-transit
+        position rather than the stale pre-move position.
+        """
         self._start_pos = self.position
-        self._start_time = time.monotonic()
+        # Backdate the clock so elapsed reflects actual travel time, not just
+        # the time since HA detected the motion.
+        self._start_time = time.monotonic() - max(0.0, latency)
         self._direction = 1 if direction == "opening" else -1
 
     def stop(self) -> None:
