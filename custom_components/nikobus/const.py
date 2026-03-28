@@ -7,6 +7,13 @@ from typing import Final
 # =============================================================================
 DOMAIN: Final[str] = "nikobus"
 BRAND: Final[str] = "Niko"
+HUB_IDENTIFIER: Final[str] = "nikobus_hub"
+
+# =============================================================================
+# Events
+# =============================================================================
+EVENT_BUTTON_OPERATION: Final[str] = "nikobus_button_operation"
+EVENT_BUTTON_PRESSED: Final[str] = "nikobus_button_pressed"
 
 # =============================================================================
 # Configuration Keys
@@ -14,13 +21,11 @@ BRAND: Final[str] = "Niko"
 CONF_CONNECTION_STRING: Final[str] = "connection_string"
 CONF_REFRESH_INTERVAL: Final[str] = "refresh_interval"
 CONF_HAS_FEEDBACK_MODULE: Final[str] = "has_feedbackmodule"
-CONF_HAS_PC_LINK: Final[str] = "has_pclink"
 CONF_PRIOR_GEN3: Final[str] = "prior_gen3"
 
 # =============================================================================
 # Serial Connection
 # =============================================================================
-BAUD_RATE: Final[int] = 9600
 COMMANDS_HANDSHAKE: Final[list[str]] = [
     "++++",
     "ATH0",
@@ -40,8 +45,6 @@ HANDSHAKE_TIMEOUT: Final[int] = 60  # Timeout for handshake in seconds
 REFRESH_DELAY: Final[float] = 0.5  # Delay before retrieving status after button press
 DIMMER_DELAY: Final[int] = 1  # Delay before retrieving dimmer status
 SHORT_PRESS: Final[float] = 1.0  # Short press duration in seconds
-MEDIUM_PRESS: Final[int] = 2  # Medium press duration in seconds
-LONG_PRESS: Final[float] = 3.0  # Long press duration threshold in seconds
 BUTTON_TIMER_THRESHOLDS: Final[tuple[int, int, int]] = (1, 2, 3)
 
 # =============================================================================
@@ -56,7 +59,6 @@ DEFAULT_COVER_OPERATION_TIME: Final[float] = 30.0
 # Listener
 # =============================================================================
 BUTTON_COMMAND_PREFIX: Final[str] = "#N"
-IGNORE_ANSWER: Final[str] = "$0E"  # Unknown response
 FEEDBACK_REFRESH_COMMAND: Final[tuple[str, str]] = ("$1012", "$1017")
 FEEDBACK_MODULE_ANSWER: Final[str] = "$1C"
 MANUAL_REFRESH_COMMAND: Final[tuple[str, str]] = ("$0512", "$0517")

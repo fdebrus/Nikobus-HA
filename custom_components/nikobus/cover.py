@@ -28,6 +28,9 @@ from .const import (
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
     DOMAIN,
+    EVENT_BUTTON_OPERATION,
+    EVENT_BUTTON_PRESSED,
+    HUB_IDENTIFIER,
 )
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
@@ -35,9 +38,6 @@ from .nkbtravelcalculator import NikobusTravelCalculator
 from .router import build_unique_id, get_routing
 
 _LOGGER = logging.getLogger(__name__)
-
-HUB_IDENTIFIER = "nikobus_hub"
-
 
 def _parse_operation_time(value: Any, fallback: float, label: str, address: str) -> float:
     """Parse and validate a cover operation time value.
@@ -68,9 +68,6 @@ STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
 STATE_ERROR = 0x03  # Catches logic engine conflicts
 
-# Event Constants
-EVENT_BUTTON_OPERATION = "nikobus_button_operation"
-EVENT_BUTTON_PRESS = "nikobus_button_pressed"
 
 
 async def async_setup_entry(
@@ -231,7 +228,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self.hass.bus.async_listen(EVENT_BUTTON_OPERATION, self._handle_nikobus_event)
         )
         self.async_on_remove(
-            self.hass.bus.async_listen(EVENT_BUTTON_PRESS, self._handle_button_pressed)
+            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_button_pressed)
         )
 
         def _cancel_cover_tasks() -> None:
@@ -318,6 +315,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move cover to a specific percentage."""
         target = kwargs[ATTR_POSITION]
+        if target == round(self._position):
+            return
         if self._coalesce_task:
             self._coalesce_task.cancel()
 
@@ -363,7 +362,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         )
         
         # Limit is travel time + movement buffer (usually 3s)
-        self._current_run_limit = float(limit_time) if limit_time else (active_op_time + self._movement_buffer)
+        self._current_run_limit = float(limit_time) if limit_time is not None else (active_op_time + self._movement_buffer)
 
         self._motion_task = self.hass.async_create_task(self._motion_loop())
         self.async_write_ha_state()

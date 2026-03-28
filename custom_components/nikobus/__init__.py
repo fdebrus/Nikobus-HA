@@ -19,7 +19,7 @@ from homeassistant.components import (
     scene,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,7 +34,6 @@ PLATFORMS: Final[list[str]] = [
 ]
 
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
-HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the Nikobus integration (single-instance) without redundant handshakes."""

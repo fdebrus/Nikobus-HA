@@ -12,15 +12,14 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN
+from .const import DOMAIN, EVENT_BUTTON_PRESSED
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
-# Constants for state reset and events
-STATE_RESET_DELAY = 1.0  # Seconds before returning to idle
-EVENT_BUTTON_PRESSED = "nikobus_button_pressed"
+# Seconds before returning to idle
+STATE_RESET_DELAY = 1.0
 
 
 async def async_setup_entry(

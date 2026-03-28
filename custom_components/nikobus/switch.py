@@ -12,16 +12,12 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import BRAND, DOMAIN
+from .const import BRAND, DOMAIN, EVENT_BUTTON_OPERATION, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import build_unique_id, get_routing
 
 _LOGGER = logging.getLogger(__name__)
-
-HUB_IDENTIFIER = "nikobus_hub"
-EVENT_BUTTON_OPERATION = "nikobus_button_operation"
-
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback

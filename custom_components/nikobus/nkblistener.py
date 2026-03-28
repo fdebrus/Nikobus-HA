@@ -197,9 +197,10 @@ class NikobusEventListener:
             total_len_hex = message[1:3]
             expected_total = int(total_len_hex, 16)
             
-            # Nikobus length field is total chars after '$' + 1
-            if len(message) != expected_total - 1:
-                _LOGGER.error("Length mismatch: %s vs actual %d (frame: %s)", total_len_hex, len(message)-1, message)
+            # Nikobus length field encodes: (chars_after_$) + 1, so total frame
+            # length including '$' == expected_total.
+            if len(message) != expected_total:
+                _LOGGER.error("Length mismatch: expected %d chars, got %d (frame: %s)", expected_total, len(message), message)
                 return False
 
             payload_with_crc16 = message[:-2]
