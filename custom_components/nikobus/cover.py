@@ -400,14 +400,17 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._motion_task.cancel()
             self._motion_task = None
 
-        self._calculator.stop()
-        self._position = self._calculator.current_position()
-
         if send_stop and (self._state != STATE_STOPPED or force_api):
             dir_cmd = "opening" if self._state == STATE_OPENING else "closing"
             await self.coordinator.api.stop_cover(
                 self._address, self._channel, dir_cmd, lambda: None
             )
+
+        # Stop the calculator AFTER the command round-trip so that position
+        # reflects where the motor actually stopped (~ACK latency later),
+        # not where it was when the stop was requested.
+        self._calculator.stop()
+        self._position = self._calculator.current_position()
 
         self._state = STATE_STOPPED
         self._target_position = None
