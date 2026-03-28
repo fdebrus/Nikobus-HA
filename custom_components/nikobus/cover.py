@@ -180,6 +180,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         self._movement_source = "ha"
         self._current_run_limit: float = op_time_up
+        self._error_recovery_task: asyncio.Task | None = None
 
     @property
     def current_cover_position(self) -> int:
@@ -240,6 +241,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             if self._coalesce_task:
                 self._coalesce_task.cancel()
                 self._coalesce_task = None
+            if self._error_recovery_task:
+                self._error_recovery_task.cancel()
+                self._error_recovery_task = None
 
         self.async_on_remove(_cancel_cover_tasks)
 
@@ -255,10 +259,16 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         # 0x03 = hardware motor-protection state: both open and close outputs
         # briefly active simultaneously as a braking mechanism. The module
         # auto-clears to VALUE=0; HA must not send any command in response.
-        # Just freeze tracking — the next coordinator refresh will confirm 0x00.
+        # Freeze tracking and schedule a single follow-up refresh to catch the clear.
         if new_bus_state == STATE_ERROR:
             _LOGGER.debug("Cover %s: hardware motor-protection (0x03) observed — waiting for auto-clear.", self._address)
             self.hass.async_create_task(self._stop(send_stop=False))
+            if not self._error_recovery_task or self._error_recovery_task.done():
+                async def _await_error_clear() -> None:
+                    await asyncio.sleep(2.5)
+                    _LOGGER.debug("Cover %s: re-polling after motor-protection delay.", self._address)
+                    await self.coordinator.async_request_refresh()
+                self._error_recovery_task = self.hass.async_create_task(_await_error_clear())
         elif new_bus_state == STATE_STOPPED:
             self.hass.async_create_task(self._stop(send_stop=False))
         else:
