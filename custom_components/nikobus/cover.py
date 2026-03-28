@@ -400,17 +400,26 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._motion_task.cancel()
             self._motion_task = None
 
-        if send_stop and (self._state != STATE_STOPPED or force_api):
-            dir_cmd = "opening" if self._state == STATE_OPENING else "closing"
+        # Freeze position at stop-request time and capture direction before clearing it.
+        stopped_state = self._state
+        self._calculator.stop()
+        self._position = self._calculator.current_position()
+
+        if send_stop and (stopped_state != STATE_STOPPED or force_api):
+            dir_cmd = "opening" if stopped_state == STATE_OPENING else "closing"
+            t0 = time.monotonic()
             await self.coordinator.api.stop_cover(
                 self._address, self._channel, dir_cmd, lambda: None
             )
+            round_trip = time.monotonic() - t0
 
-        # Stop the calculator AFTER the command round-trip so that position
-        # reflects where the motor actually stopped (~ACK latency later),
-        # not where it was when the stop was requested.
-        self._calculator.stop()
-        self._position = self._calculator.current_position()
+            # During the VALUE=0 round-trip the Nikobus motor-protection (0x03)
+            # briefly activates the opposing relay, physically moving the cover
+            # in the opposite direction. Correct the recorded position for this.
+            if stopped_state == STATE_CLOSING and self._calculator.time_up > 0:
+                self._position = min(100.0, self._position + round_trip * (100.0 / self._calculator.time_up))
+            elif stopped_state == STATE_OPENING and self._calculator.time_down > 0:
+                self._position = max(0.0, self._position - round_trip * (100.0 / self._calculator.time_down))
 
         self._state = STATE_STOPPED
         self._target_position = None
