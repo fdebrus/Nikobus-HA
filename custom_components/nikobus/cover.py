@@ -252,10 +252,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             super()._handle_coordinator_update()
             return
 
-        # Handle the 0x03 Error State by aggressively stopping
+        # 0x03 = hardware motor-protection state: both open and close outputs
+        # briefly active simultaneously as a braking mechanism. The module
+        # auto-clears to VALUE=0; HA must not send any command in response.
+        # Just freeze tracking — the next coordinator refresh will confirm 0x00.
         if new_bus_state == STATE_ERROR:
-            _LOGGER.debug("Nikobus cover %s reported error state (0x03). Forcing stop to recover.", self._address)
-            self.hass.async_create_task(self._stop(send_stop=True, force_api=True))
+            _LOGGER.debug("Cover %s: hardware motor-protection (0x03) observed — waiting for auto-clear.", self._address)
+            self.hass.async_create_task(self._stop(send_stop=False))
         elif new_bus_state == STATE_STOPPED:
             self.hass.async_create_task(self._stop(send_stop=False))
         else:
@@ -266,25 +269,16 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     async def _handle_button_pressed(self, event: Any) -> None:
-        """Cancel HA motion tracking when a linked button is pressed.
+        """Cancel HA motion tracking when a linked Nikobus button is pressed.
 
-        Nikobus hardware stops the motor immediately when a physical button is
-        pressed during cover movement (motor-protection behaviour). The cover is
-        already at VALUE=0 by the time HA sees the #N<button> frame.
+        When the user presses a physical Nikobus button during movement, HA must
+        not send any command back to the bus. Nikobus handles the stop internally
+        (motor-protection: activates the opposing direction momentarily to brake,
+        then auto-clears to VALUE=0). HA's role is observer only.
 
-        Do NOT send a redundant VALUE=0 stop command here. The previous code did,
-        and that command was stuck waiting for an ACK for up to 5 seconds because
-        the #N<button> frames arriving in the response queue prevented the expected
-        $05xx ACK from being matched on the first attempt (timeout → retry).
-        During those 5 seconds the entire command queue was blocked: any subsequent
-        open/close issued from HA would queue behind the redundant stop and appear
-        to hang, making HA look out of sync.
-
-        Instead, just cancel our motion task and let the coordinator refresh (fired
-        by the actuator ~300 ms later) confirm VALUE=0 from the hardware:
-        - _handle_coordinator_update sees STATE_STOPPED == STATE_STOPPED → no-op,
-          state and position remain as frozen by _stop().
-        The command queue is free immediately for the next user action.
+        Cancel the motion task so position tracking stops and HA state is written
+        as STOPPED. The actuator's Step-1 GET (~300 ms later) will confirm the
+        actual hardware state and _handle_coordinator_update will resync if needed.
         """
         if str(event.data.get("module_address")) != str(self._address):
             return
