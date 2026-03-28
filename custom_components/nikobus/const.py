@@ -67,6 +67,12 @@ DEVICE_ADDRESS_INVENTORY: Final[str] = "$18"
 DEVICE_INVENTORY_ANSWER: Final[tuple[str, str]] = ("$2E", "$1E")
 
 # =============================================================================
+# Reconnect
+# =============================================================================
+RECONNECT_DELAY_INITIAL: Final[int] = 5   # First retry delay in seconds
+RECONNECT_DELAY_MAX: Final[int] = 60      # Cap on exponential-backoff delay
+
+# =============================================================================
 # Command Execution
 # =============================================================================
 COMMAND_EXECUTION_DELAY: Final[float] = 0.15  # Delay between command executions (OH1 uses 50 ms; 150 ms gives the bus a safe clearing window)

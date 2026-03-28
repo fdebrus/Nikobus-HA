@@ -19,6 +19,8 @@ from .const import (
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     DOMAIN,
+    RECONNECT_DELAY_INITIAL,
+    RECONNECT_DELAY_MAX,
 )
 from .discovery import NikobusDiscovery
 from .discovery.base import InventoryQueryType
@@ -74,6 +76,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
+        self._stopping: bool = False
+        self._reconnect_task: asyncio.Task | None = None
 
     def _get_update_interval(self) -> timedelta | None:
         """Compute the update interval based on configuration."""
@@ -123,6 +127,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
 
             self.api = NikobusAPI(self.hass, self)
+            self.nikobus_listener.on_connection_lost = self._handle_connection_lost
             await self.nikobus_command.start()
             await self.nikobus_listener.start()
 
@@ -327,8 +332,76 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def get_switch_state(self, addr: str, ch: int) -> bool: return self.get_bytearray_state(addr, ch) == 0xFF
     def get_cover_state(self, addr: str, ch: int) -> int: return self.get_bytearray_state(addr, ch)
 
+    async def _handle_connection_lost(self) -> None:
+        """Called by the listener when the Nikobus connection drops unexpectedly."""
+        if self._stopping:
+            return
+        _LOGGER.warning("Nikobus connection lost — scheduling reconnect.")
+        # Mark entities as unavailable immediately.
+        self.async_update_listeners()
+        # Stop the command handler so it doesn't keep trying to send on a dead socket.
+        if self.nikobus_command:
+            await self.nikobus_command.stop()
+        # Launch the reconnect loop as a background task.
+        if self._reconnect_task is None or self._reconnect_task.done():
+            self._reconnect_task = self.hass.async_create_background_task(
+                self._reconnect_loop(), name="nikobus_reconnect"
+            )
+
+    async def _reconnect_loop(self) -> None:
+        """Attempt to reconnect with exponential back-off until successful or stopped."""
+        delay = RECONNECT_DELAY_INITIAL
+        attempt = 0
+        while not self._stopping:
+            attempt += 1
+            _LOGGER.info("Nikobus reconnect attempt %d (next delay %ds)…", attempt, delay)
+            try:
+                await self.nikobus_connection.connect()
+            except Exception as err:
+                _LOGGER.warning("Reconnect attempt %d failed: %s — retrying in %ds", attempt, err, delay)
+                try:
+                    await asyncio.sleep(delay)
+                except asyncio.CancelledError:
+                    return
+                delay = min(delay * 2, RECONNECT_DELAY_MAX)
+                continue
+
+            # Connection re-established — restart the subsystems.
+            try:
+                # Drain any stale entries from the command queue.
+                while not self.nikobus_command._command_queue.empty():
+                    try:
+                        self.nikobus_command._command_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                await self.nikobus_command.start()
+                self.nikobus_listener.on_connection_lost = self._handle_connection_lost
+                await self.nikobus_listener.start()
+                # Trigger an immediate state refresh so entities reflect reality.
+                await self._async_update_data()
+                self.async_update_listeners()
+                _LOGGER.info("Nikobus reconnected successfully after %d attempt(s).", attempt)
+                return
+            except Exception as err:
+                _LOGGER.error("Failed to restart Nikobus subsystems after reconnect: %s — retrying", err)
+                await self.nikobus_connection.disconnect()
+                try:
+                    await asyncio.sleep(delay)
+                except asyncio.CancelledError:
+                    return
+                delay = min(delay * 2, RECONNECT_DELAY_MAX)
+
     async def stop(self) -> None:
         """Shut down background tasks and disconnect."""
+        self._stopping = True
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
+            try:
+                await self._reconnect_task
+            except asyncio.CancelledError:
+                pass
+            self._reconnect_task = None
         if self._reload_task and not self._reload_task.done():
             self._reload_task.cancel()
             try:

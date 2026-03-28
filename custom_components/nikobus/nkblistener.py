@@ -49,6 +49,7 @@ class NikobusEventListener:
         self._running = False
         self._listener_task: asyncio.Task | None = None
         self.response_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=200)
+        self.on_connection_lost: Callable[[], Any] | None = None
         self._frame_buffer = ""
         # Per-address dict: maps module address → last queried group (1 or 2).
         # Replaces the single _module_group int that was vulnerable to corruption
@@ -122,6 +123,8 @@ class NikobusEventListener:
                 if not self._connection.is_connected:
                     _LOGGER.warning("Connection lost — listener loop exiting.")
                     self._running = False
+                    if self.on_connection_lost:
+                        self._hass.async_create_task(self.on_connection_lost())
                     break
                 await asyncio.sleep(1)
 
