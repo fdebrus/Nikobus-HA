@@ -178,6 +178,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._movement_source = "ha"
         self._current_run_limit: float = op_time_up
         self._error_recovery_task: asyncio.Task | None = None
+        # Timestamp of the most recent physical button press for this module,
+        # used to measure the actual detection latency for Nikobus-initiated moves.
+        self._last_button_press_monotonic: float | None = None
 
     @property
     def current_cover_position(self) -> int:
@@ -278,7 +281,18 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         else:
             direction = "opening" if new_bus_state == STATE_OPENING else "closing"
             self._movement_source = "nikobus"
-            self._start_motion_logic(direction)
+            # Measure how long ago the physical button was actually pressed.
+            # The actuator sleeps 0.3 s then waits ~0.5 s for a bus reply, so
+            # the cover has already been moving for roughly that duration before
+            # we see the 0x01/0x02 state here.  Only use timestamps that are
+            # fresh (< 10 s) to avoid stale presses from earlier interactions.
+            detection_latency = 0.0
+            if self._last_button_press_monotonic is not None:
+                age = time.monotonic() - self._last_button_press_monotonic
+                if age < 10.0:
+                    detection_latency = age
+                self._last_button_press_monotonic = None
+            self._start_motion_logic(direction, detection_latency=detection_latency)
 
         super()._handle_coordinator_update()
 
@@ -295,6 +309,10 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         """
         if str(event.data.get("module_address")) != str(self._address):
             return
+
+        # Record press time unconditionally — used to measure detection latency
+        # when a subsequent _handle_coordinator_update sees Nikobus-initiated motion.
+        self._last_button_press_monotonic = time.monotonic()
 
         if self._state != STATE_STOPPED:
             send_stop = (self._movement_source == "ha")
@@ -348,21 +366,35 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         else:
             await self.coordinator.api.close_cover(self._address, self._channel, on_sent)
 
-    def _start_motion_logic(self, direction: str, limit_time: float | None = None) -> None:
+    def _start_motion_logic(
+        self,
+        direction: str,
+        limit_time: float | None = None,
+        detection_latency: float = 0.0,
+    ) -> None:
         """Initialize the virtual travel tracker."""
         if self._motion_task:
             self._motion_task.cancel()
 
         self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
-        self._calculator.start_travel(direction)
+        self._calculator.start_travel(direction, latency=detection_latency)
+
+        # Sync self._position to the pre-advanced value so the UI immediately
+        # reflects the correct in-transit position.
+        self._position = self._calculator.current_position()
 
         # Select travel time based on direction
         active_op_time = (
             self._calculator.time_up if direction == "opening" else self._calculator.time_down
         )
-        
-        # Limit is travel time + movement buffer (usually 3s)
-        self._current_run_limit = float(limit_time) if limit_time is not None else (active_op_time + self._movement_buffer)
+
+        # The motion loop's elapsed counter starts from zero now, but the cover
+        # has already been moving for detection_latency seconds, so shorten the
+        # run limit accordingly so the loop terminates at the right moment.
+        self._current_run_limit = float(limit_time) if limit_time is not None else max(
+            self._movement_buffer,
+            active_op_time - detection_latency + self._movement_buffer,
+        )
 
         self._motion_task = self.hass.async_create_task(self._motion_loop())
         self.async_write_ha_state()
@@ -376,7 +408,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._position = self._calculator.current_position()
 
                 if elapsed >= self._current_run_limit or self._should_stop():
-                    # Stop logic: send stop command only if initiated by HA
+                    # If the motion loop ran to its time limit (no explicit
+                    # target), the cover reached the mechanical end-stop.
+                    # Snap to an exact value so any rounding/latency error
+                    # doesn't leave the position stuck at e.g. 98% or 2%.
+                    if elapsed >= self._current_run_limit and self._target_position is None:
+                        self._position = 100.0 if self._state == STATE_OPENING else 0.0
+                        self._calculator.set_position(self._position)
                     await self._stop(send_stop=(self._movement_source == "ha"))
                     break
 
