@@ -8,6 +8,7 @@ import importlib.machinery
 import importlib.util
 import sys
 import types
+from datetime import datetime, timezone as _tz
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -64,26 +65,42 @@ _mod(
     "homeassistant.exceptions",
     HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
 )
+
+# homeassistant.helpers.dispatcher
 _mod("homeassistant.helpers")
 _mod(
     "homeassistant.helpers.dispatcher",
     async_dispatcher_send=lambda *a, **kw: None,
+    async_dispatcher_connect=lambda *a, **kw: (lambda: None),
 )
 
-# homeassistant.util.dt — used by discovery/fileio.py and discovery/discovery.py
-from datetime import datetime, timezone as _tz
+# homeassistant.helpers.device_registry — DeviceInfo is a thin dict wrapper
+class _DeviceInfo(dict):
+    def __init__(self, **kwargs):
+        super().__init__(kwargs)
 
-_mod("homeassistant.util")
 _mod(
-    "homeassistant.util.dt",
-    now=lambda tz=None: datetime.now(_tz.utc),
-    utcnow=lambda: datetime.now(_tz.utc),
-    as_local=lambda dt: dt,
+    "homeassistant.helpers.device_registry",
+    DeviceInfo=_DeviceInfo,
+    DeviceEntry=type("DeviceEntry", (), {}),
+    async_get=lambda hass: None,
 )
 
+# homeassistant.helpers.entity_registry
+_mod("homeassistant.helpers.entity_registry", async_get=lambda hass: None)
 
+# homeassistant.helpers.event
+_mod("homeassistant.helpers.event", async_call_later=lambda *a, **kw: (lambda: None))
+
+# homeassistant.helpers.entity_platform
+_mod(
+    "homeassistant.helpers.entity_platform",
+    AddEntitiesCallback=type("AddEntitiesCallback", (), {}),
+)
+
+# homeassistant.helpers.update_coordinator
 class _DataUpdateCoordinatorStub:
-    """Minimal stub for homeassistant.helpers.update_coordinator.DataUpdateCoordinator."""
+    """Minimal stub for DataUpdateCoordinator."""
 
     # Support DataUpdateCoordinator[None] generic syntax used in coordinator.py.
     def __class_getitem__(cls, item):
@@ -97,11 +114,42 @@ class _DataUpdateCoordinatorStub:
         pass
 
 
+class _CoordinatorEntityStub:
+    """Minimal stub for CoordinatorEntity."""
+
+    def __class_getitem__(cls, item):
+        return cls
+
+    def __init__(self, coordinator, *args, **kwargs):
+        self.coordinator = coordinator
+
+    async def async_added_to_hass(self):
+        pass
+
+    def async_on_remove(self, fn):
+        pass
+
+
 _mod(
     "homeassistant.helpers.update_coordinator",
     DataUpdateCoordinator=_DataUpdateCoordinatorStub,
     UpdateFailed=type("UpdateFailed", (Exception,), {}),
+    CoordinatorEntity=_CoordinatorEntityStub,
 )
+
+# homeassistant.util.dt — used by discovery/fileio.py and discovery/discovery.py
+_mod("homeassistant.util")
+_mod(
+    "homeassistant.util.dt",
+    now=lambda tz=None: datetime.now(_tz.utc),
+    utcnow=lambda: datetime.now(_tz.utc),
+    as_local=lambda dt: dt,
+)
+
+# homeassistant.components — stubs for sensor (and future platforms)
+_mod("homeassistant.components")
+_mod("homeassistant.components.sensor", SensorEntity=type("SensorEntity", (), {}), DOMAIN="sensor")
+_mod("homeassistant.components.binary_sensor", BinarySensorEntity=type("BinarySensorEntity", (), {}), DOMAIN="binary_sensor")
 
 # ---------------------------------------------------------------------------
 # Third-party stubs
@@ -155,3 +203,4 @@ _load("custom_components.nikobus.nkbconnect", COMP / "nkbconnect.py")
 _load("custom_components.nikobus.nkbconfig", COMP / "nkbconfig.py")
 _load("custom_components.nikobus.router", COMP / "router.py")
 _load("custom_components.nikobus.coordinator", COMP / "coordinator.py")
+_load("custom_components.nikobus.sensor", COMP / "sensor.py")

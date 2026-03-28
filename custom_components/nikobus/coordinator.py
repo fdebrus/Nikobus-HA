@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -78,6 +78,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._reload_task = None
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
+        self._last_connected: datetime | None = None
+        self._reconnect_attempts: int = 0
+
+    @property
+    def connection_status(self) -> str:
+        """Return 'connected', 'reconnecting', or 'disconnected'."""
+        if self.nikobus_connection.is_connected:
+            return "connected"
+        if self._reconnect_task and not self._reconnect_task.done():
+            return "reconnecting"
+        return "disconnected"
 
     def _get_update_interval(self) -> timedelta | None:
         """Compute the update interval based on configuration."""
@@ -130,6 +141,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.nikobus_listener.on_connection_lost = self._handle_connection_lost
             await self.nikobus_command.start()
             await self.nikobus_listener.start()
+            self._last_connected = datetime.now(timezone.utc)
 
         except Exception as err:
             _LOGGER.exception("Failed to initialize Nikobus components: %s", err)
@@ -354,7 +366,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         attempt = 0
         while not self._stopping:
             attempt += 1
+            self._reconnect_attempts += 1
             _LOGGER.info("Nikobus reconnect attempt %d (next delay %ds)…", attempt, delay)
+            # Notify sensor that we are now in "reconnecting" state.
+            self.async_update_listeners()
             try:
                 await self.nikobus_connection.connect()
             except Exception as err:
@@ -389,6 +404,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 await self.nikobus_command.start()
                 self.nikobus_listener.on_connection_lost = self._handle_connection_lost
                 await self.nikobus_listener.start()
+                self._last_connected = datetime.now(timezone.utc)
+                self._reconnect_attempts = 0
                 # Trigger an immediate state refresh so entities reflect reality.
                 await self._async_update_data()
                 self.async_update_listeners()
@@ -448,6 +465,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")
+
+        # 4. System sensors
+        known.add(f"{DOMAIN}_connection_status")
 
         return known
 
