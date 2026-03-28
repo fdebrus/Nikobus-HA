@@ -142,11 +142,16 @@ class NikobusEventListener:
                 self._enqueue_response(message)
                 return
 
-            if self._has_feedback_module:
-                if any(message.startswith(r) for r in FEEDBACK_REFRESH_COMMAND):
+            # $1012/$1017 are GET-state command echoes — never a response HA waits for.
+            # Always discard them to prevent flooding the response queue, regardless of
+            # whether a feedback module is present.
+            if any(message.startswith(r) for r in FEEDBACK_REFRESH_COMMAND):
+                if self._has_feedback_module:
                     gid = message[3:5]
                     self._module_group = {"12": 1, "17": 2}.get(gid, 1)
-                    return
+                return
+
+            if self._has_feedback_module:
                 if message.startswith(FEEDBACK_MODULE_ANSWER):
                     if self.validate_crc(message):
                         await self._feedback_callback(self._module_group, message)
