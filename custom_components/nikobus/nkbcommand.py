@@ -14,6 +14,7 @@ from .const import (
     COMMAND_EXECUTION_DELAY,
     COMMAND_ACK_WAIT_TIMEOUT,
     COMMAND_ANSWER_WAIT_TIMEOUT,
+    COMMAND_POST_ACK_ANSWER_TIMEOUT,
     MAX_ATTEMPTS,
 )
 from .exceptions import NikobusError, NikobusSendError, NikobusTimeoutError
@@ -223,9 +224,17 @@ class NikobusCommandHandler:
         while loop.time() < end_time:
             try:
                 remaining = end_time - loop.time()
+                # Once the ACK is in hand the data response must follow within
+                # COMMAND_POST_ACK_ANSWER_TIMEOUT (typically 1.5 s).  Before the
+                # ACK we allow the full COMMAND_ANSWER_WAIT_TIMEOUT so that a
+                # slow module still gets a fair chance on the first attempt.
+                per_msg_timeout = (
+                    COMMAND_POST_ACK_ANSWER_TIMEOUT if ack_received
+                    else COMMAND_ANSWER_WAIT_TIMEOUT
+                )
                 message = await asyncio.wait_for(
                     self.nikobus_listener.response_queue.get(),
-                    timeout=min(COMMAND_ANSWER_WAIT_TIMEOUT, remaining),
+                    timeout=min(per_msg_timeout, remaining),
                 )
                 self.nikobus_listener.response_queue.task_done()
                 _LOGGER.debug("Message received: %s", message)
