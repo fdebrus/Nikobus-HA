@@ -2,32 +2,80 @@
     "config": {
         "step": {
             "user": {
-                "title": "Nikobus",
-                "description": "Veuillez saisir vos détails de connectivité.",
+                "title": "Connexion à Nikobus",
+                "description": "Entrez l'adresse de votre module PC-Link Nikobus.\n\n- **Port série** : `/dev/ttyUSB0` ou `COM3`\n- **Pont réseau** : `192.168.1.50:9999`",
                 "data": {
-                    "connection_string": "Adresse IP:Port ou périphérique série",
-                    "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)",
-                    "has_feedbackmodule": "Feedback module installé et connecté via PC-Link ?",
-                    "prior_gen3": "Le PC-Link est-il antérieur à la Gén 3 ?"
+                    "connection_string": "Connexion (port série ou IP:port)"
+                },
+                "data_description": {
+                    "connection_string": "Chemin du port série ou adresse TCP du pont PC-Link"
+                }
+            },
+            "hardware": {
+                "title": "Configuration matérielle",
+                "description": "Indiquez votre matériel Nikobus afin que l'intégration utilise la stratégie de mise à jour optimale.",
+                "data": {
+                    "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+                    "prior_gen3": "PC-Link antérieur à la Gen 3"
+                },
+                "data_description": {
+                    "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire.",
+                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération."
+                }
+            },
+            "polling": {
+                "title": "Intervalle de scrutation",
+                "description": "Sans module Feedback, Home Assistant interroge périodiquement le bus Nikobus. Choisissez la fréquence.",
+                "data": {
+                    "refresh_interval": "Intervalle de scrutation (secondes)"
+                },
+                "data_description": {
+                    "refresh_interval": "Fréquence de lecture des états des modules sur le bus (60–3600 s)."
                 }
             },
             "reconfigure": {
                 "title": "Reconfigurer Nikobus",
-                "description": "Mettre à jour vos détails de connectivité.",
+                "description": "Mettez à jour la connexion ou les paramètres matériels. La connexion sera retestée.",
                 "data": {
-                    "connection_string": "Adresse IP:Port ou périphérique série",
-                    "refresh_interval": "Intervalle de rafraîchissement en secondes (60-3600)",
-                    "has_feedbackmodule": "Feedback module installé et connecté via PC-Link ?",
-                    "prior_gen3": "Le PC-Link est-il antérieur à la Gén 3 ?"
+                    "connection_string": "Connexion (port série ou IP:port)",
+                    "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+                    "prior_gen3": "PC-Link antérieur à la Gen 3",
+                    "refresh_interval": "Intervalle de scrutation (secondes)"
                 }
             }
         },
         "error": {
-            "cannot_connect": "Échec de la connexion au PC-Link Nikobus",
-            "unknown": "Une erreur inattendue s'est produite"
+            "cannot_connect": "Impossible de se connecter au PC-Link Nikobus — vérifiez l'adresse et qu'aucun autre client n'est connecté",
+            "unknown": "Erreur inattendue — consultez les journaux Home Assistant pour plus de détails"
         },
         "abort": {
-            "already_configured": "Cette connexion est déjà configurée."
+            "already_configured": "Cette connexion Nikobus est déjà configurée."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Configuration matérielle",
+                "description": "Mettez à jour les paramètres matériels. L'intégration rechargera automatiquement.",
+                "data": {
+                    "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+                    "prior_gen3": "PC-Link antérieur à la Gen 3"
+                },
+                "data_description": {
+                    "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état.",
+                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération."
+                }
+            },
+            "polling": {
+                "title": "Intervalle de scrutation",
+                "description": "À quelle fréquence Home Assistant doit-il interroger le bus Nikobus ?",
+                "data": {
+                    "refresh_interval": "Intervalle de scrutation (secondes)"
+                },
+                "data_description": {
+                    "refresh_interval": "Fréquence de lecture des états des modules (60–3600 s)."
+                }
+            }
         }
     }
 }

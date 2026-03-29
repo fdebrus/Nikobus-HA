@@ -2,32 +2,80 @@
     "config": {
         "step": {
             "user": {
-                "title": "Nikobus",
-                "description": "Voer uw verbindingsgegevens in.",
+                "title": "Verbinding met Nikobus",
+                "description": "Voer het adres van uw Nikobus PC-Link module in.\n\n- **Seriële poort**: `/dev/ttyUSB0` of `COM3`\n- **Netwerkbrug**: `192.168.1.50:9999`",
                 "data": {
-                    "connection_string": "IP-adres:Poort of Serieel apparaat",
-                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
-                    "has_feedbackmodule": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
-                    "prior_gen3": "Is de PC-Link ouder dan Gen 3?"
+                    "connection_string": "Verbinding (seriële poort of IP:poort)"
+                },
+                "data_description": {
+                    "connection_string": "Serieel apparaatpad of TCP-adres van de PC-Link brug"
+                }
+            },
+            "hardware": {
+                "title": "Hardwareconfiguratie",
+                "description": "Vertel ons over uw Nikobus-hardware zodat de integratie de optimale updatestrategie kan gebruiken.",
+                "data": {
+                    "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+                    "prior_gen3": "PC-Link is ouder dan Gen 3"
+                },
+                "data_description": {
+                    "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig.",
+                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware."
+                }
+            },
+            "polling": {
+                "title": "Polling-interval",
+                "description": "Zonder Feedbackmodule peilt Home Assistant periodiek de Nikobus-bus. Kies hoe vaak.",
+                "data": {
+                    "refresh_interval": "Polling-interval (seconden)"
+                },
+                "data_description": {
+                    "refresh_interval": "Hoe vaak modulestatussen van de bus worden gelezen (60–3600 s)."
                 }
             },
             "reconfigure": {
                 "title": "Nikobus herconfigureren",
-                "description": "Werk uw verbindingsgegevens bij.",
+                "description": "Werk de verbinding of hardware-instellingen bij. De verbinding wordt opnieuw getest.",
                 "data": {
-                    "connection_string": "IP-adres:Poort of Serieel apparaat",
-                    "refresh_interval": "Vernieuwingsinterval in seconden (60-3600)",
-                    "has_feedbackmodule": "Feedbackmodule geïnstalleerd en verbonden via PC-Link?",
-                    "prior_gen3": "Is de PC-Link ouder dan Gen 3?"
+                    "connection_string": "Verbinding (seriële poort of IP:poort)",
+                    "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+                    "prior_gen3": "PC-Link is ouder dan Gen 3",
+                    "refresh_interval": "Polling-interval (seconden)"
                 }
             }
         },
         "error": {
-            "cannot_connect": "Kan geen verbinding maken met de Nikobus PC-Link",
-            "unknown": "Er is een onverwachte fout opgetreden"
+            "cannot_connect": "Kan geen verbinding maken met de Nikobus PC-Link — controleer het adres en of geen andere client verbonden is",
+            "unknown": "Onverwachte fout — raadpleeg de Home Assistant-logboeken voor details"
         },
         "abort": {
-            "already_configured": "Deze verbindingsreeks is al geconfigureerd."
+            "already_configured": "Deze Nikobus-verbinding is al geconfigureerd."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Hardwareconfiguratie",
+                "description": "Werk uw hardware-instellingen bij. De integratie herlaadt automatisch.",
+                "data": {
+                    "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+                    "prior_gen3": "PC-Link is ouder dan Gen 3"
+                },
+                "data_description": {
+                    "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen.",
+                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware."
+                }
+            },
+            "polling": {
+                "title": "Polling-interval",
+                "description": "Hoe vaak moet Home Assistant de Nikobus-bus pollen?",
+                "data": {
+                    "refresh_interval": "Polling-interval (seconden)"
+                },
+                "data_description": {
+                    "refresh_interval": "Hoe vaak modulestatussen worden gelezen (60–3600 s)."
+                }
+            }
         }
     }
 }

@@ -44,10 +44,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
         """Initialize the coordinator with Home Assistant and configuration entry."""
         self.config_entry = config_entry
+        # connection_string never changes via OptionsFlow — always read from data.
         self.connection_string = config_entry.data.get(CONF_CONNECTION_STRING)
-        self._refresh_interval = config_entry.data.get(CONF_REFRESH_INTERVAL, 120)
-        self._has_feedback_module = config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False)
-        self._prior_gen3 = config_entry.data.get(CONF_PRIOR_GEN3, False)
+        # The three settings below can be changed via OptionsFlow; read options
+        # first and fall back to the original data values.
+        _opts = config_entry.options
+        self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
+        self._has_feedback_module = _opts.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
+        self._prior_gen3 = _opts.get(CONF_PRIOR_GEN3, config_entry.data.get(CONF_PRIOR_GEN3, False))
 
         super().__init__(
             hass,
@@ -143,6 +147,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             await self.nikobus_listener.start()
             self._last_connected = datetime.now(timezone.utc)
 
+        except NikobusDataError:
+            # Re-raise as-is so __init__.py can present a clear config-file error.
+            raise
         except Exception as err:
             _LOGGER.exception("Failed to initialize Nikobus components: %s", err)
             raise HomeAssistantError(f"Initialization error: {err}") from err

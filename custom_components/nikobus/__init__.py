@@ -22,6 +22,7 @@ from homeassistant.components import (
 
 from .const import DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
+from .exceptions import NikobusConnectionError, NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,12 +48,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.runtime_data = coordinator
 
     # 2. Connect and prepare internal buffers.
-    # Note: Ensure you have removed 'await self.async_refresh()' from coordinator.connect()
     try:
         await coordinator.connect()
+    except NikobusConnectionError as err:
+        _LOGGER.error("Cannot connect to Nikobus: %s", err)
+        raise ConfigEntryNotReady(f"Cannot connect to Nikobus: {err}") from err
+    except NikobusDataError as err:
+        _LOGGER.error("Nikobus configuration file error: %s", err)
+        raise ConfigEntryNotReady(
+            f"Check your Nikobus config files — {err}"
+        ) from err
     except Exception as err:
-        _LOGGER.error("Could not establish Nikobus connection: %s", err)
-        raise ConfigEntryNotReady(f"Nikobus hardware not responding: {err}") from err
+        _LOGGER.error("Nikobus setup error: %s", err)
+        raise ConfigEntryNotReady(f"Nikobus setup error: {err}") from err
 
     _register_hub_device(hass, entry)
 
@@ -87,16 +95,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Error forwarding setup: %s", err)
         return False
 
-    # 5. Trigger the first refresh
+    # 5. Reload when the user changes options via the OptionsFlow
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
+    # 6. Trigger the first refresh
     # Since platforms are loaded, entities will correctly receive the "Targeted update signal".
     _LOGGER.debug("Performing initial Nikobus data synchronization")
     await coordinator.async_config_entry_first_refresh()
 
-    # 6. Clean up stale entities
+    # 7. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
     _LOGGER.info("Nikobus integration setup complete.")
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the integration when the user changes options."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
