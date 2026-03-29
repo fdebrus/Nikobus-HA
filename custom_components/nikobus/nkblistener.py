@@ -202,7 +202,14 @@ class NikobusEventListener:
                             group = self._last_query_group.get(addr, 1)
                             await self._feedback_callback(group, message)
                         if addr in self._coordinator.nikobus_module_states:
-                            self._enqueue_response(message)
+                            # Only enqueue when the command handler is actively
+                            # waiting for a response.  Feedback-module installations
+                            # emit a continuous stream of $1C frames for all modules;
+                            # enqueuing them while nobody is waiting fills the queue
+                            # and produces the "dropped oldest message" warning.
+                            cmd = self._coordinator.nikobus_command
+                            if not cmd or cmd._awaiting_response or cmd._pending_get_futures:
+                                self._enqueue_response(message)
                 return
 
             if any(message.startswith(r) for r in MANUAL_REFRESH_COMMAND):

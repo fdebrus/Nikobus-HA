@@ -54,6 +54,10 @@ class NikobusCommandHandler:
         # registered in _pending_get_futures and will be resolved by the existing
         # command's feedback fast-path, so no second bus round-trip is needed.
         self._queued_get_keys: set[str] = set()
+        # True while _wait_for_ack_and_answer_state is running.  The listener uses
+        # this to avoid enqueuing feedback-module $1C frames when nobody is waiting
+        # for them — prevents the response queue from filling up between commands.
+        self._awaiting_response: bool = False
 
         self.nikobus_connection = nikobus_connection
         self.nikobus_listener = nikobus_listener
@@ -235,42 +239,46 @@ class NikobusCommandHandler:
     ) -> str:
         """Wait for an acknowledgment and answer from the Nikobus system with retries."""
         
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            # Flush stale messages before each attempt — a failed previous attempt
-            # may have left non-matching frames (foreign bus traffic, #N button
-            # frames on old firmware) in the queue that would delay the next try.
-            while not self.nikobus_listener.response_queue.empty():
+        self._awaiting_response = True
+        try:
+            for attempt in range(1, MAX_ATTEMPTS + 1):
+                # Flush stale messages before each attempt — a failed previous attempt
+                # may have left non-matching frames (foreign bus traffic, #N button
+                # frames on old firmware) in the queue that would delay the next try.
+                while not self.nikobus_listener.response_queue.empty():
+                    try:
+                        self.nikobus_listener.response_queue.get_nowait()
+                        self.nikobus_listener.response_queue.task_done()
+                    except asyncio.QueueEmpty:
+                        break
                 try:
-                    self.nikobus_listener.response_queue.get_nowait()
-                    self.nikobus_listener.response_queue.task_done()
-                except asyncio.QueueEmpty:
-                    break
-            try:
-                await self.nikobus_connection.send(command)
-                _LOGGER.debug(
-                    "Attempt %d/%d waiting for ACK: %s, ANSWER: %s",
-                    attempt,
-                    MAX_ATTEMPTS,
-                    wait_ack,
-                    wait_answer,
-                )
-                state = await self._wait_for_ack_and_answer_state(wait_ack, wait_answer)
-                if state is not None:
-                    _LOGGER.debug("Received valid state from device.")
-                    return state
-            except (NikobusSendError, NikobusTimeoutError) as err:
-                _LOGGER.warning("Attempt %d error: %s", attempt, err, exc_info=True)
-                if attempt == MAX_ATTEMPTS:
-                    raise
-            except Exception as err:
-                _LOGGER.error(
-                    "Unhandled exception on attempt %d: %s", attempt, err, exc_info=True
-                )
-                if attempt == MAX_ATTEMPTS:
-                    raise NikobusError(f"Unhandled exception: {err}") from err
-        raise NikobusTimeoutError(
-            f"Failed to receive ACK and state for command '{command}' after {MAX_ATTEMPTS} attempts."
-        )
+                    await self.nikobus_connection.send(command)
+                    _LOGGER.debug(
+                        "Attempt %d/%d waiting for ACK: %s, ANSWER: %s",
+                        attempt,
+                        MAX_ATTEMPTS,
+                        wait_ack,
+                        wait_answer,
+                    )
+                    state = await self._wait_for_ack_and_answer_state(wait_ack, wait_answer)
+                    if state is not None:
+                        _LOGGER.debug("Received valid state from device.")
+                        return state
+                except (NikobusSendError, NikobusTimeoutError) as err:
+                    _LOGGER.warning("Attempt %d error: %s", attempt, err, exc_info=True)
+                    if attempt == MAX_ATTEMPTS:
+                        raise
+                except Exception as err:
+                    _LOGGER.error(
+                        "Unhandled exception on attempt %d: %s", attempt, err, exc_info=True
+                    )
+                    if attempt == MAX_ATTEMPTS:
+                        raise NikobusError(f"Unhandled exception: {err}") from err
+            raise NikobusTimeoutError(
+                f"Failed to receive ACK and state for command '{command}' after {MAX_ATTEMPTS} attempts."
+            )
+        finally:
+            self._awaiting_response = False
 
     async def _wait_for_ack_and_answer_state(
         self, wait_ack: str, wait_answer: str
