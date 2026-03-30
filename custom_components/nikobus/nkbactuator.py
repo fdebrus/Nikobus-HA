@@ -5,6 +5,8 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from datetime import timezone as _tz
+from datetime import datetime
 from typing import Dict, Optional, Tuple, Any
 
 from homeassistant.core import HomeAssistant
@@ -299,6 +301,7 @@ class NikobusActuator:
             "address": state.address,
             "module_address": state.module_address,
             "channel": state.channel,
+            "ts": datetime.now(_tz.utc).isoformat(),
             "press_id": state.press_id,
             "state": kwargs.get("state_value"),
             "duration_s": kwargs.get("duration"),

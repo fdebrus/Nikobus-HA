@@ -184,24 +184,25 @@ class NikobusEventListener:
                     # to the correct group even if foreign bus traffic intervenes.
                     if len(message) >= 9:
                         addr = (message[7:9] + message[5:7]).upper()
-                        self._last_query_group[addr] = group
+                        # Only track groups for modules HA manages; ignore foreign bus traffic.
+                        if addr in self._coordinator.nikobus_module_states:
+                            self._last_query_group[addr] = group
                 return
 
             if message.startswith(FEEDBACK_MODULE_ANSWER):
                 # $1C… frames are GET-state responses — from HA's own queries
-                # or from other controllers on the same bus.  Only enqueue frames
-                # from modules HA knows about; foreign ones are noise that can
-                # delay the ACK/ANSWER wait loop by a full COMMAND_ANSWER_WAIT_TIMEOUT.
+                # or from other controllers on the same bus.  Only process frames
+                # from modules HA knows about; foreign ones are silently discarded.
                 if self.validate_crc(message):
                     if len(message) >= 7:
                         addr = (message[5:7] + message[3:5]).upper()
-                        if self._has_feedback_module:
-                            # Look up which group was last queried for this specific
-                            # address.  Defaults to 1 so single-group modules still
-                            # work if the echo was never seen (e.g. missed frame).
-                            group = self._last_query_group.get(addr, 1)
-                            await self._feedback_callback(group, message)
                         if addr in self._coordinator.nikobus_module_states:
+                            if self._has_feedback_module:
+                                # Look up which group was last queried for this specific
+                                # address.  Defaults to 1 so single-group modules still
+                                # work if the echo was never seen (e.g. missed frame).
+                                group = self._last_query_group.get(addr, 1)
+                                await self._feedback_callback(group, message)
                             # Only enqueue when the command handler is actively
                             # waiting for a response.  Feedback-module installations
                             # emit a continuous stream of $1C frames for all modules;

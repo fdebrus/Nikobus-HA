@@ -451,45 +451,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         if send_stop and (stopped_state != STATE_STOPPED or force_api):
             dir_cmd = "opening" if stopped_state == STATE_OPENING else "closing"
-            t0 = time.monotonic()
-
-            # Measure the REAL bus round-trip via the completion handler so we
-            # can correct the position for the brief opposing-relay (0x03) pulse.
-            # stop_cover() returns as soon as the command is enqueued (no yield),
-            # so time.monotonic() after the await would always read ~0 ms.
-            ack_future: asyncio.Future[None] = self.coordinator.hass.loop.create_future()
-
-            async def _on_ack() -> None:
-                if not ack_future.done():
-                    ack_future.set_result(None)
-
             await self.coordinator.api.stop_cover(
-                self._address, self._channel, dir_cmd, _on_ack
-            )
-            try:
-                await asyncio.wait_for(asyncio.shield(ack_future), timeout=2.0)
-                round_trip = time.monotonic() - t0
-            except asyncio.TimeoutError:
-                _LOGGER.debug(
-                    "Cover %s: stop-command ACK timeout — skipping position correction",
-                    self._address,
-                )
-                round_trip = 0.0
-
-            # During the VALUE=0 round-trip the Nikobus motor-protection (0x03)
-            # briefly activates the opposing relay, physically moving the cover
-            # in the opposite direction. Correct the recorded position for this.
-            if stopped_state == STATE_CLOSING and self._calculator.time_up > 0:
-                self._position = min(100.0, self._position + round_trip * (100.0 / self._calculator.time_up))
-            elif stopped_state == STATE_OPENING and self._calculator.time_down > 0:
-                self._position = max(0.0, self._position - round_trip * (100.0 / self._calculator.time_down))
-
-            # Sync the calculator's internal position to the corrected value so
-            # any subsequent start_travel() resumes from the right point.
-            self._calculator.set_position(self._position)
-            _LOGGER.debug(
-                "Cover %s: stop complete — direction=%s round_trip=%.3fs corrected_position=%.1f",
-                self._address, stopped_state, round_trip, self._position,
+                self._address, self._channel, dir_cmd
             )
 
         self.async_write_ha_state()
