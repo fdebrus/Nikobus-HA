@@ -2,6 +2,7 @@
 
 import time
 
+
 class NikobusTravelCalculator:
     """Calculates cover position based on travel time."""
 
@@ -16,7 +17,7 @@ class NikobusTravelCalculator:
 
     def set_position(self, position: float) -> None:
         """Manually set the current known position."""
-        self.position = position
+        self.position = max(0.0, min(100.0, position))
 
     def start_travel(self, direction: str, latency: float = 0.0) -> None:
         """Mark the start of travel and record start position/time.
@@ -26,10 +27,10 @@ class NikobusTravelCalculator:
         Nikobus-initiated moves).  The start time is backdated so that
         ``current_position()`` immediately returns the correct in-transit
         position rather than the stale pre-move position.
+
+        Latency must be non-negative; negative values are clamped to zero.
         """
         self._start_pos = self.position
-        # Backdate the clock so elapsed reflects actual travel time, not just
-        # the time since HA detected the motion.
         self._start_time = time.monotonic() - max(0.0, latency)
         self._direction = 1 if direction == "opening" else -1
 
@@ -47,7 +48,8 @@ class NikobusTravelCalculator:
         active_time = self.time_up if self._direction == 1 else self.time_down
         if active_time <= 0:
             return self.position
-        progress = (elapsed / active_time) * 100
+
+        progress = (elapsed / active_time) * 100.0
 
         if self._direction == 1:
             return min(100.0, self._start_pos + progress)
