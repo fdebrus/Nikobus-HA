@@ -160,6 +160,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._error_recovery_task: asyncio.Task | None = None
 
         self._movement_source = "ha"
+        self._current_run_limit: float = 0.0
 
         # Set by _handle_button_pressed when a physical button starts a new move.
         # Used by _handle_coordinator_update to backdate the travel calculator so

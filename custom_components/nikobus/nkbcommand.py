@@ -427,6 +427,8 @@ class NikobusCommandHandler:
             self._command_queue.put_nowait(command_item)
         except asyncio.QueueFull:
             _LOGGER.warning("Command queue full — dropping command: %s", command)
+            if gid in ("12", "17") and address:
+                self._queued_get_keys.discard(dedup_key)
             if future and not future.done():
                 future.set_exception(NikobusError("Command queue full"))
             raise NikobusError("Command queue full")
