@@ -80,6 +80,7 @@ class NikobusAPI:
     #### DIMMERS
     async def turn_on_light(self, address: str, channel: int, brightness: int, completion_handler: Callable | None = None) -> None:
         """Turn on a dimmer output to a specific brightness."""
+        brightness = max(0, min(255, int(brightness)))
         # Get current state to decide if we need to wake the wall LED
         current_brightness = self._coordinator.get_light_brightness(address, channel)
         chan_info = self._get_channel_info("dimmer_module", address, channel)
