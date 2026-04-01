@@ -455,6 +455,15 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             pass
+        except Exception as err:
+            _LOGGER.error(
+                "Cover %s ch%d: motion loop error — forcing stop: %s",
+                self._address,
+                self._channel,
+                err,
+                exc_info=True,
+            )
+            await self._stop(send_stop=False)
 
     def _should_stop(self) -> bool:
         """Check if cover reached the target position."""
