@@ -21,6 +21,8 @@ from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
+    DEVICE_ADDRESS_INVENTORY,
+    DEVICE_INVENTORY_ANSWER,
     DOMAIN,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
@@ -69,6 +71,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.nikobus_command: NikobusCommandHandler | None = None
         self.nikobus_discovery: NikobusDiscovery | None = None
 
+        # Shared module state buffer — owned here, passed to NikobusCommandHandler
+        self._module_states: dict[str, bytearray] = {}
+
         self.discovery_running = False
         self.discovery_module = None
         self.discovery_module_address: str | None = None
@@ -80,16 +85,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._reconnect_attempts: int = 0
 
     # ------------------------------------------------------------------
-    # Backward-compat property: expose command handler's state buffer
-    # so that diagnostics.py and any other reader still works unchanged.
+    # Backward-compat property so diagnostics.py and other readers work
     # ------------------------------------------------------------------
 
     @property
     def nikobus_module_states(self) -> dict[str, bytearray]:
-        """Return the module state buffer owned by the command handler."""
-        if self.nikobus_command:
-            return self.nikobus_command._module_states
-        return {}
+        """Return the shared module state buffer."""
+        return self._module_states
 
     @property
     def connection_status(self) -> str:
@@ -134,35 +136,31 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 "nikobus_scene_config.json", "scene"
             )
 
-            # 1. Create command handler first (listener wired in after)
-            self.nikobus_command = NikobusCommandHandler(
-                nikobus_connection=self.nikobus_connection,
-            )
-            self._register_modules()
-
-            # 2. Create actuator and discovery
+            # 1. Create actuator and discovery (needed before listener)
             self.nikobus_actuator = NikobusActuator(
                 self.hass, self, self.dict_button_data, self.dict_module_data
             )
             self.nikobus_discovery = NikobusDiscovery(self.hass, self)
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
 
-            # 3. Create listener with command handler and all callbacks wired
+            # 2. Create listener with a single event_callback and feedback_callback
             self.nikobus_listener = NikobusEventListener(
-                nikobus_connection=self.nikobus_connection,
-                command_handler=self.nikobus_command,
-                has_feedback_module=self._has_feedback_module,
-                button_callback=self.nikobus_actuator.handle_button_press,
+                self.nikobus_connection,
+                self._event_callback,
                 feedback_callback=self._feedback_callback,
-                inventory_callback=self._inventory_callback,
-                discovery_frame_callback=self._discovery_frame_callback,
-                connection_lost_callback=self._handle_connection_lost,
+                has_feedback_module=self._has_feedback_module,
             )
+            self.nikobus_listener.on_connection_lost = self._handle_connection_lost
 
-            # 4. Wire listener back into command handler (breaks circular dep)
-            self.nikobus_command.nikobus_listener = self.nikobus_listener
+            # 3. Create command handler — shares the coordinator's state buffer
+            self.nikobus_command = NikobusCommandHandler(
+                self.nikobus_connection,
+                self.nikobus_listener,
+                module_states=self._module_states,
+            )
+            self._initialize_module_states()
 
-            # 5. Create the high-level API
+            # 4. Create the high-level API
             self.api = NikobusAPI(self.nikobus_command, self.dict_module_data)
 
             await self.nikobus_command.start()
@@ -175,36 +173,64 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             _LOGGER.exception("Failed to initialize Nikobus components: %s", err)
             raise HomeAssistantError(f"Initialization error: {err}") from err
 
-    def _register_modules(self) -> None:
-        """Register all configured modules with the command handler."""
+    def _initialize_module_states(self) -> None:
+        """Pre-allocate state buffers for all configured modules."""
         for modules in self.dict_module_data.values():
             module_items = modules.items() if isinstance(modules, dict) else (
                 (m.get("address"), m) for m in modules if isinstance(m, dict)
             )
             for address, info in module_items:
                 if address:
-                    channel_count = len(info.get("channels", []))
-                    self.nikobus_command.register_module(str(address).upper(), channel_count)
+                    addr_upper = str(address).upper()
+                    if addr_upper not in self._module_states:
+                        self._module_states[addr_upper] = bytearray(12)
 
     # ------------------------------------------------------------------
-    # Listener callbacks (wired at construction)
+    # Listener callbacks
     # ------------------------------------------------------------------
+
+    async def _event_callback(self, message: str) -> None:
+        """Route non-feedback bus events (buttons, ACKs, discovery frames)."""
+        if message.startswith("#N"):
+            # Button press
+            if self.nikobus_actuator:
+                await self.nikobus_actuator.handle_button_press(message)
+        elif message.startswith(DEVICE_ADDRESS_INVENTORY):
+            # $18 inventory frame — only reaches here if library forwards it
+            await self._inventory_callback(message, self.discovery_running)
+        elif any(message.startswith(p) for p in DEVICE_INVENTORY_ANSWER):
+            # $2E/$1E discovery response — only reaches here if library forwards it
+            await self._discovery_frame_callback(message)
 
     async def _feedback_callback(self, group: int, message: str) -> None:
-        """Process a $1C feedback frame: update library state + fire HA event."""
-        if not self.nikobus_command:
-            return
-        await self.nikobus_command.process_feedback_data(group, message)
+        """Process a $1C feedback frame: update state buffer + fire HA event."""
         try:
+            # $1C frame format: $1C<addr_lo><addr_hi><crc16_2bytes><state_12hex><crc8_2bytes>
+            # address bytes at [3:7], byte-swapped; state at [9:21]
             addr_raw = message[3:7]
             address = (addr_raw[2:] + addr_raw[:2]).upper()
-            if self.nikobus_command.has_module(address):
-                await self.async_event_handler(
-                    "nikobus_refreshed",
-                    {"impacted_module_address": address, "impacted_module_group": group},
-                )
+
+            if len(message) >= 21:
+                state_hex = message[9:21]
+                start = 0 if group == 1 else 6
+                buf = self._module_states.get(address)
+                if buf is None:
+                    # Auto-allocate if module wasn't pre-registered
+                    buf = bytearray(12)
+                    self._module_states[address] = buf
+                state_bytes = bytes.fromhex(state_hex)
+                buf[start : start + 6] = state_bytes
+
+                # Resolve any pending get_output_state future immediately
+                if self.nikobus_command:
+                    self.nikobus_command.resolve_pending_get(address, group, state_hex)
+
+            await self.async_event_handler(
+                "nikobus_refreshed",
+                {"impacted_module_address": address, "impacted_module_group": group},
+            )
         except Exception as err:
-            _LOGGER.error("Feedback event dispatch error: %s", err)
+            _LOGGER.error("Feedback callback error: %s", err)
 
     async def _inventory_callback(self, message: str, discovery_active: bool) -> None:
         """Route $18 inventory frames."""
@@ -253,9 +279,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             groups = (1,) if chan_count <= 6 else (1, 2)
 
             for g in groups:
-                state_hex = await self.nikobus_command.get_output_state(normalized, g) or ""
-                if state_hex:
-                    self.nikobus_command.set_group_state(normalized, g, state_hex.ljust(12, "0"))
+                try:
+                    state_hex = await self.nikobus_command.get_output_state(normalized, g) or ""
+                    if state_hex and len(state_hex) >= 12:
+                        start = 0 if g == 1 else 6
+                        buf = self._module_states.get(normalized)
+                        if buf is None:
+                            buf = bytearray(12)
+                            self._module_states[normalized] = buf
+                        buf[start : start + 6] = bytes.fromhex(state_hex[:12])
+                except Exception as err:
+                    _LOGGER.error("Error refreshing %s group %d: %s", normalized, g, err)
 
             await self.async_event_handler(
                 "nikobus_refreshed",
@@ -263,33 +297,42 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
 
     # ------------------------------------------------------------------
-    # State buffer accessors (delegate to library command handler)
+    # State buffer accessors (delegate to library or direct buffer access)
     # ------------------------------------------------------------------
 
     @callback
     def get_bytearray_state(self, address: str, channel: int) -> int:
         """Return raw byte state for a channel (1-based)."""
-        if self.nikobus_command:
-            return self.nikobus_command.get_state(address, channel)
+        buf = self._module_states.get(address.upper())
+        if buf and 0 < channel <= len(buf):
+            return buf[channel - 1]
         return 0
 
     @callback
     def get_bytearray_group_state(self, address: str, group: int) -> bytearray:
         """Return 6-byte group state."""
         if self.nikobus_command:
-            return self.nikobus_command.get_group_state(address, int(group))
+            return self.nikobus_command.get_bytearray_group_state(address, int(group))
         return bytearray(6)
 
     @callback
     def set_bytearray_state(self, address: str, channel: int, value: int) -> None:
         """Update a single channel in the state buffer."""
         if self.nikobus_command:
-            self.nikobus_command.set_state(address, channel, value)
+            self.nikobus_command.set_bytearray_state(address, channel, value)
 
     def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
         """Update a group in the state buffer from a hex string."""
-        if self.nikobus_command:
-            self.nikobus_command.set_group_state(address, int(group), value)
+        addr_upper = address.upper()
+        buf = self._module_states.get(addr_upper)
+        if buf is None:
+            return
+        start = 0 if int(group) == 1 else 6
+        try:
+            state_bytes = bytes.fromhex(value[:12].ljust(12, "0"))
+            buf[start : start + 6] = state_bytes[:6]
+        except (ValueError, IndexError):
+            pass
 
     # ------------------------------------------------------------------
     # Module metadata helpers
