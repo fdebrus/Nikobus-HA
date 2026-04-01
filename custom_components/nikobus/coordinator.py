@@ -269,7 +269,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Manually update a specific channel in the state buffer."""
         state = self.nikobus_module_states.get(str(address).upper())
         if state and 0 < channel <= len(state):
-            state[channel - 1] = value
+            state[channel - 1] = max(0, min(255, int(value)))
 
     def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
         """Safely update a module group from a hex string."""
@@ -444,11 +444,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             except asyncio.CancelledError:
                 pass
             self._reload_task = None
-        if self.nikobus_listener:
-            await self.nikobus_listener.stop()
-        if self.nikobus_command:
-            await self.nikobus_command.stop()
-        await self.nikobus_connection.disconnect()
+        try:
+            if self.nikobus_listener:
+                await self.nikobus_listener.stop()
+        except Exception as err:
+            _LOGGER.error("Error stopping listener: %s", err)
+        try:
+            if self.nikobus_command:
+                await self.nikobus_command.stop()
+        except Exception as err:
+            _LOGGER.error("Error stopping command handler: %s", err)
+        try:
+            await self.nikobus_connection.disconnect()
+        except Exception as err:
+            _LOGGER.error("Error disconnecting: %s", err)
 
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities."""

@@ -305,7 +305,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         Channel filtering prevents covers on the same roller module from
         sharing timestamps when unrelated buttons are pressed.
         """
-        if str(event.data.get("module_address")) != str(self._address):
+        if str(event.data.get("module_address", "")).upper() != str(self._address).upper():
             return
 
         # Only process events for this specific channel to avoid cross-channel
@@ -331,7 +331,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         any button-configured operation time (tilt / partial move) so that
         _handle_coordinator_update can apply it when it starts the motion.
         """
-        if str(event.data.get("impacted_module_address")) != str(self._address):
+        if str(event.data.get("impacted_module_address", "")).upper() != str(self._address).upper():
             return
         op_time = event.data.get("button_operation_time")
         if op_time is not None:
@@ -361,9 +361,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._coalesce_task.cancel()
 
         async def _debounced_move() -> None:
-            await asyncio.sleep(DEFAULT_COVER_DEBOUNCE_DELAY)
-            direction = "opening" if target > self._position else "closing"
-            await self._request_move(direction, target)
+            try:
+                await asyncio.sleep(DEFAULT_COVER_DEBOUNCE_DELAY)
+                direction = "opening" if target > self._position else "closing"
+                await self._request_move(direction, target)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self._coalesce_task = None
 
         self._coalesce_task = self.hass.async_create_task(_debounced_move())
 
