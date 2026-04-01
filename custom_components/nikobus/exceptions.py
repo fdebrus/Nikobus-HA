@@ -1,46 +1,19 @@
-"""Custom exceptions for the Nikobus integration."""
+"""Nikobus exceptions — re-exported from the nikobusconnect library."""
+
+from nikobusconnect.exceptions import (  # noqa: F401
+    NikobusConnectionError,
+    NikobusDataError,
+    NikobusError,
+    NikobusReadError,
+    NikobusSendError,
+    NikobusTimeoutError,
+)
 
 __all__ = [
+    "NikobusConnectionError",
     "NikobusDataError",
     "NikobusError",
-    "NikobusConnectionError",
     "NikobusReadError",
     "NikobusSendError",
     "NikobusTimeoutError",
 ]
-
-
-class NikobusError(Exception):
-    """Base exception class for Nikobus errors."""
-
-    __slots__ = ()
-
-
-class NikobusConnectionError(NikobusError):
-    """Exception for connection-related errors."""
-
-    __slots__ = ()
-
-
-class NikobusSendError(NikobusError):
-    """Exception for errors when sending commands."""
-
-    __slots__ = ()
-
-
-class NikobusTimeoutError(NikobusError):
-    """Exception for timeout errors."""
-
-    __slots__ = ()
-
-
-class NikobusDataError(NikobusError):
-    """Exception for data-related errors."""
-
-    __slots__ = ()
-
-
-class NikobusReadError(NikobusError):
-    """Exception for errors when reading data."""
-
-    __slots__ = ()

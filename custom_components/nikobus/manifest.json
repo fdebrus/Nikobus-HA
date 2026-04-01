@@ -8,7 +8,8 @@
   "config_flow": true,
   "requirements": [
     "aiofiles>=25.1.0",
-    "pyserial-asyncio-fast>=0.16"
+    "pyserial-asyncio-fast>=0.16",
+    "nikobusconnect==2.0.0"
   ],
   "iot_class": "local_polling",
   "loggers": ["nikobus"]

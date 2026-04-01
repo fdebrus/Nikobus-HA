@@ -15,7 +15,7 @@ from .mapping import (
 from .protocol import classify_device_type, convert_nikobus_address, reverse_hex
 from ..const import DEVICE_ADDRESS_INVENTORY, DEVICE_INVENTORY_ANSWER
 from .fileio import merge_discovered_links, update_button_data, update_module_data
-from ..nkbprotocol import make_pc_link_inventory_command
+from nikobusconnect import make_pc_link_inventory_command
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
