@@ -192,9 +192,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def _event_callback(self, message: str) -> None:
         """Route non-feedback bus events (buttons, ACKs, discovery frames)."""
         if message.startswith("#N"):
-            # Button press
-            if self.nikobus_actuator:
-                await self.nikobus_actuator.handle_button_press(message)
+            # Extract the 6-char address after the "#N" prefix
+            if self.nikobus_actuator and len(message) >= 8:
+                await self.nikobus_actuator.handle_button_press(message[2:8])
         elif message.startswith(DEVICE_ADDRESS_INVENTORY):
             # $18 inventory frame — only reaches here if library forwards it
             await self._inventory_callback(message, self.discovery_running)
