@@ -1,6 +1,6 @@
-"""Nikobus exceptions — re-exported from the nikobusconnect library."""
+"""Nikobus exceptions — re-exported from the nikobus_connect library."""
 
-from nikobusconnect.exceptions import (  # noqa: F401
+from nikobus_connect.exceptions import (  # noqa: F401
     NikobusConnectionError,
     NikobusDataError,
     NikobusError,

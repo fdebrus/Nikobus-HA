@@ -13,8 +13,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from nikobusconnect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
-from nikobusconnect.exceptions import NikobusConnectionError, NikobusDataError
+from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
+from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -27,7 +27,7 @@ from .const import (
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
 )
-from nikobus_discovery import NikobusDiscovery, InventoryQueryType
+from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 
