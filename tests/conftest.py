@@ -172,18 +172,13 @@ _niko.__path__ = [str(COMP)]
 # ---------------------------------------------------------------------------
 # Load nikobus modules in dependency order
 # ---------------------------------------------------------------------------
-_load("custom_components.nikobus.nkbprotocol", COMP / "nkbprotocol.py")
 _load("custom_components.nikobus.exceptions", COMP / "exceptions.py")
 _load("custom_components.nikobus.const", COMP / "const.py")
 
 # Discovery is now the standalone nikobus_discovery PyPI library.
 # It is installed via `pip install -e nikobus-discovery/` and imported directly.
 
-_load("custom_components.nikobus.nkblistener", COMP / "nkblistener.py")
-_load("custom_components.nikobus.nkbcommand", COMP / "nkbcommand.py")
-_load("custom_components.nikobus.nkbAPI", COMP / "nkbAPI.py")
 _load("custom_components.nikobus.nkbactuator", COMP / "nkbactuator.py")
-_load("custom_components.nikobus.nkbconnect", COMP / "nkbconnect.py")
 _load("custom_components.nikobus.nkbconfig", COMP / "nkbconfig.py")
 _load("custom_components.nikobus.router", COMP / "router.py")
 _load("custom_components.nikobus.coordinator", COMP / "coordinator.py")
