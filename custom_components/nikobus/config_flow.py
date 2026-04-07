@@ -18,7 +18,7 @@ from .const import (
     DOMAIN,
 )
 from .exceptions import NikobusConnectionError
-from nikobusconnect import NikobusConnect
+from nikobus_connect import NikobusConnect
 
 _LOGGER = logging.getLogger(__name__)
 

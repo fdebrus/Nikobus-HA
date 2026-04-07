@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from nikobus_discovery import DecodedCommand, InventoryResult, NikobusDiscovery
+from nikobus_connect.discovery import DecodedCommand, InventoryResult, NikobusDiscovery
 
 
 def _build_inventory_payload(device_type: int, address_bytes: bytes, length: int = 18) -> str:
@@ -100,7 +100,7 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
 
         message = "$2E1234ABCD"
         with patch(
-            "nikobus_discovery.discovery.merge_discovered_links",
+            "nikobus_connect.discovery.discovery.merge_discovered_links",
             _fake_merge,
         ):
             await self.discovery.parse_module_inventory_response(message)

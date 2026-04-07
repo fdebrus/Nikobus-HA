@@ -9,8 +9,7 @@
   "requirements": [
     "aiofiles>=25.1.0",
     "pyserial-asyncio-fast>=0.16",
-    "nikobusconnect==2.0.0",
-    "nikobus-discovery==0.1.0"
+    "nikobus-connect==0.1.0"
   ],
   "iot_class": "local_polling",
   "loggers": ["nikobus"]
