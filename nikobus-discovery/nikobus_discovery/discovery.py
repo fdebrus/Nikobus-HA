@@ -1,5 +1,8 @@
 import asyncio
+import json
 import logging
+import os
+from datetime import datetime, timezone
 
 from .base import DecodedCommand, InventoryQueryType, InventoryResult
 from .dimmer_decoder import DimmerDecoder, EXPECTED_CHUNK_LEN
@@ -13,10 +16,9 @@ from .mapping import (
     get_module_type_from_device_type,
 )
 from .protocol import classify_device_type, convert_nikobus_address, reverse_hex
-from ..const import DEVICE_ADDRESS_INVENTORY, DEVICE_INVENTORY_ANSWER
+from .const import DEVICE_ADDRESS_INVENTORY, DEVICE_INVENTORY_ANSWER
 from .fileio import merge_discovered_links, update_button_data, update_module_data
 from nikobusconnect import make_pc_link_inventory_command
-from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,7 +121,6 @@ def add_to_command_mapping(command_mapping, decoded_command, module_address):
         return
 
     # Normalize key to a stable string/int (depending on what your decoders use)
-    # If keys are numeric, this keeps "1" and 1 identical.
     if isinstance(key_raw, str):
         key_raw = key_raw.strip()
         if key_raw.isdigit():
@@ -203,8 +204,6 @@ def split_ir_button_address(addr: str | None) -> tuple[str | None, str | None, s
     if len(a) != 6:
         return a, None, None
 
-    # Heuristic: your IR receiver family is 0D1Cxx (from your captures).
-    # If you later have other IR bases, generalize this rule.
     if not a.startswith("0D1C"):
         return a, None, None
 
@@ -212,7 +211,6 @@ def split_ir_button_address(addr: str | None) -> tuple[str | None, str | None, s
     if a == physical:
         return physical, None, None
 
-    # Slot byte is the last byte (81..FF)
     return physical, a, a[-2:]
 
 
@@ -225,10 +223,13 @@ async def _notify_discovery_finished(discovery) -> None:
 
 
 class NikobusDiscovery:
-    def __init__(self, hass, coordinator):
+    def __init__(self, coordinator, *, config_dir, create_task):
         self.discovered_devices = {}
         self._coordinator = coordinator
-        self._hass = hass
+        self._config_dir = config_dir
+        self._create_task = create_task
+        self._module_config_path = os.path.join(config_dir, "nikobus_module_config.json")
+        self._button_config_path = os.path.join(config_dir, "nikobus_button_config.json")
         self._module_timeout_seconds = 5.0
         self._inventory_timeout_seconds = 2.0
         self._decoders = [
@@ -316,13 +317,13 @@ class NikobusDiscovery:
     def _schedule_timeout(self) -> None:
         self._cancel_timeout()
         module_address = self._module_address
-        self._timeout_task = self._hass.async_create_task(
+        self._timeout_task = self._create_task(
             self._timeout_after(module_address)
         )
 
     def _schedule_inventory_timeout(self) -> None:
         self._cancel_inventory_timeout()
-        self._inventory_timeout_task = self._hass.async_create_task(
+        self._inventory_timeout_task = self._create_task(
             self._inventory_timeout_after()
         )
 
@@ -341,7 +342,7 @@ class NikobusDiscovery:
             await asyncio.sleep(self._inventory_timeout_seconds)
         except asyncio.CancelledError:
             return
-        
+
         try:
             await self._finalize_inventory_phase()
         except Exception as err:
@@ -395,10 +396,10 @@ class NikobusDiscovery:
         # Stage 2: inventory complete -> persist results
         _LOGGER.debug("Starting file IO updates for module and button data.")
         try:
-            await update_module_data(self._hass, self.discovered_devices)
+            await update_module_data(self._module_config_path, self.discovered_devices)
             _LOGGER.debug("Finished update_module_data.")
             await update_button_data(
-                self._hass,
+                self._button_config_path,
                 self.discovered_devices,
                 KEY_MAPPING,
                 convert_nikobus_address,
@@ -412,8 +413,7 @@ class NikobusDiscovery:
             "PC Link inventory scan finished | discovered=%d",
             len(self.discovered_devices),
         )
-        
-        import json
+
         _LOGGER.debug(
             "DUMP OF DISCOVERED DEVICES:\n%s",
             json.dumps(self.discovered_devices, indent=2)
@@ -429,8 +429,6 @@ class NikobusDiscovery:
 
     async def _run_inventory_identity_queries(self, addresses: set[str]) -> None:
         for address in sorted(addresses):
-            # `address` is stored normalized (reverse_bus_order=True earlier),
-            # but PC-Link commands must be sent using bus-order.
             bus_order_address = address[2:4] + address[:2]
 
             _LOGGER.debug(
@@ -439,7 +437,6 @@ class NikobusDiscovery:
                 bus_order_address,
             )
 
-            # A0..FF inclusive => range end must be 0x100
             for reg in range(0xA0, 0x100):
                 payload = f"10{bus_order_address}{reg:02X}04"
                 pc_link_command = make_pc_link_inventory_command(payload)
@@ -463,8 +460,8 @@ class NikobusDiscovery:
             next_module, source="register_scan_queue"
         )
         _LOGGER.info(
-            "Discovery started | module=%s (Remaining in queue: %d)", 
-            normalized_address, 
+            "Discovery started | module=%s (Remaining in queue: %d)",
+            normalized_address,
             len(self._register_scan_queue)
         )
         self._coordinator.discovery_running = True
@@ -545,7 +542,7 @@ class NikobusDiscovery:
         _LOGGER.info("Inventory record | address=%s", normalized)
         self._ensure_pc_link_address(normalized, source="device_address_inventory")
         if is_new and self.discovery_stage == "inventory_addresses":
-            self._hass.async_create_task(
+            self._create_task(
                 self._queue_inventory_identity_queries_for_address(normalized)
             )
         self._schedule_inventory_timeout()
@@ -581,7 +578,7 @@ class NikobusDiscovery:
         pc_link_info = DEVICE_TYPES.get("0A", {})
         name = pc_link_info.get("Name", "PC Link")
         model = pc_link_info.get("Model", "05-200")
-        last_seen = dt_util.now().isoformat()
+        last_seen = datetime.now(timezone.utc).isoformat()
         module_type = get_module_type_from_device_type("0A")
         base_device = {
             "description": name,
@@ -618,7 +615,7 @@ class NikobusDiscovery:
                         addr = module.get("address") if isinstance(module, dict) else None
                         if addr:
                             all_addresses.append(addr)
-            
+
             if not all_addresses:
                 _LOGGER.warning("No output modules found in config to scan.")
                 self.reset_state()
@@ -702,7 +699,7 @@ class NikobusDiscovery:
                 payload = payload.split("$")[-1]
             payload = payload.lstrip("$")
             payload_bytes = bytes.fromhex(payload)
-            
+
             # --- FIX 1: The data payload starts at byte 3 ---
             data_bytes = payload_bytes[3:19] if len(payload_bytes) >= 19 else payload_bytes[3:]
 
@@ -762,7 +759,7 @@ class NikobusDiscovery:
                     converted_address,
                 )
 
-            last_seen = dt_util.now().isoformat()
+            last_seen = datetime.now(timezone.utc).isoformat()
             device_entry = {
                 "description": name,
                 "discovered_name": name,
@@ -892,7 +889,7 @@ class NikobusDiscovery:
                     )
                     # Just skip the empty chunk, do NOT abort the scan!
                     continue
-                    
+
                 decoded_commands.extend(
                     decoder.decode(normalized_chunk, module_address=address)
                 )
@@ -922,16 +919,9 @@ class NikobusDiscovery:
 
             decoded = command.metadata or {}
 
-            # ------------------------------------------------------------------
-            # IR + legacy compatibility:
-            # Some decoders (observed for IR slots like 0D1C81/0D1C9E/...) only
-            # populate button_address and not push_button_address.
-            # Discovery mapping expects push_button_address to be present.
-            # ------------------------------------------------------------------
             if decoded.get("push_button_address") is None and decoded.get("button_address") is not None:
                 decoded["push_button_address"] = decoded.get("button_address")
 
-            # If we still have no button address at all, skip.
             if decoded.get("push_button_address") is None and decoded.get("button_address") is None:
                 continue
 
@@ -953,7 +943,7 @@ class NikobusDiscovery:
         )
 
         updated_buttons, links_added, outputs_added = await merge_discovered_links(
-            self._hass, command_mapping
+            self._button_config_path, command_mapping
         )
         _LOGGER.info(
             "Discovered links merged into config: %d buttons updated, %d link blocks added, %d outputs added.",
@@ -961,6 +951,7 @@ class NikobusDiscovery:
             links_added,
             outputs_added,
         )
+
 
 def run_decoder_harness(coordinator):
     """Lightweight harness to exercise discovery decoders without full HA runtime."""

@@ -16,7 +16,7 @@ from .protocol import (
     get_push_button_address,
     reverse_hex,
 )
-from ..const import DEVICE_INVENTORY_ANSWER as DEVICE_INVENTORY
+from .const import DEVICE_INVENTORY_ANSWER as DEVICE_INVENTORY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -195,4 +195,3 @@ class DimmerDecoder:
 
 
 __all__ = ["DimmerDecoder", "decode", "EXPECTED_CHUNK_LEN"]
-

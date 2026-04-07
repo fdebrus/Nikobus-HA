@@ -1,0 +1,19 @@
+Metadata-Version: 2.4
+Name: nikobus-discovery
+Version: 1.0.0
+Summary: Protocol-level discovery library for Nikobus home-automation systems
+Author: fdebrus
+License: MIT
+Project-URL: Homepage, https://github.com/fdebrus/nikobus-ha
+Project-URL: Issues, https://github.com/fdebrus/nikobus-ha/issues
+Keywords: nikobus,home-automation,discovery
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Home Automation
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: nikobusconnect>=2.0.0

@@ -1,13 +1,10 @@
 import importlib.util
+import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-
-HA_AVAILABLE = importlib.util.find_spec("homeassistant") is not None
-
-if HA_AVAILABLE:
-    from custom_components.nikobus.discovery.base import DecodedCommand, InventoryResult
-    from custom_components.nikobus.discovery.discovery import NikobusDiscovery
+from nikobus_discovery import DecodedCommand, InventoryResult, NikobusDiscovery
 
 
 def _build_inventory_payload(device_type: int, address_bytes: bytes, length: int = 18) -> str:
@@ -17,7 +14,6 @@ def _build_inventory_payload(device_type: int, address_bytes: bytes, length: int
     return payload.hex().upper()
 
 
-@unittest.skipUnless(HA_AVAILABLE, "homeassistant not available")
 class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         class FakeCoordinator:
@@ -39,9 +35,12 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
                     discovered_devices[device["address"]] = device
 
         self.coordinator = FakeCoordinator()
-        hass = MagicMock()
-        hass.async_create_task = MagicMock(return_value=MagicMock())
-        self.discovery = NikobusDiscovery(hass, self.coordinator)
+        self._tmp_dir = tempfile.mkdtemp()
+        self.discovery = NikobusDiscovery(
+            self.coordinator,
+            config_dir=self._tmp_dir,
+            create_task=MagicMock(return_value=MagicMock()),
+        )
 
     async def test_parse_pclink_inventory_response_populates_modules_and_buttons(self):
         module_payload = _build_inventory_payload(0x01, b"\x12\x34")
@@ -101,7 +100,7 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
 
         message = "$2E1234ABCD"
         with patch(
-            "custom_components.nikobus.discovery.discovery.merge_discovered_links",
+            "nikobus_discovery.discovery.merge_discovered_links",
             _fake_merge,
         ):
             await self.discovery.parse_module_inventory_response(message)

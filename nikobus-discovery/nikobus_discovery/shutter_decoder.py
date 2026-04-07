@@ -122,4 +122,3 @@ class ShutterDecoder(BaseChunkingDecoder):
 
 
 __all__ = ["ShutterDecoder", "decode"]
-

@@ -234,4 +234,3 @@ __all__ = [
     "_is_all_ff",
     "_safe_int",
 ]
-

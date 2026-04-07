@@ -4,8 +4,6 @@ import logging
 import os
 import tempfile
 
-from homeassistant.util import dt as dt_util
-
 _LOGGER = logging.getLogger(__name__)
 
 MODULE_TYPE_ORDER = [
@@ -41,8 +39,8 @@ def _inline_channels(json_text: str) -> str:
             return False
 
         inner = block_lines[1:-1]
-        
-        # We removed the length restriction here so that objects with 
+
+        # We removed the length restriction here so that objects with
         # multiple keys (like shutters) still inline perfectly!
         return not any("{" in line or "}" in line for line in inner)
 
@@ -131,8 +129,16 @@ def _normalize_address(address):
     return address.strip().upper() if isinstance(address, str) else ""
 
 
-async def update_module_data(hass, discovered_devices):
-    """Create or merge the integration module config from discovery results."""
+async def update_module_data(file_path, discovered_devices):
+    """Create or merge the integration module config from discovery results.
+
+    Parameters
+    ----------
+    file_path : str
+        Absolute path to the module config JSON file.
+    discovered_devices : dict
+        Mapping of address -> device info dicts from discovery.
+    """
 
     def _ensure_inventory(data: dict | None) -> dict[str, list]:
         data = data or {}
@@ -201,7 +207,6 @@ async def update_module_data(hass, discovered_devices):
     def _sanitize_discovered_info(info: dict | None) -> dict:
         info = info or {}
         sanitized: dict = {}
-        # Removed "last_discovered" from allowed keys
         for key in ("name", "device_type", "channels_count"):
             if key not in info:
                 continue
@@ -252,7 +257,7 @@ async def update_module_data(hass, discovered_devices):
 
         if channels_list:
             canonical["channels"] = channels_list
-            
+
         # Append discovered_info at the bottom
         canonical["discovered_info"] = discovered_info
 
@@ -281,7 +286,6 @@ async def update_module_data(hass, discovered_devices):
         return candidate
 
     def _refresh_discovered_info(channels_count: int, device: dict) -> dict:
-        # Removed last_discovered injection
         discovery_info = {
             "name": device.get("discovered_name") or device.get("description", ""),
             "device_type": device.get("device_type"),
@@ -296,7 +300,6 @@ async def update_module_data(hass, discovered_devices):
         if device.get("category") == "Module"
     ]
 
-    file_path = hass.config.path("nikobus_module_config.json")
     existing_data = await read_json_file(file_path)
 
     inventory = _ensure_inventory(existing_data)
@@ -345,10 +348,10 @@ async def update_module_data(hass, discovered_devices):
             updated_module["channels"] = _build_channels(
                 module_type, channels, channels_count
             )
-            
-        # Append discovered_info at the bottom    
+
+        # Append discovered_info at the bottom
         updated_module["discovered_info"] = discovered_info
-        
+
         module_lookup[address] = updated_module
 
     # Rebuild inventory lists with canonical ordering and sanitization
@@ -370,12 +373,20 @@ async def update_module_data(hass, discovered_devices):
     await write_json_file(file_path, ordered_inventory, inline_channels=True)
 
 
-async def update_button_data(hass, discovered_devices, key_mapping, convert_nikobus_address):
+async def update_button_data(file_path, discovered_devices, key_mapping, convert_nikobus_address):
+    """Update the button config JSON file based on discovered devices.
+
+    Parameters
+    ----------
+    file_path : str
+        Absolute path to the button config JSON file.
+    discovered_devices : dict
+        Mapping of address -> device info dicts from discovery.
+    key_mapping : dict
+        KEY_MAPPING from mapping module.
+    convert_nikobus_address : callable
+        Address conversion function.
     """
-    Update the button config JSON file based on discovered devices.
-    Requires key_mapping and convert_nikobus_address function from protocol/mappings.
-    """
-    file_path = hass.config.path("nikobus_button_config.json")
     os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
     existing_data = []
     if os.path.exists(file_path):
@@ -483,8 +494,15 @@ def _normalize_key(value):
         return value
 
 
-async def merge_discovered_links(hass, command_mapping):
+async def merge_discovered_links(file_path, command_mapping):
     """Merge discovery command mapping into nikobus_button_config.json.
+
+    Parameters
+    ----------
+    file_path : str
+        Absolute path to the button config JSON file.
+    command_mapping : dict
+        Mapping of button keys to output definitions.
 
     Notes:
         - discovered_links blocks are grouped by module_address only.
@@ -498,8 +516,6 @@ async def merge_discovered_links(hass, command_mapping):
             - any discovered_info[].address (IR / bus identity)
         - If a button is not found in the JSON, it is skipped to prevent ghost/garbage buttons.
     """
-
-    file_path = hass.config.path("nikobus_button_config.json")
 
     file_exists_before = os.path.exists(file_path)
     file_size_before = os.path.getsize(file_path) if file_exists_before else 0
@@ -548,9 +564,9 @@ async def merge_discovered_links(hass, command_mapping):
                     di_addr = _normalize_address(info.get("address"))
                     if not di_addr:
                         continue
-                        
+
                     lookup.setdefault(di_addr, button)
-                    
+
                     # --- FIX: Link the secondary MAC address for 8-channel switches ---
                     channels = info.get("channels")
                     if channels == 8 and len(di_addr) == 6:
@@ -577,7 +593,7 @@ async def merge_discovered_links(hass, command_mapping):
 
         # --- FIX: Do not create phantom buttons for ghost links or garbage memory ---
         _LOGGER.debug(
-            "Ignored ghost link or garbage memory chunk for unknown button: %s", 
+            "Ignored ghost link or garbage memory chunk for unknown button: %s",
             normalized_address
         )
         return None

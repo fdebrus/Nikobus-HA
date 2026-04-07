@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock
 
 ROOT = Path(__file__).parent.parent
 COMP = ROOT / "custom_components" / "nikobus"
-DISCO = COMP / "discovery"
+DISCO_LIB = ROOT / "nikobus-discovery"  # standalone PyPI library
 
 
 # ---------------------------------------------------------------------------
@@ -169,9 +169,6 @@ _pkg.__path__ = [str(ROOT / "custom_components")]
 _niko = _mod("custom_components.nikobus")
 _niko.__path__ = [str(COMP)]
 
-_disco_pkg = _mod("custom_components.nikobus.discovery")
-_disco_pkg.__path__ = [str(DISCO)]
-
 # ---------------------------------------------------------------------------
 # Load nikobus modules in dependency order
 # ---------------------------------------------------------------------------
@@ -179,21 +176,8 @@ _load("custom_components.nikobus.nkbprotocol", COMP / "nkbprotocol.py")
 _load("custom_components.nikobus.exceptions", COMP / "exceptions.py")
 _load("custom_components.nikobus.const", COMP / "const.py")
 
-# Discovery sub-modules (no external HA deps beyond homeassistant.util.dt)
-_load("custom_components.nikobus.discovery.base", DISCO / "base.py")
-_load("custom_components.nikobus.discovery.mapping", DISCO / "mapping.py")
-_load("custom_components.nikobus.discovery.protocol", DISCO / "protocol.py")
-_load("custom_components.nikobus.discovery.chunk_decoder", DISCO / "chunk_decoder.py")
-_load("custom_components.nikobus.discovery.switch_decoder", DISCO / "switch_decoder.py")
-_load("custom_components.nikobus.discovery.dimmer_decoder", DISCO / "dimmer_decoder.py")
-_load("custom_components.nikobus.discovery.shutter_decoder", DISCO / "shutter_decoder.py")
-_load("custom_components.nikobus.discovery.fileio", DISCO / "fileio.py")
-_disco_mod = _load("custom_components.nikobus.discovery.discovery", DISCO / "discovery.py")
-
-# Expose NikobusDiscovery on the package so both `from .discovery import NikobusDiscovery`
-# (coordinator) and `from custom_components.nikobus.discovery.discovery import NikobusDiscovery`
-# (test_inventory_parsing) resolve correctly.
-_disco_pkg.NikobusDiscovery = _disco_mod.NikobusDiscovery
+# Discovery is now the standalone nikobus_discovery PyPI library.
+# It is installed via `pip install -e nikobus-discovery/` and imported directly.
 
 _load("custom_components.nikobus.nkblistener", COMP / "nkblistener.py")
 _load("custom_components.nikobus.nkbcommand", COMP / "nkbcommand.py")
