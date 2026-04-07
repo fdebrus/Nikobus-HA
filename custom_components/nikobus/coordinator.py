@@ -27,8 +27,7 @@ from .const import (
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
 )
-from .discovery import NikobusDiscovery
-from .discovery.base import InventoryQueryType
+from nikobus_discovery import NikobusDiscovery, InventoryQueryType
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 
@@ -140,7 +139,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.nikobus_actuator = NikobusActuator(
                 self.hass, self, self.dict_button_data, self.dict_module_data
             )
-            self.nikobus_discovery = NikobusDiscovery(self.hass, self)
+            self.nikobus_discovery = NikobusDiscovery(
+                self,
+                config_dir=self.hass.config.config_dir,
+                create_task=self.hass.async_create_task,
+            )
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
 
             # 2. Create listener with a single event_callback and feedback_callback

@@ -131,4 +131,3 @@ class SwitchDecoder(BaseChunkingDecoder):
 
 
 __all__ = ["SwitchDecoder", "decode"]
-
