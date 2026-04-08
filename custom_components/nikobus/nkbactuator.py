@@ -322,14 +322,31 @@ class NikobusActuator:
         button_data = self._dict_button_data.get("nikobus_button", {}).get(address, {})
         impacted = button_data.get("impacted_module") or []
         links = button_data.get("discovered_links") or []
-        
-        module_addr = impacted[0].get("address") if impacted else (links[0].get("module_address") if links else None)
+
+        # Try impacted_module first, skipping empty placeholder entries
+        module_addr = None
+        for entry in impacted:
+            if entry.get("address"):
+                module_addr = entry["address"]
+                break
+
         channel = None
-        if links and (ch_str := links[0].get("channel")):
-            # Extract digits from string safely (e.g. "Channel 12" -> 12)
-            parts = ch_str.split()
-            channel = int(parts[-1]) if parts and parts[-1].isdigit() else None
-            
+
+        # Fall back to discovered_links if no configured impacted_module
+        if not module_addr and links:
+            first_link = links[0]
+            module_addr = first_link.get("module_address")
+            # Handle nested outputs format: [{"module_address": "...", "outputs": [{"channel": 1, ...}]}]
+            outputs = first_link.get("outputs")
+            if isinstance(outputs, list) and outputs:
+                ch_val = outputs[0].get("channel")
+                if isinstance(ch_val, int):
+                    channel = ch_val
+            # Handle flat format: [{"module_address": "...", "channel": "Channel 1"}]
+            elif ch_str := first_link.get("channel"):
+                parts = str(ch_str).split()
+                channel = int(parts[-1]) if parts and parts[-1].isdigit() else None
+
         return (module_addr.upper() if module_addr else None, channel)
 
     def _get_bucket(self, duration: float) -> int:
