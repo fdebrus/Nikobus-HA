@@ -36,11 +36,10 @@ class NikobusConfig:
                 data = json.loads(await file.read())
             return self._transform_loaded_data(data, data_type)
 
-        except FileNotFoundError as err:
+        except FileNotFoundError:
             self._handle_file_not_found(file_path, data_type)
-            if data_type in ("scene", "button"):
-                return {}
-            raise NikobusDataError(f"Missing required {data_type} file: {file_path}") from err
+            await self._create_empty_config(file_path, data_type)
+            return {}
 
         except json.JSONDecodeError as err:
             _LOGGER.error("Failed to decode JSON in %s file: %s", data_type, err, exc_info=True)
@@ -150,20 +149,40 @@ class NikobusConfig:
 
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:
         """Handle the case where the configuration file is not found."""
-        if data_type == "button":
+        if data_type == "module":
             _LOGGER.info(
-                "Button configuration file not found: %s. A new file will be created upon discovering the first button.",
+                "Module configuration file not found: %s. "
+                "Run PC-Link inventory discovery to populate it.",
                 file_path,
             )
-        elif data_type == "scene":
+        elif data_type == "button":
             _LOGGER.info(
-                "Scene configuration file not found: %s. Skipping.",
+                "Button configuration file not found: %s. "
+                "A new file will be created upon discovering the first button.",
                 file_path,
             )
         else:
-            raise NikobusDataError(
-                f"{data_type.capitalize()} configuration file not found: {file_path}"
+            _LOGGER.info(
+                "%s configuration file not found: %s. Skipping.",
+                data_type.capitalize(),
+                file_path,
             )
+
+    @staticmethod
+    async def _create_empty_config(file_path: str, data_type: str) -> None:
+        """Create an empty skeleton config file so the library can update it later."""
+        _EMPTY_SKELETONS = {
+            "module": {},
+            "button": {"nikobus_button": []},
+            "scene": {},
+        }
+        skeleton = _EMPTY_SKELETONS.get(data_type, {})
+        try:
+            async with aio_open(file_path, "w") as file:
+                await file.write(json.dumps(skeleton, indent=4))
+            _LOGGER.info("Created empty %s config: %s", data_type, file_path)
+        except OSError as err:
+            _LOGGER.warning("Could not create empty %s config: %s", data_type, err)
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
         """Write data to a JSON file, transforming it into a list format if necessary."""
