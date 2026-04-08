@@ -336,16 +336,11 @@ class NikobusActuator:
         if not module_addr and links:
             first_link = links[0]
             module_addr = first_link.get("module_address")
-            # Handle nested outputs format: [{"module_address": "...", "outputs": [{"channel": 1, ...}]}]
             outputs = first_link.get("outputs")
             if isinstance(outputs, list) and outputs:
                 ch_val = outputs[0].get("channel")
                 if isinstance(ch_val, int):
                     channel = ch_val
-            # Handle flat format: [{"module_address": "...", "channel": "Channel 1"}]
-            elif ch_str := first_link.get("channel"):
-                parts = str(ch_str).split()
-                channel = int(parts[-1]) if parts and parts[-1].isdigit() else None
 
         return (module_addr.upper() if module_addr else None, channel)
 
