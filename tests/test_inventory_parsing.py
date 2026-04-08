@@ -5,6 +5,8 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from nikobus_connect.discovery import DecodedCommand, InventoryResult, NikobusDiscovery
+from nikobus_connect.discovery.protocol import DecoderContext, normalize_payload, reverse_hex
+from nikobus_connect.discovery.shutter_decoder import decode as shutter_decode
 
 
 def _build_inventory_payload(device_type: int, address_bytes: bytes, length: int = 18) -> str:
@@ -114,3 +116,44 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(matching_key, f"Expected key starting with ('AA0000', 1) in {list(mapping)}")
         output = mapping[matching_key][0]
         self.assertEqual(output["module_address"], "3412")
+
+
+class TestShutterDecoder(unittest.TestCase):
+    """Verify the shutter decoder extracts channel from the lower nibble of byte 1.
+
+    Real bus frame from roller module 8394:
+        chunk = 723610B010FF → reversed = FF10B0103672
+        byte 1 = 0x10 → upper nibble (key) = 1, lower nibble (channel_raw) = 0
+        channel = (0 // 2) + 1 = 1
+    """
+
+    def _decode_chunk(self, chunk_hex: str, channel_count: int = 6) -> dict | None:
+        payload_hex = reverse_hex(chunk_hex)
+        raw_bytes = normalize_payload(payload_hex)
+        ctx = DecoderContext(coordinator=None, module_address="8394", module_channel_count=channel_count)
+        return shutter_decode(payload_hex, raw_bytes, ctx)
+
+    def test_real_roller_payload_channel_1(self):
+        result = self._decode_chunk("723610B010FF")
+        self.assertIsNotNone(result, "Decoder should not reject a valid roller payload")
+        self.assertEqual(result["channel"], 1)
+        self.assertEqual(result["key_raw"], 1)
+        self.assertEqual(result["M"], "M01 (Open - stop - close)")
+
+    def test_channel_extraction_all_channels(self):
+        """Ensure channels 1-6 are correctly decoded from lower nibble values 0-10."""
+        # Build minimal valid payloads varying only the channel nibble in byte 1
+        # Reversed payload: [t2_byte, key_ch_byte, t1_mode_byte, addr, addr, addr]
+        for channel_nibble, expected_channel in [(0, 1), (2, 2), (4, 3), (6, 4), (8, 5), (0xA, 6)]:
+            key = 1
+            byte1 = (key << 4) | channel_nibble
+            # Build reversed payload: FF <byte1> 00 00 00 00 (mode=0 → M01, t1=0, dummy addr)
+            payload_hex = f"FF{byte1:02X}00000000"
+            chunk_hex = reverse_hex(payload_hex)
+            result = self._decode_chunk(chunk_hex)
+            self.assertIsNotNone(result, f"channel_nibble={channel_nibble:#x} should decode")
+            self.assertEqual(result["channel"], expected_channel, f"channel_nibble={channel_nibble:#x}")
+
+    def test_empty_slot_skipped(self):
+        result = self._decode_chunk("FFFFFFFFFFFF")
+        self.assertIsNone(result)
