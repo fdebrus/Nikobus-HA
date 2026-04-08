@@ -4,6 +4,8 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from nikobus_connect.discovery import InventoryQueryType
+
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
 
@@ -27,7 +29,7 @@ class _FakeCoord:
     get_bytearray_group_state = NikobusDataCoordinator.get_bytearray_group_state
     set_bytearray_state = NikobusDataCoordinator.set_bytearray_state
     set_bytearray_group_state = NikobusDataCoordinator.set_bytearray_group_state
-    process_feedback_data = NikobusDataCoordinator.process_feedback_data
+    _feedback_callback = NikobusDataCoordinator._feedback_callback
     get_cover_operation_time = NikobusDataCoordinator.get_cover_operation_time
 
 
@@ -191,11 +193,11 @@ class TestSetByteArrayGroupState(unittest.TestCase):
 # process_feedback_data
 # ---------------------------------------------------------------------------
 
-class TestProcessFeedbackData(unittest.IsolatedAsyncioTestCase):
+class TestFeedbackCallback(unittest.IsolatedAsyncioTestCase):
     async def test_group1_updates_first_6_bytes(self):
         c = _coord(states={"C1C7": bytearray(12)})
         frame = _feedback_frame("C7C1", "AABBCCDDEEFF")
-        await c.process_feedback_data(1, frame)
+        await c._feedback_callback(1, frame)
         self.assertEqual(
             c.nikobus_module_states["C1C7"][:6],
             bytearray.fromhex("AABBCCDDEEFF"),
@@ -204,7 +206,7 @@ class TestProcessFeedbackData(unittest.IsolatedAsyncioTestCase):
     async def test_group2_updates_second_6_bytes(self):
         c = _coord(states={"C1C7": bytearray(12)})
         frame = _feedback_frame("C7C1", "112233445566")
-        await c.process_feedback_data(2, frame)
+        await c._feedback_callback(2, frame)
         self.assertEqual(
             c.nikobus_module_states["C1C7"][6:],
             bytearray.fromhex("112233445566"),
@@ -213,25 +215,25 @@ class TestProcessFeedbackData(unittest.IsolatedAsyncioTestCase):
     async def test_group2_on_6byte_module_not_written(self):
         c = _coord(states={"C1C7": bytearray(6)})
         frame = _feedback_frame("C7C1", "AABBCCDDEEFF")
-        await c.process_feedback_data(2, frame)
+        await c._feedback_callback(2, frame)
         self.assertEqual(c.nikobus_module_states["C1C7"], bytearray(6))
 
     async def test_group1_does_not_touch_group2_bytes(self):
         state = bytearray([0] * 6 + [0xAA] * 6)
         c = _coord(states={"C1C7": state})
         frame = _feedback_frame("C7C1", "FFEEDDCCBBAA")
-        await c.process_feedback_data(1, frame)
+        await c._feedback_callback(1, frame)
         self.assertEqual(c.nikobus_module_states["C1C7"][6:], bytearray([0xAA] * 6))
 
     async def test_frame_too_short_ignored(self):
         c = _coord(states={"C1C7": bytearray(12)})
-        await c.process_feedback_data(1, "$1CC7C1")  # too short
+        await c._feedback_callback(1, "$1CC7C1")  # too short
         self.assertEqual(c.nikobus_module_states["C1C7"], bytearray(12))
 
     async def test_unknown_module_ignored(self):
         c = _coord(states={})
         frame = _feedback_frame("C7C1", "AABBCCDDEEFF")
-        await c.process_feedback_data(1, frame)  # should not raise
+        await c._feedback_callback(1, frame)  # should not raise
 
     async def test_resolve_pending_get_called_when_command_set(self):
         c = _coord(states={"C1C7": bytearray(12)})
@@ -239,7 +241,7 @@ class TestProcessFeedbackData(unittest.IsolatedAsyncioTestCase):
         c.nikobus_command.resolve_pending_get = MagicMock()
 
         frame = _feedback_frame("C7C1", "AABBCCDDEEFF")
-        await c.process_feedback_data(1, frame)
+        await c._feedback_callback(1, frame)
 
         c.nikobus_command.resolve_pending_get.assert_called_once_with(
             "C1C7", 1, "AABBCCDDEEFF"
@@ -250,7 +252,7 @@ class TestProcessFeedbackData(unittest.IsolatedAsyncioTestCase):
         # Module address "AABB": little-endian in frame = "BBAA"
         c = _coord(states={"AABB": bytearray(12)})
         frame = _feedback_frame("BBAA", "001122334455")
-        await c.process_feedback_data(1, frame)
+        await c._feedback_callback(1, frame)
         self.assertEqual(
             c.nikobus_module_states["AABB"][:6],
             bytearray.fromhex("001122334455"),
@@ -301,6 +303,150 @@ class TestGetCoverOperationTime(unittest.TestCase):
         c = self._coord_with_cover({"operation_time_up": "25"})
         result = c.get_cover_operation_time("C1C7", 99, "up", default=30.0)
         self.assertAlmostEqual(result, 30.0)
+
+
+# ---------------------------------------------------------------------------
+# _is_empty_inventory_block
+# ---------------------------------------------------------------------------
+
+class TestIsEmptyInventoryBlock(unittest.TestCase):
+    """Test the static helper that classifies $2E inventory responses."""
+
+    _check = staticmethod(NikobusDataCoordinator._is_empty_inventory_block)
+
+    def test_all_ff_payload_is_empty(self):
+        msg = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
+        self.assertTrue(self._check(msg))
+
+    def test_near_ff_payload_is_empty(self):
+        msg = "$2EF586FFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFF3A4806"
+        self.assertTrue(self._check(msg))
+
+    def test_module_record_is_not_empty(self):
+        msg = "$2EF58603000000030000006C0E000001000000F938E8"
+        self.assertFalse(self._check(msg))
+
+    def test_button_record_is_not_empty(self):
+        msg = "$2EF5860400000006000080B44318000100000028AB77"
+        self.assertFalse(self._check(msg))
+
+    def test_short_message_is_empty(self):
+        self.assertTrue(self._check("$2EF586"))
+        self.assertTrue(self._check(""))
+
+    def test_1e_prefix_all_ff_is_empty(self):
+        msg = "$1EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000"
+        self.assertTrue(self._check(msg))
+
+
+# ---------------------------------------------------------------------------
+# Early termination of PC Link discovery
+# ---------------------------------------------------------------------------
+
+class TestDiscoveryEarlyTermination(unittest.IsolatedAsyncioTestCase):
+    """Verify that the coordinator aborts PC Link inventory after consecutive empties."""
+
+    def _make_coordinator_stub(self):
+        """Build a minimal duck-typed coordinator with the discovery fields."""
+        coord = MagicMock()
+        coord.nikobus_discovery = MagicMock()
+        coord.nikobus_discovery.parse_inventory_response = AsyncMock()
+        coord.nikobus_discovery.parse_module_inventory_response = AsyncMock()
+        coord.discovery_running = True
+        coord.inventory_query_type = InventoryQueryType.PC_LINK
+        coord._discovery_found_data = False
+        coord._consecutive_empty_blocks = 0
+        coord.nikobus_command = MagicMock()
+        coord.nikobus_command._command_queue = asyncio.Queue()
+
+        # Wire up the real methods under test
+        coord._is_empty_inventory_block = NikobusDataCoordinator._is_empty_inventory_block
+        coord._handle_discovery_finished = AsyncMock()
+        coord._abort_discovery_early = lambda self_=coord: NikobusDataCoordinator._abort_discovery_early(self_)
+        coord._discovery_frame_callback = lambda msg, self_=coord: NikobusDataCoordinator._discovery_frame_callback(self_, msg)
+        return coord
+
+    async def test_no_abort_before_data_found(self):
+        coord = self._make_coordinator_stub()
+        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
+
+        # Send 5 empties — should NOT abort because no data has been found yet.
+        for _ in range(5):
+            await coord._discovery_frame_callback(empty)
+
+        coord._handle_discovery_finished.assert_not_awaited()
+
+    async def test_abort_after_consecutive_empties_following_data(self):
+        coord = self._make_coordinator_stub()
+        data = "$2EF58603000000030000006C0E000001000000F938E8"
+        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
+
+        # First: a real data response
+        await coord._discovery_frame_callback(data)
+        self.assertTrue(coord._discovery_found_data)
+        self.assertEqual(coord._consecutive_empty_blocks, 0)
+
+        # Then: 3 consecutive empties → should trigger abort
+        for _ in range(3):
+            await coord._discovery_frame_callback(empty)
+
+        coord._handle_discovery_finished.assert_awaited_once()
+
+    async def test_data_resets_empty_counter(self):
+        coord = self._make_coordinator_stub()
+        data = "$2EF58603000000010000000747000003000000BF8DA1"
+        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
+
+        # Data → 2 empties → data again → counter should reset
+        await coord._discovery_frame_callback(data)
+        await coord._discovery_frame_callback(empty)
+        await coord._discovery_frame_callback(empty)
+        self.assertEqual(coord._consecutive_empty_blocks, 2)
+
+        await coord._discovery_frame_callback(data)
+        self.assertEqual(coord._consecutive_empty_blocks, 0)
+
+        coord._handle_discovery_finished.assert_not_awaited()
+
+    async def test_abort_drains_command_queue(self):
+        coord = self._make_coordinator_stub()
+        # Pre-fill the queue with fake discovery commands
+        for i in range(10):
+            coord.nikobus_command._command_queue.put_nowait({"command": f"$1410F586{i:02X}04", "address": None})
+        self.assertEqual(coord.nikobus_command._command_queue.qsize(), 10)
+
+        data = "$2EF58603000000030000006C0E000001000000F938E8"
+        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
+
+        await coord._discovery_frame_callback(data)
+        for _ in range(3):
+            await coord._discovery_frame_callback(empty)
+
+        # Queue should be drained
+        self.assertEqual(coord.nikobus_command._command_queue.qsize(), 0)
+
+    async def test_skipped_after_discovery_not_running(self):
+        coord = self._make_coordinator_stub()
+        coord.discovery_running = False
+        data = "$2EF58603000000030000006C0E000001000000F938E8"
+
+        await coord._discovery_frame_callback(data)
+
+        coord.nikobus_discovery.parse_inventory_response.assert_not_awaited()
+
+    async def test_module_query_does_not_trigger_early_termination(self):
+        coord = self._make_coordinator_stub()
+        coord.inventory_query_type = InventoryQueryType.MODULE
+
+        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
+        coord._discovery_found_data = True  # pretend data was found
+
+        for _ in range(5):
+            await coord._discovery_frame_callback(empty)
+
+        # Module queries use a different parser and don't trigger early abort
+        coord._handle_discovery_finished.assert_not_awaited()
+        coord.nikobus_discovery.parse_module_inventory_response.assert_awaited()
 
 
 if __name__ == "__main__":

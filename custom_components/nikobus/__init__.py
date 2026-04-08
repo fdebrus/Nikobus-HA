@@ -71,6 +71,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         
         if not module_address:
             _LOGGER.info("Starting manual Nikobus PC-Link inventory discovery (#A)")
+            coordinator._discovery_found_data = False
+            coordinator._consecutive_empty_blocks = 0
             if coordinator.nikobus_discovery:
                 await coordinator.nikobus_discovery.start_inventory_discovery()
         else:

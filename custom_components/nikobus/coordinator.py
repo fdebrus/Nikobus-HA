@@ -36,6 +36,10 @@ _LOGGER = logging.getLogger(__name__)
 # Module types supported for polling
 MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
 
+# After finding real device data in the PC Link registry, abort the scan
+# once this many consecutive empty (0xFF) blocks are encountered.
+_DISCOVERY_EMPTY_THRESHOLD = 3
+
 
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
@@ -77,6 +81,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_module = None
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
+        self._discovery_found_data: bool = False
+        self._consecutive_empty_blocks: int = 0
         self._reload_task = None
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
@@ -249,12 +255,53 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     async def _discovery_frame_callback(self, message: str) -> None:
         """Route $2E/$1E discovery response frames."""
-        if not self.nikobus_discovery:
+        if not self.nikobus_discovery or not self.discovery_running:
             return
         if self.inventory_query_type == InventoryQueryType.MODULE:
             await self.nikobus_discovery.parse_module_inventory_response(message)
+            return
+
+        # PC Link inventory response
+        await self.nikobus_discovery.parse_inventory_response(message)
+
+        # Early termination: stop scanning after consecutive empty registry blocks.
+        if self._is_empty_inventory_block(message):
+            if self._discovery_found_data:
+                self._consecutive_empty_blocks += 1
+                if self._consecutive_empty_blocks >= _DISCOVERY_EMPTY_THRESHOLD:
+                    _LOGGER.info(
+                        "PC Link inventory: %d consecutive empty blocks — stopping early",
+                        self._consecutive_empty_blocks,
+                    )
+                    await self._abort_discovery_early()
         else:
-            await self.nikobus_discovery.parse_inventory_response(message)
+            self._discovery_found_data = True
+            self._consecutive_empty_blocks = 0
+
+    @staticmethod
+    def _is_empty_inventory_block(message: str) -> bool:
+        """Check whether a $2E/$1E inventory response carries no device data.
+
+        The first data byte after the PC-Link address indicates the record
+        type (0x03 = module, 0x04+ = button).  A value of 0xFF means the
+        registry slot is unused.
+        """
+        return len(message) < 9 or message[7:9].upper() == "FF"
+
+    async def _abort_discovery_early(self) -> None:
+        """Stop the PC-Link inventory scan ahead of schedule."""
+        # Drain remaining discovery commands so they are not sent on the bus.
+        if self.nikobus_command and hasattr(self.nikobus_command, "_command_queue"):
+            drained = 0
+            while not self.nikobus_command._command_queue.empty():
+                try:
+                    self.nikobus_command._command_queue.get_nowait()
+                    drained += 1
+                except asyncio.QueueEmpty:
+                    break
+            if drained:
+                _LOGGER.debug("Drained %d queued discovery commands", drained)
+        await self._handle_discovery_finished()
 
     # ------------------------------------------------------------------
     # Data update
