@@ -38,6 +38,7 @@ class NikobusConfig:
 
         except FileNotFoundError:
             self._handle_file_not_found(file_path, data_type)
+            await self._create_empty_config(file_path, data_type)
             return {}
 
         except json.JSONDecodeError as err:
@@ -166,6 +167,22 @@ class NikobusConfig:
                 data_type.capitalize(),
                 file_path,
             )
+
+    @staticmethod
+    async def _create_empty_config(file_path: str, data_type: str) -> None:
+        """Create an empty skeleton config file so the library can update it later."""
+        _EMPTY_SKELETONS = {
+            "module": {},
+            "button": {"nikobus_button": []},
+            "scene": {},
+        }
+        skeleton = _EMPTY_SKELETONS.get(data_type, {})
+        try:
+            async with aio_open(file_path, "w") as file:
+                await file.write(json.dumps(skeleton, indent=4))
+            _LOGGER.info("Created empty %s config: %s", data_type, file_path)
+        except OSError as err:
+            _LOGGER.warning("Could not create empty %s config: %s", data_type, err)
 
     async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
         """Write data to a JSON file, transforming it into a list format if necessary."""
