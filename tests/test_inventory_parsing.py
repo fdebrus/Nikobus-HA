@@ -109,7 +109,7 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
             self.discovery._cancel_timeout()
 
         mapping = self.discovery._decoded_buffer["command_mapping"]
-        # Key is (push_button_address, channel, ir_slot) — match on first two components
+        # Key is (push_button_address, key_raw, ir_code) — match on first two components
         matching_key = next(
             (k for k in mapping if k[0] == "AA0000" and k[1] == 1), None
         )
