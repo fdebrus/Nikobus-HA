@@ -102,7 +102,7 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
 
         message = "$2E1234ABCD"
         with patch(
-            "nikobus_connect.discovery.discovery.merge_discovered_links",
+            "nikobus_connect.discovery.discovery.merge_linked_modules",
             _fake_merge,
         ):
             await self.discovery.parse_module_inventory_response(message)

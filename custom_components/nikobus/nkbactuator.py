@@ -321,7 +321,7 @@ class NikobusActuator:
         """Determine primary module/channel link for a button from config."""
         button_data = self._dict_button_data.get("nikobus_button", {}).get(address, {})
         impacted = button_data.get("impacted_module") or []
-        links = button_data.get("discovered_links") or []
+        links = button_data.get("linked_modules") or []
 
         # Try impacted_module first, skipping empty placeholder entries
         module_addr = None
@@ -332,7 +332,7 @@ class NikobusActuator:
 
         channel = None
 
-        # Fall back to discovered_links if no configured impacted_module
+        # Fall back to linked_modules if no configured impacted_module
         if not module_addr and links:
             first_link = links[0]
             module_addr = first_link.get("module_address")
