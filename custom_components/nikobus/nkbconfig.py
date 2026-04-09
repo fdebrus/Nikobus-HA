@@ -87,8 +87,19 @@ class NikobusConfig:
         return getattr(self, transform_name)(data)
 
     def _transform_button_data(self, data: dict) -> dict:
-        """Transform button data from a list to a dictionary."""
+        """Transform button data from a list to a dictionary.
+
+        Also migrates legacy field names from nikobus-connect < 0.1.4:
+            discovered_info  → linked_button
+            discovered_links → linked_modules
+        """
         if "nikobus_button" in data:
+            for button in data["nikobus_button"]:
+                if isinstance(button, dict):
+                    if "discovered_info" in button:
+                        button["linked_button"] = button.pop("discovered_info")
+                    if "discovered_links" in button:
+                        button["linked_modules"] = button.pop("discovered_links")
             data["nikobus_button"] = {
                 button["address"]: button for button in data["nikobus_button"]
             }
