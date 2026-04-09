@@ -402,6 +402,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 return m_type
         return None
 
+    def get_button_channels(self, button_address: str) -> int | None:
+        """Return the operation-point count for a physical button address.
+
+        Called by nikobus-connect decoders to derive the push-button (bus)
+        address from the physical device address found in module firmware.
+        Looks up ``linked_button[].address`` across all button entries.
+        """
+        normalized = (button_address or "").upper()
+        for button in (self.dict_button_data or {}).get("nikobus_button", {}).values():
+            for info in button.get("linked_button") or []:
+                if isinstance(info, dict) and (info.get("address") or "").upper() == normalized:
+                    ch = info.get("channels")
+                    if isinstance(ch, int) and ch > 0:
+                        return ch
+        return None
+
     def get_cover_operation_time(
         self, module_id: str, channel: int, direction: str = "up", default: float = 30.0
     ) -> float:
