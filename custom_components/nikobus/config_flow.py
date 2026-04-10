@@ -327,7 +327,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
         HA only re-runs the flow step when the ``progress_task`` completes.
         To refresh the displayed progress during a long-running discovery, we
-        pass a short "poll" task (sleep 0.5s) as the ``progress_task``. HA
+        pass a short "poll" task (sleep 1s) as the ``progress_task``. HA
         re-runs the step when that poll task completes, which lets us read
         the latest coordinator state and return a new spinner with updated
         description placeholders. Meanwhile the real discovery task runs
@@ -352,10 +352,10 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             else "Discovery in progress…"
         )
         percent = coordinator.discovery_progress_percent if coordinator else 0
-        display = f"{raw_message or 'Starting…'} ({percent}%)"
+        display = raw_message or "Starting…"
 
-        # Short poll task so HA re-runs this step ~every 0.5s to refresh the UI.
-        poll_task = self.hass.async_create_task(asyncio.sleep(0.5))
+        # Short poll task so HA re-runs this step every 1s to refresh the UI.
+        poll_task = self.hass.async_create_task(asyncio.sleep(1))
 
         kwargs: dict[str, Any] = {
             "step_id": step_id,
@@ -374,33 +374,29 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     async def async_step_discovery_done(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Final step after a successful discovery."""
-        coordinator = self._coordinator()
-        msg = (
-            coordinator.discovery_status_message
-            if coordinator
-            else "Discovery finished."
+        """Close the flow after a successful discovery and reload the entry.
+
+        We use ``async_abort`` rather than ``async_create_entry`` so HA does
+        not show the generic "Options successfully saved" dialog — nothing
+        actually changed in the options. The reload is scheduled manually
+        so the newly-discovered entities appear.
+        """
+        self.hass.async_create_task(
+            self.hass.config_entries.async_reload(self._entry.entry_id)
         )
-        return self.async_show_form(
-            step_id="discovery_done",
-            data_schema=vol.Schema({}),
-            description_placeholders={"message": msg},
-            last_step=True,
-        ) if user_input is None else self.async_create_entry(data=self._options)
+        return self.async_abort(reason="discovery_done")
 
     async def async_step_discovery_error(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Shown when a discovery task raised an exception."""
+        """Close the flow after a failed discovery, surfacing the error."""
         coordinator = self._coordinator()
         err = (
             coordinator.discovery_last_error
             if coordinator
             else "Unknown error"
         ) or "Unknown error"
-        return self.async_show_form(
-            step_id="discovery_error",
-            data_schema=vol.Schema({}),
+        return self.async_abort(
+            reason="discovery_error",
             description_placeholders={"error": err},
-            last_step=True,
-        ) if user_input is None else self.async_create_entry(data=self._options)
+        )

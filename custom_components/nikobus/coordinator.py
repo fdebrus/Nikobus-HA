@@ -103,6 +103,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_finished_event: asyncio.Event = asyncio.Event()
         self._discovery_finished_event.set()  # idle = already set
         self._discovery_auto_reload: bool = True
+        self._discovery_progress_task: asyncio.Task | None = None
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: datetime | None = None
@@ -323,45 +324,97 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
 
     def _update_module_scan_progress(self) -> None:
-        """Update progress counters based on the discovery library's internal state."""
+        """Poll the discovery library + command queue for live progress.
+
+        Derives progress from the library's remaining-queue length and the
+        command handler's pending-command queue. Avoids incremental counters
+        that can drift out of sync when modules transition.
+        """
         disc = self.nikobus_discovery
         if disc is None:
             return
 
-        # Current module being scanned
-        current = getattr(disc, "_module_address", None) or self.discovery_module_address
-        if current and current != self.discovery_current_module:
-            # Module changed → increment the done counter, reset register counter.
-            if self.discovery_current_module is not None:
-                self.discovery_modules_done += 1
-            self.discovery_current_module = current
-            self.discovery_registers_done = 0
-            self.discovery_registers_total = 240  # command range 0x10-0xFF
+        if self.discovery_registers_total == 0:
+            self.discovery_registers_total = 240  # 0x10-0xFF
 
-        # Queue size tells us remaining modules when using "ALL"
-        queue = getattr(disc, "_register_scan_queue", None)
-        if isinstance(queue, list):
-            # modules_total should reflect the initial total; only set once
+        current = getattr(disc, "_module_address", None) or self.discovery_module_address
+        if current:
+            self.discovery_current_module = current
+
+        # Derive modules_done from the library's scan queue:
+        #   remaining_after_current = len(_register_scan_queue)
+        #   modules_done = modules_total - remaining_after_current - 1
+        # When discovery_modules_total wasn't set by start_module_scan(),
+        # infer it once from the initial queue snapshot.
+        queue_list = getattr(disc, "_register_scan_queue", None)
+        if isinstance(queue_list, list):
             if self.discovery_modules_total == 0:
-                self.discovery_modules_total = (
-                    self.discovery_modules_done + 1 + len(queue)
+                self.discovery_modules_total = len(queue_list) + (1 if current else 0)
+            if self.discovery_modules_total:
+                self.discovery_modules_done = max(
+                    0,
+                    min(
+                        self.discovery_modules_total - 1,
+                        self.discovery_modules_total - len(queue_list) - 1,
+                    ),
                 )
 
-        self.discovery_registers_done = min(
-            self.discovery_registers_total,
-            self.discovery_registers_done + 1,
-        )
+        # Per-register progress from the command handler's queue size.
+        cmd_handler = self.nikobus_command
+        queue = getattr(cmd_handler, "_command_queue", None) if cmd_handler else None
+        if queue is not None and hasattr(queue, "qsize"):
+            remaining = queue.qsize()
+            done = max(0, self.discovery_registers_total - remaining)
+            self.discovery_registers_done = min(self.discovery_registers_total, done)
 
-        if self.discovery_current_module:
-            pct = self.discovery_progress_percent
+        if self.discovery_current_module and self.discovery_modules_total:
+            current_index = min(
+                self.discovery_modules_done + 1, self.discovery_modules_total
+            )
             self._update_discovery_state(
                 message=(
                     f"Scanning module {self.discovery_current_module} "
-                    f"({self.discovery_modules_done + 1}/{self.discovery_modules_total or '?'}) — {pct}%"
+                    f"({current_index}/{self.discovery_modules_total}) — "
+                    f"{self.discovery_registers_done}/{self.discovery_registers_total}"
                 ),
             )
         else:
             async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
+
+    def _start_progress_poller(self) -> None:
+        """Start a background task that polls progress once per second."""
+        if self._discovery_progress_task and not self._discovery_progress_task.done():
+            return
+        self._discovery_progress_task = self.hass.async_create_task(
+            self._progress_poll_loop()
+        )
+
+    def _stop_progress_poller(self) -> None:
+        """Cancel the background progress poller."""
+        task = self._discovery_progress_task
+        self._discovery_progress_task = None
+        if task and not task.done():
+            task.cancel()
+
+    async def _progress_poll_loop(self) -> None:
+        """Periodically refresh module-scan progress so the UI sees updates.
+
+        Frame callbacks alone are not enough to drive live updates because
+        the library buffers multiple chunks per frame and empty registers
+        don't always produce a frame. This loop re-reads the command queue
+        every second and publishes a fresh state message.
+        """
+        try:
+            while self.discovery_running:
+                if self.inventory_query_type == InventoryQueryType.MODULE:
+                    self._update_module_scan_progress()
+                else:
+                    async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
+                await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            return
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.debug("Discovery progress poller error: %s", err)
 
     @staticmethod
     def _is_empty_inventory_block(message: str) -> bool:
@@ -688,6 +741,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def _handle_discovery_finished(self) -> None:
         """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
+        self._stop_progress_poller()
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
             message="Discovery finished",
@@ -790,12 +844,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             registers_total=92,
             error=None,
         )
+        self._start_progress_poller()
         try:
             await self.nikobus_discovery.start_inventory_discovery()
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
         except Exception as err:
+            self._stop_progress_poller()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"PC Link inventory failed: {err}",
@@ -843,12 +899,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             registers_total=0,
             error=None,
         )
+        self._start_progress_poller()
         try:
             await self.nikobus_discovery.query_module_inventory(target)
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
         except Exception as err:
+            self._stop_progress_poller()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"Module scan failed: {err}",
