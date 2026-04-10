@@ -103,7 +103,7 @@
             }
         },
         "progress": {
-            "discovery": "Discovery in progress…"
+            "discovery": "{message}"
         },
         "abort": {
             "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."

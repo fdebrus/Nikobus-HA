@@ -103,7 +103,7 @@
             }
         },
         "progress": {
-            "discovery": "Ontdekking bezig…"
+            "discovery": "{message}"
         },
         "abort": {
             "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
