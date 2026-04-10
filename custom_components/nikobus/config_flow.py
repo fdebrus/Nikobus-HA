@@ -327,7 +327,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
         HA only re-runs the flow step when the ``progress_task`` completes.
         To refresh the displayed progress during a long-running discovery, we
-        pass a short "poll" task (sleep 5s) as the ``progress_task``. HA
+        pass a short "poll" task (sleep 1s) as the ``progress_task``. HA
         re-runs the step when that poll task completes, which lets us read
         the latest coordinator state and return a new spinner with updated
         description placeholders. Meanwhile the real discovery task runs
@@ -354,8 +354,8 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         percent = coordinator.discovery_progress_percent if coordinator else 0
         display = f"{raw_message or 'Starting…'} ({percent}%)"
 
-        # Short poll task so HA re-runs this step every 5s to refresh the UI.
-        poll_task = self.hass.async_create_task(asyncio.sleep(5))
+        # Short poll task so HA re-runs this step every 1s to refresh the UI.
+        poll_task = self.hass.async_create_task(asyncio.sleep(1))
 
         kwargs: dict[str, Any] = {
             "step_id": step_id,
