@@ -92,21 +92,15 @@
             "discovery_modules": {
                 "title": "Modules scannen",
                 "description": "Elk uitgangsmodule wordt gescand op knoppenkoppelingen.\n\n**Voortgang:** {percent}%\n\n{message}"
-            },
-            "discovery_done": {
-                "title": "Ontdekking voltooid",
-                "description": "{message}\n\nDe integratie wordt opnieuw geladen; nieuwe entiteiten verschijnen zo dadelijk."
-            },
-            "discovery_error": {
-                "title": "Ontdekking mislukt",
-                "description": "De ontdekkingsscan kon niet worden voltooid:\n\n**{error}**\n\nControleer de Home Assistant-logboeken voor details."
             }
         },
         "progress": {
             "discovery": "{message}"
         },
         "abort": {
-            "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
+            "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw.",
+            "discovery_done": "Ontdekking voltooid. De integratie wordt herladen; nieuwe entiteiten verschijnen zo dadelijk.",
+            "discovery_error": "Ontdekking mislukt: {error}"
         }
     },
     "entity": {

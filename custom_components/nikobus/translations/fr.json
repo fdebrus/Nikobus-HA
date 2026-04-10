@@ -92,21 +92,15 @@
             "discovery_modules": {
                 "title": "Scan des modules",
                 "description": "Analyse de chaque module de sortie pour récupérer les liens de boutons.\n\n**Progression :** {percent}%\n\n{message}"
-            },
-            "discovery_done": {
-                "title": "Découverte terminée",
-                "description": "{message}\n\nL'intégration va être rechargée, les nouvelles entités apparaîtront sous peu."
-            },
-            "discovery_error": {
-                "title": "Échec de la découverte",
-                "description": "Le scan de découverte n'a pas pu aboutir :\n\n**{error}**\n\nConsultez les journaux Home Assistant pour plus de détails."
             }
         },
         "progress": {
             "discovery": "{message}"
         },
         "abort": {
-            "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."
+            "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer.",
+            "discovery_done": "Découverte terminée. L'intégration est en cours de rechargement, les nouvelles entités apparaîtront sous peu.",
+            "discovery_error": "Échec de la découverte : {error}"
         }
     },
     "entity": {

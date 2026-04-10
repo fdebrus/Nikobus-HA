@@ -92,21 +92,15 @@
             "discovery_modules": {
                 "title": "Module Scan",
                 "description": "Scanning each output module for button links.\n\n**Progress:** {percent}%\n\n{message}"
-            },
-            "discovery_done": {
-                "title": "Discovery finished",
-                "description": "{message}\n\nThe integration will reload and newly-discovered entities will appear shortly."
-            },
-            "discovery_error": {
-                "title": "Discovery failed",
-                "description": "The discovery scan could not complete:\n\n**{error}**\n\nCheck the Home Assistant logs for details."
             }
         },
         "progress": {
             "discovery": "{message}"
         },
         "abort": {
-            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."
+            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
+            "discovery_done": "Discovery finished. The integration is reloading and the newly-discovered entities will appear shortly.",
+            "discovery_error": "Discovery failed: {error}"
         }
     },
     "entity": {
