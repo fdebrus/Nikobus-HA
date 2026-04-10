@@ -281,6 +281,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # PC Link inventory response
         await self.nikobus_discovery.parse_inventory_response(message)
 
+        # Count this frame toward the PC Link progress bar.
+        self.discovery_registers_done = min(
+            self.discovery_registers_total,
+            self.discovery_registers_done + 1,
+        )
+        devices_found = len(getattr(self.nikobus_discovery, "discovered_devices", {}) or {})
+
         # Early termination: stop scanning after consecutive empty registry blocks.
         if self._is_empty_inventory_block(message):
             if self._discovery_found_data:
@@ -291,12 +298,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         self._consecutive_empty_blocks,
                     )
                     await self._abort_discovery_early()
+                    return
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_PC_LINK,
+                message=(
+                    f"PC Link inventory: {self.discovery_registers_done}/"
+                    f"{self.discovery_registers_total} registers, "
+                    f"{devices_found} device(s) found"
+                ),
+            )
         else:
             self._discovery_found_data = True
             self._consecutive_empty_blocks = 0
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_PC_LINK,
-                message="PC Link inventory: found devices, continuing scan…",
+                message=(
+                    f"PC Link inventory: {self.discovery_registers_done}/"
+                    f"{self.discovery_registers_total} registers, "
+                    f"{devices_found} device(s) found"
+                ),
             )
 
     def _update_module_scan_progress(self) -> None:
@@ -692,8 +712,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if self.discovery_phase == DISCOVERY_PHASE_FINISHED:
             return 100
         if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
-            # No reliable total — use a coarse indicator based on found data.
-            return 50 if self._discovery_found_data else 10
+            if self.discovery_registers_total:
+                pct = int(
+                    (self.discovery_registers_done / self.discovery_registers_total) * 100
+                )
+                return min(99, pct)
+            return 10
         if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
             total = self.discovery_modules_total or 1
             done = self.discovery_modules_done
@@ -742,6 +766,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             raise HomeAssistantError("A Nikobus discovery is already running")
         self._discovery_found_data = False
         self._consecutive_empty_blocks = 0
+        # PC Link inventory scans register range 0xA4-0xFF = 92 frames.
+        # This is a rough total; early termination may stop the scan sooner.
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_PC_LINK,
             message="Scanning PC Link registry for modules and buttons…",
@@ -749,7 +775,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             modules_done=0,
             modules_total=0,
             registers_done=0,
-            registers_total=0,
+            registers_total=92,
             error=None,
         )
         try:
