@@ -352,7 +352,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             else "Discovery in progress…"
         )
         percent = coordinator.discovery_progress_percent if coordinator else 0
-        display = f"{raw_message or 'Starting…'} ({percent}%)"
+        display = raw_message or "Starting…"
 
         # Short poll task so HA re-runs this step every 1s to refresh the UI.
         poll_task = self.hass.async_create_task(asyncio.sleep(1))

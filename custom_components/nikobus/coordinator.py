@@ -326,35 +326,40 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def _update_module_scan_progress(self) -> None:
         """Poll the discovery library + command queue for live progress.
 
-        Uses the command queue size (commands remaining) for fine-grained
-        per-register progress rather than counting response frames, because
-        the library batches multiple chunks per frame.
+        Derives progress from the library's remaining-queue length and the
+        command handler's pending-command queue. Avoids incremental counters
+        that can drift out of sync when modules transition.
         """
         disc = self.nikobus_discovery
         if disc is None:
             return
 
-        # --- Current module & module counter tracking ------------------
-        current = getattr(disc, "_module_address", None) or self.discovery_module_address
-        if current and current != self.discovery_current_module:
-            if self.discovery_current_module is not None:
-                self.discovery_modules_done += 1
-            self.discovery_current_module = current
-            self.discovery_registers_done = 0
+        if self.discovery_registers_total == 0:
             self.discovery_registers_total = 240  # 0x10-0xFF
 
-        # Fallback default for the register total before any module is known.
-        if self.discovery_registers_total == 0:
-            self.discovery_registers_total = 240
+        current = getattr(disc, "_module_address", None) or self.discovery_module_address
+        if current:
+            self.discovery_current_module = current
 
-        # modules_total: set once from the initial queue depth
+        # Derive modules_done from the library's scan queue:
+        #   remaining_after_current = len(_register_scan_queue)
+        #   modules_done = modules_total - remaining_after_current - 1
+        # When discovery_modules_total wasn't set by start_module_scan(),
+        # infer it once from the initial queue snapshot.
         queue_list = getattr(disc, "_register_scan_queue", None)
-        if isinstance(queue_list, list) and self.discovery_modules_total == 0:
-            self.discovery_modules_total = (
-                self.discovery_modules_done + 1 + len(queue_list)
-            )
+        if isinstance(queue_list, list):
+            if self.discovery_modules_total == 0:
+                self.discovery_modules_total = len(queue_list) + (1 if current else 0)
+            if self.discovery_modules_total:
+                self.discovery_modules_done = max(
+                    0,
+                    min(
+                        self.discovery_modules_total - 1,
+                        self.discovery_modules_total - len(queue_list) - 1,
+                    ),
+                )
 
-        # --- Per-register progress from the command queue --------------
+        # Per-register progress from the command handler's queue size.
         cmd_handler = self.nikobus_command
         queue = getattr(cmd_handler, "_command_queue", None) if cmd_handler else None
         if queue is not None and hasattr(queue, "qsize"):
@@ -362,13 +367,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             done = max(0, self.discovery_registers_total - remaining)
             self.discovery_registers_done = min(self.discovery_registers_total, done)
 
-        if self.discovery_current_module:
-            pct = self.discovery_progress_percent
+        if self.discovery_current_module and self.discovery_modules_total:
+            current_index = min(
+                self.discovery_modules_done + 1, self.discovery_modules_total
+            )
             self._update_discovery_state(
                 message=(
                     f"Scanning module {self.discovery_current_module} "
-                    f"({self.discovery_modules_done + 1}/"
-                    f"{self.discovery_modules_total or '?'}) — "
+                    f"({current_index}/{self.discovery_modules_total}) — "
                     f"{self.discovery_registers_done}/{self.discovery_registers_total}"
                 ),
             )
