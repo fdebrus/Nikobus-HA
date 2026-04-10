@@ -103,7 +103,7 @@
             }
         },
         "progress": {
-            "discovery": "Découverte en cours…"
+            "discovery": "{message}"
         },
         "abort": {
             "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."

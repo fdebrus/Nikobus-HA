@@ -336,18 +336,19 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                 return self.async_show_progress_done(next_step_id="discovery_error")
             return self.async_show_progress_done(next_step_id="discovery_done")
 
-        message = (
+        raw_message = (
             coordinator.discovery_status_message
             if coordinator
             else "Discovery in progress…"
         )
         percent = coordinator.discovery_progress_percent if coordinator else 0
+        display = f"{raw_message or 'Starting…'} ({percent}%)"
 
         kwargs: dict[str, Any] = {
             "step_id": step_id,
             "progress_action": "discovery",
             "description_placeholders": {
-                "message": message or "Starting…",
+                "message": display,
                 "percent": str(percent),
             },
         }
