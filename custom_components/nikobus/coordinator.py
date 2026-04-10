@@ -23,9 +23,15 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     DEVICE_ADDRESS_INVENTORY,
     DEVICE_INVENTORY_ANSWER,
+    DISCOVERY_PHASE_ERROR,
+    DISCOVERY_PHASE_FINISHED,
+    DISCOVERY_PHASE_IDLE,
+    DISCOVERY_PHASE_MODULE_SCAN,
+    DISCOVERY_PHASE_PC_LINK,
     DOMAIN,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
+    SIGNAL_DISCOVERY_STATE,
 )
 from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
 from .nkbactuator import NikobusActuator
@@ -84,6 +90,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_found_data: bool = False
         self._consecutive_empty_blocks: int = 0
         self._reload_task = None
+
+        # --- Discovery progress tracking (for UI) ---
+        self.discovery_phase: str = DISCOVERY_PHASE_IDLE
+        self.discovery_status_message: str = ""
+        self.discovery_current_module: str | None = None
+        self.discovery_modules_done: int = 0
+        self.discovery_modules_total: int = 0
+        self.discovery_registers_done: int = 0
+        self.discovery_registers_total: int = 0
+        self.discovery_last_error: str | None = None
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: datetime | None = None
@@ -259,6 +275,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             return
         if self.inventory_query_type == InventoryQueryType.MODULE:
             await self.nikobus_discovery.parse_module_inventory_response(message)
+            self._update_module_scan_progress()
             return
 
         # PC Link inventory response
@@ -277,6 +294,51 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         else:
             self._discovery_found_data = True
             self._consecutive_empty_blocks = 0
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_PC_LINK,
+                message="PC Link inventory: found devices, continuing scan…",
+            )
+
+    def _update_module_scan_progress(self) -> None:
+        """Update progress counters based on the discovery library's internal state."""
+        disc = self.nikobus_discovery
+        if disc is None:
+            return
+
+        # Current module being scanned
+        current = getattr(disc, "_module_address", None) or self.discovery_module_address
+        if current and current != self.discovery_current_module:
+            # Module changed → increment the done counter, reset register counter.
+            if self.discovery_current_module is not None:
+                self.discovery_modules_done += 1
+            self.discovery_current_module = current
+            self.discovery_registers_done = 0
+            self.discovery_registers_total = 240  # command range 0x10-0xFF
+
+        # Queue size tells us remaining modules when using "ALL"
+        queue = getattr(disc, "_register_scan_queue", None)
+        if isinstance(queue, list):
+            # modules_total should reflect the initial total; only set once
+            if self.discovery_modules_total == 0:
+                self.discovery_modules_total = (
+                    self.discovery_modules_done + 1 + len(queue)
+                )
+
+        self.discovery_registers_done = min(
+            self.discovery_registers_total,
+            self.discovery_registers_done + 1,
+        )
+
+        if self.discovery_current_module:
+            pct = self.discovery_progress_percent
+            self._update_discovery_state(
+                message=(
+                    f"Scanning module {self.discovery_current_module} "
+                    f"({self.discovery_modules_done + 1}/{self.discovery_modules_total or '?'}) — {pct}%"
+                ),
+            )
+        else:
+            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
 
     @staticmethod
     def _is_empty_inventory_block(message: str) -> bool:
@@ -586,6 +648,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")
         known.add(f"{DOMAIN}_connection_status")
+        known.add(f"{DOMAIN}_discovery_status")
+        known.add(f"{DOMAIN}_discovery_progress")
+        known.add(f"{DOMAIN}_pc_link_inventory_button")
+        known.add(f"{DOMAIN}_module_scan_button")
         return known
 
     def _merge_discovered_modules(self, discovered: dict[str, Any]) -> None:
@@ -599,6 +665,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def _handle_discovery_finished(self) -> None:
         """Reload config entry once discovery is complete."""
         self.discovery_running = False
+        self._update_discovery_state(
+            phase=DISCOVERY_PHASE_FINISHED,
+            message="Discovery finished",
+        )
         if self._reload_task and not self._reload_task.done():
             return
 
@@ -609,3 +679,128 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 _LOGGER.error("Failed to reload config entry after discovery: %s", err)
 
         self._reload_task = self.hass.async_create_task(_reload())
+
+    # ------------------------------------------------------------------
+    # Discovery progress API (called by options flow / buttons / sensors)
+    # ------------------------------------------------------------------
+
+    @property
+    def discovery_progress_percent(self) -> int:
+        """Overall progress estimate (0-100) for the current discovery phase."""
+        if self.discovery_phase == DISCOVERY_PHASE_IDLE:
+            return 0
+        if self.discovery_phase == DISCOVERY_PHASE_FINISHED:
+            return 100
+        if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
+            # No reliable total — use a coarse indicator based on found data.
+            return 50 if self._discovery_found_data else 10
+        if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
+            total = self.discovery_modules_total or 1
+            done = self.discovery_modules_done
+            per_module = 0
+            if self.discovery_registers_total:
+                per_module = self.discovery_registers_done / self.discovery_registers_total
+            return min(99, int(((done + per_module) / total) * 100))
+        return 0
+
+    def _update_discovery_state(
+        self,
+        *,
+        phase: str | None = None,
+        message: str | None = None,
+        current_module: str | None = None,
+        modules_done: int | None = None,
+        modules_total: int | None = None,
+        registers_done: int | None = None,
+        registers_total: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Update discovery progress and notify listeners."""
+        if phase is not None:
+            self.discovery_phase = phase
+        if message is not None:
+            self.discovery_status_message = message
+        if current_module is not None:
+            self.discovery_current_module = current_module
+        if modules_done is not None:
+            self.discovery_modules_done = modules_done
+        if modules_total is not None:
+            self.discovery_modules_total = modules_total
+        if registers_done is not None:
+            self.discovery_registers_done = registers_done
+        if registers_total is not None:
+            self.discovery_registers_total = registers_total
+        if error is not None:
+            self.discovery_last_error = error
+        async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
+
+    async def start_pc_link_inventory(self) -> None:
+        """Run a PC Link inventory discovery and track progress."""
+        if not self.nikobus_discovery:
+            raise HomeAssistantError("Nikobus discovery is not initialized")
+        if self.discovery_running:
+            raise HomeAssistantError("A Nikobus discovery is already running")
+        self._discovery_found_data = False
+        self._consecutive_empty_blocks = 0
+        self._update_discovery_state(
+            phase=DISCOVERY_PHASE_PC_LINK,
+            message="Scanning PC Link registry for modules and buttons…",
+            current_module=None,
+            modules_done=0,
+            modules_total=0,
+            registers_done=0,
+            registers_total=0,
+            error=None,
+        )
+        try:
+            await self.nikobus_discovery.start_inventory_discovery()
+        except Exception as err:
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_ERROR,
+                message=f"PC Link inventory failed: {err}",
+                error=str(err),
+            )
+            self.discovery_running = False
+            raise
+
+    async def start_module_scan(self, module_address: str | None = None) -> None:
+        """Run module inventory discovery (single module or ALL)."""
+        if not self.nikobus_discovery:
+            raise HomeAssistantError("Nikobus discovery is not initialized")
+        if self.discovery_running:
+            raise HomeAssistantError("A Nikobus discovery is already running")
+
+        if module_address:
+            target = module_address.strip().upper()
+            total = 1
+            message = f"Scanning module {target}…"
+        else:
+            target = "ALL"
+            # Count configured output modules for progress display.
+            total = 0
+            for m_type, modules in self.dict_module_data.items():
+                if m_type in ("pc_link", "pc_logic", "feedback_module", "other_module"):
+                    continue
+                total += len(modules) if isinstance(modules, dict) else 0
+            message = f"Scanning {total} modules…" if total else "Scanning modules…"
+
+        self._update_discovery_state(
+            phase=DISCOVERY_PHASE_MODULE_SCAN,
+            message=message,
+            current_module=None if target == "ALL" else target,
+            modules_done=0,
+            modules_total=total,
+            registers_done=0,
+            registers_total=0,
+            error=None,
+        )
+        try:
+            await self.nikobus_discovery.query_module_inventory(target)
+        except Exception as err:
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_ERROR,
+                message=f"Module scan failed: {err}",
+                error=str(err),
+            )
+            self.discovery_running = False
+            raise

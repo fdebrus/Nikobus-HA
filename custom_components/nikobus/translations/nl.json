@@ -55,6 +55,15 @@
     "options": {
         "step": {
             "init": {
+                "title": "Nikobus",
+                "description": "Wat wilt u doen?",
+                "menu_options": {
+                    "hardware": "Hardware-instellingen wijzigen",
+                    "discovery_pc_link": "Modules en knoppen ontdekken (PC Link-inventaris)",
+                    "discovery_modules": "Alle modules scannen voor knoppenkoppelingen"
+                }
+            },
+            "hardware": {
                 "title": "Hardwareconfiguratie",
                 "description": "Werk uw hardware-instellingen bij. De integratie herlaadt automatisch.",
                 "data": {
@@ -75,6 +84,49 @@
                 "data_description": {
                     "refresh_interval": "Hoe vaak modulestatussen worden gelezen (60–3600 s)."
                 }
+            },
+            "discovery_pc_link": {
+                "title": "PC Link-inventaris",
+                "description": "Het PC Link-register wordt gescand op modules en knoppen.\n\n**Voortgang:** {percent}%\n\n{message}"
+            },
+            "discovery_modules": {
+                "title": "Modules scannen",
+                "description": "Elk uitgangsmodule wordt gescand op knoppenkoppelingen.\n\n**Voortgang:** {percent}%\n\n{message}"
+            },
+            "discovery_done": {
+                "title": "Ontdekking voltooid",
+                "description": "{message}\n\nDe integratie wordt opnieuw geladen; nieuwe entiteiten verschijnen zo dadelijk."
+            },
+            "discovery_error": {
+                "title": "Ontdekking mislukt",
+                "description": "De ontdekkingsscan kon niet worden voltooid:\n\n**{error}**\n\nControleer de Home Assistant-logboeken voor details."
+            }
+        },
+        "progress": {
+            "discovery": "Ontdekking bezig…"
+        },
+        "abort": {
+            "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
+        }
+    },
+    "entity": {
+        "sensor": {
+            "connection": {
+                "name": "Verbinding"
+            },
+            "discovery_status": {
+                "name": "Ontdekkingsstatus"
+            },
+            "discovery_progress": {
+                "name": "Ontdekkingsvoortgang"
+            }
+        },
+        "button": {
+            "discover_modules_buttons": {
+                "name": "Modules en knoppen ontdekken"
+            },
+            "scan_all_module_links": {
+                "name": "Alle modulekoppelingen scannen"
             }
         }
     }

@@ -55,6 +55,15 @@
     "options": {
         "step": {
             "init": {
+                "title": "Nikobus",
+                "description": "Que souhaitez-vous faire ?",
+                "menu_options": {
+                    "hardware": "Modifier la configuration matérielle",
+                    "discovery_pc_link": "Découvrir les modules et boutons (inventaire PC Link)",
+                    "discovery_modules": "Scanner tous les modules pour les liens de boutons"
+                }
+            },
+            "hardware": {
                 "title": "Configuration matérielle",
                 "description": "Mettez à jour les paramètres matériels. L'intégration rechargera automatiquement.",
                 "data": {
@@ -75,6 +84,49 @@
                 "data_description": {
                     "refresh_interval": "Fréquence de lecture des états des modules (60–3600 s)."
                 }
+            },
+            "discovery_pc_link": {
+                "title": "Inventaire PC Link",
+                "description": "Analyse du registre PC Link pour trouver les modules et boutons.\n\n**Progression :** {percent}%\n\n{message}"
+            },
+            "discovery_modules": {
+                "title": "Scan des modules",
+                "description": "Analyse de chaque module de sortie pour récupérer les liens de boutons.\n\n**Progression :** {percent}%\n\n{message}"
+            },
+            "discovery_done": {
+                "title": "Découverte terminée",
+                "description": "{message}\n\nL'intégration va être rechargée, les nouvelles entités apparaîtront sous peu."
+            },
+            "discovery_error": {
+                "title": "Échec de la découverte",
+                "description": "Le scan de découverte n'a pas pu aboutir :\n\n**{error}**\n\nConsultez les journaux Home Assistant pour plus de détails."
+            }
+        },
+        "progress": {
+            "discovery": "Découverte en cours…"
+        },
+        "abort": {
+            "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."
+        }
+    },
+    "entity": {
+        "sensor": {
+            "connection": {
+                "name": "Connexion"
+            },
+            "discovery_status": {
+                "name": "Statut de la découverte"
+            },
+            "discovery_progress": {
+                "name": "Progression de la découverte"
+            }
+        },
+        "button": {
+            "discover_modules_buttons": {
+                "name": "Découvrir modules et boutons"
+            },
+            "scan_all_module_links": {
+                "name": "Scanner les liens des modules"
             }
         }
     }
