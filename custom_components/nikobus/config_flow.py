@@ -323,7 +323,17 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     async def _progress_step(
         self, step_id: str
     ) -> config_entries.FlowResult:
-        """Poll the background discovery task and show a progress spinner."""
+        """Poll the background discovery task and show a progress spinner.
+
+        HA only re-runs the flow step when the ``progress_task`` completes.
+        To refresh the displayed progress during a long-running discovery, we
+        pass a short "poll" task (sleep 0.5s) as the ``progress_task``. HA
+        re-runs the step when that poll task completes, which lets us read
+        the latest coordinator state and return a new spinner with updated
+        description placeholders. Meanwhile the real discovery task runs
+        independently; once it finishes, the next invocation transitions to
+        the done/error step.
+        """
         coordinator = self._coordinator()
         task = self._discovery_task
 
@@ -344,6 +354,9 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         percent = coordinator.discovery_progress_percent if coordinator else 0
         display = f"{raw_message or 'Starting…'} ({percent}%)"
 
+        # Short poll task so HA re-runs this step ~every 0.5s to refresh the UI.
+        poll_task = self.hass.async_create_task(asyncio.sleep(0.5))
+
         kwargs: dict[str, Any] = {
             "step_id": step_id,
             "progress_action": "discovery",
@@ -352,14 +365,11 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                 "percent": str(percent),
             },
         }
-        # Newer HA versions support progress_task to auto-reschedule the step.
-        if task is not None:
-            try:
-                return self.async_show_progress(progress_task=task, **kwargs)
-            except TypeError:
-                # Older HA: fall back to plain show_progress (manual polling)
-                pass
-        return self.async_show_progress(**kwargs)
+        try:
+            return self.async_show_progress(progress_task=poll_task, **kwargs)
+        except TypeError:
+            # Older HA without progress_task support — fall back to plain call.
+            return self.async_show_progress(**kwargs)
 
     async def async_step_discovery_done(
         self, user_input: dict[str, Any] | None = None
