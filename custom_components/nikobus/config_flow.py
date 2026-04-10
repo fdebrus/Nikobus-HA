@@ -297,7 +297,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         if self._discovery_task is None:
             self._discovery_kind = "pc_link"
             self._discovery_task = self.hass.async_create_task(
-                coordinator.start_pc_link_inventory()
+                coordinator.start_pc_link_inventory(auto_reload=False)
             )
 
         return await self._progress_step("discovery_pc_link")
@@ -315,7 +315,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         if self._discovery_task is None:
             self._discovery_kind = "module_scan"
             self._discovery_task = self.hass.async_create_task(
-                coordinator.start_module_scan()
+                coordinator.start_module_scan(auto_reload=False)
             )
 
         return await self._progress_step("discovery_modules")

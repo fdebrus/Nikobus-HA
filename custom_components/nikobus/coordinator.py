@@ -100,6 +100,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_registers_done: int = 0
         self.discovery_registers_total: int = 0
         self.discovery_last_error: str | None = None
+        self._discovery_finished_event: asyncio.Event = asyncio.Event()
+        self._discovery_finished_event.set()  # idle = already set
+        self._discovery_auto_reload: bool = True
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: datetime | None = None
@@ -281,6 +284,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # PC Link inventory response
         await self.nikobus_discovery.parse_inventory_response(message)
 
+        # Count this frame toward the PC Link progress bar.
+        self.discovery_registers_done = min(
+            self.discovery_registers_total,
+            self.discovery_registers_done + 1,
+        )
+        devices_found = len(getattr(self.nikobus_discovery, "discovered_devices", {}) or {})
+
         # Early termination: stop scanning after consecutive empty registry blocks.
         if self._is_empty_inventory_block(message):
             if self._discovery_found_data:
@@ -291,12 +301,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         self._consecutive_empty_blocks,
                     )
                     await self._abort_discovery_early()
+                    return
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_PC_LINK,
+                message=(
+                    f"PC Link inventory: {self.discovery_registers_done}/"
+                    f"{self.discovery_registers_total} registers, "
+                    f"{devices_found} device(s) found"
+                ),
+            )
         else:
             self._discovery_found_data = True
             self._consecutive_empty_blocks = 0
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_PC_LINK,
-                message="PC Link inventory: found devices, continuing scan…",
+                message=(
+                    f"PC Link inventory: {self.discovery_registers_done}/"
+                    f"{self.discovery_registers_total} registers, "
+                    f"{devices_found} device(s) found"
+                ),
             )
 
     def _update_module_scan_progress(self) -> None:
@@ -663,12 +686,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     target[addr] = info
 
     async def _handle_discovery_finished(self) -> None:
-        """Reload config entry once discovery is complete."""
+        """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
             message="Discovery finished",
         )
+        self._discovery_finished_event.set()
+
+        # Skip the auto-reload when the options flow triggered the discovery;
+        # the flow will reload via its final async_create_entry call.
+        if not self._discovery_auto_reload:
+            return
+
         if self._reload_task and not self._reload_task.done():
             return
 
@@ -692,8 +722,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if self.discovery_phase == DISCOVERY_PHASE_FINISHED:
             return 100
         if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
-            # No reliable total — use a coarse indicator based on found data.
-            return 50 if self._discovery_found_data else 10
+            if self.discovery_registers_total:
+                pct = int(
+                    (self.discovery_registers_done / self.discovery_registers_total) * 100
+                )
+                return min(99, pct)
+            return 10
         if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
             total = self.discovery_modules_total or 1
             done = self.discovery_modules_done
@@ -734,14 +768,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_last_error = error
         async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
 
-    async def start_pc_link_inventory(self) -> None:
-        """Run a PC Link inventory discovery and track progress."""
+    async def start_pc_link_inventory(self, *, auto_reload: bool = True) -> None:
+        """Run a PC Link inventory discovery and wait until it completes."""
         if not self.nikobus_discovery:
             raise HomeAssistantError("Nikobus discovery is not initialized")
         if self.discovery_running:
             raise HomeAssistantError("A Nikobus discovery is already running")
         self._discovery_found_data = False
         self._consecutive_empty_blocks = 0
+        self._discovery_auto_reload = auto_reload
+        self._discovery_finished_event.clear()
+        # PC Link inventory scans register range 0xA4-0xFF = 92 frames.
+        # This is a rough total; early termination may stop the scan sooner.
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_PC_LINK,
             message="Scanning PC Link registry for modules and buttons…",
@@ -749,11 +787,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             modules_done=0,
             modules_total=0,
             registers_done=0,
-            registers_total=0,
+            registers_total=92,
             error=None,
         )
         try:
             await self.nikobus_discovery.start_inventory_discovery()
+            # The library returns after queueing commands; wait for the
+            # on_discovery_finished callback to actually fire.
+            await self._discovery_finished_event.wait()
         except Exception as err:
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
@@ -761,10 +802,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 error=str(err),
             )
             self.discovery_running = False
+            self._discovery_finished_event.set()
             raise
 
-    async def start_module_scan(self, module_address: str | None = None) -> None:
-        """Run module inventory discovery (single module or ALL)."""
+    async def start_module_scan(
+        self,
+        module_address: str | None = None,
+        *,
+        auto_reload: bool = True,
+    ) -> None:
+        """Run module inventory discovery and wait until it completes."""
         if not self.nikobus_discovery:
             raise HomeAssistantError("Nikobus discovery is not initialized")
         if self.discovery_running:
@@ -784,6 +831,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 total += len(modules) if isinstance(modules, dict) else 0
             message = f"Scanning {total} modules…" if total else "Scanning modules…"
 
+        self._discovery_auto_reload = auto_reload
+        self._discovery_finished_event.clear()
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_MODULE_SCAN,
             message=message,
@@ -796,6 +845,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         )
         try:
             await self.nikobus_discovery.query_module_inventory(target)
+            # The library returns after queueing commands; wait for the
+            # on_discovery_finished callback to actually fire.
+            await self._discovery_finished_event.wait()
         except Exception as err:
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
@@ -803,4 +855,5 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 error=str(err),
             )
             self.discovery_running = False
+            self._discovery_finished_event.set()
             raise
