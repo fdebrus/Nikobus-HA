@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -15,6 +16,9 @@ from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
+    DISCOVERY_PHASE_ERROR,
+    DISCOVERY_PHASE_FINISHED,
+    DISCOVERY_PHASE_IDLE,
     DOMAIN,
 )
 from .exceptions import NikobusConnectionError
@@ -222,19 +226,39 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 # ---------------------------------------------------------------------------
 
 class NikobusOptionsFlow(config_entries.OptionsFlow):
-    """Change hardware/polling settings without re-entering the connection string."""
+    """Change hardware/polling settings and trigger discovery with live progress."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
         self._options: dict[str, Any] = {}
+        self._discovery_task: asyncio.Task | None = None
+        self._discovery_kind: str | None = None  # "pc_link" or "module_scan"
 
     def _current(self) -> dict[str, Any]:
         """Merge entry data + options so defaults reflect the live settings."""
         return {**self._entry.data, **self._entry.options}
 
-    # --- Step 1: hardware capabilities -------------------------------------
+    def _coordinator(self):
+        return self._entry.runtime_data
+
+    # --- Step 1: main menu --------------------------------------------------
 
     async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Entry point — let the user pick what to do."""
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=[
+                "hardware",
+                "discovery_pc_link",
+                "discovery_modules",
+            ],
+        )
+
+    # --- Hardware settings (existing flow) ---------------------------------
+
+    async def async_step_hardware(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         if user_input is not None:
@@ -244,11 +268,9 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(data=self._options)
 
         return self.async_show_form(
-            step_id="init",
+            step_id="hardware",
             data_schema=_hardware_schema(self._current()),
         )
-
-    # --- Step 2: polling interval ------------------------------------------
 
     async def async_step_polling(
         self, user_input: dict[str, Any] | None = None
@@ -261,3 +283,113 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             step_id="polling",
             data_schema=_polling_schema(self._current()),
         )
+
+    # --- Discovery: PC Link inventory --------------------------------------
+
+    async def async_step_discovery_pc_link(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Kick off a PC Link inventory scan and show live progress."""
+        coordinator = self._coordinator()
+        if coordinator is None:
+            return self.async_abort(reason="not_loaded")
+
+        if self._discovery_task is None:
+            self._discovery_kind = "pc_link"
+            self._discovery_task = self.hass.async_create_task(
+                coordinator.start_pc_link_inventory()
+            )
+
+        return await self._progress_step("discovery_pc_link")
+
+    # --- Discovery: full module scan ---------------------------------------
+
+    async def async_step_discovery_modules(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Kick off a full module-scan discovery and show live progress."""
+        coordinator = self._coordinator()
+        if coordinator is None:
+            return self.async_abort(reason="not_loaded")
+
+        if self._discovery_task is None:
+            self._discovery_kind = "module_scan"
+            self._discovery_task = self.hass.async_create_task(
+                coordinator.start_module_scan()
+            )
+
+        return await self._progress_step("discovery_modules")
+
+    async def _progress_step(
+        self, step_id: str
+    ) -> config_entries.FlowResult:
+        """Poll the background discovery task and show a progress spinner."""
+        coordinator = self._coordinator()
+        task = self._discovery_task
+
+        if task is not None and task.done():
+            self._discovery_task = None
+            try:
+                task.result()
+            except Exception as err:
+                _LOGGER.error("Discovery failed: %s", err)
+                return self.async_show_progress_done(next_step_id="discovery_error")
+            return self.async_show_progress_done(next_step_id="discovery_done")
+
+        message = (
+            coordinator.discovery_status_message
+            if coordinator
+            else "Discovery in progress…"
+        )
+        percent = coordinator.discovery_progress_percent if coordinator else 0
+
+        kwargs: dict[str, Any] = {
+            "step_id": step_id,
+            "progress_action": "discovery",
+            "description_placeholders": {
+                "message": message or "Starting…",
+                "percent": str(percent),
+            },
+        }
+        # Newer HA versions support progress_task to auto-reschedule the step.
+        if task is not None:
+            try:
+                return self.async_show_progress(progress_task=task, **kwargs)
+            except TypeError:
+                # Older HA: fall back to plain show_progress (manual polling)
+                pass
+        return self.async_show_progress(**kwargs)
+
+    async def async_step_discovery_done(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Final step after a successful discovery."""
+        coordinator = self._coordinator()
+        msg = (
+            coordinator.discovery_status_message
+            if coordinator
+            else "Discovery finished."
+        )
+        return self.async_show_form(
+            step_id="discovery_done",
+            data_schema=vol.Schema({}),
+            description_placeholders={"message": msg},
+            last_step=True,
+        ) if user_input is None else self.async_create_entry(data=self._options)
+
+    async def async_step_discovery_error(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Shown when a discovery task raised an exception."""
+        coordinator = self._coordinator()
+        err = (
+            coordinator.discovery_last_error
+            if coordinator
+            else "Unknown error"
+        ) or "Unknown error"
+        return self.async_show_form(
+            step_id="discovery_error",
+            data_schema=vol.Schema({}),
+            description_placeholders={"error": err},
+            last_step=True,
+        ) if user_input is None else self.async_create_entry(data=self._options)

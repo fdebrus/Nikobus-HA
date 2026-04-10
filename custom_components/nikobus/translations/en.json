@@ -55,6 +55,15 @@
     "options": {
         "step": {
             "init": {
+                "title": "Nikobus",
+                "description": "What would you like to do?",
+                "menu_options": {
+                    "hardware": "Change hardware settings",
+                    "discovery_pc_link": "Discover modules & buttons (PC Link inventory)",
+                    "discovery_modules": "Scan all modules for button links"
+                }
+            },
+            "hardware": {
                 "title": "Hardware Configuration",
                 "description": "Update your hardware settings. The integration will reload automatically.",
                 "data": {
@@ -75,6 +84,49 @@
                 "data_description": {
                     "refresh_interval": "How often to read module states from the bus (60–3600 s)."
                 }
+            },
+            "discovery_pc_link": {
+                "title": "PC Link Inventory",
+                "description": "Scanning the PC Link registry for modules and buttons.\n\n**Progress:** {percent}%\n\n{message}"
+            },
+            "discovery_modules": {
+                "title": "Module Scan",
+                "description": "Scanning each output module for button links.\n\n**Progress:** {percent}%\n\n{message}"
+            },
+            "discovery_done": {
+                "title": "Discovery finished",
+                "description": "{message}\n\nThe integration will reload and newly-discovered entities will appear shortly."
+            },
+            "discovery_error": {
+                "title": "Discovery failed",
+                "description": "The discovery scan could not complete:\n\n**{error}**\n\nCheck the Home Assistant logs for details."
+            }
+        },
+        "progress": {
+            "discovery": "Discovery in progress…"
+        },
+        "abort": {
+            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."
+        }
+    },
+    "entity": {
+        "sensor": {
+            "connection": {
+                "name": "Connection"
+            },
+            "discovery_status": {
+                "name": "Discovery status"
+            },
+            "discovery_progress": {
+                "name": "Discovery progress"
+            }
+        },
+        "button": {
+            "discover_modules_buttons": {
+                "name": "Discover modules & buttons"
+            },
+            "scan_all_module_links": {
+                "name": "Scan all module links"
             }
         }
     }

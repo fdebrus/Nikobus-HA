@@ -8,31 +8,83 @@ from typing import Any
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import BRAND, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
 from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
-    hass: HomeAssistant, 
-    entry: ConfigEntry, 
+    hass: HomeAssistant,
+    entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up Nikobus button entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    
-    if not coordinator.dict_button_data:
-        return
 
-    buttons = coordinator.dict_button_data.get("nikobus_button", {})
-    
-    async_add_entities(
-        NikobusButtonEntity(coordinator, addr, data)
-        for addr, data in buttons.items()
+    entities: list[ButtonEntity] = [
+        NikobusPcLinkInventoryButton(coordinator),
+        NikobusModuleScanButton(coordinator),
+    ]
+
+    if coordinator.dict_button_data:
+        buttons = coordinator.dict_button_data.get("nikobus_button", {})
+        entities.extend(
+            NikobusButtonEntity(coordinator, addr, data)
+            for addr, data in buttons.items()
+        )
+
+    async_add_entities(entities)
+
+
+def _hub_device_info() -> dr.DeviceInfo:
+    return dr.DeviceInfo(
+        identifiers={(DOMAIN, HUB_IDENTIFIER)},
+        name="Nikobus Bridge",
+        manufacturer=BRAND,
+        model="PC-Link Bridge",
     )
+
+
+class NikobusPcLinkInventoryButton(ButtonEntity):
+    """Bridge button that starts a PC Link inventory discovery."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Discover modules & buttons"
+    _attr_icon = "mdi:magnify-scan"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        self._coordinator = coordinator
+        self._attr_unique_id = f"{DOMAIN}_pc_link_inventory_button"
+        self._attr_device_info = _hub_device_info()
+
+    async def async_press(self) -> None:
+        """Start PC Link inventory discovery."""
+        _LOGGER.info("PC Link inventory discovery triggered via UI button")
+        await self._coordinator.start_pc_link_inventory()
+
+
+class NikobusModuleScanButton(ButtonEntity):
+    """Bridge button that starts a full module scan for button links."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Scan all module links"
+    _attr_icon = "mdi:cog-sync"
+    _attr_should_poll = False
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        self._coordinator = coordinator
+        self._attr_unique_id = f"{DOMAIN}_module_scan_button"
+        self._attr_device_info = _hub_device_info()
+
+    async def async_press(self) -> None:
+        """Scan all output modules for button links."""
+        _LOGGER.info("Module scan discovery triggered via UI button")
+        await self._coordinator.start_module_scan()
 
 
 class NikobusButtonEntity(NikobusEntity, ButtonEntity):

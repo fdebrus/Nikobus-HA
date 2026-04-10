@@ -16,6 +16,17 @@ EVENT_BUTTON_OPERATION: Final[str] = "nikobus_button_operation"
 EVENT_BUTTON_PRESSED: Final[str] = "nikobus_button_pressed"
 
 # =============================================================================
+# Discovery
+# =============================================================================
+SIGNAL_DISCOVERY_STATE: Final[str] = "nikobus_discovery_state"
+
+DISCOVERY_PHASE_IDLE: Final[str] = "idle"
+DISCOVERY_PHASE_PC_LINK: Final[str] = "pc_link"
+DISCOVERY_PHASE_MODULE_SCAN: Final[str] = "module_scan"
+DISCOVERY_PHASE_FINISHED: Final[str] = "finished"
+DISCOVERY_PHASE_ERROR: Final[str] = "error"
+
+# =============================================================================
 # Configuration Keys
 # =============================================================================
 CONF_CONNECTION_STRING: Final[str] = "connection_string"
