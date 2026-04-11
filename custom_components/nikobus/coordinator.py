@@ -107,8 +107,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_module_order: list[str] = []
         self._module_scan_frame_count: int = 0
         self._module_scan_last_index: int = -1
-        # Monkey-patch state for counting commands sent during discovery
-        self._original_send_command = None
+        # Per-module scan start time for time-based progress interpolation.
+        self._module_scan_started_at: float | None = None
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: datetime | None = None
@@ -284,8 +284,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             return
         if self.inventory_query_type == InventoryQueryType.MODULE:
             await self.nikobus_discovery.parse_module_inventory_response(message)
-            # Per-command progress is counted by the wrapped _send_command
-            # (see _install_command_counter); we just refresh the UI state.
+            # Progress is time-based, the poller refreshes it every second.
             self._update_module_scan_progress()
             return
 
@@ -335,9 +334,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         Uses the pre-captured ``_discovery_module_order`` list together
         with the library's remaining-queue length to determine the current
-        module. Per-module register progress is a monotonic counter of the
-        response frames we have received for the current module (reset on
-        module transition).
+        module. Per-module progress is interpolated from elapsed time
+        since the module started — each module sends 240 register queries
+        spaced by COMMAND_EXECUTION_DELAY (0.15s), taking ~36s total. We
+        avoid hooking into the command handler internals which proved
+        fragile across library versions.
         """
         disc = self.nikobus_discovery
         if disc is None:
@@ -354,16 +355,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         queue_list = getattr(disc, "_register_scan_queue", None)
         remaining = len(queue_list) if isinstance(queue_list, list) else 0
 
-        # How many modules have been POPPED so far (including the current one).
         popped = total - remaining
         current_index_0 = max(0, popped - 1)  # 0-based index of current module
         current_index_1 = min(current_index_0 + 1, total)  # 1-based display
         self.discovery_modules_done = current_index_0
 
-        # Reset per-module frame counter when we advance to a new module.
+        # Detect module transition: restart the per-module timer.
+        now = asyncio.get_event_loop().time()
         if current_index_0 != self._module_scan_last_index:
             self._module_scan_last_index = current_index_0
-            self._module_scan_frame_count = 0
+            self._module_scan_started_at = now
 
         if self._discovery_module_order and current_index_0 < len(
             self._discovery_module_order
@@ -379,10 +380,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             if lib_current:
                 self.discovery_current_module = lib_current
 
-        self.discovery_registers_done = min(
-            self.discovery_registers_total,
-            self._module_scan_frame_count,
-        )
+        # Time-based interpolation: 240 commands * 0.15s = ~36s per module.
+        # Clamp to [0, registers_total - 1] while scanning so the display
+        # never jumps to 240 before the module actually finishes.
+        if self._module_scan_started_at is not None:
+            elapsed = max(0.0, now - self._module_scan_started_at)
+            expected_seconds = self.discovery_registers_total * 0.15
+            fraction = min(1.0, elapsed / expected_seconds) if expected_seconds else 0
+            estimated = int(fraction * self.discovery_registers_total)
+            # Leave a small gap so the counter doesn't claim completion early.
+            self.discovery_registers_done = min(
+                self.discovery_registers_total - 1, estimated
+            )
+        else:
+            self.discovery_registers_done = 0
 
         if self.discovery_current_module:
             self._update_discovery_state(
@@ -394,48 +405,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
         else:
             async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
-
-    def _install_command_counter(self) -> None:
-        """Wrap the command handler's _send_command to count discovery commands.
-
-        Every inventory register query results in exactly one _send_command
-        invocation (for commands without an address, i.e., fire-and-forget).
-        Wrapping that method gives us a reliable per-command counter that
-        doesn't depend on bus frame batching.
-        """
-        handler = self.nikobus_command
-        if handler is None:
-            _LOGGER.debug("Command counter install skipped: no handler")
-            return
-        if self._original_send_command is not None:
-            _LOGGER.debug("Command counter install skipped: already installed")
-            return
-        original = handler._send_command
-        self._original_send_command = original
-        coordinator = self  # closure reference
-
-        async def _counting_send_command(*args, **kwargs):
-            result = await original(*args, **kwargs)
-            if (
-                coordinator.discovery_running
-                and coordinator.inventory_query_type == InventoryQueryType.MODULE
-            ):
-                coordinator._module_scan_frame_count = min(
-                    coordinator.discovery_registers_total or 240,
-                    coordinator._module_scan_frame_count + 1,
-                )
-            return result
-
-        handler._send_command = _counting_send_command
-        _LOGGER.debug("Command counter installed on handler %s", handler)
-
-    def _uninstall_command_counter(self) -> None:
-        """Restore the original _send_command method."""
-        handler = self.nikobus_command
-        if handler is None or self._original_send_command is None:
-            return
-        handler._send_command = self._original_send_command
-        self._original_send_command = None
 
     def _start_progress_poller(self) -> None:
         """Start a background task that polls progress once per second."""
@@ -798,7 +767,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
         self._stop_progress_poller()
-        self._uninstall_command_counter()
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
             message="Discovery finished",
@@ -952,10 +920,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
         self._module_scan_frame_count = 0
-        # Initialize to 0 so the first poll tick (current_index_0 == 0)
-        # does not reset the counter and discard the initial increments.
-        self._module_scan_last_index = 0
-        self._install_command_counter()
+        # Initialize to -1 so the first poll tick detects a "new module"
+        # and stamps the per-module start timestamp.
+        self._module_scan_last_index = -1
+        self._module_scan_started_at = None
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_MODULE_SCAN,
             message=message,
@@ -974,7 +942,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             await self._discovery_finished_event.wait()
         except Exception as err:
             self._stop_progress_poller()
-            self._uninstall_command_counter()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"Module scan failed: {err}",
