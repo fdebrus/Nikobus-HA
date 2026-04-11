@@ -374,30 +374,18 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     async def async_step_discovery_done(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Close the flow after a successful discovery and reload the entry.
+        """Finalize the flow after a successful discovery.
 
-        We use ``async_abort`` rather than ``async_create_entry`` so HA does
-        not show the generic "Options successfully saved" dialog — nothing
-        actually changed in the options. The reload is scheduled with a
-        short delay so HA can render the abort result before the flow is
-        torn down by the reload.
+        Use ``async_create_entry`` with empty options so HA closes the
+        flow cleanly via its standard success dialog. The coordinator's
+        auto-reload (triggered by the options update listener) picks up
+        the newly-discovered entities. This avoids the "Invalid flow
+        specified" error that async_abort + manual reload can cause.
         """
-        entry_id = self._entry.entry_id
-        hass = self.hass
-
-        async def _delayed_reload() -> None:
-            # Wait long enough for HA to render the abort dialog and for
-            # the user to dismiss it before the reload tears down the
-            # options flow (which would otherwise show "Invalid flow
-            # specified").
-            await asyncio.sleep(3.0)
-            try:
-                await hass.config_entries.async_reload(entry_id)
-            except Exception as err:  # pragma: no cover - defensive
-                _LOGGER.debug("Failed to reload entry after discovery: %s", err)
-
-        hass.async_create_task(_delayed_reload())
-        return self.async_abort(reason="discovery_done")
+        # Merge back the existing options so the update listener fires
+        # even if self._options is empty.
+        merged = {**self._entry.options, **self._options}
+        return self.async_create_entry(title="", data=merged)
 
     async def async_step_discovery_error(
         self, user_input: dict[str, Any] | None = None
