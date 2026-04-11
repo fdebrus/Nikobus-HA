@@ -404,21 +404,30 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         doesn't depend on bus frame batching.
         """
         handler = self.nikobus_command
-        if handler is None or self._original_send_command is not None:
+        if handler is None:
+            _LOGGER.debug("Command counter install skipped: no handler")
+            return
+        if self._original_send_command is not None:
+            _LOGGER.debug("Command counter install skipped: already installed")
             return
         original = handler._send_command
         self._original_send_command = original
+        coordinator = self  # closure reference
 
         async def _counting_send_command(*args, **kwargs):
             result = await original(*args, **kwargs)
-            if self.discovery_running and self.inventory_query_type == InventoryQueryType.MODULE:
-                self._module_scan_frame_count = min(
-                    self.discovery_registers_total or 240,
-                    self._module_scan_frame_count + 1,
+            if (
+                coordinator.discovery_running
+                and coordinator.inventory_query_type == InventoryQueryType.MODULE
+            ):
+                coordinator._module_scan_frame_count = min(
+                    coordinator.discovery_registers_total or 240,
+                    coordinator._module_scan_frame_count + 1,
                 )
             return result
 
         handler._send_command = _counting_send_command
+        _LOGGER.debug("Command counter installed on handler %s", handler)
 
     def _uninstall_command_counter(self) -> None:
         """Restore the original _send_command method."""
@@ -943,7 +952,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
         self._module_scan_frame_count = 0
-        self._module_scan_last_index = -1
+        # Initialize to 0 so the first poll tick (current_index_0 == 0)
+        # does not reset the counter and discard the initial increments.
+        self._module_scan_last_index = 0
         self._install_command_counter()
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_MODULE_SCAN,
