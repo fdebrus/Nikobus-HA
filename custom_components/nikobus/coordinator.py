@@ -107,6 +107,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_module_order: list[str] = []
         self._module_scan_frame_count: int = 0
         self._module_scan_last_index: int = -1
+        # Monkey-patch state for counting commands sent during discovery
+        self._original_send_command = None
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: datetime | None = None
@@ -282,13 +284,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             return
         if self.inventory_query_type == InventoryQueryType.MODULE:
             await self.nikobus_discovery.parse_module_inventory_response(message)
-            # Count this response frame toward the per-module progress.
-            # Each register query produces one frame, so frame count ≈
-            # register count. The poller resets this on module transition.
-            self._module_scan_frame_count = min(
-                self.discovery_registers_total or 240,
-                self._module_scan_frame_count + 1,
-            )
+            # Per-command progress is counted by the wrapped _send_command
+            # (see _install_command_counter); we just refresh the UI state.
             self._update_module_scan_progress()
             return
 
@@ -397,6 +394,39 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
         else:
             async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
+
+    def _install_command_counter(self) -> None:
+        """Wrap the command handler's _send_command to count discovery commands.
+
+        Every inventory register query results in exactly one _send_command
+        invocation (for commands without an address, i.e., fire-and-forget).
+        Wrapping that method gives us a reliable per-command counter that
+        doesn't depend on bus frame batching.
+        """
+        handler = self.nikobus_command
+        if handler is None or self._original_send_command is not None:
+            return
+        original = handler._send_command
+        self._original_send_command = original
+
+        async def _counting_send_command(*args, **kwargs):
+            result = await original(*args, **kwargs)
+            if self.discovery_running and self.inventory_query_type == InventoryQueryType.MODULE:
+                self._module_scan_frame_count = min(
+                    self.discovery_registers_total or 240,
+                    self._module_scan_frame_count + 1,
+                )
+            return result
+
+        handler._send_command = _counting_send_command
+
+    def _uninstall_command_counter(self) -> None:
+        """Restore the original _send_command method."""
+        handler = self.nikobus_command
+        if handler is None or self._original_send_command is None:
+            return
+        handler._send_command = self._original_send_command
+        self._original_send_command = None
 
     def _start_progress_poller(self) -> None:
         """Start a background task that polls progress once per second."""
@@ -759,6 +789,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
         self._stop_progress_poller()
+        self._uninstall_command_counter()
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
             message="Discovery finished",
@@ -913,6 +944,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_finished_event.clear()
         self._module_scan_frame_count = 0
         self._module_scan_last_index = -1
+        self._install_command_counter()
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_MODULE_SCAN,
             message=message,
@@ -931,6 +963,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             await self._discovery_finished_event.wait()
         except Exception as err:
             self._stop_progress_poller()
+            self._uninstall_command_counter()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"Module scan failed: {err}",
