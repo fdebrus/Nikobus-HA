@@ -105,6 +105,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_auto_reload: bool = True
         self._discovery_progress_task: asyncio.Task | None = None
         self._discovery_module_order: list[str] = []
+        self._module_scan_frame_count: int = 0
+        self._module_scan_last_index: int = -1
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task | None = None
         self._last_connected: datetime | None = None
@@ -280,6 +282,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             return
         if self.inventory_query_type == InventoryQueryType.MODULE:
             await self.nikobus_discovery.parse_module_inventory_response(message)
+            # Count this response frame toward the per-module progress.
+            # Each register query produces one frame, so frame count ≈
+            # register count. The poller resets this on module transition.
+            self._module_scan_frame_count = min(
+                self.discovery_registers_total or 240,
+                self._module_scan_frame_count + 1,
+            )
             self._update_module_scan_progress()
             return
 
@@ -325,12 +334,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
 
     def _update_module_scan_progress(self) -> None:
-        """Poll the discovery library + command queue for live progress.
+        """Refresh the module-scan progress state for the UI.
 
-        Uses the pre-captured ``_discovery_module_order`` list together with
-        the library's remaining-queue length to determine the current module
-        index (and its address). Per-register progress comes from the
-        command handler's pending-command queue size.
+        Uses the pre-captured ``_discovery_module_order`` list together
+        with the library's remaining-queue length to determine the current
+        module. Per-module register progress is a monotonic counter of the
+        response frames we have received for the current module (reset on
+        module transition).
         """
         disc = self.nikobus_discovery
         if disc is None:
@@ -345,16 +355,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             return
 
         queue_list = getattr(disc, "_register_scan_queue", None)
-        if isinstance(queue_list, list):
-            remaining = len(queue_list)
-        else:
-            remaining = 0
+        remaining = len(queue_list) if isinstance(queue_list, list) else 0
 
         # How many modules have been POPPED so far (including the current one).
         popped = total - remaining
         current_index_0 = max(0, popped - 1)  # 0-based index of current module
         current_index_1 = min(current_index_0 + 1, total)  # 1-based display
         self.discovery_modules_done = current_index_0
+
+        # Reset per-module frame counter when we advance to a new module.
+        if current_index_0 != self._module_scan_last_index:
+            self._module_scan_last_index = current_index_0
+            self._module_scan_frame_count = 0
 
         if self._discovery_module_order and current_index_0 < len(
             self._discovery_module_order
@@ -363,7 +375,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 current_index_0
             ]
         else:
-            # Fallback to library attribute if available.
             lib_current = (
                 getattr(disc, "_module_address", None)
                 or self.discovery_module_address
@@ -371,13 +382,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             if lib_current:
                 self.discovery_current_module = lib_current
 
-        # Per-register progress from the command handler's queue size.
-        cmd_handler = self.nikobus_command
-        queue = getattr(cmd_handler, "_command_queue", None) if cmd_handler else None
-        if queue is not None and hasattr(queue, "qsize"):
-            qsize = queue.qsize()
-            done = max(0, self.discovery_registers_total - qsize)
-            self.discovery_registers_done = min(self.discovery_registers_total, done)
+        self.discovery_registers_done = min(
+            self.discovery_registers_total,
+            self._module_scan_frame_count,
+        )
 
         if self.discovery_current_module:
             self._update_discovery_state(
@@ -903,6 +911,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
+        self._module_scan_frame_count = 0
+        self._module_scan_last_index = -1
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_MODULE_SCAN,
             message=message,
