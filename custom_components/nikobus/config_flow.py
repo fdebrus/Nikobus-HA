@@ -386,7 +386,11 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         hass = self.hass
 
         async def _delayed_reload() -> None:
-            await asyncio.sleep(1.0)
+            # Wait long enough for HA to render the abort dialog and for
+            # the user to dismiss it before the reload tears down the
+            # options flow (which would otherwise show "Invalid flow
+            # specified").
+            await asyncio.sleep(3.0)
             try:
                 await hass.config_entries.async_reload(entry_id)
             except Exception as err:  # pragma: no cover - defensive
