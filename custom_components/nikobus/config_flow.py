@@ -378,12 +378,21 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
         We use ``async_abort`` rather than ``async_create_entry`` so HA does
         not show the generic "Options successfully saved" dialog — nothing
-        actually changed in the options. The reload is scheduled manually
-        so the newly-discovered entities appear.
+        actually changed in the options. The reload is scheduled with a
+        short delay so HA can render the abort result before the flow is
+        torn down by the reload.
         """
-        self.hass.async_create_task(
-            self.hass.config_entries.async_reload(self._entry.entry_id)
-        )
+        entry_id = self._entry.entry_id
+        hass = self.hass
+
+        async def _delayed_reload() -> None:
+            await asyncio.sleep(1.0)
+            try:
+                await hass.config_entries.async_reload(entry_id)
+            except Exception as err:  # pragma: no cover - defensive
+                _LOGGER.debug("Failed to reload entry after discovery: %s", err)
+
+        hass.async_create_task(_delayed_reload())
         return self.async_abort(reason="discovery_done")
 
     async def async_step_discovery_error(
