@@ -21,6 +21,7 @@ from .const import (
     DISCOVERY_PHASE_IDLE,
     DOMAIN,
 )
+from .coordinator import NikobusConfigEntry
 from .exceptions import NikobusConnectionError
 from nikobus_connect import NikobusConnect
 
@@ -91,9 +92,9 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: config_entries.ConfigEntry,
+        config_entry: NikobusConfigEntry,
     ) -> NikobusOptionsFlow:
-        return NikobusOptionsFlow(config_entry)
+        return NikobusOptionsFlow()
 
     # --- Step 1: connection string ------------------------------------------
 
@@ -112,7 +113,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await _test_connection(self.hass, conn_str)
             except ValueError:
                 errors["base"] = "cannot_connect"
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected error during Nikobus connection test")
                 errors["base"] = "unknown"
             else:
@@ -175,7 +176,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         """Re-test the connection and update all settings in one step."""
-        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        entry = self._get_reconfigure_entry()
         defaults = {**entry.data, **entry.options}
         errors: dict[str, str] = {}
 
@@ -186,7 +187,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             except ValueError:
                 errors["base"] = "cannot_connect"
-            except Exception:
+            except Exception:  # noqa: BLE001
                 _LOGGER.exception("Unexpected error during Nikobus reconfigure test")
                 errors["base"] = "unknown"
             else:
@@ -228,18 +229,17 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class NikobusOptionsFlow(config_entries.OptionsFlow):
     """Change hardware/polling settings and trigger discovery with live progress."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._entry = config_entry
+    def __init__(self) -> None:
         self._options: dict[str, Any] = {}
         self._discovery_task: asyncio.Task | None = None
         self._discovery_kind: str | None = None  # "pc_link" or "module_scan"
 
     def _current(self) -> dict[str, Any]:
         """Merge entry data + options so defaults reflect the live settings."""
-        return {**self._entry.data, **self._entry.options}
+        return {**self.config_entry.data, **self.config_entry.options}
 
     def _coordinator(self):
-        return self._entry.runtime_data
+        return self.config_entry.runtime_data
 
     # --- Step 1: main menu --------------------------------------------------
 
@@ -384,7 +384,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         """
         # Merge back the existing options so the update listener fires
         # even if self._options is empty.
-        merged = {**self._entry.options, **self._options}
+        merged = {**self.config_entry.options, **self._options}
         return self.async_create_entry(title="", data=merged)
 
     async def async_step_discovery_error(
