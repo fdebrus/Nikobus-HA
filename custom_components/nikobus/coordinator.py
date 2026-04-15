@@ -209,8 +209,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         except NikobusDataError:
             raise
         except Exception as err:
-            _LOGGER.exception("Failed to initialize Nikobus components: %s", err)
-            raise HomeAssistantError(f"Initialization error: {err}") from err
+            _LOGGER.exception("Failed to initialize Nikobus components")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="initialization_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
     def _initialize_module_states(self) -> None:
         """Pre-allocate state buffers for all configured modules."""
@@ -887,9 +891,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def start_pc_link_inventory(self, *, auto_reload: bool = True) -> None:
         """Run a PC Link inventory discovery and wait until it completes."""
         if not self.nikobus_discovery:
-            raise HomeAssistantError("Nikobus discovery is not initialized")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_not_initialized",
+            )
         if self.discovery_running:
-            raise HomeAssistantError("A Nikobus discovery is already running")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
         self._discovery_found_data = False
         self._consecutive_empty_blocks = 0
         self._discovery_auto_reload = auto_reload
@@ -931,9 +941,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     ) -> None:
         """Run module inventory discovery and wait until it completes."""
         if not self.nikobus_discovery:
-            raise HomeAssistantError("Nikobus discovery is not initialized")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_not_initialized",
+            )
         if self.discovery_running:
-            raise HomeAssistantError("A Nikobus discovery is already running")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
 
         if module_address:
             target = module_address.strip().upper()
