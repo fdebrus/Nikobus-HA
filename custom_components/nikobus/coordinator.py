@@ -670,7 +670,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Called by the listener when the connection drops."""
         if self._stopping:
             return
-        _LOGGER.warning("Nikobus connection lost — scheduling reconnect.")
+        _LOGGER.warning("Nikobus connection lost — scheduling reconnect")
         self.async_update_listeners()
         if self.nikobus_command:
             await self.nikobus_command.stop()
@@ -723,7 +723,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 self._reconnect_attempts = 0
                 await self._async_update_data()
                 self.async_update_listeners()
-                _LOGGER.info("Nikobus reconnected after %d attempt(s).", attempt)
+                _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempt)
                 return
             except Exception as err:
                 _LOGGER.error("Subsystem restart failed after reconnect: %s — retrying", err)
