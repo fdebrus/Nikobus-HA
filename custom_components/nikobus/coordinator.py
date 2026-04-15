@@ -15,10 +15,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
+from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
 from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError, NikobusError
-
-# Typed config entry alias used across the integration.
-type NikobusConfigEntry = ConfigEntry["NikobusDataCoordinator"]
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -37,9 +35,13 @@ from .const import (
     RECONNECT_DELAY_MAX,
     SIGNAL_DISCOVERY_STATE,
 )
-from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
+
+# Typed config entry alias used across the integration. A plain alias
+# (instead of PEP 695 `type X = ...`) keeps compatibility with older
+# HA Python versions.
+NikobusConfigEntry = ConfigEntry["NikobusDataCoordinator"]
 
 _LOGGER = logging.getLogger(__name__)
 

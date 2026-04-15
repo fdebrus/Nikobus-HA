@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict
 
 from aiofiles import open as aio_open
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict
 
-from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity

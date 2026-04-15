@@ -16,9 +16,6 @@ from .const import (
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
-    DISCOVERY_PHASE_ERROR,
-    DISCOVERY_PHASE_FINISHED,
-    DISCOVERY_PHASE_IDLE,
     DOMAIN,
 )
 from .coordinator import NikobusConfigEntry
