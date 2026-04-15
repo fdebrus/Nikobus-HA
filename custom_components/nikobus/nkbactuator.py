@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Dict, Optional, Tuple, Any
 
 from homeassistant.core import HomeAssistant
-from .exceptions import NikobusTimeoutError
 from .const import (
     BUTTON_TIMER_THRESHOLDS,
     DIMMER_DELAY,

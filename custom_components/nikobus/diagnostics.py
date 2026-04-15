@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
@@ -15,14 +14,14 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     DOMAIN,
 )
-from .coordinator import NikobusDataCoordinator
+from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import device_entry_diagnostics
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, config_entry: ConfigEntry
+    hass: HomeAssistant, config_entry: NikobusConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a Nikobus config entry."""
     _LOGGER.debug("Generating diagnostics for Nikobus entry: %s", config_entry.entry_id)

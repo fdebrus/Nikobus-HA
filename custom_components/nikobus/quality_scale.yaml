@@ -1,0 +1,92 @@
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: |
+      The only service (query_module_inventory) is registered inside
+      async_setup_entry because it requires a loaded coordinator to
+      operate on.
+  appropriate-polling: done
+  brands:
+    status: exempt
+    comment: HACS custom component — brand is published with the repo.
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage:
+    status: todo
+    comment: |
+      Existing tests cover coordinator and protocol layers; a dedicated
+      test module for config/options flow is planned.
+  dependency-transparency: done
+  docs-actions: done
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates:
+    status: todo
+    comment: |
+      PARALLEL_UPDATES is not yet declared in the platform modules.
+  reauthentication-flow:
+    status: exempt
+    comment: |
+      The Nikobus PC-Link bridge has no authentication; the integration
+      only opens a serial or raw TCP socket.
+  test-coverage:
+    status: todo
+    comment: |
+      Core flows have tests; broader coverage (reconfigure flow, error
+      branches) is planned.
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery:
+    status: exempt
+    comment: |
+      The PC-Link bridge exposes no discoverable service (no mDNS /
+      SSDP / USB vendor-specific descriptor) — users enter the serial
+      device or TCP endpoint manually.
+  discovery-update-info:
+    status: exempt
+    comment: See `discovery`.
+  docs-data-update: done
+  docs-examples: todo
+  docs-known-limitations: todo
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices: done
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default: todo
+  entity-translations: done
+  exception-translations: done
+  icon-translations: todo
+  reconfiguration-flow: done
+  repair-issues: todo
+  stale-devices: done
+
+  # Platinum
+  async-dependency: done
+  inject-websession:
+    status: exempt
+    comment: |
+      The Nikobus protocol runs over a serial/TCP link, not HTTP.
+  strict-typing: todo

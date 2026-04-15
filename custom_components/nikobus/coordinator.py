@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -14,7 +15,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
-from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError
+from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
+from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -33,9 +35,13 @@ from .const import (
     RECONNECT_DELAY_MAX,
     SIGNAL_DISCOVERY_STATE,
 )
-from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
+
+# Typed config entry alias used across the integration. A plain alias
+# (instead of PEP 695 `type X = ...`) keeps compatibility with older
+# HA Python versions.
+NikobusConfigEntry = ConfigEntry["NikobusDataCoordinator"]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,9 +56,10 @@ _DISCOVERY_EMPTY_THRESHOLD = 3
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    config_entry: NikobusConfigEntry
+
+    def __init__(self, hass: HomeAssistant, config_entry: NikobusConfigEntry) -> None:
         """Initialize the coordinator."""
-        self.config_entry = config_entry
         self.connection_string = config_entry.data.get(CONF_CONNECTION_STRING)
         _opts = config_entry.options
         self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
@@ -65,6 +72,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             name="Nikobus",
             update_method=self._async_update_data,
             update_interval=self._get_update_interval(),
+            config_entry=config_entry,
         )
 
         self.nikobus_connection = NikobusConnect(self.connection_string)
@@ -204,8 +212,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         except NikobusDataError:
             raise
         except Exception as err:
-            _LOGGER.exception("Failed to initialize Nikobus components: %s", err)
-            raise HomeAssistantError(f"Initialization error: {err}") from err
+            _LOGGER.exception("Failed to initialize Nikobus components")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="initialization_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
     def _initialize_module_states(self) -> None:
         """Pre-allocate state buffers for all configured modules."""
@@ -661,7 +673,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Called by the listener when the connection drops."""
         if self._stopping:
             return
-        _LOGGER.warning("Nikobus connection lost — scheduling reconnect.")
+        _LOGGER.warning("Nikobus connection lost — scheduling reconnect")
         self.async_update_listeners()
         if self.nikobus_command:
             await self.nikobus_command.stop()
@@ -714,7 +726,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 self._reconnect_attempts = 0
                 await self._async_update_data()
                 self.async_update_listeners()
-                _LOGGER.info("Nikobus reconnected after %d attempt(s).", attempt)
+                _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempt)
                 return
             except Exception as err:
                 _LOGGER.error("Subsystem restart failed after reconnect: %s — retrying", err)
@@ -730,35 +742,38 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     # ------------------------------------------------------------------
 
     async def stop(self) -> None:
-        """Shut down background tasks and disconnect."""
+        """Shut down background tasks and disconnect.
+
+        Cancels background tasks first so no in-flight handler can touch
+        the listener, command handler, or connection while we tear them
+        down. Then stops the protocol stack in the reverse of the order
+        it was started.
+        """
         self._stopping = True
-        if self._reconnect_task and not self._reconnect_task.done():
-            self._reconnect_task.cancel()
+
+        # 1. Cancel background tasks FIRST.
+        for task_attr in ("_reconnect_task", "_reload_task"):
+            task: asyncio.Task | None = getattr(self, task_attr, None)
+            if task and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            setattr(self, task_attr, None)
+
+        # 2. Then stop subsystems in reverse start order.
+        if self.nikobus_listener:
             try:
-                await self._reconnect_task
-            except asyncio.CancelledError:
-                pass
-            self._reconnect_task = None
-        if self._reload_task and not self._reload_task.done():
-            self._reload_task.cancel()
-            try:
-                await self._reload_task
-            except asyncio.CancelledError:
-                pass
-            self._reload_task = None
-        try:
-            if self.nikobus_listener:
                 await self.nikobus_listener.stop()
-        except Exception as err:
-            _LOGGER.error("Error stopping listener: %s", err)
-        try:
-            if self.nikobus_command:
+            except NikobusError as err:
+                _LOGGER.error("Error stopping listener: %s", err)
+        if self.nikobus_command:
+            try:
                 await self.nikobus_command.stop()
-        except Exception as err:
-            _LOGGER.error("Error stopping command handler: %s", err)
+            except NikobusError as err:
+                _LOGGER.error("Error stopping command handler: %s", err)
         try:
             await self.nikobus_connection.disconnect()
-        except Exception as err:
+        except NikobusError as err:
             _LOGGER.error("Error disconnecting: %s", err)
 
     # ------------------------------------------------------------------
@@ -882,9 +897,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def start_pc_link_inventory(self, *, auto_reload: bool = True) -> None:
         """Run a PC Link inventory discovery and wait until it completes."""
         if not self.nikobus_discovery:
-            raise HomeAssistantError("Nikobus discovery is not initialized")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_not_initialized",
+            )
         if self.discovery_running:
-            raise HomeAssistantError("A Nikobus discovery is already running")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
         self._discovery_found_data = False
         self._consecutive_empty_blocks = 0
         self._discovery_auto_reload = auto_reload
@@ -926,9 +947,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     ) -> None:
         """Run module inventory discovery and wait until it completes."""
         if not self.nikobus_discovery:
-            raise HomeAssistantError("Nikobus discovery is not initialized")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_not_initialized",
+            )
         if self.discovery_running:
-            raise HomeAssistantError("A Nikobus discovery is already running")
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
 
         if module_address:
             target = module_address.strip().upper()

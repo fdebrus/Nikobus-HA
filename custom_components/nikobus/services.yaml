@@ -1,10 +1,6 @@
 query_module_inventory:
-  name: Query module inventory
-  description: Trigger a Nikobus module inventory scan for all modules or a single module.
   fields:
     module_address:
-      name: Module address
-      description: Optional Nikobus module address to limit the inventory scan.
       example: "05"
       required: false
       selector:

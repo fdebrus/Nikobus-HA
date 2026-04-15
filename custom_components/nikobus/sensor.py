@@ -5,11 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
@@ -23,7 +23,7 @@ from .const import (
     HUB_IDENTIFIER,
     SIGNAL_DISCOVERY_STATE,
 )
-from .coordinator import NikobusDataCoordinator
+from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 
 _CONNECTED = "connected"
 _RECONNECTING = "reconnecting"
@@ -32,8 +32,8 @@ _DISCONNECTED = "disconnected"
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: NikobusConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Nikobus connection + discovery sensors."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
@@ -166,7 +166,7 @@ class NikobusDiscoveryProgressSensor(_DiscoverySignalEntity):
     _attr_has_entity_name = True
     _attr_name = "Discovery progress"
     _attr_icon = "mdi:progress-clock"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         super().__init__(coordinator)

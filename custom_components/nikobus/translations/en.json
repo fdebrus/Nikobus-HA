@@ -1,19 +1,14 @@
 {
     "config": {
+        "abort": {
+            "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+        },
+        "error": {
+            "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+            "unknown": "[%key:common::config_flow::error::unknown%]"
+        },
         "step": {
-            "user": {
-                "title": "Connect to Nikobus",
-                "description": "Enter the address of your Nikobus PC-Link module.\n\n- **Serial port**: `/dev/ttyUSB0` or `COM3`\n- **Network bridge**: `192.168.1.50:9999`",
-                "data": {
-                    "connection_string": "Connection (serial port or IP:port)"
-                },
-                "data_description": {
-                    "connection_string": "Serial device path or TCP address of the PC-Link bridge"
-                }
-            },
             "hardware": {
-                "title": "Hardware Configuration",
-                "description": "Tell us about your Nikobus hardware so the integration can use the optimal update strategy.",
                 "data": {
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
                     "prior_gen3": "PC-Link is older than Gen 3"
@@ -21,100 +16,49 @@
                 "data_description": {
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
                     "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
-                }
+                },
+                "description": "Tell us about your Nikobus hardware so the integration can use the optimal update strategy.",
+                "title": "Hardware Configuration"
             },
             "polling": {
-                "title": "Polling Interval",
-                "description": "Without a Feedback Module, Home Assistant polls the Nikobus bus periodically. Choose how often.",
                 "data": {
                     "refresh_interval": "Polling interval (seconds)"
                 },
                 "data_description": {
                     "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
-                }
+                },
+                "description": "Without a Feedback Module, Home Assistant polls the Nikobus bus periodically. Choose how often.",
+                "title": "Polling Interval"
             },
             "reconfigure": {
-                "title": "Reconfigure Nikobus",
-                "description": "Update the connection string or hardware settings. The connection will be re-tested.",
                 "data": {
                     "connection_string": "Connection (serial port or IP:port)",
-                    "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
-                    "prior_gen3": "PC-Link is older than Gen 3",
-                    "refresh_interval": "Polling interval (seconds)"
-                }
-            }
-        },
-        "error": {
-            "cannot_connect": "Cannot connect to the Nikobus PC-Link — check the address and that no other client is connected",
-            "unknown": "Unexpected error — check the Home Assistant logs for details"
-        },
-        "abort": {
-            "already_configured": "This Nikobus connection is already configured."
-        }
-    },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Nikobus",
-                "description": "What would you like to do?",
-                "menu_options": {
-                    "hardware": "Change hardware settings",
-                    "discovery_pc_link": "Discover modules & buttons (PC Link inventory)",
-                    "discovery_modules": "Scan all modules for button links"
-                }
-            },
-            "hardware": {
-                "title": "Hardware Configuration",
-                "description": "Update your hardware settings. The integration will reload automatically.",
-                "data": {
-                    "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
-                    "prior_gen3": "PC-Link is older than Gen 3"
+                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data::has_feedbackmodule%]",
+                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data::prior_gen3%]",
+                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data::refresh_interval%]"
                 },
                 "data_description": {
-                    "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
-                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
-                }
+                    "connection_string": "Serial device path or TCP address of the PC-Link bridge",
+                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data_description::has_feedbackmodule%]",
+                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data_description::prior_gen3%]",
+                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data_description::refresh_interval%]"
+                },
+                "description": "Update the connection string or hardware settings. The connection will be re-tested.",
+                "title": "Reconfigure Nikobus"
             },
-            "polling": {
-                "title": "Polling Interval",
-                "description": "How often should Home Assistant poll the Nikobus bus for state changes?",
+            "user": {
                 "data": {
-                    "refresh_interval": "Polling interval (seconds)"
+                    "connection_string": "Connection (serial port or IP:port)"
                 },
                 "data_description": {
-                    "refresh_interval": "How often to read module states from the bus (60–3600 s)."
-                }
-            },
-            "discovery_pc_link": {
-                "title": "PC Link Inventory",
-                "description": "Scanning the PC Link registry for modules and buttons.\n\n**Progress:** {percent}%\n\n{message}"
-            },
-            "discovery_modules": {
-                "title": "Module Scan",
-                "description": "Scanning each output module for button links.\n\n**Progress:** {percent}%\n\n{message}"
+                    "connection_string": "Serial device path or TCP address of the PC-Link bridge"
+                },
+                "description": "Enter the address of your Nikobus PC-Link module.\n\n- **Serial port**: `/dev/ttyUSB0` or `COM3`\n- **Network bridge**: `192.168.1.50:9999`",
+                "title": "Connect to Nikobus"
             }
-        },
-        "progress": {
-            "discovery": "{message}"
-        },
-        "abort": {
-            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
-            "discovery_done": "Discovery finished. The integration is reloading and the newly-discovered entities will appear shortly.",
-            "discovery_error": "Discovery failed: {error}"
         }
     },
     "entity": {
-        "sensor": {
-            "connection": {
-                "name": "Connection"
-            },
-            "discovery_status": {
-                "name": "Discovery status"
-            },
-            "discovery_progress": {
-                "name": "Discovery progress"
-            }
-        },
         "button": {
             "discover_modules_buttons": {
                 "name": "Discover modules & buttons"
@@ -122,6 +66,94 @@
             "scan_all_module_links": {
                 "name": "Scan all module links"
             }
+        },
+        "sensor": {
+            "connection": {
+                "name": "Connection"
+            },
+            "discovery_progress": {
+                "name": "Discovery progress"
+            },
+            "discovery_status": {
+                "name": "Discovery status"
+            }
+        }
+    },
+    "exceptions": {
+        "communication_error": {
+            "message": "Communication with Nikobus failed: {error}"
+        },
+        "discovery_already_running": {
+            "message": "A Nikobus discovery is already running."
+        },
+        "discovery_not_initialized": {
+            "message": "Nikobus discovery is not initialized."
+        },
+        "initialization_error": {
+            "message": "Failed to initialize Nikobus components: {error}"
+        }
+    },
+    "options": {
+        "abort": {
+            "discovery_done": "Discovery finished. The integration is reloading and the newly-discovered entities will appear shortly.",
+            "discovery_error": "Discovery failed: {error}",
+            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."
+        },
+        "progress": {
+            "discovery": "{message}"
+        },
+        "step": {
+            "discovery_modules": {
+                "description": "Scanning each output module for button links.\n\n**Progress:** {percent}%\n\n{message}",
+                "title": "Module Scan"
+            },
+            "discovery_pc_link": {
+                "description": "Scanning the PC Link registry for modules and buttons.\n\n**Progress:** {percent}%\n\n{message}",
+                "title": "PC Link Inventory"
+            },
+            "hardware": {
+                "data": {
+                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data::has_feedbackmodule%]",
+                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data::prior_gen3%]"
+                },
+                "data_description": {
+                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data_description::has_feedbackmodule%]",
+                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data_description::prior_gen3%]"
+                },
+                "description": "Update your hardware settings. The integration will reload automatically.",
+                "title": "Hardware Configuration"
+            },
+            "init": {
+                "description": "What would you like to do?",
+                "menu_options": {
+                    "discovery_modules": "Scan all modules for button links",
+                    "discovery_pc_link": "Discover modules & buttons (PC Link inventory)",
+                    "hardware": "Change hardware settings"
+                },
+                "title": "Nikobus"
+            },
+            "polling": {
+                "data": {
+                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data::refresh_interval%]"
+                },
+                "data_description": {
+                    "refresh_interval": "How often to read module states from the bus (60–3600 s)."
+                },
+                "description": "How often should Home Assistant poll the Nikobus bus for state changes?",
+                "title": "Polling Interval"
+            }
+        }
+    },
+    "services": {
+        "query_module_inventory": {
+            "description": "Triggers a Nikobus module inventory scan for all modules or a single module.",
+            "fields": {
+                "module_address": {
+                    "description": "Optional Nikobus module address to limit the inventory scan.",
+                    "name": "Module address"
+                }
+            },
+            "name": "Query module inventory"
         }
     }
 }
