@@ -14,10 +14,9 @@ from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -30,7 +29,7 @@ from .const import (
     EVENT_BUTTON_PRESSED,
     HUB_IDENTIFIER,
 )
-from .coordinator import NikobusDataCoordinator
+from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .nkbtravelcalculator import NikobusTravelCalculator
 from .router import build_unique_id, get_routing
@@ -71,8 +70,8 @@ STATE_ERROR = 0x03  # Catches logic engine conflicts
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: NikobusConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Nikobus cover entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data

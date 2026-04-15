@@ -8,11 +8,10 @@ import uuid
 from typing import Any
 
 from homeassistant.components.scene import Scene
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .coordinator import NikobusDataCoordinator
+from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,8 +30,8 @@ _STATE_MAPPING = {
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    entry: NikobusConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Nikobus scenes from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
