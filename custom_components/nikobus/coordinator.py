@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -14,7 +15,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
-from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError
+from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
 # Typed config entry alias used across the integration.
 type NikobusConfigEntry = ConfigEntry["NikobusDataCoordinator"]
@@ -739,35 +740,38 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     # ------------------------------------------------------------------
 
     async def stop(self) -> None:
-        """Shut down background tasks and disconnect."""
+        """Shut down background tasks and disconnect.
+
+        Cancels background tasks first so no in-flight handler can touch
+        the listener, command handler, or connection while we tear them
+        down. Then stops the protocol stack in the reverse of the order
+        it was started.
+        """
         self._stopping = True
-        if self._reconnect_task and not self._reconnect_task.done():
-            self._reconnect_task.cancel()
+
+        # 1. Cancel background tasks FIRST.
+        for task_attr in ("_reconnect_task", "_reload_task"):
+            task: asyncio.Task | None = getattr(self, task_attr, None)
+            if task and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+            setattr(self, task_attr, None)
+
+        # 2. Then stop subsystems in reverse start order.
+        if self.nikobus_listener:
             try:
-                await self._reconnect_task
-            except asyncio.CancelledError:
-                pass
-            self._reconnect_task = None
-        if self._reload_task and not self._reload_task.done():
-            self._reload_task.cancel()
-            try:
-                await self._reload_task
-            except asyncio.CancelledError:
-                pass
-            self._reload_task = None
-        try:
-            if self.nikobus_listener:
                 await self.nikobus_listener.stop()
-        except Exception as err:
-            _LOGGER.error("Error stopping listener: %s", err)
-        try:
-            if self.nikobus_command:
+            except NikobusError as err:
+                _LOGGER.error("Error stopping listener: %s", err)
+        if self.nikobus_command:
+            try:
                 await self.nikobus_command.stop()
-        except Exception as err:
-            _LOGGER.error("Error stopping command handler: %s", err)
+            except NikobusError as err:
+                _LOGGER.error("Error stopping command handler: %s", err)
         try:
             await self.nikobus_connection.disconnect()
-        except Exception as err:
+        except NikobusError as err:
             _LOGGER.error("Error disconnecting: %s", err)
 
     # ------------------------------------------------------------------
