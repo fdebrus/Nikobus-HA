@@ -7,7 +7,6 @@ from typing import Final
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.components import (
@@ -21,7 +20,7 @@ from homeassistant.components import (
 )
 
 from .const import DOMAIN, HUB_IDENTIFIER
-from .coordinator import NikobusDataCoordinator
+from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .exceptions import NikobusConnectionError, NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,7 +37,7 @@ PLATFORMS: Final[list[str]] = [
 
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
     """Set up the Nikobus integration (single-instance) without redundant handshakes."""
     _LOGGER.debug("Starting setup of Nikobus (single-instance)")
 
@@ -112,12 +111,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
-async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _async_options_updated(hass: HomeAssistant, entry: NikobusConfigEntry) -> None:
     """Reload the integration when the user changes options."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
+def _register_hub_device(hass: HomeAssistant, entry: NikobusConfigEntry) -> None:
     """Register the Nikobus bridge (hub) as a device."""
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(
@@ -129,7 +128,7 @@ def _register_hub_device(hass: HomeAssistant, entry: ConfigEntry) -> None:
     )
 
 async def _async_cleanup_orphan_entities(
-    hass: HomeAssistant, entry: ConfigEntry, coordinator: NikobusDataCoordinator
+    hass: HomeAssistant, entry: NikobusConfigEntry, coordinator: NikobusDataCoordinator
 ) -> None:
     """Remove entities and devices that no longer exist in the Nikobus configuration."""
     ent_reg = er.async_get(hass)
@@ -158,7 +157,7 @@ async def _async_cleanup_orphan_entities(
             if device.id not in devices_with_entities:
                 dev_reg.async_remove_device(device.id)
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
     """Unload the integration and stop background tasks."""
     coordinator = entry.runtime_data
     if coordinator:

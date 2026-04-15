@@ -16,6 +16,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
 from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError
 
+# Typed config entry alias used across the integration.
+type NikobusConfigEntry = ConfigEntry["NikobusDataCoordinator"]
+
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
@@ -50,9 +53,10 @@ _DISCOVERY_EMPTY_THRESHOLD = 3
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
 
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    config_entry: NikobusConfigEntry
+
+    def __init__(self, hass: HomeAssistant, config_entry: NikobusConfigEntry) -> None:
         """Initialize the coordinator."""
-        self.config_entry = config_entry
         self.connection_string = config_entry.data.get(CONF_CONNECTION_STRING)
         _opts = config_entry.options
         self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
@@ -65,6 +69,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             name="Nikobus",
             update_method=self._async_update_data,
             update_interval=self._get_update_interval(),
+            config_entry=config_entry,
         )
 
         self.nikobus_connection = NikobusConnect(self.connection_string)
