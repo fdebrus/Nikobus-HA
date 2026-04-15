@@ -21,7 +21,7 @@ from homeassistant.components import (
 
 from .const import DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .exceptions import NikobusConnectionError, NikobusDataError
+from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,15 +50,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     try:
         await coordinator.connect()
     except NikobusConnectionError as err:
-        _LOGGER.error("Cannot connect to Nikobus: %s", err)
-        raise ConfigEntryNotReady(f"Cannot connect to Nikobus: {err}") from err
+        raise ConfigEntryNotReady(
+            f"Cannot connect to Nikobus: {err}"
+        ) from err
     except NikobusDataError as err:
-        _LOGGER.error("Nikobus configuration file error: %s", err)
         raise ConfigEntryNotReady(
             f"Check your Nikobus config files — {err}"
         ) from err
-    except Exception as err:
-        _LOGGER.error("Nikobus setup error: %s", err)
+    except NikobusError as err:
         raise ConfigEntryNotReady(f"Nikobus setup error: {err}") from err
 
     _register_hub_device(hass, entry)
@@ -89,12 +88,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
     # 4. Forward setup to platforms FIRST
     # This allows entities to be created and register their dispatcher listeners.
-    try:
-        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-        _LOGGER.debug("Successfully forwarded setup to Nikobus platforms")
-    except Exception as err:
-        _LOGGER.error("Error forwarding setup: %s", err)
-        return False
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # 5. Reload when the user changes options via the OptionsFlow
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
