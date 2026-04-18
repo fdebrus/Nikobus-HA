@@ -106,10 +106,22 @@
     "entity": {
         "sensor": {
             "connection": {
-                "name": "Connexion"
+                "name": "Connexion",
+                "state": {
+                    "connected": "Connecté",
+                    "reconnecting": "Reconnexion en cours",
+                    "disconnected": "Déconnecté"
+                }
             },
             "discovery_status": {
-                "name": "Statut de la découverte"
+                "name": "Statut de la découverte",
+                "state": {
+                    "idle": "Inactif",
+                    "pc_link": "Inventaire PC Link",
+                    "module_scan": "Analyse des modules",
+                    "finished": "Terminé",
+                    "error": "Erreur"
+                }
             },
             "discovery_progress": {
                 "name": "Progression de la découverte"

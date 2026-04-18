@@ -106,10 +106,22 @@
     "entity": {
         "sensor": {
             "connection": {
-                "name": "Verbinding"
+                "name": "Verbinding",
+                "state": {
+                    "connected": "Verbonden",
+                    "reconnecting": "Opnieuw verbinden",
+                    "disconnected": "Verbinding verbroken"
+                }
             },
             "discovery_status": {
-                "name": "Ontdekkingsstatus"
+                "name": "Ontdekkingsstatus",
+                "state": {
+                    "idle": "Inactief",
+                    "pc_link": "PC Link-inventaris",
+                    "module_scan": "Modules scannen",
+                    "finished": "Voltooid",
+                    "error": "Fout"
+                }
             },
             "discovery_progress": {
                 "name": "Ontdekkingsvoortgang"

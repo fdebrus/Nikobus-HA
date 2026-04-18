@@ -69,13 +69,25 @@
         },
         "sensor": {
             "connection": {
-                "name": "Connection"
+                "name": "Connection",
+                "state": {
+                    "connected": "Connected",
+                    "reconnecting": "Reconnecting",
+                    "disconnected": "Disconnected"
+                }
             },
             "discovery_progress": {
                 "name": "Discovery progress"
             },
             "discovery_status": {
-                "name": "Discovery status"
+                "name": "Discovery status",
+                "state": {
+                    "idle": "Idle",
+                    "pc_link": "PC Link inventory",
+                    "module_scan": "Scanning modules",
+                    "finished": "Finished",
+                    "error": "Error"
+                }
             }
         }
     },
