@@ -161,6 +161,14 @@ If the connection drops for any reason, the integration will automatically attem
 ![TCP bridge example 2](https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8)
 ![TCP bridge example 3](https://github.com/fdebrus/Nikobus-HA/assets/33791533/498e5a0f-ab75-4d29-9988-884015fbf05a)
 
+## Known Limitations
+
+- **Always quote button addresses in YAML.** A Nikobus button address is a six-character hex string (e.g. `25E952`). Addresses that contain only digits and the letter `E` happen to look like scientific notation to YAML 1.1 parsers — `25E952` is read as `25 × 10⁹⁵²`, overflows, and Home Assistant persists the value back as `null`. Home Assistant's automation editor may even strip your quotes on save. Workarounds: prefix the address with a leading space inside the quotes (`address: " 25E952"`), or use the integration's `button_id`-style identifiers in your trigger conditions when matching is critical. Addresses containing any letter `A`–`F` other than `E` (e.g. `9A93EE`) are unaffected.
+- **No bus-level discovery.** The PC-Link bridge does not advertise itself over mDNS, SSDP, or USB vendor-specific descriptors. The serial device path or TCP `host:port` must be entered manually.
+- **One client per bus.** Only one client may talk to the PC-Link at a time. Stop any other Nikobus software (the official PC tool, ioBroker, OpenHAB, etc.) before starting Home Assistant.
+- **Polling latency without a Feedback Module.** When no 05-207 Feedback Module is present, module states are read on the configured polling interval (60–3600 s, default 120 s). Physical button presses still trigger immediate targeted refreshes for the impacted modules, so day-to-day responsiveness is unaffected — but external changes (manual relay actuation, scenes triggered by another client) are only picked up on the next poll cycle.
+- **Single config entry per HA instance.** Two physically separate Nikobus installations cannot be paired with the same Home Assistant; the integration is designed for one bus per HA host.
+
 ## Setup Process
 
 1. Install the custom integration using HACS. Use the custom link below, or clone the repository into `config/custom_components/nikobus` on your Home Assistant host.
