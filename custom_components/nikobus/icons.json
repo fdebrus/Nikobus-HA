@@ -1,0 +1,40 @@
+{
+    "entity": {
+        "button": {
+            "discover_modules_buttons": {
+                "default": "mdi:magnify-scan"
+            },
+            "scan_all_module_links": {
+                "default": "mdi:cog-sync"
+            }
+        },
+        "sensor": {
+            "connection": {
+                "default": "mdi:lan-disconnect",
+                "state": {
+                    "connected": "mdi:lan-connect",
+                    "reconnecting": "mdi:lan-pending",
+                    "disconnected": "mdi:lan-disconnect"
+                }
+            },
+            "discovery_progress": {
+                "default": "mdi:progress-clock"
+            },
+            "discovery_status": {
+                "default": "mdi:magnify",
+                "state": {
+                    "idle": "mdi:magnify",
+                    "pc_link": "mdi:magnify-scan",
+                    "module_scan": "mdi:magnify-scan",
+                    "finished": "mdi:check-circle",
+                    "error": "mdi:alert-circle"
+                }
+            }
+        }
+    },
+    "services": {
+        "query_module_inventory": {
+            "service": "mdi:magnify-scan"
+        }
+    }
+}

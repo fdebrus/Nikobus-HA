@@ -27,6 +27,11 @@ DISCOVERY_PHASE_FINISHED: Final[str] = "finished"
 DISCOVERY_PHASE_ERROR: Final[str] = "error"
 
 # =============================================================================
+# Repair issues
+# =============================================================================
+ISSUE_NO_BUTTONS_CONFIGURED: Final[str] = "no_buttons_configured"
+
+# =============================================================================
 # Configuration Keys
 # =============================================================================
 CONF_CONNECTION_STRING: Final[str] = "connection_string"

@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -15,6 +16,9 @@ from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -52,9 +56,9 @@ class NikobusPcLinkInventoryButton(ButtonEntity):
     """Bridge button that starts a PC Link inventory discovery."""
 
     _attr_has_entity_name = True
-    _attr_name = "Discover modules & buttons"
-    _attr_icon = "mdi:magnify-scan"
+    _attr_translation_key = "discover_modules_buttons"
     _attr_should_poll = False
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
@@ -71,9 +75,9 @@ class NikobusModuleScanButton(ButtonEntity):
     """Bridge button that starts a full module scan for button links."""
 
     _attr_has_entity_name = True
-    _attr_name = "Scan all module links"
-    _attr_icon = "mdi:cog-sync"
+    _attr_translation_key = "scan_all_module_links"
     _attr_should_poll = False
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator

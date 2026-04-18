@@ -1,5 +1,7 @@
 """Nikobus Button Press Events Handling"""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
@@ -7,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import timezone as _tz
 from datetime import datetime
-from typing import Dict, Optional, Tuple, Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 from .const import (
@@ -19,6 +21,9 @@ from .const import (
     SHORT_PRESS,
 )
 
+if TYPE_CHECKING:
+    from .coordinator import NikobusDataCoordinator
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -29,10 +34,10 @@ class PressState:
     press_start: float
     last_press_time: float
     press_id: str
-    module_address: Optional[str]
-    channel: Optional[int]
-    release_task: Optional[asyncio.Task] = None
-    timer_tasks: Dict[int, asyncio.Task] = field(default_factory=dict)
+    module_address: str | None
+    channel: int | None
+    release_task: asyncio.Task[None] | None = None
+    timer_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
     last_timer_threshold: int = 0
 
 
@@ -42,9 +47,9 @@ class NikobusActuator:
     def __init__(
         self,
         hass: HomeAssistant,
-        coordinator: Any,
-        dict_button_data: dict,
-        dict_module_data: dict,
+        coordinator: NikobusDataCoordinator,
+        dict_button_data: dict[str, Any],
+        dict_module_data: dict[str, Any],
     ) -> None:
         """Initialize the Nikobus actuator."""
         self._hass = hass
@@ -52,8 +57,8 @@ class NikobusActuator:
         self._dict_button_data = dict_button_data
         self._dict_module_data = dict_module_data
         self._debounce_time_ms = 150
-        self._press_states: Dict[str, PressState] = {}
-        self._module_refresh_tasks: Dict[str, asyncio.Task] = {}
+        self._press_states: dict[str, PressState] = {}
+        self._module_refresh_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def handle_button_press(self, address: str) -> None:
         """Handle incoming button frames with debounce and duration tracking."""
@@ -171,7 +176,7 @@ class NikobusActuator:
         self._hass.async_create_task(self.button_discovery(state.address, press_context=press_context))
         self._press_states.pop(state.address, None)
 
-    async def button_discovery(self, address: str, press_context: Optional[Dict[str, Any]] = None) -> None:
+    async def button_discovery(self, address: str, press_context: dict[str, Any] | None = None) -> None:
         """Identify impacted modules and trigger targeted refreshes."""
         button_data = self._dict_button_data.get("nikobus_button", {}).get(address)
 
@@ -189,10 +194,12 @@ class NikobusActuator:
                 await self._coordinator.nikobus_config.write_json_data(
                     "nikobus_button_config.json", "button", self._dict_button_data
                 )
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.warning("Failed to persist discovered button %s to config: %s", address, err)
 
-    async def process_button_modules(self, button_data: Dict[str, Any], button_address: str, press_context: Optional[Dict[str, Any]]) -> None:
+    async def process_button_modules(self, button_data: dict[str, Any], button_address: str, press_context: dict[str, Any] | None) -> None:
         """Refresh states for specific modules impacted by this button."""
         op_time = float(button_data.get("operation_time", 0))
         press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
@@ -262,6 +269,8 @@ class NikobusActuator:
                                 _LOGGER.debug("[%s] Step 1 Success for %s: %s", m_press_id, m_addr, new_state)
                                 self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
                                 await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
+                        except asyncio.CancelledError:
+                            raise
                         except Exception as err:
                             _LOGGER.debug("[%s] Step 1 Quick fetch failed for %s: %s", m_press_id, m_addr, err)
 
@@ -316,7 +325,7 @@ class NikobusActuator:
         
         self._hass.bus.async_fire(event_type, payload)
 
-    def _derive_button_context(self, address: str) -> Tuple[Optional[str], Optional[int]]:
+    def _derive_button_context(self, address: str) -> tuple[str | None, int | None]:
         """Determine primary module/channel link for a button from config."""
         button_data = self._dict_button_data.get("nikobus_button", {}).get(address, {})
         impacted = button_data.get("impacted_module") or []

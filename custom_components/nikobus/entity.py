@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -17,6 +17,8 @@ _LOGGER = logging.getLogger(__name__)
 
 class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
     """Base entity for Nikobus devices with targeted refresh support."""
+
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -62,7 +64,7 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         )
 
 
-def device_entry_diagnostics(device: dr.DeviceEntry) -> Dict[str, Any]:
+def device_entry_diagnostics(device: dr.DeviceEntry) -> dict[str, Any]:
     """Return diagnostics data for a Nikobus device entry."""
     return {
         "id": device.id,

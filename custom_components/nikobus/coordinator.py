@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -31,6 +32,7 @@ from .const import (
     DISCOVERY_PHASE_MODULE_SCAN,
     DISCOVERY_PHASE_PC_LINK,
     DOMAIN,
+    ISSUE_NO_BUTTONS_CONFIGURED,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
     SIGNAL_DISCOVERY_STATE,
@@ -111,14 +113,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_finished_event: asyncio.Event = asyncio.Event()
         self._discovery_finished_event.set()  # idle = already set
         self._discovery_auto_reload: bool = True
-        self._discovery_progress_task: asyncio.Task | None = None
+        self._discovery_progress_task: asyncio.Task[None] | None = None
         self._discovery_module_order: list[str] = []
         self._module_scan_frame_count: int = 0
         self._module_scan_last_index: int = -1
         # Monkey-patch state for counting commands sent during discovery
         self._original_send_command = None
         self._stopping: bool = False
-        self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_task: asyncio.Task[None] | None = None
         self._last_connected: datetime | None = None
         self._reconnect_attempts: int = 0
 
@@ -130,6 +132,31 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def nikobus_module_states(self) -> dict[str, bytearray]:
         """Return the shared module state buffer."""
         return self._module_states
+
+    def reset_discovery_counters(self) -> None:
+        """Clear the empty-block / found-data counters before a new scan."""
+        self._discovery_found_data = False
+        self._consecutive_empty_blocks = 0
+
+    def refresh_repair_issues(self) -> None:
+        """Create / clear repair issues based on the current configuration."""
+        has_buttons = bool(
+            self.dict_button_data.get("nikobus_button")
+        )
+        issue_id = f"{ISSUE_NO_BUTTONS_CONFIGURED}_{self.config_entry.entry_id}"
+        if has_buttons:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_NO_BUTTONS_CONFIGURED,
+            data={"entry_id": self.config_entry.entry_id},
+        )
 
     @property
     def connection_status(self) -> str:
@@ -211,6 +238,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         except NikobusDataError:
             raise
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.exception("Failed to initialize Nikobus components")
             raise HomeAssistantError(
@@ -275,6 +304,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 "nikobus_refreshed",
                 {"impacted_module_address": address, "impacted_module_group": group},
             )
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Feedback callback error: %s", err)
 
@@ -544,6 +575,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                             buf = bytearray(12)
                             self._module_states[normalized] = buf
                         buf[start : start + 6] = bytes.fromhex(state_hex[:12])
+                except asyncio.CancelledError:
+                    raise
                 except Exception as err:
                     _LOGGER.error("Error refreshing %s group %d: %s", normalized, g, err)
 
@@ -693,6 +726,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.async_update_listeners()
             try:
                 await self.nikobus_connection.connect()
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.warning("Reconnect %d failed: %s — retrying in %ds", attempt, err, delay)
                 try:
@@ -728,6 +763,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 self.async_update_listeners()
                 _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempt)
                 return
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.error("Subsystem restart failed after reconnect: %s — retrying", err)
                 await self.nikobus_connection.disconnect()
@@ -753,7 +790,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         # 1. Cancel background tasks FIRST.
         for task_attr in ("_reconnect_task", "_reload_task"):
-            task: asyncio.Task | None = getattr(self, task_attr, None)
+            task: asyncio.Task[None] | None = getattr(self, task_attr, None)
             if task and not task.done():
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -831,6 +868,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         async def _reload() -> None:
             try:
                 await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.error("Failed to reload config entry after discovery: %s", err)
 
@@ -928,6 +967,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
+        except asyncio.CancelledError:
+            self._stop_progress_poller()
+            self.discovery_running = False
+            self._discovery_finished_event.set()
+            raise
         except Exception as err:
             self._stop_progress_poller()
             self._update_discovery_state(
@@ -999,6 +1043,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
+        except asyncio.CancelledError:
+            self._stop_progress_poller()
+            self._uninstall_command_counter()
+            self.discovery_running = False
+            self._discovery_finished_event.set()
+            raise
         except Exception as err:
             self._stop_progress_poller()
             self._uninstall_command_counter()
