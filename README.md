@@ -69,11 +69,13 @@ source: "nikobus"
 
 You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses are recorded in `nikobus_button_config.json`).
 
-### Example Automation
+### Example Automations
+
+#### Short press: toggle a light
 
 ```yaml
 alias: "React to Nikobus Button Push"
-description: "Perform actions when a specific Nikobus button is pressed."
+description: "Toggle a light when a specific Nikobus button is pressed."
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
@@ -85,7 +87,66 @@ action:
       entity_id: light.example_light
 ```
 
-Place this YAML in a Home Assistant automation (UI or YAML) as you would for any other event trigger.
+#### Long press: dim a light progressively
+
+`nikobus_button_timer_2` fires once the button has been held for ≥ 2 s, allowing you to differentiate a sustained press from a tap. Combine it with `nikobus_button_pressed_3` (released after ≥ 3 s) to build a hold-to-dim behaviour.
+
+```yaml
+alias: "Hold Nikobus button to dim"
+description: "While the button is held past 2 s, dim the target light to 30 %."
+trigger:
+  - platform: event
+    event_type: nikobus_button_timer_2
+    event_data:
+      address: "004E2C"
+action:
+  - service: light.turn_on
+    target:
+      entity_id: light.living_room_dimmer
+    data:
+      brightness_pct: 30
+      transition: 1
+```
+
+#### Drive a scene from a physical Nikobus button
+
+```yaml
+alias: "All shutters down at sunset"
+description: "Close every roller via a Nikobus scene whenever button 25E952 is pressed after dusk."
+trigger:
+  - platform: event
+    event_type: nikobus_button_pressed
+    event_data:
+      address: " 25E952"   # leading space prevents YAML scientific-notation parsing
+condition:
+  - condition: sun
+    after: sunset
+action:
+  - service: scene.turn_on
+    target:
+      entity_id: scene.scene_close_all_shutters
+```
+
+#### Move a cover to an exact position
+
+`set_cover_position` works against the integration's virtual travel calculator, so the cover stops automatically when the requested position is reached.
+
+```yaml
+alias: "Living room cover at 60 % when 'TV' button pressed"
+trigger:
+  - platform: event
+    event_type: nikobus_button_pressed
+    event_data:
+      address: "C9A5"
+action:
+  - service: cover.set_cover_position
+    target:
+      entity_id: cover.living_room_blind
+    data:
+      position: 60
+```
+
+Place any of these YAML blocks in a Home Assistant automation (UI or YAML) as you would for any other event trigger.
 
 ## Scenes
 
