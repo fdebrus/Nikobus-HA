@@ -16,6 +16,8 @@ from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 # Nikobus State Constants
 STATE_STOPPED = 0x00
 STATE_OPEN = 0x01

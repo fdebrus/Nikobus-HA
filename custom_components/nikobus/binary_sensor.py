@@ -17,6 +17,8 @@ from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 # Seconds before returning to idle
 STATE_RESET_DELAY = 1.0
 

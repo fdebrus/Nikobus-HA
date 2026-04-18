@@ -36,6 +36,8 @@ from .router import build_unique_id, get_routing
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 
 def _parse_operation_time(value: Any, fallback: float, label: str, address: str) -> float:
     """Parse and validate a cover operation time value.

@@ -25,6 +25,8 @@ from .const import (
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 
+PARALLEL_UPDATES = 0
+
 _CONNECTED = "connected"
 _RECONNECTING = "reconnecting"
 _DISCONNECTED = "disconnected"
