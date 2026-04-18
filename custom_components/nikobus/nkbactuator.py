@@ -189,6 +189,8 @@ class NikobusActuator:
                 await self._coordinator.nikobus_config.write_json_data(
                     "nikobus_button_config.json", "button", self._dict_button_data
                 )
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.warning("Failed to persist discovered button %s to config: %s", address, err)
 
@@ -262,6 +264,8 @@ class NikobusActuator:
                                 _LOGGER.debug("[%s] Step 1 Success for %s: %s", m_press_id, m_addr, new_state)
                                 self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
                                 await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
+                        except asyncio.CancelledError:
+                            raise
                         except Exception as err:
                             _LOGGER.debug("[%s] Step 1 Quick fetch failed for %s: %s", m_press_id, m_addr, err)
 

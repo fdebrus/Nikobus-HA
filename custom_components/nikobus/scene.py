@@ -206,6 +206,8 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         _LOGGER.debug("Timed stop for rollers on module %s", module_id)
         try:
             await self._apply_module_state(module_id, stop_state)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Failed to send timed stop for module %s: %s", module_id, err)
 

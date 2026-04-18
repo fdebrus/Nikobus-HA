@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Dict
 
@@ -146,6 +147,8 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
         
         try:
             await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
@@ -158,6 +161,8 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
         
         try:
             await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
@@ -189,6 +194,8 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
         
         try:
             await self.coordinator.api.open_cover(self._address, self._channel)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
@@ -201,6 +208,8 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
         
         try:
             await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()

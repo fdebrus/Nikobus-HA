@@ -238,6 +238,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         except NikobusDataError:
             raise
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.exception("Failed to initialize Nikobus components")
             raise HomeAssistantError(
@@ -302,6 +304,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 "nikobus_refreshed",
                 {"impacted_module_address": address, "impacted_module_group": group},
             )
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Feedback callback error: %s", err)
 
@@ -571,6 +575,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                             buf = bytearray(12)
                             self._module_states[normalized] = buf
                         buf[start : start + 6] = bytes.fromhex(state_hex[:12])
+                except asyncio.CancelledError:
+                    raise
                 except Exception as err:
                     _LOGGER.error("Error refreshing %s group %d: %s", normalized, g, err)
 
@@ -720,6 +726,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.async_update_listeners()
             try:
                 await self.nikobus_connection.connect()
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.warning("Reconnect %d failed: %s — retrying in %ds", attempt, err, delay)
                 try:
@@ -755,6 +763,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 self.async_update_listeners()
                 _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempt)
                 return
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.error("Subsystem restart failed after reconnect: %s — retrying", err)
                 await self.nikobus_connection.disconnect()
@@ -858,6 +868,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         async def _reload() -> None:
             try:
                 await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.error("Failed to reload config entry after discovery: %s", err)
 
@@ -955,6 +967,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
+        except asyncio.CancelledError:
+            self._stop_progress_poller()
+            self.discovery_running = False
+            self._discovery_finished_event.set()
+            raise
         except Exception as err:
             self._stop_progress_poller()
             self._update_discovery_state(
@@ -1026,6 +1043,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
+        except asyncio.CancelledError:
+            self._stop_progress_poller()
+            self._uninstall_command_counter()
+            self.discovery_running = False
+            self._discovery_finished_event.set()
+            raise
         except Exception as err:
             self._stop_progress_poller()
             self._uninstall_command_counter()

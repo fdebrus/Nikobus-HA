@@ -1,5 +1,6 @@
 """Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
 
+import asyncio
 import json
 import logging
 import os
@@ -45,6 +46,8 @@ class NikobusConfig:
             _LOGGER.error("Failed to decode JSON in %s file: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to decode JSON in {data_type} file: {err}") from err
 
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
@@ -71,6 +74,8 @@ class NikobusConfig:
             raise NikobusDataError(
                 f"Failed to decode JSON in optional {data_type} file: {err}"
             ) from err
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Failed to load optional %s data: %s", data_type, err, exc_info=True
@@ -232,6 +237,8 @@ class NikobusConfig:
                 f"Failed to serialize {data_type} data to JSON: {err}"
             ) from err
 
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error writing %s data to file %s: %s",
