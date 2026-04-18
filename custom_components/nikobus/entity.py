@@ -18,6 +18,8 @@ _LOGGER = logging.getLogger(__name__)
 class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
     """Base entity for Nikobus devices with targeted refresh support."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: NikobusDataCoordinator,
