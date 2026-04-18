@@ -1,21 +1,24 @@
 """Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 from aiofiles import open as aio_open
+from homeassistant.core import HomeAssistant
 
-from .exceptions import NikobusDataError  # Updated import
+from .exceptions import NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
-_LOAD_TRANSFORMS: Dict[str, str] = {
+_LOAD_TRANSFORMS: dict[str, str] = {
     "button": "_transform_button_data",
     "module": "_transform_module_data",
 }
-_WRITE_TRANSFORMS: Dict[str, str] = {
+_WRITE_TRANSFORMS: dict[str, str] = {
     "button": "_transform_button_data_for_writing",
 }
 
@@ -23,7 +26,7 @@ _WRITE_TRANSFORMS: Dict[str, str] = {
 class NikobusConfig:
     """Handles the loading and saving of Nikobus configuration data."""
 
-    def __init__(self, hass: Any) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the configuration handler."""
         self._hass = hass
 

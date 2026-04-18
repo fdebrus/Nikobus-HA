@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
@@ -69,7 +68,7 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         self._attr_unique_id = f"{DOMAIN}_button_{address}"
         
         self._attr_is_on = False
-        self._reset_timer_cancel: Any | None = None
+        self._reset_timer_cancel: CALLBACK_TYPE | None = None
 
     @property
     def state(self) -> str:
@@ -93,7 +92,7 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         self.async_on_remove(_cancel_reset_timer)
 
     @callback
-    def _handle_button_event(self, event: Any) -> None:
+    def _handle_button_event(self, event: Event) -> None:
         """Handle button press events from the Nikobus bus."""
         if event.data.get("address") != self._address:
             return

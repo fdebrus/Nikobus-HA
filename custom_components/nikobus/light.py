@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -91,7 +91,7 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
         self._is_on: bool | None = None
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return entity specific state attributes safely."""
         parent_attrs = super().extra_state_attributes or {}
         return {
@@ -120,7 +120,7 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     @callback
-    def _handle_nikobus_event(self, event: Any) -> None:
+    def _handle_nikobus_event(self, event: Event) -> None:
         """Handle physical button operation events."""
         if str(event.data.get("impacted_module_address")) != str(self._address):
             return
@@ -166,7 +166,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
         super()._handle_coordinator_update()
 
     @callback
-    def _handle_nikobus_event(self, event: Any) -> None:
+    def _handle_nikobus_event(self, event: Event) -> None:
         """Handle physical button operation events."""
         if str(event.data.get("impacted_module_address")) == str(self._address):
             self._optimistic_brightness = None
