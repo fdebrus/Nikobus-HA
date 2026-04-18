@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -58,6 +59,7 @@ class NikobusPcLinkInventoryButton(ButtonEntity):
     _attr_name = "Discover modules & buttons"
     _attr_icon = "mdi:magnify-scan"
     _attr_should_poll = False
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
@@ -77,6 +79,7 @@ class NikobusModuleScanButton(ButtonEntity):
     _attr_name = "Scan all module links"
     _attr_icon = "mdi:cog-sync"
     _attr_should_poll = False
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator

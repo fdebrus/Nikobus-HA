@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.const import PERCENTAGE
+from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -61,6 +61,7 @@ class NikobusConnectionSensor(CoordinatorEntity[NikobusDataCoordinator], SensorE
     _attr_has_entity_name = True
     _attr_name = "Connection"
     _attr_icon = "mdi:lan-connect"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         """Initialize the sensor."""
@@ -122,6 +123,7 @@ class NikobusDiscoveryStatusSensor(_DiscoverySignalEntity):
     _attr_has_entity_name = True
     _attr_name = "Discovery status"
     _attr_icon = "mdi:magnify-scan"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         super().__init__(coordinator)
@@ -169,6 +171,7 @@ class NikobusDiscoveryProgressSensor(_DiscoverySignalEntity):
     _attr_name = "Discovery progress"
     _attr_icon = "mdi:progress-clock"
     _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         super().__init__(coordinator)
