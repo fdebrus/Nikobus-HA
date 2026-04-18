@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -31,6 +32,7 @@ from .const import (
     DISCOVERY_PHASE_MODULE_SCAN,
     DISCOVERY_PHASE_PC_LINK,
     DOMAIN,
+    ISSUE_NO_BUTTONS_CONFIGURED,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
     SIGNAL_DISCOVERY_STATE,
@@ -135,6 +137,26 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Clear the empty-block / found-data counters before a new scan."""
         self._discovery_found_data = False
         self._consecutive_empty_blocks = 0
+
+    def refresh_repair_issues(self) -> None:
+        """Create / clear repair issues based on the current configuration."""
+        has_buttons = bool(
+            self.dict_button_data.get("nikobus_button")
+        )
+        issue_id = f"{ISSUE_NO_BUTTONS_CONFIGURED}_{self.config_entry.entry_id}"
+        if has_buttons:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_NO_BUTTONS_CONFIGURED,
+            data={"entry_id": self.config_entry.entry_id},
+        )
 
     @property
     def connection_status(self) -> str:

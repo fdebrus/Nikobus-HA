@@ -136,6 +136,19 @@
             }
         }
     },
+    "issues": {
+        "no_buttons_configured": {
+            "title": "Aucun bouton Nikobus configuré",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Découvrir les modules et boutons Nikobus",
+                        "description": "Home Assistant n'a détecté aucun bouton Nikobus. Lancez maintenant un inventaire PC-Link pour compléter la configuration."
+                    }
+                }
+            }
+        }
+    },
     "exceptions": {
         "communication_error": {
             "message": "Communication avec Nikobus échouée : {error}"

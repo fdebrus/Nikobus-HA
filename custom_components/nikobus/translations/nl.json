@@ -136,6 +136,19 @@
             }
         }
     },
+    "issues": {
+        "no_buttons_configured": {
+            "title": "Geen Nikobus-knoppen geconfigureerd",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Nikobus-modules en -knoppen ontdekken",
+                        "description": "Home Assistant heeft geen Nikobus-knoppen gedetecteerd. Voer nu een PC-Link-inventaris uit om de configuratie aan te vullen."
+                    }
+                }
+            }
+        }
+    },
     "exceptions": {
         "communication_error": {
             "message": "Communicatie met Nikobus mislukt: {error}"

@@ -132,6 +132,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     # 6. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
+    # 7. Surface repair issues for actionable misconfigurations.
+    coordinator.refresh_repair_issues()
+
     _LOGGER.info("Nikobus integration setup complete")
     return True
 
