@@ -228,7 +228,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         self._options: dict[str, Any] = {}
-        self._discovery_task: asyncio.Task | None = None
+        self._discovery_task: asyncio.Task[None] | None = None
         self._discovery_kind: str | None = None  # "pc_link" or "module_scan"
 
     def _current(self) -> dict[str, Any]:

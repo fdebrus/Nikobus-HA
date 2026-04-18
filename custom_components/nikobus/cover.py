@@ -156,9 +156,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._position: float = 100.0
         self._state = STATE_STOPPED
         self._target_position: int | None = None
-        self._motion_task: asyncio.Task | None = None
-        self._coalesce_task: asyncio.Task | None = None
-        self._error_recovery_task: asyncio.Task | None = None
+        self._motion_task: asyncio.Task[None] | None = None
+        self._coalesce_task: asyncio.Task[None] | None = None
+        self._error_recovery_task: asyncio.Task[None] | None = None
 
         self._movement_source = "ha"
         self._current_run_limit: float = 0.0

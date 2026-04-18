@@ -87,7 +87,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         
         # Guard against overlapping roller release tasks
         self._module_tokens: dict[str, str] = {}
-        self._roller_stop_tasks: list[asyncio.Task] = []
+        self._roller_stop_tasks: list[asyncio.Task[None]] = []
 
     async def async_added_to_hass(self) -> None:
         """Register cleanup of pending roller-stop tasks on removal."""

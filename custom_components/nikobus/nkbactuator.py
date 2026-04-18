@@ -36,8 +36,8 @@ class PressState:
     press_id: str
     module_address: str | None
     channel: int | None
-    release_task: asyncio.Task | None = None
-    timer_tasks: dict[int, asyncio.Task] = field(default_factory=dict)
+    release_task: asyncio.Task[None] | None = None
+    timer_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
     last_timer_threshold: int = 0
 
 
@@ -58,7 +58,7 @@ class NikobusActuator:
         self._dict_module_data = dict_module_data
         self._debounce_time_ms = 150
         self._press_states: dict[str, PressState] = {}
-        self._module_refresh_tasks: dict[str, asyncio.Task] = {}
+        self._module_refresh_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def handle_button_press(self, address: str) -> None:
         """Handle incoming button frames with debounce and duration tracking."""

@@ -113,14 +113,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_finished_event: asyncio.Event = asyncio.Event()
         self._discovery_finished_event.set()  # idle = already set
         self._discovery_auto_reload: bool = True
-        self._discovery_progress_task: asyncio.Task | None = None
+        self._discovery_progress_task: asyncio.Task[None] | None = None
         self._discovery_module_order: list[str] = []
         self._module_scan_frame_count: int = 0
         self._module_scan_last_index: int = -1
         # Monkey-patch state for counting commands sent during discovery
         self._original_send_command = None
         self._stopping: bool = False
-        self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_task: asyncio.Task[None] | None = None
         self._last_connected: datetime | None = None
         self._reconnect_attempts: int = 0
 
@@ -790,7 +790,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         # 1. Cancel background tasks FIRST.
         for task_attr in ("_reconnect_task", "_reload_task"):
-            task: asyncio.Task | None = getattr(self, task_attr, None)
+            task: asyncio.Task[None] | None = getattr(self, task_attr, None)
             if task and not task.done():
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
