@@ -135,5 +135,22 @@
                 "name": "Scanner les liens des modules"
             }
         }
+    },
+    "exceptions": {
+        "communication_error": {
+            "message": "Communication avec Nikobus échouée : {error}"
+        },
+        "discovery_already_running": {
+            "message": "Une découverte Nikobus est déjà en cours."
+        },
+        "discovery_not_initialized": {
+            "message": "La découverte Nikobus n'est pas initialisée."
+        },
+        "initialization_error": {
+            "message": "Échec de l'initialisation des composants Nikobus : {error}"
+        },
+        "no_loaded_entry": {
+            "message": "Aucune intégration Nikobus chargée. Configurez-en une avant d'appeler cette action."
+        }
     }
 }

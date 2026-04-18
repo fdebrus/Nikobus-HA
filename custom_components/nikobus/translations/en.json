@@ -103,6 +103,9 @@
         },
         "initialization_error": {
             "message": "Failed to initialize Nikobus components: {error}"
+        },
+        "no_loaded_entry": {
+            "message": "No loaded Nikobus integration found. Set one up before calling this action."
         }
     },
     "options": {

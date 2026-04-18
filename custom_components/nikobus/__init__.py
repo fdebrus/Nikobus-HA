@@ -1,4 +1,4 @@
-"""The Nikobus integration - Platinum Edition."""
+"""The Nikobus integration."""
 from __future__ import annotations
 
 import logging
@@ -6,9 +6,11 @@ from typing import Final
 
 import voluptuous as vol
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.components import (
     switch,
     light,
@@ -35,7 +37,60 @@ PLATFORMS: Final[list[str]] = [
     sensor.DOMAIN,
 ]
 
+SERVICE_QUERY_MODULE_INVENTORY: Final = "query_module_inventory"
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register integration-wide services."""
+
+    async def handle_module_discovery(call: ServiceCall) -> None:
+        """Trigger a Nikobus inventory scan via the coordinator's discovery engine."""
+        module_address = (call.data.get("module_address", "") or "").strip().upper()
+
+        coordinator = _loaded_coordinator(hass)
+        if coordinator is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_loaded_entry",
+            )
+        if coordinator.nikobus_discovery is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_not_initialized",
+            )
+        if coordinator.discovery_running:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
+
+        if not module_address:
+            _LOGGER.info("Starting manual Nikobus PC-Link inventory discovery")
+            coordinator.reset_discovery_counters()
+            await coordinator.nikobus_discovery.start_inventory_discovery()
+        else:
+            _LOGGER.info("Starting manual Nikobus discovery for module: %s", module_address)
+            await coordinator.nikobus_discovery.query_module_inventory(module_address)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_QUERY_MODULE_INVENTORY,
+        handle_module_discovery,
+        SCAN_MODULE_SCHEMA,
+    )
+    return True
+
+
+def _loaded_coordinator(hass: HomeAssistant) -> NikobusDataCoordinator | None:
+    """Return the coordinator of the first loaded Nikobus entry, or None."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is ConfigEntryState.LOADED:
+            return entry.runtime_data
+    return None
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
     """Set up the Nikobus integration (single-instance) without redundant handshakes."""
@@ -62,43 +117,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
     _register_hub_device(hass, entry)
 
-    # 3. Register Discovery Service
-    async def handle_module_discovery(call: ServiceCall) -> None:
-        """Manually trigger device discovery via the coordinator's discovery engine."""
-        module_address = (call.data.get("module_address", "") or "").strip().upper()
-        
-        if not module_address:
-            _LOGGER.info("Starting manual Nikobus PC-Link inventory discovery (#A)")
-            coordinator._discovery_found_data = False
-            coordinator._consecutive_empty_blocks = 0
-            if coordinator.nikobus_discovery:
-                await coordinator.nikobus_discovery.start_inventory_discovery()
-        else:
-            _LOGGER.info("Starting manual Nikobus discovery for module: %s", module_address)
-            if coordinator.nikobus_discovery:
-                await coordinator.nikobus_discovery.query_module_inventory(module_address)
-
-    if not hass.services.has_service(DOMAIN, "query_module_inventory"):
-        hass.services.async_register(
-            DOMAIN,
-            "query_module_inventory",
-            handle_module_discovery,
-            SCAN_MODULE_SCHEMA,
-        )
-
-    # 4. Forward setup to platforms FIRST
+    # 3. Forward setup to platforms FIRST
     # This allows entities to be created and register their dispatcher listeners.
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # 5. Reload when the user changes options via the OptionsFlow
+    # 4. Reload when the user changes options via the OptionsFlow
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
-    # 6. Trigger the first refresh
+    # 5. Trigger the first refresh
     # Since platforms are loaded, entities will correctly receive the "Targeted update signal".
     _LOGGER.debug("Performing initial Nikobus data synchronization")
     await coordinator.async_config_entry_first_refresh()
 
-    # 7. Clean up stale entities
+    # 6. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
     _LOGGER.info("Nikobus integration setup complete")
@@ -157,9 +188,4 @@ async def async_unload_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> 
     if coordinator:
         await coordinator.stop()
 
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    
-    if hass.services.has_service(DOMAIN, "query_module_inventory"):
-        hass.services.async_remove(DOMAIN, "query_module_inventory")
-
-    return unload_ok
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)

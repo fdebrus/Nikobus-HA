@@ -135,5 +135,22 @@
                 "name": "Alle modulekoppelingen scannen"
             }
         }
+    },
+    "exceptions": {
+        "communication_error": {
+            "message": "Communicatie met Nikobus mislukt: {error}"
+        },
+        "discovery_already_running": {
+            "message": "Er is al een Nikobus-ontdekking bezig."
+        },
+        "discovery_not_initialized": {
+            "message": "Nikobus-ontdekking is niet geïnitialiseerd."
+        },
+        "initialization_error": {
+            "message": "Initialisatie van Nikobus-componenten mislukt: {error}"
+        },
+        "no_loaded_entry": {
+            "message": "Geen geladen Nikobus-integratie gevonden. Stel er één in voordat u deze actie aanroept."
+        }
     }
 }

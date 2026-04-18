@@ -131,6 +131,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Return the shared module state buffer."""
         return self._module_states
 
+    def reset_discovery_counters(self) -> None:
+        """Clear the empty-block / found-data counters before a new scan."""
+        self._discovery_found_data = False
+        self._consecutive_empty_blocks = 0
+
     @property
     def connection_status(self) -> str:
         """Return 'connected', 'reconnecting', or 'disconnected'."""
