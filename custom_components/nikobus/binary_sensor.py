@@ -49,6 +49,8 @@ async def async_setup_entry(
 class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
     """Binary sensor representing a physical Nikobus button press."""
 
+    _attr_entity_registry_enabled_default = False
+
     def __init__(
         self,
         coordinator: NikobusDataCoordinator,

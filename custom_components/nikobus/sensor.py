@@ -172,6 +172,7 @@ class NikobusDiscoveryProgressSensor(_DiscoverySignalEntity):
     _attr_icon = "mdi:progress-clock"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         super().__init__(coordinator)
