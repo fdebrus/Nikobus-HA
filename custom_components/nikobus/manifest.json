@@ -8,7 +8,7 @@
   "config_flow": true,
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "quality_scale": "bronze",
+  "quality_scale": "gold",
   "requirements": [
     "aiofiles>=25.1.0",
     "pyserial-asyncio-fast>=0.16",
