@@ -24,6 +24,7 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         address: str,
         name: str,
         model: str,
+        via_device: tuple[str, str] | None = None,
     ) -> None:
         """Initialize the entity with shared device information."""
         super().__init__(coordinator)
@@ -32,12 +33,15 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         self._device_model = model
 
         # Platinum Architecture: Groups channels under a single physical device.
-        self._attr_device_info = dr.DeviceInfo(
+        device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, self._address)},
             name=self._device_name,
             manufacturer=BRAND,
             model=self._device_model,
         )
+        if via_device is not None:
+            device_info["via_device"] = via_device
+        self._attr_device_info = device_info
 
     @property
     def available(self) -> bool:

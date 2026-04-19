@@ -31,12 +31,48 @@ async def async_setup_entry(
 
     if coordinator.dict_button_data:
         buttons = coordinator.dict_button_data.get("nikobus_button", {})
+        register_wall_button_devices(hass, entry, buttons)
         entities.extend(
             NikobusButtonEntity(coordinator, addr, data)
             for addr, data in buttons.items()
         )
 
     async_add_entities(entities)
+
+
+def register_wall_button_devices(
+    hass: HomeAssistant,
+    entry: NikobusConfigEntry,
+    buttons: dict[str, Any],
+) -> None:
+    """Register one device per physical wall button (linked_button address).
+
+    Groups the 1..N software buttons of a keypad/IR remote under a single
+    parent device in the device registry. Idempotent: safe to call from
+    multiple platforms.
+    """
+    device_registry = dr.async_get(hass)
+    seen: set[str] = set()
+    for data in buttons.values():
+        if not isinstance(data, dict):
+            continue
+        for info in data.get("linked_button") or []:
+            if not isinstance(info, dict):
+                continue
+            address = info.get("address")
+            if not address or address in seen:
+                continue
+            seen.add(address)
+            model = info.get("model") or info.get("type") or "Wall Button"
+            name = info.get("type") or f"Wall Button {address}"
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, address)},
+                manufacturer=BRAND,
+                name=name,
+                model=model,
+                via_device=(DOMAIN, HUB_IDENTIFIER),
+            )
 
 
 def _hub_device_info() -> dr.DeviceInfo:
@@ -90,26 +126,46 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     """Representation of a Nikobus UI button (Software trigger)."""
 
     def __init__(
-        self, 
-        coordinator: NikobusDataCoordinator, 
-        address: str, 
+        self,
+        coordinator: NikobusDataCoordinator,
+        address: str,
         data: dict[str, Any]
     ) -> None:
         """Initialize the button entity."""
-        
+
         raw_desc = str(data.get("description", ""))
         name = raw_desc if raw_desc and "UndefinedType" not in raw_desc else f"Button {address}"
 
+        wall_info = coordinator.get_wall_button_info(address)
+        via_device = (DOMAIN, wall_info["address"]) if wall_info else (DOMAIN, HUB_IDENTIFIER)
+
         super().__init__(
-            coordinator=coordinator, 
-            address=address, 
-            name=name, 
-            model="Push Button"
+            coordinator=coordinator,
+            address=address,
+            name=name,
+            model="Push Button",
+            via_device=via_device,
         )
-        
+
         # Unique ID for the Home Assistant entity registry
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
         self._operation_time = data.get("operation_time")
+        self._wall_button = wall_info
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose wall-button parent info and linked module outputs."""
+        parent_attrs = super().extra_state_attributes or {}
+        attrs: dict[str, Any] = {
+            **parent_attrs,
+            "linked_outputs": self.coordinator.get_button_linked_outputs(self._address),
+        }
+        if self._wall_button:
+            attrs["wall_button_address"] = self._wall_button.get("address")
+            attrs["wall_button_model"] = self._wall_button.get("model")
+            attrs["wall_button_type"] = self._wall_button.get("type")
+            attrs["wall_button_key"] = self._wall_button.get("key")
+        return attrs
 
     async def async_press(self) -> None:
         """Execute the button press command on the Nikobus bus."""
