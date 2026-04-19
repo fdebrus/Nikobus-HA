@@ -38,7 +38,11 @@ PLATFORMS: Final[list[str]] = [
 ]
 
 SERVICE_QUERY_MODULE_INVENTORY: Final = "query_module_inventory"
+SERVICE_SEND_BUTTON_PRESS: Final = "send_button_press"
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
+SEND_BUTTON_PRESS_SCHEMA = vol.Schema({
+    vol.Required("address"): cv.string,
+})
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -80,6 +84,34 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_QUERY_MODULE_INVENTORY,
         handle_module_discovery,
         SCAN_MODULE_SCHEMA,
+    )
+
+    async def handle_send_button_press(call: ServiceCall) -> None:
+        """Fire a Nikobus button-press command on the bus for the given address.
+
+        Useful for virtual / IR-scene entries that are not part of discovery —
+        define them as scripts/automations calling this service.
+        """
+        address = (call.data.get("address", "") or "").strip().upper()
+        if not address:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="missing_button_address",
+            )
+
+        coordinator = _loaded_coordinator(hass)
+        if coordinator is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_loaded_entry",
+            )
+        await coordinator.async_event_handler("ha_button_pressed", {"address": address})
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SEND_BUTTON_PRESS,
+        handle_send_button_press,
+        SEND_BUTTON_PRESS_SCHEMA,
     )
     return True
 

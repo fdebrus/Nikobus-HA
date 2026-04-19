@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
@@ -31,19 +32,20 @@ async def async_setup_entry(
     """Set up Nikobus button sensor entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
 
-    if not coordinator.dict_button_data:
-        return
-
-    buttons = coordinator.dict_button_data.get("nikobus_button", {})
-    register_wall_button_devices(hass, entry, buttons)
+    buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
+    discovered = {
+        addr: data for addr, data in buttons.items()
+        if isinstance(data, dict) and data.get("linked_button")
+    }
+    register_wall_button_devices(hass, entry, discovered)
 
     async_add_entities(
         NikobusButtonBinarySensor(
             coordinator=coordinator,
             address=address,
-            description=data.get("description", f"Button {address}"),
+            description=f"Button {address}",
         )
-        for address, data in buttons.items()
+        for address in discovered
     )
 
 

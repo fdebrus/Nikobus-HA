@@ -5,3 +5,11 @@ query_module_inventory:
       required: false
       selector:
         text:
+
+send_button_press:
+  fields:
+    address:
+      example: "84DFFC"
+      required: true
+      selector:
+        text:

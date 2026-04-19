@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
-from os.path import commonprefix
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -35,13 +33,19 @@ async def async_setup_entry(
         NikobusModuleScanButton(coordinator),
     ]
 
-    if coordinator.dict_button_data:
-        buttons = coordinator.dict_button_data.get("nikobus_button", {})
-        register_wall_button_devices(hass, entry, buttons)
-        entities.extend(
-            NikobusButtonEntity(coordinator, addr, data)
-            for addr, data in buttons.items()
-        )
+    buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
+    # Only discovered buttons (those with at least one linked_button entry)
+    # become HA entities. Hand-added virtual entries are intentionally ignored —
+    # fire them from scripts/automations via ``nikobus.send_button_press``.
+    discovered = {
+        addr: data for addr, data in buttons.items()
+        if isinstance(data, dict) and data.get("linked_button")
+    }
+    register_wall_button_devices(hass, entry, discovered)
+    entities.extend(
+        NikobusButtonEntity(coordinator, addr, data)
+        for addr, data in discovered.items()
+    )
 
     async_add_entities(entities)
 
@@ -54,80 +58,33 @@ def register_wall_button_devices(
     """Register one device per physical wall button (linked_button address).
 
     Groups the 1..N software buttons of a keypad/IR remote under a single
-    parent device in the device registry. Idempotent: safe to call from
-    multiple platforms.
+    parent device in the device registry. The default name is taken straight
+    from the discovery metadata (``{type} ({address})``) so it is identical
+    for every user; HA preserves any user rename via ``name_by_user`` across
+    reloads. Idempotent: safe to call from multiple platforms.
     """
     device_registry = dr.async_get(hass)
-
-    # Pass 1: bucket soft-button descriptions by wall-button address.
-    grouped: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
     for data in buttons.values():
         if not isinstance(data, dict):
             continue
-        desc = str(data.get("description", "") or "")
         for info in data.get("linked_button") or []:
             if not isinstance(info, dict):
                 continue
             address = info.get("address")
-            if not address:
+            if not address or address in seen:
                 continue
-            bucket = grouped.setdefault(address, {"info": info, "children": []})
-            if desc:
-                bucket["children"].append(desc)
-
-    # Pass 2: register each wall-button device with a unique, meaningful name.
-    for address, bucket in grouped.items():
-        info = bucket["info"]
-        model = info.get("model") or info.get("type") or "Wall Button"
-        name = _wall_button_display_name(info, bucket["children"])
-        device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, address)},
-            manufacturer=BRAND,
-            name=name,
-            model=model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
-        )
-
-
-def _wall_button_display_name(info: dict[str, Any], child_descriptions: list[str]) -> str:
-    """Derive a unique, human-friendly name for a wall-button parent device.
-
-    Uses the longest common prefix of the soft-button descriptions so a keypad
-    whose children are ``BT_GF_Living_Sofa_Wall_Light_Up`` / ``…_Down`` /
-    ``…_Shutter_Open`` / ``…_Close`` is named ``BT_GF_Living_Sofa``. Falls back
-    to ``{type} ({address})`` when no useful prefix exists.
-    """
-    address = str(info.get("address") or "")
-    type_str = str(info.get("type") or info.get("model") or "Wall Button")
-
-    # Drop placeholder descriptions Nikobus auto-generates for unknown buttons:
-    # "DISCOVERED - Nikobus Button #NABCDEF", "Button with 8 Operation Points #NABCDEF",
-    # "Feedback Button with 4 Operation Points #NABCDEF", etc.
-    meaningful = [
-        d for d in child_descriptions
-        if d
-        and not d.startswith("DISCOVERED")
-        and "UndefinedType" not in d
-        and not re.search(r"#N[0-9A-Fa-f]+$", d)
-    ]
-    if len(meaningful) == 1:
-        return meaningful[0]
-    if len(meaningful) >= 2:
-        prefix = commonprefix(meaningful)
-        # If the common prefix stops mid-word ("BT_FF_Office_Light_O" from
-        # "…_On" / "…_Off"), trim back to the last natural separator.
-        if prefix and prefix[-1] not in " _-·/":
-            idx = max(prefix.rfind("_"), prefix.rfind("-"), prefix.rfind(" "))
-            if idx >= 3:
-                prefix = prefix[:idx]
-        prefix = prefix.rstrip(" _-·/")
-        # Require at least a couple of semantic chunks to avoid meaningless
-        # single-letter prefixes like "B" across unrelated buttons.
-        if prefix.count("_") >= 2 or len(prefix) >= 8:
-            return prefix
-
-    return f"{type_str} ({address})" if address else type_str
+            seen.add(address)
+            type_str = str(info.get("type") or info.get("model") or "Wall Button")
+            model = str(info.get("model") or info.get("type") or "Wall Button")
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, address)},
+                manufacturer=BRAND,
+                name=f"{type_str} ({address})",
+                model=model,
+                via_device=(DOMAIN, HUB_IDENTIFIER),
+            )
 
 
 def _hub_device_info() -> dr.DeviceInfo:
@@ -188,11 +145,9 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     ) -> None:
         """Initialize the button entity."""
 
-        raw_desc = str(data.get("description", ""))
-        name = raw_desc if raw_desc and "UndefinedType" not in raw_desc else f"Button {address}"
-
         wall_info = coordinator.get_wall_button_info(address)
         via_device = (DOMAIN, wall_info["address"]) if wall_info else (DOMAIN, HUB_IDENTIFIER)
+        name = f"Button {address}"
 
         super().__init__(
             coordinator=coordinator,
@@ -202,9 +157,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             via_device=via_device,
         )
 
-        # Unique ID for the Home Assistant entity registry
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
-        self._operation_time = data.get("operation_time")
         self._wall_button = wall_info
 
     @property
@@ -225,11 +178,9 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Execute the button press command on the Nikobus bus."""
         _LOGGER.debug("UI Button pressed for address: %s", self._address)
-        
-        await self.coordinator.async_event_handler("ha_button_pressed", {
-            "address": self._address,
-            "operation_time": self._operation_time,
-        })
+        await self.coordinator.async_event_handler(
+            "ha_button_pressed", {"address": self._address}
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:
