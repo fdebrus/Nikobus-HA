@@ -36,6 +36,9 @@ PLATFORMS: Final[list[str]] = [
 ]
 
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
+SEND_BUTTON_PRESS_SCHEMA = vol.Schema({
+    vol.Required("address"): cv.string,
+})
 
 async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
     """Set up the Nikobus integration (single-instance) without redundant handshakes."""
@@ -84,6 +87,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
             "query_module_inventory",
             handle_module_discovery,
             SCAN_MODULE_SCHEMA,
+        )
+
+    async def handle_send_button_press(call: ServiceCall) -> None:
+        """Fire a Nikobus button-press command on the bus for the given address.
+
+        Useful for virtual / IR-scene entries that are not part of discovery —
+        define them as scripts/automations calling this service.
+        """
+        address = (call.data.get("address", "") or "").strip().upper()
+        if not address:
+            _LOGGER.warning("nikobus.send_button_press called without address")
+            return
+        await coordinator.async_event_handler("ha_button_pressed", {"address": address})
+
+    if not hass.services.has_service(DOMAIN, "send_button_press"):
+        hass.services.async_register(
+            DOMAIN,
+            "send_button_press",
+            handle_send_button_press,
+            SEND_BUTTON_PRESS_SCHEMA,
         )
 
     # 4. Forward setup to platforms FIRST

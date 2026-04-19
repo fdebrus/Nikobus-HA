@@ -29,13 +29,19 @@ async def async_setup_entry(
         NikobusModuleScanButton(coordinator),
     ]
 
-    if coordinator.dict_button_data:
-        buttons = coordinator.dict_button_data.get("nikobus_button", {})
-        register_wall_button_devices(hass, entry, buttons)
-        entities.extend(
-            NikobusButtonEntity(coordinator, addr, data)
-            for addr, data in buttons.items()
-        )
+    buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
+    # Only discovered buttons (those with at least one linked_button entry)
+    # become HA entities. Hand-added virtual entries are intentionally ignored —
+    # fire them from scripts/automations via ``nikobus.send_button_press``.
+    discovered = {
+        addr: data for addr, data in buttons.items()
+        if isinstance(data, dict) and data.get("linked_button")
+    }
+    register_wall_button_devices(hass, entry, discovered)
+    entities.extend(
+        NikobusButtonEntity(coordinator, addr, data)
+        for addr, data in discovered.items()
+    )
 
     async_add_entities(entities)
 
@@ -135,11 +141,9 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     ) -> None:
         """Initialize the button entity."""
 
-        raw_desc = str(data.get("description", ""))
-        name = raw_desc if raw_desc and "UndefinedType" not in raw_desc else f"Button {address}"
-
         wall_info = coordinator.get_wall_button_info(address)
         via_device = (DOMAIN, wall_info["address"]) if wall_info else (DOMAIN, HUB_IDENTIFIER)
+        name = f"Button {address}"
 
         super().__init__(
             coordinator=coordinator,
@@ -149,9 +153,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             via_device=via_device,
         )
 
-        # Unique ID for the Home Assistant entity registry
         self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
-        self._operation_time = data.get("operation_time")
         self._wall_button = wall_info
 
     @property
@@ -172,11 +174,9 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Execute the button press command on the Nikobus bus."""
         _LOGGER.debug("UI Button pressed for address: %s", self._address)
-        
-        await self.coordinator.async_event_handler("ha_button_pressed", {
-            "address": self._address,
-            "operation_time": self._operation_time,
-        })
+        await self.coordinator.async_event_handler(
+            "ha_button_pressed", {"address": self._address}
+        )
 
     @callback
     def _handle_coordinator_update(self) -> None:

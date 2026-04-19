@@ -174,38 +174,42 @@ class NikobusActuator:
     async def button_discovery(self, address: str, press_context: Optional[Dict[str, Any]] = None) -> None:
         """Identify impacted modules and trigger targeted refreshes."""
         button_data = self._dict_button_data.get("nikobus_button", {}).get(address)
-
         if button_data:
             await self.process_button_modules(button_data, address, press_context)
         else:
-            # Auto-discovery for unconfigured buttons
-            new_button = {
-                "description": f"DISCOVERED - Nikobus Button #N{address}",
-                "address": address,
-                "impacted_module": [{"address": "", "group": ""}],
-            }
-            self._dict_button_data.setdefault("nikobus_button", {})[address] = new_button
-            try:
-                await self._coordinator.nikobus_config.write_json_data(
-                    "nikobus_button_config.json", "button", self._dict_button_data
-                )
-            except Exception as err:
-                _LOGGER.warning("Failed to persist discovered button %s to config: %s", address, err)
+            _LOGGER.debug("Press from unknown button %s — run discovery to populate it", address)
+
+    def _derive_impacted_modules(self, button_data: Dict[str, Any]) -> list[tuple[str, str]]:
+        """Return the unique (module_address, group) pairs this button affects.
+
+        Derived from ``linked_modules`` — channels 1-6 live in feedback group 1,
+        7-12 in group 2.
+        """
+        seen: set[tuple[str, str]] = set()
+        for link in button_data.get("linked_modules") or []:
+            if not isinstance(link, dict):
+                continue
+            module_address = (link.get("module_address") or "").upper()
+            if not module_address:
+                continue
+            for out in link.get("outputs") or []:
+                if not isinstance(out, dict):
+                    continue
+                channel = out.get("channel")
+                if not isinstance(channel, int):
+                    continue
+                group = "1" if channel <= 6 else "2"
+                seen.add((module_address, group))
+        return list(seen)
 
     async def process_button_modules(self, button_data: Dict[str, Any], button_address: str, press_context: Optional[Dict[str, Any]]) -> None:
         """Refresh states for specific modules impacted by this button."""
-        op_time = float(button_data.get("operation_time", 0))
         press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
-        
-        impacted_modules = button_data.get("impacted_module", [])
-        
-        _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted_modules))
 
-        for module_info in impacted_modules:
-            addr = (module_info.get("address") or "").upper()
-            group = module_info.get("group", "")
-            if not addr or not group:
-                continue
+        impacted = self._derive_impacted_modules(button_data)
+        _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted))
+
+        for addr, group in impacted:
 
             # Determine if this specific module is a dimmer BEFORE debouncing
             is_dimmer = addr in self._dict_module_data.get("dimmer_module", {})
@@ -227,7 +231,6 @@ class NikobusActuator:
                 duration=(press_context or {}).get("duration_s"),
                 bucket=(press_context or {}).get("bucket"),
                 extra={
-                    "button_operation_time": op_time,
                     "impacted_module_address": addr,
                     "impacted_module_group": group,
                 }
@@ -317,31 +320,22 @@ class NikobusActuator:
         self._hass.bus.async_fire(event_type, payload)
 
     def _derive_button_context(self, address: str) -> Tuple[Optional[str], Optional[int]]:
-        """Determine primary module/channel link for a button from config."""
+        """Determine the primary (module_address, channel) link from discovery."""
         button_data = self._dict_button_data.get("nikobus_button", {}).get(address, {})
-        impacted = button_data.get("impacted_module") or []
-        links = button_data.get("linked_modules") or []
-
-        # Try impacted_module first, skipping empty placeholder entries
-        module_addr = None
-        for entry in impacted:
-            if entry.get("address"):
-                module_addr = entry["address"]
-                break
-
-        channel = None
-
-        # Fall back to linked_modules if no configured impacted_module
-        if not module_addr and links:
-            first_link = links[0]
-            module_addr = first_link.get("module_address")
-            outputs = first_link.get("outputs")
+        for link in button_data.get("linked_modules") or []:
+            if not isinstance(link, dict):
+                continue
+            module_addr = link.get("module_address")
+            if not module_addr:
+                continue
+            channel: Optional[int] = None
+            outputs = link.get("outputs")
             if isinstance(outputs, list) and outputs:
                 ch_val = outputs[0].get("channel")
                 if isinstance(ch_val, int):
                     channel = ch_val
-
-        return (module_addr.upper() if module_addr else None, channel)
+            return (module_addr.upper(), channel)
+        return (None, None)
 
     def _get_bucket(self, duration: float) -> int:
         """Map press duration to a discrete bucket (0-3)."""

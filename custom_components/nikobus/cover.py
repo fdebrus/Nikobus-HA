@@ -25,7 +25,6 @@ from .const import (
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
     DOMAIN,
-    EVENT_BUTTON_OPERATION,
     EVENT_BUTTON_PRESSED,
     HUB_IDENTIFIER,
 )
@@ -166,11 +165,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         # that the in-transit position reflects actual elapsed travel time.
         self._last_button_press_monotonic: float | None = None
 
-        # Set by _handle_nikobus_event when EVENT_BUTTON_OPERATION carries a
-        # button-configured operation time (tilt / partial move).  Consumed by
-        # _handle_coordinator_update when starting the corresponding motion.
-        self._last_button_operation_time: float | None = None
-
     @property
     def current_cover_position(self) -> int:
         """Return the current position of the cover (0-100)."""
@@ -216,9 +210,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._position = float(pos)
                 self._calculator.set_position(self._position)
 
-        self.async_on_remove(
-            self.hass.bus.async_listen(EVENT_BUTTON_OPERATION, self._handle_nikobus_event)
-        )
         self.async_on_remove(
             self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_button_pressed)
         )
@@ -284,13 +275,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                     detection_latency = age
                 self._last_button_press_monotonic = None
 
-            # Consume any button-configured operation time (e.g. tilt / partial
-            # move) stored by _handle_nikobus_event.  Takes precedence over the
-            # default full-travel run limit.
-            op_time = self._last_button_operation_time
-            self._last_button_operation_time = None
-
-            self._start_motion_logic(direction, limit_time=op_time, detection_latency=detection_latency)
+            self._start_motion_logic(direction, detection_latency=detection_latency)
 
         super()._handle_coordinator_update()
 
@@ -321,24 +306,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             # Cover is moving — this press is a stop command.
             send_stop = (self._movement_source == "ha")
             await self._stop(send_stop=send_stop)
-
-    async def _handle_nikobus_event(self, event: Any) -> None:
-        """Capture button_operation_time from the Nikobus bus event payload.
-
-        EVENT_BUTTON_OPERATION fires before the state buffer is updated, so
-        motion tracking is deferred to _handle_coordinator_update which fires
-        after the buffer is refreshed.  This handler's only job is to store
-        any button-configured operation time (tilt / partial move) so that
-        _handle_coordinator_update can apply it when it starts the motion.
-        """
-        if str(event.data.get("impacted_module_address", "")).upper() != str(self._address).upper():
-            return
-        op_time = event.data.get("button_operation_time")
-        if op_time is not None:
-            try:
-                self._last_button_operation_time = float(op_time)
-            except (TypeError, ValueError):
-                pass
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open cover command."""
@@ -395,7 +362,6 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     def _start_motion_logic(
         self,
         direction: str,
-        limit_time: float | None = None,
         detection_latency: float = 0.0,
     ) -> None:
         """Initialize the virtual travel tracker."""
@@ -415,15 +381,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         # Sync position immediately so the UI reflects in-transit state.
         self._position = self._calculator.current_position()
 
-        if limit_time is not None:
-            # Button-configured operation time (tilt / partial move).
-            self._current_run_limit = float(limit_time)
-        else:
-            # Full-travel run limit, shortened by already-elapsed detection time.
-            self._current_run_limit = max(
-                DEFAULT_COVER_MOVEMENT_BUFFER,
-                active_op_time - detection_latency + DEFAULT_COVER_MOVEMENT_BUFFER,
-            )
+        # Full-travel run limit, shortened by already-elapsed detection time.
+        self._current_run_limit = max(
+            DEFAULT_COVER_MOVEMENT_BUFFER,
+            active_op_time - detection_latency + DEFAULT_COVER_MOVEMENT_BUFFER,
+        )
 
         self._motion_task = self.hass.async_create_task(self._motion_loop())
         self.async_write_ha_state()

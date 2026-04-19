@@ -37,6 +37,7 @@ from .const import (
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
+from .nkbstorage import NikobusButtonStorage
 
 # Typed config entry alias used across the integration. A plain alias
 # (instead of PEP 695 `type X = ...`) keeps compatibility with older
@@ -77,10 +78,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         self.nikobus_connection = NikobusConnect(self.connection_string)
         self.nikobus_config = NikobusConfig(hass)
+        self.button_storage = NikobusButtonStorage(hass)
         self.api: NikobusAPI | None = None
 
         self.dict_module_data: dict[str, Any] = {}
-        self.dict_button_data: dict[str, Any] = {}
+        self.dict_button_data: dict[str, Any] = {"nikobus_button": {}}
         self.dict_scene_data: dict[str, Any] = {}
 
         # Lazy cache: (module_address_upper, channel) -> [button records that trigger it]
@@ -170,9 +172,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             if discovered_modules:
                 self._merge_discovered_modules(discovered_modules)
 
-            self.dict_button_data = await self.nikobus_config.load_json_data(
-                "nikobus_button_config.json", "button"
-            ) or {"nikobus_button": {}}
+            self.dict_button_data = await self.button_storage.async_load()
             self.dict_scene_data = await self.nikobus_config.load_json_data(
                 "nikobus_scene_config.json", "scene"
             )
@@ -185,6 +185,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 self,
                 config_dir=self.hass.config.config_dir,
                 create_task=self.hass.async_create_task,
+                button_data=self.dict_button_data,
+                on_button_save=self.button_storage.async_save,
             )
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
 

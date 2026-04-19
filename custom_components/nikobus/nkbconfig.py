@@ -11,12 +11,9 @@ from .exceptions import NikobusDataError  # Updated import
 
 _LOGGER = logging.getLogger(__name__)
 _LOAD_TRANSFORMS: Dict[str, str] = {
-    "button": "_transform_button_data",
     "module": "_transform_module_data",
 }
-_WRITE_TRANSFORMS: Dict[str, str] = {
-    "button": "_transform_button_data_for_writing",
-}
+_WRITE_TRANSFORMS: Dict[str, str] = {}
 
 
 class NikobusConfig:
@@ -86,27 +83,6 @@ class NikobusConfig:
             return data
         return getattr(self, transform_name)(data)
 
-    def _transform_button_data(self, data: dict) -> dict:
-        """Transform button data from a list to a dictionary.
-
-        Also migrates legacy field names from nikobus-connect < 0.1.4:
-            discovered_info  → linked_button
-            discovered_links → linked_modules
-        """
-        if "nikobus_button" in data:
-            for button in data["nikobus_button"]:
-                if isinstance(button, dict):
-                    if "discovered_info" in button:
-                        button["linked_button"] = button.pop("discovered_info")
-                    if "discovered_links" in button:
-                        button["linked_modules"] = button.pop("discovered_links")
-            data["nikobus_button"] = {
-                button["address"]: button for button in data["nikobus_button"]
-            }
-        else:
-            _LOGGER.warning("'nikobus_button' key not found in button data")
-        return data
-
     def _transform_module_data(self, data: dict) -> dict:
         """Transform module data from a list to a dictionary."""
         for key in ["switch_module", "dimmer_module", "roller_module", "other_module"]:
@@ -166,12 +142,6 @@ class NikobusConfig:
                 "Run PC-Link inventory discovery to populate it.",
                 file_path,
             )
-        elif data_type == "button":
-            _LOGGER.info(
-                "Button configuration file not found: %s. "
-                "A new file will be created upon discovering the first button.",
-                file_path,
-            )
         else:
             _LOGGER.info(
                 "%s configuration file not found: %s. Skipping.",
@@ -184,7 +154,6 @@ class NikobusConfig:
         """Create an empty skeleton config file so the library can update it later."""
         _EMPTY_SKELETONS = {
             "module": {},
-            "button": {"nikobus_button": []},
             "scene": {},
         }
         skeleton = _EMPTY_SKELETONS.get(data_type, {})
@@ -259,12 +228,3 @@ class NikobusConfig:
         if not transform_name:
             return data
         return getattr(self, transform_name)(data)
-
-    def _transform_button_data_for_writing(self, data: dict) -> dict:
-        """Transform button data from a dictionary back to a list for saving."""
-        button_data_list = []
-        for address, details in data.get("nikobus_button", {}).items():
-            entry = dict(details)
-            entry["address"] = address
-            button_data_list.append(entry)
-        return {"nikobus_button": button_data_list}
