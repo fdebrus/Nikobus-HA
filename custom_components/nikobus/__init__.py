@@ -173,17 +173,25 @@ async def _async_cleanup_orphan_entities(
         if entity.unique_id not in valid_entity_ids:
             ent_reg.async_remove(entity.entity_id)
 
-    # Remove orphan devices (except the hub)
+    # Remove orphan devices (except the hub). A device is kept when it either
+    # has at least one entity of its own OR acts as the ``via_device`` parent
+    # of another device in this entry (e.g. a physical wall button that groups
+    # its soft-button children but has no entity of its own).
     hub_identifier = (DOMAIN, HUB_IDENTIFIER)
     devices_with_entities = {
         entity.device_id for entity in ent_reg.entities.values()
         if entity.config_entry_id == entry.entry_id and entity.device_id
     }
+    via_parent_ids = {
+        device.via_device_id for device in dev_reg.devices.values()
+        if device.via_device_id and entry.entry_id in device.config_entries
+    }
 
     for device in list(dev_reg.devices.values()):
         if entry.entry_id in device.config_entries and hub_identifier not in device.identifiers:
-            if device.id not in devices_with_entities:
-                dev_reg.async_remove_device(device.id)
+            if device.id in devices_with_entities or device.id in via_parent_ids:
+                continue
+            dev_reg.async_remove_device(device.id)
 
 async def async_unload_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
     """Unload the integration and stop background tasks."""
