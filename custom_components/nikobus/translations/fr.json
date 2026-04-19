@@ -106,10 +106,22 @@
     "entity": {
         "sensor": {
             "connection": {
-                "name": "Connexion"
+                "name": "Connexion",
+                "state": {
+                    "connected": "Connecté",
+                    "reconnecting": "Reconnexion en cours",
+                    "disconnected": "Déconnecté"
+                }
             },
             "discovery_status": {
-                "name": "Statut de la découverte"
+                "name": "Statut de la découverte",
+                "state": {
+                    "idle": "Inactif",
+                    "pc_link": "Inventaire PC Link",
+                    "module_scan": "Analyse des modules",
+                    "finished": "Terminé",
+                    "error": "Erreur"
+                }
             },
             "discovery_progress": {
                 "name": "Progression de la découverte"
@@ -122,6 +134,36 @@
             "scan_all_module_links": {
                 "name": "Scanner les liens des modules"
             }
+        }
+    },
+    "issues": {
+        "no_buttons_configured": {
+            "title": "Aucun bouton Nikobus configuré",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Découvrir les modules et boutons Nikobus",
+                        "description": "Home Assistant n'a détecté aucun bouton Nikobus. Lancez maintenant un inventaire PC-Link pour compléter la configuration."
+                    }
+                }
+            }
+        }
+    },
+    "exceptions": {
+        "communication_error": {
+            "message": "Communication avec Nikobus échouée : {error}"
+        },
+        "discovery_already_running": {
+            "message": "Une découverte Nikobus est déjà en cours."
+        },
+        "discovery_not_initialized": {
+            "message": "La découverte Nikobus n'est pas initialisée."
+        },
+        "initialization_error": {
+            "message": "Échec de l'initialisation des composants Nikobus : {error}"
+        },
+        "no_loaded_entry": {
+            "message": "Aucune intégration Nikobus chargée. Configurez-en une avant d'appeler cette action."
         }
     }
 }

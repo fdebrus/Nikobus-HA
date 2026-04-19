@@ -106,10 +106,22 @@
     "entity": {
         "sensor": {
             "connection": {
-                "name": "Verbinding"
+                "name": "Verbinding",
+                "state": {
+                    "connected": "Verbonden",
+                    "reconnecting": "Opnieuw verbinden",
+                    "disconnected": "Verbinding verbroken"
+                }
             },
             "discovery_status": {
-                "name": "Ontdekkingsstatus"
+                "name": "Ontdekkingsstatus",
+                "state": {
+                    "idle": "Inactief",
+                    "pc_link": "PC Link-inventaris",
+                    "module_scan": "Modules scannen",
+                    "finished": "Voltooid",
+                    "error": "Fout"
+                }
             },
             "discovery_progress": {
                 "name": "Ontdekkingsvoortgang"
@@ -122,6 +134,36 @@
             "scan_all_module_links": {
                 "name": "Alle modulekoppelingen scannen"
             }
+        }
+    },
+    "issues": {
+        "no_buttons_configured": {
+            "title": "Geen Nikobus-knoppen geconfigureerd",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Nikobus-modules en -knoppen ontdekken",
+                        "description": "Home Assistant heeft geen Nikobus-knoppen gedetecteerd. Voer nu een PC-Link-inventaris uit om de configuratie aan te vullen."
+                    }
+                }
+            }
+        }
+    },
+    "exceptions": {
+        "communication_error": {
+            "message": "Communicatie met Nikobus mislukt: {error}"
+        },
+        "discovery_already_running": {
+            "message": "Er is al een Nikobus-ontdekking bezig."
+        },
+        "discovery_not_initialized": {
+            "message": "Nikobus-ontdekking is niet geïnitialiseerd."
+        },
+        "initialization_error": {
+            "message": "Initialisatie van Nikobus-componenten mislukt: {error}"
+        },
+        "no_loaded_entry": {
+            "message": "Geen geladen Nikobus-integratie gevonden. Stel er één in voordat u deze actie aanroept."
         }
     }
 }

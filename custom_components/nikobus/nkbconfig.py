@@ -1,29 +1,33 @@
 """Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
 
+from __future__ import annotations
+
+import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 from aiofiles import open as aio_open
+from homeassistant.core import HomeAssistant
 
-from .exceptions import NikobusDataError  # Updated import
+from .exceptions import NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
-_LOAD_TRANSFORMS: Dict[str, str] = {
+_LOAD_TRANSFORMS: dict[str, str] = {
     "module": "_transform_module_data",
 }
-_WRITE_TRANSFORMS: Dict[str, str] = {}
+_WRITE_TRANSFORMS: dict[str, str] = {}
 
 
 class NikobusConfig:
     """Handles the loading and saving of Nikobus configuration data."""
 
-    def __init__(self, hass: Any) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the configuration handler."""
         self._hass = hass
 
-    async def load_json_data(self, file_name: str, data_type: str) -> dict:
+    async def load_json_data(self, file_name: str, data_type: str) -> dict[str, Any]:
         """Load JSON data from a file and transform it based on the data type."""
         file_path = self._hass.config.path(file_name)
         _LOGGER.info("Loading %s data from %s", data_type, file_path)
@@ -42,11 +46,13 @@ class NikobusConfig:
             _LOGGER.error("Failed to decode JSON in %s file: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to decode JSON in {data_type} file: {err}") from err
 
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
 
-    async def load_optional_json_data(self, file_name: str, data_type: str) -> dict:
+    async def load_optional_json_data(self, file_name: str, data_type: str) -> dict[str, Any]:
         """Load JSON data from a file, returning an empty dict if it does not exist."""
         file_path = self._hass.config.path(file_name)
         _LOGGER.debug("Loading optional %s data from %s", data_type, file_path)
@@ -68,6 +74,8 @@ class NikobusConfig:
             raise NikobusDataError(
                 f"Failed to decode JSON in optional {data_type} file: {err}"
             ) from err
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Failed to load optional %s data: %s", data_type, err, exc_info=True
@@ -76,14 +84,14 @@ class NikobusConfig:
                 f"Failed to load optional {data_type} data: {err}"
             ) from err
 
-    def _transform_loaded_data(self, data: dict, data_type: str) -> dict:
+    def _transform_loaded_data(self, data: dict[str, Any], data_type: str) -> dict[str, Any]:
         """Transform the loaded JSON data based on the data type."""
         transform_name = _LOAD_TRANSFORMS.get(data_type)
         if not transform_name:
             return data
         return getattr(self, transform_name)(data)
 
-    def _transform_module_data(self, data: dict) -> dict:
+    def _transform_module_data(self, data: dict[str, Any]) -> dict[str, Any]:
         """Transform module data from a list to a dictionary."""
         for key in ["switch_module", "dimmer_module", "roller_module", "other_module"]:
             if key not in data:
@@ -152,7 +160,7 @@ class NikobusConfig:
     @staticmethod
     async def _create_empty_config(file_path: str, data_type: str) -> None:
         """Create an empty skeleton config file so the library can update it later."""
-        _EMPTY_SKELETONS = {
+        _EMPTY_SKELETONS: dict[str, dict[str, Any]] = {
             "module": {},
             "scene": {},
         }
@@ -164,7 +172,9 @@ class NikobusConfig:
         except OSError as err:
             _LOGGER.warning("Could not create empty %s config: %s", data_type, err)
 
-    async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
+    async def write_json_data(
+        self, file_name: str, data_type: str, data: dict[str, Any]
+    ) -> None:
         """Write data to a JSON file, transforming it into a list format if necessary."""
         file_path = self._hass.config.path(file_name)
 
@@ -201,6 +211,8 @@ class NikobusConfig:
                 f"Failed to serialize {data_type} data to JSON: {err}"
             ) from err
 
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error writing %s data to file %s: %s",
@@ -222,7 +234,9 @@ class NikobusConfig:
         except OSError:
             pass
 
-    def _transform_data_for_writing(self, data_type: str, data: dict) -> dict:
+    def _transform_data_for_writing(
+        self, data_type: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Transform the data for writing based on the data type."""
         transform_name = _WRITE_TRANSFORMS.get(data_type)
         if not transform_name:

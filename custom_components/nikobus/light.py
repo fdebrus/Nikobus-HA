@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -17,6 +18,9 @@ from .entity import NikobusEntity
 from .router import build_unique_id, get_routing
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 0
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -87,7 +91,7 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
         self._is_on: bool | None = None
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return entity specific state attributes safely."""
         parent_attrs = super().extra_state_attributes or {}
         return {
@@ -117,7 +121,7 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
         super()._handle_coordinator_update()
 
     @callback
-    def _handle_nikobus_event(self, event: Any) -> None:
+    def _handle_nikobus_event(self, event: Event) -> None:
         """Handle physical button operation events."""
         if str(event.data.get("impacted_module_address")) != str(self._address):
             return
@@ -163,7 +167,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
         super()._handle_coordinator_update()
 
     @callback
-    def _handle_nikobus_event(self, event: Any) -> None:
+    def _handle_nikobus_event(self, event: Event) -> None:
         """Handle physical button operation events."""
         if str(event.data.get("impacted_module_address")) == str(self._address):
             self._optimistic_brightness = None
@@ -178,6 +182,8 @@ class NikobusDimmerEntity(NikobusBaseLight):
         
         try:
             await self.coordinator.api.turn_on_light(self._address, self._channel, target_brightness)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self._optimistic_brightness = None
@@ -192,6 +198,8 @@ class NikobusDimmerEntity(NikobusBaseLight):
         
         try:
             await self.coordinator.api.turn_off_light(self._address, self._channel)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             # Revert UI state on failure
             self._is_on = None
@@ -227,6 +235,8 @@ class NikobusRelayEntity(NikobusBaseLight):
         
         try:
             await self.coordinator.api.turn_on_switch(self._address, self._channel)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
@@ -239,6 +249,8 @@ class NikobusRelayEntity(NikobusBaseLight):
         
         try:
             await self.coordinator.api.turn_off_switch(self._address, self._channel)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
@@ -272,6 +284,8 @@ class NikobusCoverLightEntity(NikobusBaseLight):
         
         try:
             await self.coordinator.api.open_cover(self._address, self._channel)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
@@ -284,6 +298,8 @@ class NikobusCoverLightEntity(NikobusBaseLight):
         
         try:
             await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()

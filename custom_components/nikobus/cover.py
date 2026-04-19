@@ -14,7 +14,7 @@ from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -34,6 +34,8 @@ from .nkbtravelcalculator import NikobusTravelCalculator
 from .router import build_unique_id, get_routing
 
 _LOGGER = logging.getLogger(__name__)
+
+PARALLEL_UPDATES = 0
 
 
 def _parse_operation_time(value: Any, fallback: float, label: str, address: str) -> float:
@@ -153,9 +155,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._position: float = 100.0
         self._state = STATE_STOPPED
         self._target_position: int | None = None
-        self._motion_task: asyncio.Task | None = None
-        self._coalesce_task: asyncio.Task | None = None
-        self._error_recovery_task: asyncio.Task | None = None
+        self._motion_task: asyncio.Task[None] | None = None
+        self._coalesce_task: asyncio.Task[None] | None = None
+        self._error_recovery_task: asyncio.Task[None] | None = None
 
         self._movement_source = "ha"
         self._current_run_limit: float = 0.0
@@ -279,7 +281,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         super()._handle_coordinator_update()
 
-    async def _handle_button_pressed(self, event: Any) -> None:
+    async def _handle_button_pressed(self, event: Event) -> None:
         """Handle a physical Nikobus button press event.
 
         Records the press timestamp (for detection-latency calculation) only

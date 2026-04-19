@@ -16,6 +16,8 @@ from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
 
+PARALLEL_UPDATES = 0
+
 # Nikobus State Constants
 STATE_STOPPED = 0x00
 STATE_OPEN = 0x01
@@ -85,7 +87,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         
         # Guard against overlapping roller release tasks
         self._module_tokens: dict[str, str] = {}
-        self._roller_stop_tasks: list[asyncio.Task] = []
+        self._roller_stop_tasks: list[asyncio.Task[None]] = []
 
     async def async_added_to_hass(self) -> None:
         """Register cleanup of pending roller-stop tasks on removal."""
@@ -204,6 +206,8 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         _LOGGER.debug("Timed stop for rollers on module %s", module_id)
         try:
             await self._apply_module_state(module_id, stop_state)
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Failed to send timed stop for module %s: %s", module_id, err)
 

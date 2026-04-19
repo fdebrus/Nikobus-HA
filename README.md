@@ -69,11 +69,13 @@ source: "nikobus"
 
 You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses are recorded in `nikobus_button_config.json`).
 
-### Example Automation
+### Example Automations
+
+#### Short press: toggle a light
 
 ```yaml
 alias: "React to Nikobus Button Push"
-description: "Perform actions when a specific Nikobus button is pressed."
+description: "Toggle a light when a specific Nikobus button is pressed."
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
@@ -85,7 +87,66 @@ action:
       entity_id: light.example_light
 ```
 
-Place this YAML in a Home Assistant automation (UI or YAML) as you would for any other event trigger.
+#### Long press: dim a light progressively
+
+`nikobus_button_timer_2` fires once the button has been held for ≥ 2 s, allowing you to differentiate a sustained press from a tap. Combine it with `nikobus_button_pressed_3` (released after ≥ 3 s) to build a hold-to-dim behaviour.
+
+```yaml
+alias: "Hold Nikobus button to dim"
+description: "While the button is held past 2 s, dim the target light to 30 %."
+trigger:
+  - platform: event
+    event_type: nikobus_button_timer_2
+    event_data:
+      address: "004E2C"
+action:
+  - service: light.turn_on
+    target:
+      entity_id: light.living_room_dimmer
+    data:
+      brightness_pct: 30
+      transition: 1
+```
+
+#### Drive a scene from a physical Nikobus button
+
+```yaml
+alias: "All shutters down at sunset"
+description: "Close every roller via a Nikobus scene whenever button 25E952 is pressed after dusk."
+trigger:
+  - platform: event
+    event_type: nikobus_button_pressed
+    event_data:
+      address: " 25E952"   # leading space prevents YAML scientific-notation parsing
+condition:
+  - condition: sun
+    after: sunset
+action:
+  - service: scene.turn_on
+    target:
+      entity_id: scene.scene_close_all_shutters
+```
+
+#### Move a cover to an exact position
+
+`set_cover_position` works against the integration's virtual travel calculator, so the cover stops automatically when the requested position is reached.
+
+```yaml
+alias: "Living room cover at 60 % when 'TV' button pressed"
+trigger:
+  - platform: event
+    event_type: nikobus_button_pressed
+    event_data:
+      address: "C9A5"
+action:
+  - service: cover.set_cover_position
+    target:
+      entity_id: cover.living_room_blind
+    data:
+      position: 60
+```
+
+Place any of these YAML blocks in a Home Assistant automation (UI or YAML) as you would for any other event trigger.
 
 ## Scenes
 
@@ -160,6 +221,14 @@ If the connection drops for any reason, the integration will automatically attem
 ![TCP bridge example 1](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
 ![TCP bridge example 2](https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8)
 ![TCP bridge example 3](https://github.com/fdebrus/Nikobus-HA/assets/33791533/498e5a0f-ab75-4d29-9988-884015fbf05a)
+
+## Known Limitations
+
+- **Always quote button addresses in YAML.** A Nikobus button address is a six-character hex string (e.g. `25E952`). Addresses that contain only digits and the letter `E` happen to look like scientific notation to YAML 1.1 parsers — `25E952` is read as `25 × 10⁹⁵²`, overflows, and Home Assistant persists the value back as `null`. Home Assistant's automation editor may even strip your quotes on save. Workarounds: prefix the address with a leading space inside the quotes (`address: " 25E952"`), or use the integration's `button_id`-style identifiers in your trigger conditions when matching is critical. Addresses containing any letter `A`–`F` other than `E` (e.g. `9A93EE`) are unaffected.
+- **No bus-level discovery.** The PC-Link bridge does not advertise itself over mDNS, SSDP, or USB vendor-specific descriptors. The serial device path or TCP `host:port` must be entered manually.
+- **One client per bus.** Only one client may talk to the PC-Link at a time. Stop any other Nikobus software (the official PC tool, ioBroker, OpenHAB, etc.) before starting Home Assistant.
+- **Polling latency without a Feedback Module.** When no 05-207 Feedback Module is present, module states are read on the configured polling interval (60–3600 s, default 120 s). Physical button presses still trigger immediate targeted refreshes for the impacted modules, so day-to-day responsiveness is unaffected — but external changes (manual relay actuation, scenes triggered by another client) are only picked up on the next poll cycle.
+- **Single config entry per HA instance.** Two physically separate Nikobus installations cannot be paired with the same Home Assistant; the integration is designed for one bus per HA host.
 
 ## Setup Process
 
