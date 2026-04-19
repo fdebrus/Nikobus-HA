@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import re
-from os.path import commonprefix
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -50,80 +48,33 @@ def register_wall_button_devices(
     """Register one device per physical wall button (linked_button address).
 
     Groups the 1..N software buttons of a keypad/IR remote under a single
-    parent device in the device registry. Idempotent: safe to call from
-    multiple platforms.
+    parent device in the device registry. The default name is taken straight
+    from the discovery metadata (``{type} ({address})``) so it is identical
+    for every user; HA preserves any user rename via ``name_by_user`` across
+    reloads. Idempotent: safe to call from multiple platforms.
     """
     device_registry = dr.async_get(hass)
-
-    # Pass 1: bucket soft-button descriptions by wall-button address.
-    grouped: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
     for data in buttons.values():
         if not isinstance(data, dict):
             continue
-        desc = str(data.get("description", "") or "")
         for info in data.get("linked_button") or []:
             if not isinstance(info, dict):
                 continue
             address = info.get("address")
-            if not address:
+            if not address or address in seen:
                 continue
-            bucket = grouped.setdefault(address, {"info": info, "children": []})
-            if desc:
-                bucket["children"].append(desc)
-
-    # Pass 2: register each wall-button device with a unique, meaningful name.
-    for address, bucket in grouped.items():
-        info = bucket["info"]
-        model = info.get("model") or info.get("type") or "Wall Button"
-        name = _wall_button_display_name(info, bucket["children"])
-        device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, address)},
-            manufacturer=BRAND,
-            name=name,
-            model=model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
-        )
-
-
-def _wall_button_display_name(info: dict[str, Any], child_descriptions: list[str]) -> str:
-    """Derive a unique, human-friendly name for a wall-button parent device.
-
-    Uses the longest common prefix of the soft-button descriptions so a keypad
-    whose children are ``BT_GF_Living_Sofa_Wall_Light_Up`` / ``…_Down`` /
-    ``…_Shutter_Open`` / ``…_Close`` is named ``BT_GF_Living_Sofa``. Falls back
-    to ``{type} ({address})`` when no useful prefix exists.
-    """
-    address = str(info.get("address") or "")
-    type_str = str(info.get("type") or info.get("model") or "Wall Button")
-
-    # Drop placeholder descriptions Nikobus auto-generates for unknown buttons:
-    # "DISCOVERED - Nikobus Button #NABCDEF", "Button with 8 Operation Points #NABCDEF",
-    # "Feedback Button with 4 Operation Points #NABCDEF", etc.
-    meaningful = [
-        d for d in child_descriptions
-        if d
-        and not d.startswith("DISCOVERED")
-        and "UndefinedType" not in d
-        and not re.search(r"#N[0-9A-Fa-f]+$", d)
-    ]
-    if len(meaningful) == 1:
-        return meaningful[0]
-    if len(meaningful) >= 2:
-        prefix = commonprefix(meaningful)
-        # If the common prefix stops mid-word ("BT_FF_Office_Light_O" from
-        # "…_On" / "…_Off"), trim back to the last natural separator.
-        if prefix and prefix[-1] not in " _-·/":
-            idx = max(prefix.rfind("_"), prefix.rfind("-"), prefix.rfind(" "))
-            if idx >= 3:
-                prefix = prefix[:idx]
-        prefix = prefix.rstrip(" _-·/")
-        # Require at least a couple of semantic chunks to avoid meaningless
-        # single-letter prefixes like "B" across unrelated buttons.
-        if prefix.count("_") >= 2 or len(prefix) >= 8:
-            return prefix
-
-    return f"{type_str} ({address})" if address else type_str
+            seen.add(address)
+            type_str = str(info.get("type") or info.get("model") or "Wall Button")
+            model = str(info.get("model") or info.get("type") or "Wall Button")
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, address)},
+                manufacturer=BRAND,
+                name=f"{type_str} ({address})",
+                model=model,
+                via_device=(DOMAIN, HUB_IDENTIFIER),
+            )
 
 
 def _hub_device_info() -> dr.DeviceInfo:
