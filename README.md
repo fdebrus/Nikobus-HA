@@ -36,9 +36,10 @@ Before installing:
 - **Feedback Module** `05-207`
   - Can be used for connectivity and for status refresh based on its internal mechanism when combined with PC-Link. Without PC-Link, use a custom refresh interval.
 - **Nikobus Buttons** (physical switches, IR, Feedback, Remote)
+  - Populated automatically via the **Discover modules & buttons** and **Scan all module links** buttons on the Nikobus Bridge device.
   - Button press events can be used as triggers in Home Assistant automations.
   - Buttons with LEDs require LED on/off addresses in each module output configuration.
-  - Virtual buttons can be created in Home Assistant and mapped to Nikobus.
+  - Virtual / IR-scene button addresses that aren't on the bus can be fired from scripts via the `nikobus.send_button_press` service.
 - **Home Assistant Scenes**
   - Trigger multiple module/channel updates from one command.
 
@@ -67,7 +68,7 @@ threshold_s: 2            # Timer milestone that fired (1/2/3), otherwise null
 source: "nikobus"
 ```
 
-You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses are recorded in `nikobus_button_config.json`).
+You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses come from the button discovery run).
 
 ### Example Automations
 
@@ -80,7 +81,7 @@ trigger:
   - platform: event
     event_type: nikobus_button_pressed
     event_data:
-      address: "004E2C"  # Address from nikobus_button_config.json
+      address: "004E2C"  # Address taken from the button entity attributes after discovery
 action:
   - service: homeassistant.toggle
     target:
@@ -204,10 +205,10 @@ Scene activation only changes the channels you define; other channels remain unt
 
 The integration keeps Home Assistant synchronized with Nikobus using two complementary methods:
 
-1. **Button-driven refresh**: Make sure every physical button is listed in the button config file. When the button is pressed, the integration refreshes the impacted module(s) immediately.
-2. **Periodic refresh**: Choose either the integration’s custom refresh interval or the Feedback Module’s internal refresh (when connected via PC-Link).
+1. **Button-driven refresh**: Every discovered button carries its `linked_modules` mapping. When the button fires on the bus, the integration refreshes the impacted module group(s) immediately.
+2. **Periodic refresh**: Choose either the integration's custom refresh interval or the Feedback Module's internal refresh (when connected via PC-Link).
 
-If you rely solely on periodic refresh, Home Assistant may briefly be out of sync between refresh cycles. Keeping the button configuration complete provides the most accurate, immediate state updates.
+If you rely solely on periodic refresh, Home Assistant may briefly be out of sync between refresh cycles. Running discovery after adding new hardware keeps button-driven refreshes complete for the most accurate, immediate state updates.
 
 ## Connectivity Options
 
@@ -351,49 +352,59 @@ Open `nikobus_module_config.json` and complete the module definitions.
 
 ## Button Configuration
 
-When you press a Nikobus button for the first time, the integration discovers it and creates (or appends to) `nikobus_button_config.json` in your Home Assistant `/config` directory. After discovery, manually edit each button entry to list the impacted modules so state refreshes immediately after a press.
+Buttons are populated entirely by discovery — **there is no user-editable button JSON file**. All button data lives in Home Assistant's own storage at `.storage/nikobus.buttons` and is written by the integration after a discovery run. Migrating from an earlier release that used `config/nikobus_button_config.json`? See [Upgrading](#upgrading-from-pre-20-releases).
 
-- For 12-output modules, groups 1–6 map to module group 1; groups 7–12 map to module group 2. Six-output modules use group 1 only.
-- You can map a single button to multiple modules.
-- After editing the file, reload the integration via **Settings → Devices & Services → Nikobus → Reload** (a full HA restart is not required).
+### Populate buttons via discovery
 
-### Discovered Button Example
+Go to **Settings → Devices & Services → Nikobus** and press the two buttons on the Nikobus Bridge device:
 
-```json
-{
-  "description": "DISCOVERED - Nikobus Button #N4ECB1A",
-  "address": "4ECB1A",
-  "impacted_module": [
-    {"address": "", "group": ""}
-  ]
-}
+1. **Discover modules & buttons** — scans the PC-Link inventory. Every physical button found on the bus becomes a Home Assistant entity under a wall-button parent device.
+2. **Scan all module links** — walks each output module and records which button addresses drive which channels, populating the `linked_modules` metadata on each button.
+
+After discovery, each software button entity exposes its linkage as attributes:
+
+```yaml
+linked_outputs:
+  - module_address: "0E6C"
+    channel: 1
+    mode: "M01 (Dim on/off (2 buttons))"
+    t1: null
+    t2: null
+wall_button_address: "0D1C80"
+wall_button_model: "05-348"
+wall_button_type: "IR Button with 4 Operation Points"
+wall_button_key: "1C"
 ```
 
-### Updated Button Example
+Every light, cover, and switch entity mirrors this with a `controlled_by` attribute that lists the buttons triggering it — so you can answer "which wall button turns on this light?" from the entity page without parsing config.
 
-```json
-{
-  "description": "Kitchen Light On",
-  "address": "4ECB1A",
-  "impacted_module": [
-    {"address": "4707", "group": "1"},
-    {"address": "C9A5", "group": "2"}
-  ]
-}
+Impacted module groups are derived automatically from `linked_modules` (channels 1–6 → group 1, 7–12 → group 2), so state refreshes after a press work out of the box.
+
+### Renaming buttons
+
+Discovered devices get names like `Button with 2 Operation Points (1E584C)`. To give them a friendlier name, rename the device in the HA UI (**Settings → Devices & Services → Nikobus → ⋮ → Rename**). HA stores that as `name_by_user` and preserves it across reloads, restarts, and re-runs of discovery.
+
+### Virtual / IR-scene buttons
+
+Button addresses that are not present on the physical bus (IR scene triggers, Harmony plug codes, hand-added entries from older releases) are no longer exposed as entities. Fire them from scripts or automations instead:
+
+```yaml
+service: nikobus.send_button_press
+data:
+  address: "84DFFC"
 ```
 
-If a button controls a shutter, set `operation_time` (in seconds) on the button entry to match the time needed to move fully so the integration can stop the shutter after the desired duration.
+This emits a `#N<address>` frame on the bus just as a physical press would, and every automation listening on the corresponding `nikobus_button_pressed` event fires normally.
 
-```json
-{
-  "description": "BT_GF_Office_Shutter_Close",
-  "address": "C86C4E",
-  "operation_time": "5",
-  "impacted_module": [
-    {"address": "8394", "group": "1"}
-  ]
-}
-```
+### Upgrading from pre-2.0 releases
+
+Older versions of the integration persisted button data in `config/nikobus_button_config.json`, often hand-edited with descriptions, `impacted_module` entries, and `operation_time` values. As of 2.0 that file is ignored. To migrate:
+
+1. Full HA restart after upgrading the integration and the pinned `nikobus-connect` library.
+2. Run both discovery buttons from the Nikobus Bridge device.
+3. Rename devices in the UI if you want semantic names (HA remembers them).
+4. Rebuild any virtual / scene buttons as scripts calling the `nikobus.send_button_press` service.
+5. The old `nikobus_button_config.json` is safe to leave on disk or delete — nothing reads it anymore.
 
 ## Protocol
 
@@ -408,7 +419,8 @@ This is a short, repo-aligned excerpt. Full details are in `docs/nikobus-protoco
 ## How the Integration Works
 
 - **nkbconnect**: Connects Home Assistant to Nikobus over TCP/IP or USB and performs the handshake so commands are echoed on the bus.
-- **nkbconfig**: Reads and validates the user-provided configuration files. Because the inventory is not discoverable from the bus, you must define all modules and buttons. The button file is created automatically on first discovery but should be edited to add descriptions and impacted modules.
+- **nkbconfig**: Reads and validates the user-provided module configuration file. Modules still need a hand-edited JSON (channels, operation times, entity overrides). Buttons are handled separately — see **nkbstorage**.
+- **nkbstorage**: Persists button discovery data in Home Assistant's `.storage/nikobus.buttons` file. Discovery populates it directly; there is no user-editable button JSON.
 - **nkblistener**: Listens for messages on the Nikobus bus and hands them off for processing (button press, feedback module command, module responses, etc.). Includes logic for handling long button presses.
 - **nkbcommand**: Provides a queued command processor to throttle bursts of commands (e.g., closing all shutters), adding a short pause between consecutive commands and implementing a retry strategy when reading from a busy bus.
 
