@@ -10,7 +10,8 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .const import DOMAIN, EVENT_BUTTON_PRESSED
+from .button import register_wall_button_devices
+from .const import DOMAIN, EVENT_BUTTON_PRESSED, HUB_IDENTIFIER
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 
@@ -34,6 +35,7 @@ async def async_setup_entry(
         return
 
     buttons = coordinator.dict_button_data.get("nikobus_button", {})
+    register_wall_button_devices(hass, entry, buttons)
 
     async_add_entities(
         NikobusButtonBinarySensor(
@@ -57,18 +59,37 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         description: str,
     ) -> None:
         """Initialize the button binary sensor."""
+        wall_info = coordinator.get_wall_button_info(address)
+        via_device = (DOMAIN, wall_info["address"]) if wall_info else (DOMAIN, HUB_IDENTIFIER)
         super().__init__(
             coordinator=coordinator,
             address=address,
             name=description,
             model="Physical Button",
+            via_device=via_device,
         )
         self._address = address
         self._attr_name = description
         self._attr_unique_id = f"{DOMAIN}_button_{address}"
-        
+        self._wall_button = wall_info
+
         self._attr_is_on = False
         self._reset_timer_cancel: CALLBACK_TYPE | None = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose wall-button parent info and linked module outputs."""
+        parent_attrs = super().extra_state_attributes or {}
+        attrs: dict[str, Any] = {
+            **parent_attrs,
+            "linked_outputs": self.coordinator.get_button_linked_outputs(self._address),
+        }
+        if self._wall_button:
+            attrs["wall_button_address"] = self._wall_button.get("address")
+            attrs["wall_button_model"] = self._wall_button.get("model")
+            attrs["wall_button_type"] = self._wall_button.get("type")
+            attrs["wall_button_key"] = self._wall_button.get("key")
+        return attrs
 
     @property
     def state(self) -> str:

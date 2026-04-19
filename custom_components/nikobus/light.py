@@ -101,6 +101,7 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
             "channel_description": self._channel_description,
             "module_description": self._module_description,
             "module_model": self._module_model,
+            "controlled_by": self.coordinator.get_controlled_by(self._address, self._channel),
         }
 
     async def async_added_to_hass(self) -> None:

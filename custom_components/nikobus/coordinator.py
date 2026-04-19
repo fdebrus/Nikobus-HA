@@ -85,6 +85,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.dict_button_data: dict[str, Any] = {}
         self.dict_scene_data: dict[str, Any] = {}
 
+        # Lazy cache: (module_address_upper, channel) -> [button records that trigger it]
+        self._controlled_by_index: dict[tuple[str, int], list[dict[str, Any]]] | None = None
+
         self.nikobus_actuator: NikobusActuator | None = None
         self.nikobus_listener: NikobusEventListener | None = None
         self.nikobus_command: NikobusCommandHandler | None = None
@@ -656,6 +659,99 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     if isinstance(ch, int) and ch > 0:
                         return ch
         return None
+
+    # ------------------------------------------------------------------
+    # Discovery link helpers (wall button parents + controlled_by index)
+    # ------------------------------------------------------------------
+
+    def get_wall_button_info(self, button_address: str) -> dict[str, Any] | None:
+        """Return the physical wall-button record a software button belongs to.
+
+        Reads the first entry of ``linked_button`` for the given software
+        button address. Returns ``None`` if the button has never been discovered.
+        """
+        button = (self.dict_button_data or {}).get("nikobus_button", {}).get(button_address)
+        if not isinstance(button, dict):
+            return None
+        for info in button.get("linked_button") or []:
+            if isinstance(info, dict) and info.get("address"):
+                return info
+        return None
+
+    def get_button_linked_outputs(self, button_address: str) -> list[dict[str, Any]]:
+        """Return flattened output links for a software button.
+
+        Each item: ``{module_address, channel, mode, t1, t2}``.
+        """
+        button = (self.dict_button_data or {}).get("nikobus_button", {}).get(button_address)
+        if not isinstance(button, dict):
+            return []
+        flattened: list[dict[str, Any]] = []
+        for link in button.get("linked_modules") or []:
+            if not isinstance(link, dict):
+                continue
+            module_address = link.get("module_address")
+            for out in link.get("outputs") or []:
+                if not isinstance(out, dict):
+                    continue
+                flattened.append({
+                    "module_address": module_address,
+                    "channel": out.get("channel"),
+                    "mode": out.get("mode"),
+                    "t1": out.get("t1"),
+                    "t2": out.get("t2"),
+                })
+        return flattened
+
+    def _build_controlled_by_index(self) -> dict[tuple[str, int], list[dict[str, Any]]]:
+        """Build a (module_address_upper, channel) -> list[button record] index."""
+        index: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        buttons = (self.dict_button_data or {}).get("nikobus_button", {})
+        for soft_addr, button in buttons.items():
+            if not isinstance(button, dict):
+                continue
+            description = button.get("description") or f"Button {soft_addr}"
+            wall_info = next(
+                (i for i in (button.get("linked_button") or []) if isinstance(i, dict)),
+                None,
+            )
+            wall_addr = (wall_info or {}).get("address") if wall_info else None
+            wall_key = (wall_info or {}).get("key") if wall_info else None
+            for link in button.get("linked_modules") or []:
+                if not isinstance(link, dict):
+                    continue
+                module_address = link.get("module_address")
+                if not module_address:
+                    continue
+                module_key = str(module_address).upper()
+                for out in link.get("outputs") or []:
+                    if not isinstance(out, dict):
+                        continue
+                    channel = out.get("channel")
+                    if not isinstance(channel, int):
+                        continue
+                    index.setdefault((module_key, channel), []).append({
+                        "button_address": soft_addr,
+                        "description": description,
+                        "mode": out.get("mode"),
+                        "t1": out.get("t1"),
+                        "t2": out.get("t2"),
+                        "wall_button_address": wall_addr,
+                        "wall_button_key": wall_key,
+                    })
+        return index
+
+    def get_controlled_by(self, module_address: str, channel: int) -> list[dict[str, Any]]:
+        """Return the buttons that trigger a given ``(module_address, channel)``."""
+        if self._controlled_by_index is None:
+            self._controlled_by_index = self._build_controlled_by_index()
+        return self._controlled_by_index.get(
+            (str(module_address).upper(), int(channel)), []
+        )
+
+    def invalidate_controlled_by_index(self) -> None:
+        """Drop the cached controlled-by index — call after discovery updates."""
+        self._controlled_by_index = None
 
     def get_cover_operation_time(
         self, module_id: str, channel: int, direction: str = "up", default: float = 30.0

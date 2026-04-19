@@ -207,6 +207,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             "operation_time_up": self._calculator.time_up,
             "operation_time_down": self._calculator.time_down,
             "movement_source": self._movement_source,
+            "controlled_by": self.coordinator.get_controlled_by(self._address, self._channel),
         }
 
     async def async_added_to_hass(self) -> None:
