@@ -155,10 +155,12 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         self._physical_address = physical_address
         self._key_label = key_label
 
+        name = op_point.get("description") or f"Push button {key_label}"
+
         super().__init__(
             coordinator=coordinator,
             address=bus_addr,
-            name=f"Button {key_label}",
+            name=name,
             model="Push Button",
             via_device=(DOMAIN, physical_address),
         )
