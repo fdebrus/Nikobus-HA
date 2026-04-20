@@ -16,7 +16,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
-from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
+from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType, find_operation_point
 from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
 from .const import (
@@ -651,45 +651,53 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         Called by nikobus-connect decoders to derive the push-button (bus)
         address from the physical device address found in module firmware.
-        Looks up ``linked_button[].address`` across all button entries.
+        Looks up the top-level ``channels`` field on the physical entry
+        (schema v2).
         """
         normalized = (button_address or "").upper()
-        for button in (self.dict_button_data or {}).get("nikobus_button", {}).values():
-            for info in button.get("linked_button") or []:
-                if isinstance(info, dict) and (info.get("address") or "").upper() == normalized:
-                    ch = info.get("channels")
-                    if isinstance(ch, int) and ch > 0:
-                        return ch
+        phys = (self.dict_button_data or {}).get("nikobus_button", {}).get(normalized)
+        if isinstance(phys, dict):
+            ch = phys.get("channels")
+            if isinstance(ch, int) and ch > 0:
+                return ch
         return None
 
     # ------------------------------------------------------------------
     # Discovery link helpers (wall button parents + controlled_by index)
     # ------------------------------------------------------------------
 
-    def get_wall_button_info(self, button_address: str) -> dict[str, Any] | None:
-        """Return the physical wall-button record a software button belongs to.
+    def get_wall_button_info(self, bus_address: str) -> dict[str, Any] | None:
+        """Return the physical-button record a soft button (bus address) belongs to.
 
-        Reads the first entry of ``linked_button`` for the given software
-        button address. Returns ``None`` if the button has never been discovered.
+        Shape: ``{type, model, address, channels, key}``. Returns ``None`` when
+        the bus address is not part of any discovered physical button.
         """
-        button = (self.dict_button_data or {}).get("nikobus_button", {}).get(button_address)
-        if not isinstance(button, dict):
+        hit = find_operation_point(self.dict_button_data, bus_address)
+        if hit is None:
             return None
-        for info in button.get("linked_button") or []:
-            if isinstance(info, dict) and info.get("address"):
-                return info
-        return None
+        physical_addr, key_label, _op_point = hit
+        phys = (self.dict_button_data or {}).get("nikobus_button", {}).get(physical_addr)
+        if not isinstance(phys, dict):
+            return None
+        return {
+            "type": phys.get("type"),
+            "model": phys.get("model"),
+            "address": physical_addr,
+            "channels": phys.get("channels"),
+            "key": key_label,
+        }
 
-    def get_button_linked_outputs(self, button_address: str) -> list[dict[str, Any]]:
-        """Return flattened output links for a software button.
+    def get_button_linked_outputs(self, bus_address: str) -> list[dict[str, Any]]:
+        """Return flattened output links for a soft button (bus address).
 
         Each item: ``{module_address, channel, mode, t1, t2}``.
         """
-        button = (self.dict_button_data or {}).get("nikobus_button", {}).get(button_address)
-        if not isinstance(button, dict):
+        hit = find_operation_point(self.dict_button_data, bus_address)
+        if hit is None:
             return []
+        _physical_addr, _key_label, op_point = hit
         flattened: list[dict[str, Any]] = []
-        for link in button.get("linked_modules") or []:
+        for link in op_point.get("linked_modules") or []:
             if not isinstance(link, dict):
                 continue
             module_address = link.get("module_address")
@@ -709,38 +717,39 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """Build a (module_address_upper, channel) -> list[button record] index."""
         index: dict[tuple[str, int], list[dict[str, Any]]] = {}
         buttons = (self.dict_button_data or {}).get("nikobus_button", {})
-        for soft_addr, button in buttons.items():
-            if not isinstance(button, dict):
+        for physical_addr, phys in buttons.items():
+            if not isinstance(phys, dict):
                 continue
-            description = button.get("description") or f"Button {soft_addr}"
-            wall_info = next(
-                (i for i in (button.get("linked_button") or []) if isinstance(i, dict)),
-                None,
-            )
-            wall_addr = (wall_info or {}).get("address") if wall_info else None
-            wall_key = (wall_info or {}).get("key") if wall_info else None
-            for link in button.get("linked_modules") or []:
-                if not isinstance(link, dict):
+            op_points = phys.get("operation_points") or {}
+            if not isinstance(op_points, dict):
+                continue
+            for key_label, op_point in op_points.items():
+                if not isinstance(op_point, dict):
                     continue
-                module_address = link.get("module_address")
-                if not module_address:
-                    continue
-                module_key = str(module_address).upper()
-                for out in link.get("outputs") or []:
-                    if not isinstance(out, dict):
+                bus_addr = op_point.get("bus_address") or ""
+                description = op_point.get("description") or f"Button {bus_addr}"
+                for link in op_point.get("linked_modules") or []:
+                    if not isinstance(link, dict):
                         continue
-                    channel = out.get("channel")
-                    if not isinstance(channel, int):
+                    module_address = link.get("module_address")
+                    if not module_address:
                         continue
-                    index.setdefault((module_key, channel), []).append({
-                        "button_address": soft_addr,
-                        "description": description,
-                        "mode": out.get("mode"),
-                        "t1": out.get("t1"),
-                        "t2": out.get("t2"),
-                        "wall_button_address": wall_addr,
-                        "wall_button_key": wall_key,
-                    })
+                    module_key = str(module_address).upper()
+                    for out in link.get("outputs") or []:
+                        if not isinstance(out, dict):
+                            continue
+                        channel = out.get("channel")
+                        if not isinstance(channel, int):
+                            continue
+                        index.setdefault((module_key, channel), []).append({
+                            "bus_address": bus_addr,
+                            "description": description,
+                            "mode": out.get("mode"),
+                            "t1": out.get("t1"),
+                            "t2": out.get("t2"),
+                            "wall_button_address": physical_addr,
+                            "wall_button_key": key_label,
+                        })
         return index
 
     def get_controlled_by(self, module_address: str, channel: int) -> list[dict[str, Any]]:
@@ -923,9 +932,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         for specs in routing.values():
             for spec in specs:
                 known.add(build_unique_id(spec.domain, spec.kind, spec.address, spec.channel))
-        for addr in self.dict_button_data.get("nikobus_button", {}):
-            known.add(f"{DOMAIN}_button_{addr}")
-            known.add(f"{DOMAIN}_push_button_{addr}")
+        for phys in self.dict_button_data.get("nikobus_button", {}).values():
+            if not isinstance(phys, dict):
+                continue
+            for op_point in (phys.get("operation_points") or {}).values():
+                if not isinstance(op_point, dict):
+                    continue
+                if bus_addr := op_point.get("bus_address"):
+                    known.add(f"{DOMAIN}_button_{bus_addr}")
+                    known.add(f"{DOMAIN}_push_button_{bus_addr}")
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")

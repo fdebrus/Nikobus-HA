@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
 from .button import register_wall_button_devices
-from .const import DOMAIN, EVENT_BUTTON_PRESSED, HUB_IDENTIFIER
+from .const import DOMAIN, EVENT_BUTTON_PRESSED
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 
@@ -33,64 +33,71 @@ async def async_setup_entry(
     coordinator: NikobusDataCoordinator = entry.runtime_data
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-    discovered = {
-        addr: data for addr, data in buttons.items()
-        if isinstance(data, dict) and data.get("linked_button")
-    }
-    register_wall_button_devices(hass, entry, discovered)
+    register_wall_button_devices(hass, entry, buttons)
 
-    async_add_entities(
-        NikobusButtonBinarySensor(
-            coordinator=coordinator,
-            address=address,
-            description=f"Button {address}",
-        )
-        for address in discovered
-    )
+    entities: list[NikobusButtonBinarySensor] = []
+    for physical_addr, phys in buttons.items():
+        if not isinstance(phys, dict):
+            continue
+        for key_label, op_point in (phys.get("operation_points") or {}).items():
+            if not isinstance(op_point, dict):
+                continue
+            bus_addr = op_point.get("bus_address")
+            if not bus_addr:
+                continue
+            entities.append(
+                NikobusButtonBinarySensor(coordinator, physical_addr, key_label, op_point)
+            )
+    async_add_entities(entities)
 
 
 class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
-    """Binary sensor representing a physical Nikobus button press."""
+    """Binary sensor representing a physical Nikobus button press.
+
+    One entity per ``(physical_address, key_label)`` pair; grouped under the
+    physical-button device in the registry.
+    """
 
     _attr_entity_registry_enabled_default = False
 
     def __init__(
         self,
         coordinator: NikobusDataCoordinator,
-        address: str,
-        description: str,
+        physical_address: str,
+        key_label: str,
+        op_point: dict[str, Any],
     ) -> None:
         """Initialize the button binary sensor."""
-        wall_info = coordinator.get_wall_button_info(address)
-        via_device = (DOMAIN, wall_info["address"]) if wall_info else (DOMAIN, HUB_IDENTIFIER)
+        bus_addr = op_point["bus_address"]
+        self._physical_address = physical_address
+        self._key_label = key_label
         super().__init__(
             coordinator=coordinator,
-            address=address,
-            name=description,
+            address=bus_addr,
+            name=f"Button {key_label}",
             model="Physical Button",
-            via_device=via_device,
+            via_device=(DOMAIN, physical_address),
         )
-        self._address = address
-        self._attr_name = description
-        self._attr_unique_id = f"{DOMAIN}_button_{address}"
-        self._wall_button = wall_info
+        self._address = bus_addr
+        self._attr_unique_id = f"{DOMAIN}_button_{bus_addr}"
 
         self._attr_is_on = False
         self._reset_timer_cancel: CALLBACK_TYPE | None = None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose wall-button parent info and linked module outputs."""
+        """Expose physical-button parent info and linked module outputs."""
         parent_attrs = super().extra_state_attributes or {}
         attrs: dict[str, Any] = {
             **parent_attrs,
             "linked_outputs": self.coordinator.get_button_linked_outputs(self._address),
+            "wall_button_address": self._physical_address,
+            "wall_button_key": self._key_label,
         }
-        if self._wall_button:
-            attrs["wall_button_address"] = self._wall_button.get("address")
-            attrs["wall_button_model"] = self._wall_button.get("model")
-            attrs["wall_button_type"] = self._wall_button.get("type")
-            attrs["wall_button_key"] = self._wall_button.get("key")
+        wall_info = self.coordinator.get_wall_button_info(self._address)
+        if wall_info:
+            attrs["wall_button_model"] = wall_info.get("model")
+            attrs["wall_button_type"] = wall_info.get("type")
         return attrs
 
     @property

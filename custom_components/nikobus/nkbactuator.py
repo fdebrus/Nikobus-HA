@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
+from nikobus_connect.discovery import find_operation_point
+
 from .const import (
     BUTTON_TIMER_THRESHOLDS,
     DIMMER_DELAY,
@@ -178,20 +180,21 @@ class NikobusActuator:
 
     async def button_discovery(self, address: str, press_context: dict[str, Any] | None = None) -> None:
         """Identify impacted modules and trigger targeted refreshes."""
-        button_data = self._dict_button_data.get("nikobus_button", {}).get(address)
-        if button_data:
-            await self.process_button_modules(button_data, address, press_context)
-        else:
+        hit = find_operation_point(self._dict_button_data, address)
+        if hit is None:
             _LOGGER.debug("Press from unknown button %s — run discovery to populate it", address)
+            return
+        _physical_addr, _key_label, op_point = hit
+        await self.process_button_modules(op_point, address, press_context)
 
-    def _derive_impacted_modules(self, button_data: dict[str, Any]) -> list[tuple[str, str]]:
-        """Return the unique (module_address, group) pairs this button affects.
+    def _derive_impacted_modules(self, op_point: dict[str, Any]) -> list[tuple[str, str]]:
+        """Return the unique (module_address, group) pairs this op-point affects.
 
         Derived from ``linked_modules`` — channels 1-6 live in feedback group 1,
         7-12 in group 2.
         """
         seen: set[tuple[str, str]] = set()
-        for link in button_data.get("linked_modules") or []:
+        for link in op_point.get("linked_modules") or []:
             if not isinstance(link, dict):
                 continue
             module_address = (link.get("module_address") or "").upper()
@@ -207,11 +210,11 @@ class NikobusActuator:
                 seen.add((module_address, group))
         return list(seen)
 
-    async def process_button_modules(self, button_data: dict[str, Any], button_address: str, press_context: dict[str, Any] | None) -> None:
-        """Refresh states for specific modules impacted by this button."""
+    async def process_button_modules(self, op_point: dict[str, Any], button_address: str, press_context: dict[str, Any] | None) -> None:
+        """Refresh states for specific modules impacted by this op-point."""
         press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
 
-        impacted = self._derive_impacted_modules(button_data)
+        impacted = self._derive_impacted_modules(op_point)
         _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted))
 
         for addr, group in impacted:
@@ -328,8 +331,11 @@ class NikobusActuator:
 
     def _derive_button_context(self, address: str) -> tuple[str | None, int | None]:
         """Determine the primary (module_address, channel) link from discovery."""
-        button_data = self._dict_button_data.get("nikobus_button", {}).get(address, {})
-        for link in button_data.get("linked_modules") or []:
+        hit = find_operation_point(self._dict_button_data, address)
+        if hit is None:
+            return (None, None)
+        _physical_addr, _key_label, op_point = hit
+        for link in op_point.get("linked_modules") or []:
             if not isinstance(link, dict):
                 continue
             module_addr = link.get("module_address")
