@@ -34,20 +34,30 @@ async def async_setup_entry(
     ]
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-    # Only discovered buttons (those with at least one linked_button entry)
-    # become HA entities. Hand-added virtual entries are intentionally ignored —
-    # fire them from scripts/automations via ``nikobus.send_button_press``.
-    discovered = {
-        addr: data for addr, data in buttons.items()
-        if isinstance(data, dict) and data.get("linked_button")
-    }
-    register_wall_button_devices(hass, entry, discovered)
-    entities.extend(
-        NikobusButtonEntity(coordinator, addr, data)
-        for addr, data in discovered.items()
-    )
+    register_wall_button_devices(hass, entry, buttons)
+    entities.extend(_iter_button_entities(coordinator, buttons))
 
     async_add_entities(entities)
+
+
+def _iter_button_entities(
+    coordinator: NikobusDataCoordinator,
+    buttons: dict[str, Any],
+):
+    """Yield one NikobusButtonEntity per discovered operation point."""
+    for physical_addr, phys in buttons.items():
+        if not isinstance(phys, dict):
+            continue
+        op_points = phys.get("operation_points") or {}
+        if not isinstance(op_points, dict):
+            continue
+        for key_label, op_point in op_points.items():
+            if not isinstance(op_point, dict):
+                continue
+            bus_addr = op_point.get("bus_address")
+            if not bus_addr:
+                continue
+            yield NikobusButtonEntity(coordinator, physical_addr, key_label, op_point)
 
 
 def register_wall_button_devices(
@@ -55,36 +65,28 @@ def register_wall_button_devices(
     entry: NikobusConfigEntry,
     buttons: dict[str, Any],
 ) -> None:
-    """Register one device per physical wall button (linked_button address).
+    """Register one device per physical wall button (top-level address).
 
-    Groups the 1..N software buttons of a keypad/IR remote under a single
-    parent device in the device registry. The default name is taken straight
-    from the discovery metadata (``{type} ({address})``) so it is identical
-    for every user; HA preserves any user rename via ``name_by_user`` across
-    reloads. Idempotent: safe to call from multiple platforms.
+    Groups the N operation-points of a keypad/IR remote under a single parent
+    device in the device registry. The default name is taken straight from
+    the discovery metadata (``{type} ({address})``) so it is identical for
+    every installation; HA preserves any user rename via ``name_by_user``
+    across reloads. Idempotent: safe to call from multiple platforms.
     """
     device_registry = dr.async_get(hass)
-    seen: set[str] = set()
-    for data in buttons.values():
-        if not isinstance(data, dict):
+    for physical_addr, phys in buttons.items():
+        if not isinstance(phys, dict):
             continue
-        for info in data.get("linked_button") or []:
-            if not isinstance(info, dict):
-                continue
-            address = info.get("address")
-            if not address or address in seen:
-                continue
-            seen.add(address)
-            type_str = str(info.get("type") or info.get("model") or "Wall Button")
-            model = str(info.get("model") or info.get("type") or "Wall Button")
-            device_registry.async_get_or_create(
-                config_entry_id=entry.entry_id,
-                identifiers={(DOMAIN, address)},
-                manufacturer=BRAND,
-                name=f"{type_str} ({address})",
-                model=model,
-                via_device=(DOMAIN, HUB_IDENTIFIER),
-            )
+        type_str = str(phys.get("type") or phys.get("model") or "Wall Button")
+        model = str(phys.get("model") or phys.get("type") or "Wall Button")
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, physical_addr)},
+            manufacturer=BRAND,
+            name=f"{type_str} ({physical_addr})",
+            model=model,
+            via_device=(DOMAIN, HUB_IDENTIFIER),
+        )
 
 
 def _hub_device_info() -> dr.DeviceInfo:
@@ -135,44 +137,48 @@ class NikobusModuleScanButton(ButtonEntity):
 
 
 class NikobusButtonEntity(NikobusEntity, ButtonEntity):
-    """Representation of a Nikobus UI button (Software trigger)."""
+    """Representation of a Nikobus operation-point (software trigger).
+
+    One entity per ``(physical_address, key_label)`` pair; grouped under the
+    physical-button device in the registry.
+    """
 
     def __init__(
         self,
         coordinator: NikobusDataCoordinator,
-        address: str,
-        data: dict[str, Any]
+        physical_address: str,
+        key_label: str,
+        op_point: dict[str, Any],
     ) -> None:
         """Initialize the button entity."""
-
-        wall_info = coordinator.get_wall_button_info(address)
-        via_device = (DOMAIN, wall_info["address"]) if wall_info else (DOMAIN, HUB_IDENTIFIER)
-        name = f"Button {address}"
+        bus_addr = op_point["bus_address"]
+        self._physical_address = physical_address
+        self._key_label = key_label
 
         super().__init__(
             coordinator=coordinator,
-            address=address,
-            name=name,
+            address=bus_addr,
+            name=f"Button {key_label}",
             model="Push Button",
-            via_device=via_device,
+            via_device=(DOMAIN, physical_address),
         )
 
-        self._attr_unique_id = f"{DOMAIN}_push_button_{address}"
-        self._wall_button = wall_info
+        self._attr_unique_id = f"{DOMAIN}_push_button_{bus_addr}"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose wall-button parent info and linked module outputs."""
+        """Expose physical-button parent info and linked module outputs."""
         parent_attrs = super().extra_state_attributes or {}
         attrs: dict[str, Any] = {
             **parent_attrs,
             "linked_outputs": self.coordinator.get_button_linked_outputs(self._address),
+            "wall_button_address": self._physical_address,
+            "wall_button_key": self._key_label,
         }
-        if self._wall_button:
-            attrs["wall_button_address"] = self._wall_button.get("address")
-            attrs["wall_button_model"] = self._wall_button.get("model")
-            attrs["wall_button_type"] = self._wall_button.get("type")
-            attrs["wall_button_key"] = self._wall_button.get("key")
+        wall_info = self.coordinator.get_wall_button_info(self._address)
+        if wall_info:
+            attrs["wall_button_model"] = wall_info.get("model")
+            attrs["wall_button_type"] = wall_info.get("type")
         return attrs
 
     async def async_press(self) -> None:
