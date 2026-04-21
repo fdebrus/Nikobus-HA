@@ -1,4 +1,9 @@
-"""Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
+"""Nikobus Configuration Handler - Load / Write configuration files for Nikobus.
+
+As of nikobus-connect 0.4.0 the module store lives in the HA Store
+(``.storage/nikobus.modules``). This handler only manages the scene config
+file today; the module/button paths are intentionally absent.
+"""
 
 from __future__ import annotations
 
@@ -14,9 +19,7 @@ from homeassistant.core import HomeAssistant
 from .exceptions import NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
-_LOAD_TRANSFORMS: dict[str, str] = {
-    "module": "_transform_module_data",
-}
+_LOAD_TRANSFORMS: dict[str, str] = {}
 _WRITE_TRANSFORMS: dict[str, str] = {}
 
 
@@ -91,77 +94,18 @@ class NikobusConfig:
             return data
         return getattr(self, transform_name)(data)
 
-    def _transform_module_data(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Transform module data from a list to a dictionary."""
-        for key in ["switch_module", "dimmer_module", "roller_module", "other_module"]:
-            if key not in data:
-                continue
-            modules = data[key]
-            if isinstance(modules, list):
-                data[key] = {
-                    module["address"]: self._normalize_module_channels(module)
-                    for module in modules
-                    if module.get("address")
-                }
-            elif isinstance(modules, dict):
-                normalized: dict[str, dict[str, Any]] = {}
-                for address, module in modules.items():
-                    if not isinstance(module, dict):
-                        _LOGGER.warning(
-                            "Skipping module %s with invalid data type: %s",
-                            address,
-                            type(module),
-                        )
-                        continue
-                    module_data = dict(module)
-                    module_data.setdefault("address", address)
-                    normalized[address] = self._normalize_module_channels(module_data)
-                data[key] = normalized
-            else:
-                _LOGGER.warning(
-                    "Unsupported module data type for %s: %s", key, type(modules)
-                )
-                data[key] = {}
-        return data
-
-    @staticmethod
-    def _normalize_module_channels(module: dict[str, Any]) -> dict[str, Any]:
-        """Normalize module channel definitions to a list of channel dicts."""
-        channels = module.get("channels", [])
-        if isinstance(channels, int):
-            module["channels"] = [
-                {"description": f"Channel {idx}"} for idx in range(1, channels + 1)
-            ]
-            return module
-        if isinstance(channels, list):
-            module["channels"] = [
-                channel if isinstance(channel, dict) else {"description": str(channel)}
-                for channel in channels
-            ]
-            return module
-        module["channels"] = []
-        return module
-
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:
         """Handle the case where the configuration file is not found."""
-        if data_type == "module":
-            _LOGGER.info(
-                "Module configuration file not found: %s. "
-                "Run PC-Link inventory discovery to populate it.",
-                file_path,
-            )
-        else:
-            _LOGGER.info(
-                "%s configuration file not found: %s. Skipping.",
-                data_type.capitalize(),
-                file_path,
-            )
+        _LOGGER.info(
+            "%s configuration file not found: %s. Skipping.",
+            data_type.capitalize(),
+            file_path,
+        )
 
     @staticmethod
     async def _create_empty_config(file_path: str, data_type: str) -> None:
         """Create an empty skeleton config file so the library can update it later."""
         _EMPTY_SKELETONS: dict[str, dict[str, Any]] = {
-            "module": {},
             "scene": {},
         }
         skeleton = _EMPTY_SKELETONS.get(data_type, {})

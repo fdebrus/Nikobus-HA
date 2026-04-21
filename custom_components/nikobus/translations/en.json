@@ -125,7 +125,13 @@
         "abort": {
             "discovery_done": "Discovery finished. The integration is reloading and the newly-discovered entities will appear shortly.",
             "discovery_error": "Discovery failed: {error}",
-            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."
+            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
+            "no_modules": "No Nikobus modules are configured yet. Run a PC-Link inventory discovery first.",
+            "module_not_found": "The selected module was not found in storage.",
+            "channel_not_found": "The selected channel was not found."
+        },
+        "error": {
+            "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty)."
         },
         "progress": {
             "discovery": "{message}"
@@ -154,6 +160,7 @@
             "init": {
                 "description": "What would you like to do?",
                 "menu_options": {
+                    "configure_modules": "Customize a module (description, entity type, LED triggers, travel time)",
                     "discovery_modules": "Scan all modules for button links",
                     "discovery_pc_link": "Discover modules & buttons (PC Link inventory)",
                     "hardware": "Change hardware settings"
@@ -169,6 +176,33 @@
                 },
                 "description": "How often should Home Assistant poll the Nikobus bus for state changes?",
                 "title": "Polling Interval"
+            },
+            "configure_modules": {
+                "title": "Customize a Nikobus module",
+                "description": "Pick a module to edit. Discovery-owned fields (model, address, channel count) stay read-only; only user-facing fields (descriptions, entity types, LED triggers, travel times) can be changed here.",
+                "data": {
+                    "module": "Module"
+                }
+            },
+            "edit_module": {
+                "title": "Module {address} ({module_type})",
+                "description": "Model: {model}. Edit the module description or pick a channel to customize.",
+                "data": {
+                    "description": "Module description",
+                    "channel": "Channel"
+                }
+            },
+            "edit_channel": {
+                "title": "Module {address} — channel {channel}",
+                "description": "Configure how this channel appears in Home Assistant. Set `entity_type` to `none` to hide the channel entirely.",
+                "data": {
+                    "entity_type": "Entity type",
+                    "description": "Channel description",
+                    "led_on": "LED-on trigger (6-hex bus address, optional)",
+                    "led_off": "LED-off trigger (6-hex bus address, optional)",
+                    "operation_time_up": "Travel time up (seconds)",
+                    "operation_time_down": "Travel time down (seconds)"
+                }
             }
         }
     },
