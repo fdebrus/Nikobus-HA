@@ -26,6 +26,24 @@ DISCOVERY_PHASE_MODULE_SCAN: Final[str] = "module_scan"
 DISCOVERY_PHASE_FINISHED: Final[str] = "finished"
 DISCOVERY_PHASE_ERROR: Final[str] = "error"
 
+# Fine-grained sub-phases exposed via ``discovery_sub_phase``. The high-level
+# ``discovery_phase`` stays on the legacy enum so existing automations keep
+# working: ``inventory`` + ``identity`` map back to ``pc_link``;
+# ``register_scan`` + ``finalizing`` map back to ``module_scan``.
+DISCOVERY_SUB_PHASE_IDLE: Final[str] = "idle"
+DISCOVERY_SUB_PHASE_INVENTORY: Final[str] = "inventory"
+DISCOVERY_SUB_PHASE_IDENTITY: Final[str] = "identity"
+DISCOVERY_SUB_PHASE_REGISTER_SCAN: Final[str] = "register_scan"
+DISCOVERY_SUB_PHASE_FINALIZING: Final[str] = "finalizing"
+DISCOVERY_SUB_PHASE_FINISHED: Final[str] = "finished"
+DISCOVERY_SUB_PHASE_ERROR: Final[str] = "error"
+
+# Weighting for the 0-100 progress sensor. Must sum to 100.
+DISCOVERY_WEIGHT_INVENTORY: Final[int] = 10
+DISCOVERY_WEIGHT_IDENTITY: Final[int] = 20
+DISCOVERY_WEIGHT_REGISTER_SCAN: Final[int] = 65
+DISCOVERY_WEIGHT_FINALIZING: Final[int] = 5
+
 # =============================================================================
 # Repair issues
 # =============================================================================
