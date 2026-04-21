@@ -226,19 +226,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 create_task=self.hass.async_create_task,
                 button_data=self.dict_button_data,
                 on_button_save=self.button_storage.async_save,
+                on_progress=self._handle_discovery_progress,
             )
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
-            # 0.3.5+ exposes a structured progress callback. Attach defensively
-            # — on older libraries the attribute is ignored and the legacy
-            # frame-callback path keeps the basic UI working.
-            if hasattr(self.nikobus_discovery, "on_progress"):
-                self.nikobus_discovery.on_progress = self._handle_discovery_progress
-            else:
-                _LOGGER.warning(
-                    "nikobus-connect does not expose on_progress; discovery UI will "
-                    "show coarse-grained state only. Upgrade to >=0.3.5 for the "
-                    "phase-aware tracker."
-                )
 
             # 2. Create listener with a single event_callback and feedback_callback
             self.nikobus_listener = NikobusEventListener(
@@ -414,41 +404,38 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         DISCOVERY_SUB_PHASE_ERROR: DISCOVERY_PHASE_ERROR,
     }
 
-    async def _handle_discovery_progress(self, event: dict[str, Any]) -> None:
-        """Consume a progress event emitted by nikobus-connect 0.3.5+.
+    async def _handle_discovery_progress(self, progress: Any) -> None:
+        """Consume a ``DiscoveryProgress`` event emitted by nikobus-connect 0.3.5+.
 
-        Event payload (TypedDict-shaped, fields optional):
+        ``progress`` is a ``nikobus_connect.discovery.DiscoveryProgress``
+        dataclass with: ``phase``, ``module_address``, ``module_index``,
+        ``module_total``, ``register``, ``register_total``,
+        ``decoded_records``. The library emits one of the four real phases
+        (``inventory`` / ``identity`` / ``register_scan`` / ``finalizing``);
+        idle / finished / error states are handled by the caller's own
+        ``_handle_discovery_finished`` and error-path code.
 
-        - ``phase``: one of ``inventory`` / ``identity`` / ``register_scan``
-          / ``finalizing`` / ``idle`` / ``finished`` / ``error``.
-        - ``module_current``: address being scanned (``register_scan``).
-        - ``module_index`` / ``module_total``: 1-based position + total.
-        - ``register_current`` / ``register_total``: ``0x10``–``0xFF``.
-        - ``decoded_records``: running count of decoded links.
-
-        The library pushes a snapshot on every phase transition and every
-        N registers within ``register_scan``. The callback is fire-and-
-        forget from the library's perspective; exceptions here must not
-        bubble back into the scan loop.
+        Exceptions raised here are swallowed — the library treats this
+        callback as fire-and-forget and must not be stalled by UI plumbing.
         """
         try:
-            sub_phase = str(event.get("phase") or DISCOVERY_SUB_PHASE_IDLE)
+            sub_phase = str(getattr(progress, "phase", "") or DISCOVERY_SUB_PHASE_IDLE)
             legacy_phase = self._SUB_TO_LEGACY_PHASE.get(
                 sub_phase, self.discovery_phase
             )
 
-            module_current = event.get("module_current")
-            module_index = int(event.get("module_index") or 0)
-            module_total = int(event.get("module_total") or 0)
-            register_current = event.get("register_current")
-            register_total = int(event.get("register_total") or 0)
-            decoded_records = int(event.get("decoded_records") or 0)
+            module_address = getattr(progress, "module_address", None)
+            module_index = int(getattr(progress, "module_index", 0) or 0)
+            module_total = int(getattr(progress, "module_total", 0) or 0)
+            register = getattr(progress, "register", None)
+            register_total = int(getattr(progress, "register_total", 0) or 0)
+            decoded_records = int(getattr(progress, "decoded_records", 0) or 0)
 
             registers_done = 0
-            if register_current is not None and register_total:
+            if register is not None and register_total:
                 # Registers start at 0x10, so done-count is (current - 0x10 + 1).
                 try:
-                    cur = int(register_current)
+                    cur = int(register)
                     registers_done = max(0, cur - 0x10 + 1)
                 except (TypeError, ValueError):
                     registers_done = 0
@@ -462,33 +449,29 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     else "Identifying modules…"
                 )
             elif sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
-                if module_current:
+                if module_address:
                     message = (
-                        f"Scanning module {module_current} "
+                        f"Scanning module {module_address} "
                         f"({module_index}/{module_total}) — "
-                        f"register 0x{int(register_current or 0):02X} of 0xFF "
+                        f"register 0x{int(register or 0):02X} of 0xFF "
                         f"({decoded_records} records)"
                     )
                 else:
                     message = f"Scanning modules ({module_index}/{module_total})"
             elif sub_phase == DISCOVERY_SUB_PHASE_FINALIZING:
                 message = f"Merging {decoded_records} discovered records…"
-            elif sub_phase == DISCOVERY_SUB_PHASE_FINISHED:
-                message = f"Discovery complete — {decoded_records} records decoded."
-            elif sub_phase == DISCOVERY_SUB_PHASE_ERROR:
-                message = event.get("message") or "Discovery failed"
             else:
                 message = self.discovery_status_message
 
             self.discovery_sub_phase = sub_phase
             self.discovery_decoded_records = decoded_records
             self.discovery_register_current = (
-                int(register_current) if register_current is not None else None
+                int(register) if register is not None else None
             )
             self._update_discovery_state(
                 phase=legacy_phase,
                 message=message,
-                current_module=module_current if module_current else None,
+                current_module=module_address if module_address else None,
                 modules_done=max(0, module_index - 1),
                 modules_total=module_total,
                 registers_done=registers_done,
