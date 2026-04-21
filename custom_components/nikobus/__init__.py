@@ -1,10 +1,13 @@
 """The Nikobus integration."""
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import Final
 
 import voluptuous as vol
+from aiofiles import open as aio_open
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -164,7 +167,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     # 6. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
-    # 7. Surface repair issues for actionable misconfigurations.
+    # 7. One-shot: migrate legacy per-button descriptions to device name_by_user.
+    await _async_migrate_legacy_button_names(hass)
+
+    # 8. Surface repair issues for actionable misconfigurations.
     coordinator.refresh_repair_issues()
 
     _LOGGER.info("Nikobus integration setup complete")
@@ -224,6 +230,105 @@ async def _async_cleanup_orphan_entities(
             if device.id in devices_with_entities or device.id in via_parent_ids:
                 continue
             dev_reg.async_remove_device(device.id)
+
+_LEGACY_BUTTON_CONFIG_FILE: Final = "nikobus_button_config.json"
+
+
+async def _async_migrate_legacy_button_names(hass: HomeAssistant) -> None:
+    """One-shot: copy per-button ``description`` from the legacy JSON to HA.
+
+    Versions prior to the v2 schema persisted user-edited names in
+    ``config/nikobus_button_config.json``, keyed by bus address. That file is
+    no longer read or written by the integration (button data now lives in
+    ``.storage/nikobus.buttons``), so any custom names the user typed in the
+    old file are invisible.
+
+    This function loads the legacy file when present, walks its entries, and
+    applies each entry's ``description`` to the matching HA device's
+    ``name_by_user`` — only when the user has not already renamed the device
+    via the UI. Wall-button parent devices are new to the v2 schema and do
+    not appear in the legacy file, so they are never touched.
+
+    On success the file is renamed to ``.migrated`` so the migration runs
+    exactly once per installation. Errors are logged and swallowed; the
+    integration continues to start normally even if the migration fails.
+    """
+    file_path = hass.config.path(_LEGACY_BUTTON_CONFIG_FILE)
+    if not await hass.async_add_executor_job(os.path.isfile, file_path):
+        return
+
+    try:
+        async with aio_open(file_path, mode="r") as fh:
+            raw = await fh.read()
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as err:
+        _LOGGER.warning(
+            "Legacy button config at %s is unreadable — skipping name migration: %s",
+            file_path,
+            err,
+        )
+        return
+
+    entries = data.get("nikobus_button", []) if isinstance(data, dict) else []
+    if not isinstance(entries, list) or not entries:
+        _LOGGER.debug("Legacy button config has no entries to migrate")
+        return
+
+    # Build {bus_address_upper: description}, skipping auto-generated placeholders.
+    name_map: dict[str, str] = {}
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        addr = str(item.get("address") or "").upper()
+        desc = item.get("description")
+        if not addr or not isinstance(desc, str) or not desc.strip():
+            continue
+        if desc.startswith("DISCOVERED"):
+            continue
+        name_map[addr] = desc
+
+    if not name_map:
+        _LOGGER.debug("Legacy button config has no user-written names to migrate")
+        return
+
+    dev_reg = dr.async_get(hass)
+    applied = 0
+    skipped_existing = 0
+    unmatched: list[str] = []
+
+    for addr, desc in name_map.items():
+        device = dev_reg.async_get_device(identifiers={(DOMAIN, addr)})
+        if device is None:
+            unmatched.append(addr)
+            continue
+        if device.name_by_user:
+            skipped_existing += 1
+            continue
+        dev_reg.async_update_device(device.id, name_by_user=desc)
+        applied += 1
+
+    migrated_path = file_path + ".migrated"
+    try:
+        await hass.async_add_executor_job(os.replace, file_path, migrated_path)
+    except OSError as err:
+        _LOGGER.warning(
+            "Could not rename %s to %s after migration: %s",
+            file_path,
+            migrated_path,
+            err,
+        )
+
+    _LOGGER.info(
+        "Migrated %d button name(s) from legacy config; skipped %d already-renamed, "
+        "%d address(es) had no matching device. File renamed to %s.",
+        applied,
+        skipped_existing,
+        len(unmatched),
+        migrated_path,
+    )
+    if unmatched:
+        _LOGGER.debug("Unmatched legacy addresses: %s", ", ".join(sorted(unmatched)))
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
     """Unload the integration and stop background tasks."""
