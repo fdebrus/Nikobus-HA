@@ -31,6 +31,17 @@ from .const import (
     DISCOVERY_PHASE_IDLE,
     DISCOVERY_PHASE_MODULE_SCAN,
     DISCOVERY_PHASE_PC_LINK,
+    DISCOVERY_SUB_PHASE_ERROR,
+    DISCOVERY_SUB_PHASE_FINALIZING,
+    DISCOVERY_SUB_PHASE_FINISHED,
+    DISCOVERY_SUB_PHASE_IDENTITY,
+    DISCOVERY_SUB_PHASE_IDLE,
+    DISCOVERY_SUB_PHASE_INVENTORY,
+    DISCOVERY_SUB_PHASE_REGISTER_SCAN,
+    DISCOVERY_WEIGHT_FINALIZING,
+    DISCOVERY_WEIGHT_IDENTITY,
+    DISCOVERY_WEIGHT_INVENTORY,
+    DISCOVERY_WEIGHT_REGISTER_SCAN,
     DOMAIN,
     ISSUE_NO_BUTTONS_CONFIGURED,
     RECONNECT_DELAY_INITIAL,
@@ -107,23 +118,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._reload_task = None
 
         # --- Discovery progress tracking (for UI) ---
+        # `discovery_phase` stays on the legacy enum for backward-compat with
+        # automations; `discovery_sub_phase` carries the fine-grained state
+        # the library emits via its on_progress callback (0.3.5+).
         self.discovery_phase: str = DISCOVERY_PHASE_IDLE
+        self.discovery_sub_phase: str = DISCOVERY_SUB_PHASE_IDLE
         self.discovery_status_message: str = ""
         self.discovery_current_module: str | None = None
         self.discovery_modules_done: int = 0
         self.discovery_modules_total: int = 0
         self.discovery_registers_done: int = 0
         self.discovery_registers_total: int = 0
+        self.discovery_register_current: int | None = None
+        self.discovery_decoded_records: int = 0
         self.discovery_last_error: str | None = None
         self._discovery_finished_event: asyncio.Event = asyncio.Event()
         self._discovery_finished_event.set()  # idle = already set
         self._discovery_auto_reload: bool = True
-        self._discovery_progress_task: asyncio.Task[None] | None = None
         self._discovery_module_order: list[str] = []
-        self._module_scan_frame_count: int = 0
-        self._module_scan_last_index: int = -1
-        # Monkey-patch state for counting commands sent during discovery
-        self._original_send_command = None
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task[None] | None = None
         self._last_connected: datetime | None = None
@@ -216,6 +228,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 on_button_save=self.button_storage.async_save,
             )
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
+            # 0.3.5+ exposes a structured progress callback. Attach defensively
+            # — on older libraries the attribute is ignored and the legacy
+            # frame-callback path keeps the basic UI working.
+            if hasattr(self.nikobus_discovery, "on_progress"):
+                self.nikobus_discovery.on_progress = self._handle_discovery_progress
+            else:
+                _LOGGER.warning(
+                    "nikobus-connect does not expose on_progress; discovery UI will "
+                    "show coarse-grained state only. Upgrade to >=0.3.5 for the "
+                    "phase-aware tracker."
+                )
 
             # 2. Create listener with a single event_callback and feedback_callback
             self.nikobus_listener = NikobusEventListener(
@@ -331,10 +354,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if not self.nikobus_discovery or not self.discovery_running:
             return
         if self.inventory_query_type == InventoryQueryType.MODULE:
+            # Progress tracking is driven by the library's on_progress
+            # callback (0.3.5+). Here we only forward the raw frame.
             await self.nikobus_discovery.parse_module_inventory_response(message)
-            # Per-command progress is counted by the wrapped _send_command
-            # (see _install_command_counter); we just refresh the UI state.
-            self._update_module_scan_progress()
             return
 
         # PC Link inventory response
@@ -378,147 +400,102 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 ),
             )
 
-    def _update_module_scan_progress(self) -> None:
-        """Refresh the module-scan progress state for the UI.
+    # ------------------------------------------------------------------
+    # Phase-aware progress (consumes nikobus-connect 0.3.5+ on_progress)
+    # ------------------------------------------------------------------
 
-        Uses the pre-captured ``_discovery_module_order`` list together
-        with the library's remaining-queue length to determine the current
-        module. Per-module register progress is a monotonic counter of the
-        response frames we have received for the current module (reset on
-        module transition).
-        """
-        disc = self.nikobus_discovery
-        if disc is None:
-            return
+    _SUB_TO_LEGACY_PHASE: dict[str, str] = {
+        DISCOVERY_SUB_PHASE_IDLE: DISCOVERY_PHASE_IDLE,
+        DISCOVERY_SUB_PHASE_INVENTORY: DISCOVERY_PHASE_PC_LINK,
+        DISCOVERY_SUB_PHASE_IDENTITY: DISCOVERY_PHASE_PC_LINK,
+        DISCOVERY_SUB_PHASE_REGISTER_SCAN: DISCOVERY_PHASE_MODULE_SCAN,
+        DISCOVERY_SUB_PHASE_FINALIZING: DISCOVERY_PHASE_MODULE_SCAN,
+        DISCOVERY_SUB_PHASE_FINISHED: DISCOVERY_PHASE_FINISHED,
+        DISCOVERY_SUB_PHASE_ERROR: DISCOVERY_PHASE_ERROR,
+    }
 
-        if self.discovery_registers_total == 0:
-            self.discovery_registers_total = 240  # 0x10-0xFF
+    async def _handle_discovery_progress(self, event: dict[str, Any]) -> None:
+        """Consume a progress event emitted by nikobus-connect 0.3.5+.
 
-        total = self.discovery_modules_total or len(self._discovery_module_order)
-        if total == 0:
-            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
-            return
+        Event payload (TypedDict-shaped, fields optional):
 
-        queue_list = getattr(disc, "_register_scan_queue", None)
-        remaining = len(queue_list) if isinstance(queue_list, list) else 0
+        - ``phase``: one of ``inventory`` / ``identity`` / ``register_scan``
+          / ``finalizing`` / ``idle`` / ``finished`` / ``error``.
+        - ``module_current``: address being scanned (``register_scan``).
+        - ``module_index`` / ``module_total``: 1-based position + total.
+        - ``register_current`` / ``register_total``: ``0x10``–``0xFF``.
+        - ``decoded_records``: running count of decoded links.
 
-        # How many modules have been POPPED so far (including the current one).
-        popped = total - remaining
-        current_index_0 = max(0, popped - 1)  # 0-based index of current module
-        current_index_1 = min(current_index_0 + 1, total)  # 1-based display
-        self.discovery_modules_done = current_index_0
-
-        # Reset per-module frame counter when we advance to a new module.
-        if current_index_0 != self._module_scan_last_index:
-            self._module_scan_last_index = current_index_0
-            self._module_scan_frame_count = 0
-
-        if self._discovery_module_order and current_index_0 < len(
-            self._discovery_module_order
-        ):
-            self.discovery_current_module = self._discovery_module_order[
-                current_index_0
-            ]
-        else:
-            lib_current = (
-                getattr(disc, "_module_address", None)
-                or self.discovery_module_address
-            )
-            if lib_current:
-                self.discovery_current_module = lib_current
-
-        self.discovery_registers_done = min(
-            self.discovery_registers_total,
-            self._module_scan_frame_count,
-        )
-
-        if self.discovery_current_module:
-            self._update_discovery_state(
-                message=(
-                    f"Scanning module {self.discovery_current_module} "
-                    f"({current_index_1}/{total}) — "
-                    f"{self.discovery_registers_done}/{self.discovery_registers_total}"
-                ),
-            )
-        else:
-            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
-
-    def _install_command_counter(self) -> None:
-        """Wrap the command handler's _send_command to count discovery commands.
-
-        Every inventory register query results in exactly one _send_command
-        invocation (for commands without an address, i.e., fire-and-forget).
-        Wrapping that method gives us a reliable per-command counter that
-        doesn't depend on bus frame batching.
-        """
-        handler = self.nikobus_command
-        if handler is None:
-            _LOGGER.debug("Command counter install skipped: no handler")
-            return
-        if self._original_send_command is not None:
-            _LOGGER.debug("Command counter install skipped: already installed")
-            return
-        original = handler._send_command
-        self._original_send_command = original
-        coordinator = self  # closure reference
-
-        async def _counting_send_command(*args, **kwargs):
-            result = await original(*args, **kwargs)
-            if (
-                coordinator.discovery_running
-                and coordinator.inventory_query_type == InventoryQueryType.MODULE
-            ):
-                coordinator._module_scan_frame_count = min(
-                    coordinator.discovery_registers_total or 240,
-                    coordinator._module_scan_frame_count + 1,
-                )
-            return result
-
-        handler._send_command = _counting_send_command
-        _LOGGER.debug("Command counter installed on handler %s", handler)
-
-    def _uninstall_command_counter(self) -> None:
-        """Restore the original _send_command method."""
-        handler = self.nikobus_command
-        if handler is None or self._original_send_command is None:
-            return
-        handler._send_command = self._original_send_command
-        self._original_send_command = None
-
-    def _start_progress_poller(self) -> None:
-        """Start a background task that polls progress once per second."""
-        if self._discovery_progress_task and not self._discovery_progress_task.done():
-            return
-        self._discovery_progress_task = self.hass.async_create_task(
-            self._progress_poll_loop()
-        )
-
-    def _stop_progress_poller(self) -> None:
-        """Cancel the background progress poller."""
-        task = self._discovery_progress_task
-        self._discovery_progress_task = None
-        if task and not task.done():
-            task.cancel()
-
-    async def _progress_poll_loop(self) -> None:
-        """Periodically refresh module-scan progress so the UI sees updates.
-
-        Frame callbacks alone are not enough to drive live updates because
-        the library buffers multiple chunks per frame and empty registers
-        don't always produce a frame. This loop re-reads the command queue
-        every second and publishes a fresh state message.
+        The library pushes a snapshot on every phase transition and every
+        N registers within ``register_scan``. The callback is fire-and-
+        forget from the library's perspective; exceptions here must not
+        bubble back into the scan loop.
         """
         try:
-            while self.discovery_running:
-                if self.inventory_query_type == InventoryQueryType.MODULE:
-                    self._update_module_scan_progress()
+            sub_phase = str(event.get("phase") or DISCOVERY_SUB_PHASE_IDLE)
+            legacy_phase = self._SUB_TO_LEGACY_PHASE.get(
+                sub_phase, self.discovery_phase
+            )
+
+            module_current = event.get("module_current")
+            module_index = int(event.get("module_index") or 0)
+            module_total = int(event.get("module_total") or 0)
+            register_current = event.get("register_current")
+            register_total = int(event.get("register_total") or 0)
+            decoded_records = int(event.get("decoded_records") or 0)
+
+            registers_done = 0
+            if register_current is not None and register_total:
+                # Registers start at 0x10, so done-count is (current - 0x10 + 1).
+                try:
+                    cur = int(register_current)
+                    registers_done = max(0, cur - 0x10 + 1)
+                except (TypeError, ValueError):
+                    registers_done = 0
+
+            if sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+                message = "PC Link inventory: enumerating bus addresses…"
+            elif sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
+                message = (
+                    f"Identifying modules ({module_index}/{module_total})…"
+                    if module_total
+                    else "Identifying modules…"
+                )
+            elif sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
+                if module_current:
+                    message = (
+                        f"Scanning module {module_current} "
+                        f"({module_index}/{module_total}) — "
+                        f"register 0x{int(register_current or 0):02X} of 0xFF "
+                        f"({decoded_records} records)"
+                    )
                 else:
-                    async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
-                await asyncio.sleep(1.0)
-        except asyncio.CancelledError:
-            return
+                    message = f"Scanning modules ({module_index}/{module_total})"
+            elif sub_phase == DISCOVERY_SUB_PHASE_FINALIZING:
+                message = f"Merging {decoded_records} discovered records…"
+            elif sub_phase == DISCOVERY_SUB_PHASE_FINISHED:
+                message = f"Discovery complete — {decoded_records} records decoded."
+            elif sub_phase == DISCOVERY_SUB_PHASE_ERROR:
+                message = event.get("message") or "Discovery failed"
+            else:
+                message = self.discovery_status_message
+
+            self.discovery_sub_phase = sub_phase
+            self.discovery_decoded_records = decoded_records
+            self.discovery_register_current = (
+                int(register_current) if register_current is not None else None
+            )
+            self._update_discovery_state(
+                phase=legacy_phase,
+                message=message,
+                current_module=module_current if module_current else None,
+                modules_done=max(0, module_index - 1),
+                modules_total=module_total,
+                registers_done=registers_done,
+                registers_total=register_total or 240,
+            )
         except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.debug("Discovery progress poller error: %s", err)
+            _LOGGER.debug("Discovery progress handler error: %s", err)
 
     @staticmethod
     def _is_empty_inventory_block(message: str) -> bool:
@@ -962,11 +939,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def _handle_discovery_finished(self) -> None:
         """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
-        self._stop_progress_poller()
-        self._uninstall_command_counter()
+        self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
+        self.discovery_register_current = None
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
-            message="Discovery finished",
+            message=(
+                f"Discovery finished — {self.discovery_decoded_records} records decoded."
+                if self.discovery_decoded_records
+                else "Discovery finished"
+            ),
         )
         self._discovery_finished_event.set()
 
@@ -994,26 +975,59 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     @property
     def discovery_progress_percent(self) -> int:
-        """Overall progress estimate (0-100) for the current discovery phase."""
-        if self.discovery_phase == DISCOVERY_PHASE_IDLE:
+        """Overall progress estimate (0-100) across all discovery sub-phases.
+
+        Phases are stacked by weight (see const.DISCOVERY_WEIGHT_*):
+        inventory → identity → register_scan → finalizing. Within
+        register_scan, progress is (completed_modules + partial_current) /
+        total_modules.
+        """
+        if self.discovery_sub_phase in (DISCOVERY_SUB_PHASE_IDLE, DISCOVERY_SUB_PHASE_ERROR):
             return 0
-        if self.discovery_phase == DISCOVERY_PHASE_FINISHED:
+        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_FINISHED:
             return 100
-        if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
-            if self.discovery_registers_total:
-                pct = int(
-                    (self.discovery_registers_done / self.discovery_registers_total) * 100
-                )
-                return min(99, pct)
-            return 10
-        if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
+
+        # Cumulative floor — everything before the current phase is "done".
+        floor = 0
+        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+            floor = 0
+            phase_weight = DISCOVERY_WEIGHT_INVENTORY
+            phase_frac = 0.5  # can't measure inventory fraction directly
+        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
+            floor = DISCOVERY_WEIGHT_INVENTORY
+            phase_weight = DISCOVERY_WEIGHT_IDENTITY
             total = self.discovery_modules_total or 1
             done = self.discovery_modules_done
-            per_module = 0
+            phase_frac = min(1.0, done / total)
+        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
+            floor = DISCOVERY_WEIGHT_INVENTORY + DISCOVERY_WEIGHT_IDENTITY
+            phase_weight = DISCOVERY_WEIGHT_REGISTER_SCAN
+            total = self.discovery_modules_total or 1
+            done = self.discovery_modules_done
+            per_module = 0.0
             if self.discovery_registers_total:
-                per_module = self.discovery_registers_done / self.discovery_registers_total
-            return min(99, int(((done + per_module) / total) * 100))
-        return 0
+                per_module = min(
+                    1.0,
+                    self.discovery_registers_done / self.discovery_registers_total,
+                )
+            phase_frac = min(1.0, (done + per_module) / total)
+        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_FINALIZING:
+            floor = (
+                DISCOVERY_WEIGHT_INVENTORY
+                + DISCOVERY_WEIGHT_IDENTITY
+                + DISCOVERY_WEIGHT_REGISTER_SCAN
+            )
+            phase_weight = DISCOVERY_WEIGHT_FINALIZING
+            phase_frac = 0.5
+        else:
+            # Older libraries may still drive the legacy-phase field only.
+            if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
+                return 10
+            if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
+                return 40
+            return 0
+
+        return min(99, int(floor + phase_frac * phase_weight))
 
     def _update_discovery_state(
         self,
@@ -1074,19 +1088,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             registers_total=92,
             error=None,
         )
-        self._start_progress_poller()
         try:
             await self.nikobus_discovery.start_inventory_discovery()
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
         except asyncio.CancelledError:
-            self._stop_progress_poller()
             self.discovery_running = False
             self._discovery_finished_event.set()
             raise
         except Exception as err:
-            self._stop_progress_poller()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"PC Link inventory failed: {err}",
@@ -1135,11 +1146,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
-        self._module_scan_frame_count = 0
-        # Initialize to 0 so the first poll tick (current_index_0 == 0)
-        # does not reset the counter and discard the initial increments.
-        self._module_scan_last_index = 0
-        self._install_command_counter()
+        self.discovery_decoded_records = 0
+        self.discovery_register_current = None
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_MODULE_SCAN,
             message=message,
@@ -1147,24 +1155,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             modules_done=0,
             modules_total=total,
             registers_done=0,
-            registers_total=0,
+            registers_total=240,
             error=None,
         )
-        self._start_progress_poller()
         try:
             await self.nikobus_discovery.query_module_inventory(target)
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
         except asyncio.CancelledError:
-            self._stop_progress_poller()
-            self._uninstall_command_counter()
             self.discovery_running = False
             self._discovery_finished_event.set()
             raise
         except Exception as err:
-            self._stop_progress_poller()
-            self._uninstall_command_counter()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"Module scan failed: {err}",

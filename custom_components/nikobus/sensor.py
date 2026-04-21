@@ -137,11 +137,14 @@ class NikobusDiscoveryStatusSensor(_DiscoverySignalEntity):
         c = self._coordinator
         return {
             "message": c.discovery_status_message,
+            "sub_phase": c.discovery_sub_phase,
             "current_module": c.discovery_current_module,
             "modules_done": c.discovery_modules_done,
             "modules_total": c.discovery_modules_total,
+            "register_current": c.discovery_register_current,
             "registers_done": c.discovery_registers_done,
             "registers_total": c.discovery_registers_total,
+            "decoded_records": c.discovery_decoded_records,
             "last_error": c.discovery_last_error,
         }
 
