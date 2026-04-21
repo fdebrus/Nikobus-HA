@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+)
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -21,8 +32,80 @@ from .const import (
 from .coordinator import NikobusConfigEntry
 from .exceptions import NikobusConnectionError
 from nikobus_connect import NikobusConnect
+from nikobus_connect.discovery import find_module
 
 _LOGGER = logging.getLogger(__name__)
+
+# Module hardware capabilities: which HA entity types each module type can back.
+_MODULE_ENTITY_TYPES: dict[str, list[str]] = {
+    "switch_module": ["switch", "light", "none"],
+    "dimmer_module": ["light", "none"],
+    "roller_module": ["cover", "switch", "light", "none"],
+}
+
+_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
+
+
+def _validate_optional_hex6(value: Any) -> str:
+    """Accept an empty string or a 6-char hex bus address."""
+    if value is None:
+        return ""
+    text = str(value).strip().upper()
+    if text == "":
+        return ""
+    if not _HEX_RE.match(text):
+        raise vol.Invalid("invalid_hex_address")
+    return text
+
+
+_MODULE_TYPE_ORDER: dict[str, int] = {
+    "switch_module": 0,
+    "dimmer_module": 1,
+    "roller_module": 2,
+}
+
+
+def _module_type_order(module_type: str | None) -> int:
+    return _MODULE_TYPE_ORDER.get(module_type or "", 99)
+
+
+def _module_label(address: str, entry: dict[str, Any]) -> str:
+    """Render a user-facing label for the module picker."""
+    desc = entry.get("description") or f"Module {address}"
+    module_type = entry.get("module_type") or "module"
+    pretty_type = module_type.replace("_", " ").title()
+    return f"{pretty_type} — {address} — {desc}"
+
+
+def _set_or_drop(mapping: dict[str, Any], key: str, value: str) -> None:
+    """Store ``value`` when non-empty; otherwise remove the key entirely."""
+    if value:
+        mapping[key] = value
+    else:
+        mapping.pop(key, None)
+
+
+def _set_time_or_drop(mapping: dict[str, Any], key: str, value: Any) -> None:
+    """Store an operation-time value (as a string, to match legacy shape)."""
+    if value in (None, ""):
+        mapping.pop(key, None)
+        return
+    try:
+        as_int = int(float(value))
+    except (TypeError, ValueError):
+        mapping.pop(key, None)
+        return
+    if as_int <= 0:
+        mapping.pop(key, None)
+        return
+    mapping[key] = str(as_int)
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 # ---------------------------------------------------------------------------
 # Reusable schema fragments
@@ -230,6 +313,8 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         self._options: dict[str, Any] = {}
         self._discovery_task: asyncio.Task[None] | None = None
         self._discovery_kind: str | None = None  # "pc_link" or "module_scan"
+        self._edit_module_address: str | None = None
+        self._edit_channel_index: int | None = None
 
     def _current(self) -> dict[str, Any]:
         """Merge entry data + options so defaults reflect the live settings."""
@@ -248,6 +333,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             menu_options=[
                 "hardware",
+                "configure_modules",
                 "discovery_pc_link",
                 "discovery_modules",
             ],
@@ -367,6 +453,231 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         except TypeError:
             # Older HA without progress_task support — fall back to plain call.
             return self.async_show_progress(**kwargs)
+
+    # --- Module customization ----------------------------------------------
+
+    async def async_step_configure_modules(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Let the user pick a module to customize."""
+        coordinator = self._coordinator()
+        if coordinator is None:
+            return self.async_abort(reason="not_loaded")
+
+        modules = coordinator.module_storage.data.get("nikobus_module") or {}
+        if not modules:
+            return self.async_abort(reason="no_modules")
+
+        if user_input is not None:
+            self._edit_module_address = str(user_input["module"]).upper()
+            return await self.async_step_edit_module()
+
+        options = [
+            {
+                "value": addr,
+                "label": self._module_label(addr, entry),
+            }
+            for addr, entry in sorted(
+                modules.items(),
+                key=lambda kv: (
+                    _module_type_order(kv[1].get("module_type")),
+                    kv[0],
+                ),
+            )
+        ]
+
+        return self.async_show_form(
+            step_id="configure_modules",
+            data_schema=vol.Schema({
+                vol.Required("module"): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN)
+                ),
+            }),
+        )
+
+    async def async_step_edit_module(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Edit module-level description; pick a channel or finish."""
+        coordinator = self._coordinator()
+        if coordinator is None or self._edit_module_address is None:
+            return self.async_abort(reason="not_loaded")
+
+        module_data = coordinator.module_storage.data
+        hit = find_module(module_data, self._edit_module_address)
+        if hit is None:
+            return self.async_abort(reason="module_not_found")
+        address, entry = hit
+
+        channels = entry.get("channels", [])
+
+        if user_input is not None:
+            # Persist the module-level description verbatim.
+            new_desc = (user_input.get("description") or "").strip()
+            if new_desc:
+                entry["description"] = new_desc
+
+            selected = user_input.get("channel")
+            await coordinator._async_on_module_save()
+
+            if selected and selected != "done":
+                try:
+                    self._edit_channel_index = int(selected)
+                except ValueError:
+                    return await self.async_step_edit_module()
+                return await self.async_step_edit_channel()
+
+            # Done — close the flow. The entry's update listener reloads.
+            merged = {**self.config_entry.options, **self._options}
+            return self.async_create_entry(title="", data=merged)
+
+        channel_options = [
+            {
+                "value": str(idx),
+                "label": (
+                    f"Channel {idx}: "
+                    f"{ch.get('description') or '(no description)'}"
+                ),
+            }
+            for idx, ch in enumerate(channels, start=1)
+            if isinstance(ch, dict)
+        ]
+        channel_options.append({"value": "done", "label": "Finish editing"})
+
+        return self.async_show_form(
+            step_id="edit_module",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "description",
+                    default=entry.get("description") or "",
+                ): TextSelector(TextSelectorConfig()),
+                vol.Required("channel", default="done"): SelectSelector(
+                    SelectSelectorConfig(
+                        options=channel_options,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
+            }),
+            description_placeholders={
+                "address": address,
+                "module_type": entry.get("module_type", "unknown"),
+                "model": entry.get("model") or "unknown",
+            },
+        )
+
+    async def async_step_edit_channel(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Edit a single channel's user-owned fields."""
+        coordinator = self._coordinator()
+        if (
+            coordinator is None
+            or self._edit_module_address is None
+            or self._edit_channel_index is None
+        ):
+            return self.async_abort(reason="not_loaded")
+
+        hit = find_module(coordinator.module_storage.data, self._edit_module_address)
+        if hit is None:
+            return self.async_abort(reason="module_not_found")
+        address, entry = hit
+        module_type = entry.get("module_type", "switch_module")
+        idx = self._edit_channel_index
+        channels = entry.get("channels", [])
+        if not (1 <= idx <= len(channels)) or not isinstance(channels[idx - 1], dict):
+            return self.async_abort(reason="channel_not_found")
+        channel = channels[idx - 1]
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                led_on = _validate_optional_hex6(user_input.get("led_on", ""))
+                led_off = _validate_optional_hex6(user_input.get("led_off", ""))
+            except vol.Invalid:
+                errors["base"] = "invalid_hex_address"
+            else:
+                entity_type = user_input.get("entity_type")
+                if entity_type and entity_type != "none":
+                    channel["entity_type"] = entity_type
+                else:
+                    channel.pop("entity_type", None)
+
+                channel["description"] = (
+                    user_input.get("description") or channel.get("description", "")
+                )
+                _set_or_drop(channel, "led_on", led_on)
+                _set_or_drop(channel, "led_off", led_off)
+
+                if module_type == "roller_module":
+                    up = user_input.get("operation_time_up")
+                    down = user_input.get("operation_time_down")
+                    _set_time_or_drop(channel, "operation_time_up", up)
+                    _set_time_or_drop(channel, "operation_time_down", down)
+
+                await coordinator._async_on_module_save()
+                # Return to the module step so the user can edit another
+                # channel or finish.
+                self._edit_channel_index = None
+                return await self.async_step_edit_module()
+
+        allowed = _MODULE_ENTITY_TYPES.get(module_type, ["switch", "light", "none"])
+        current_entity_type = channel.get("entity_type") or "none"
+        if current_entity_type not in allowed:
+            current_entity_type = allowed[0]
+
+        schema_dict: dict[Any, Any] = {
+            vol.Required(
+                "entity_type",
+                default=current_entity_type,
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=[{"value": v, "label": v.capitalize()} for v in allowed],
+                    mode=SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                "description",
+                default=channel.get("description") or "",
+            ): TextSelector(TextSelectorConfig()),
+            vol.Optional(
+                "led_on",
+                default=channel.get("led_on") or "",
+            ): TextSelector(TextSelectorConfig()),
+            vol.Optional(
+                "led_off",
+                default=channel.get("led_off") or "",
+            ): TextSelector(TextSelectorConfig()),
+        }
+
+        if module_type == "roller_module":
+            schema_dict[vol.Optional(
+                "operation_time_up",
+                default=_coerce_int(channel.get("operation_time_up"), 30),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=600, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+                )
+            )
+            schema_dict[vol.Optional(
+                "operation_time_down",
+                default=_coerce_int(channel.get("operation_time_down"), 30),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=600, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+                )
+            )
+
+        return self.async_show_form(
+            step_id="edit_channel",
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders={
+                "address": address,
+                "channel": str(idx),
+                "module_type": module_type,
+            },
+            errors=errors,
+        )
 
     async def async_step_discovery_done(
         self, user_input: dict[str, Any] | None = None

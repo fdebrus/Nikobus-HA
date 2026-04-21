@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
-from nikobus_connect.discovery import find_operation_point
+from nikobus_connect.discovery import find_module, find_operation_point
 
 from .const import (
     BUTTON_TIMER_THRESHOLDS,
@@ -51,13 +51,18 @@ class NikobusActuator:
         hass: HomeAssistant,
         coordinator: NikobusDataCoordinator,
         dict_button_data: dict[str, Any],
-        dict_module_data: dict[str, Any],
+        module_data: dict[str, Any],
     ) -> None:
-        """Initialize the Nikobus actuator."""
+        """Initialize the Nikobus actuator.
+
+        ``module_data`` is the live caller-owned dict wrapped by the Store
+        (``{"nikobus_module": {addr: entry}}``). We hold a reference rather
+        than a copy so ``on_module_save`` mutations are visible immediately.
+        """
         self._hass = hass
         self._coordinator = coordinator
         self._dict_button_data = dict_button_data
-        self._dict_module_data = dict_module_data
+        self._module_data = module_data
         self._debounce_time_ms = 150
         self._press_states: dict[str, PressState] = {}
         self._module_refresh_tasks: dict[str, asyncio.Task[None]] = {}
@@ -219,8 +224,9 @@ class NikobusActuator:
 
         for addr, group in impacted:
 
-            # Determine if this specific module is a dimmer BEFORE debouncing
-            is_dimmer = addr in self._dict_module_data.get("dimmer_module", {})
+            # Determine if this specific module is a dimmer BEFORE debouncing.
+            hit = find_module(self._module_data, addr)
+            is_dimmer = hit is not None and hit[1].get("module_type") == "dimmer_module"
             requires_long_press = is_dimmer
             is_initial_press = press_context is not None and press_context.get("duration_s") == 0.0
 

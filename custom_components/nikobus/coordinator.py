@@ -16,7 +16,12 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
-from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType, find_operation_point
+from nikobus_connect.discovery import (
+    NikobusDiscovery,
+    InventoryQueryType,
+    find_module,
+    find_operation_point,
+)
 from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
 from .const import (
@@ -50,7 +55,8 @@ from .const import (
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
-from .nkbstorage import NikobusButtonStorage
+from .nkbmigration import async_migrate_legacy_module_config
+from .nkbstorage import NikobusButtonStorage, NikobusModuleStorage
 
 # Typed config entry alias used across the integration. A plain alias
 # (instead of PEP 695 `type X = ...`) keeps compatibility with older
@@ -92,8 +98,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.nikobus_connection = NikobusConnect(self.connection_string)
         self.nikobus_config = NikobusConfig(hass)
         self.button_storage = NikobusButtonStorage(hass)
+        self.module_storage = NikobusModuleStorage(hass)
         self.api: NikobusAPI | None = None
 
+        # ``dict_module_data`` is a derived view of ``module_storage.data``,
+        # grouped by ``module_type`` for the library's scan planner and for
+        # the router/actuator/polling code. It is rebuilt after every load
+        # or save via ``_rebuild_dict_module_data``.
         self.dict_module_data: dict[str, Any] = {}
         self.dict_button_data: dict[str, Any] = {"nikobus_button": {}}
         self.dict_scene_data: dict[str, Any] = {}
@@ -202,14 +213,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             raise
 
         try:
-            self.dict_module_data = await self.nikobus_config.load_json_data(
-                "nikobus_module_config.json", "module"
-            )
-            discovered_modules = await self.nikobus_config.load_optional_json_data(
-                "nikobus_module_discovered.json", "module"
-            )
-            if discovered_modules:
-                self._merge_discovered_modules(discovered_modules)
+            # Module data now lives in .storage/nikobus.modules. On first
+            # startup after upgrading to 0.4.0, migrate any legacy
+            # nikobus_module_config.json into the store, then rename it.
+            await self.module_storage.async_load()
+            await async_migrate_legacy_module_config(self.hass, self.module_storage)
+            self._rebuild_dict_module_data()
 
             self.dict_button_data = await self.button_storage.async_load()
             self.dict_scene_data = await self.nikobus_config.load_json_data(
@@ -218,7 +227,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
             # 1. Create actuator and discovery (needed before listener)
             self.nikobus_actuator = NikobusActuator(
-                self.hass, self, self.dict_button_data, self.dict_module_data
+                self.hass, self, self.dict_button_data, self.module_storage.data
             )
             self.nikobus_discovery = NikobusDiscovery(
                 self,
@@ -226,6 +235,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 create_task=self.hass.async_create_task,
                 button_data=self.dict_button_data,
                 on_button_save=self.button_storage.async_save,
+                module_data=self.module_storage.data,
+                on_module_save=self._async_on_module_save,
                 on_progress=self._handle_discovery_progress,
             )
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
@@ -594,17 +605,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     def get_module_channel_count(self, module_id: str) -> int:
         """Return the channel count for a module (from config)."""
-        for modules in self.dict_module_data.values():
-            if data := modules.get(module_id):
-                return len(data.get("channels", []))
-        return 0
+        hit = find_module(self.module_storage.data, module_id)
+        if hit is None:
+            return 0
+        channels = hit[1].get("channels")
+        return len(channels) if isinstance(channels, list) else 0
 
     def get_module_type(self, module_id: str) -> str | None:
         """Return the hardware type of the specified module."""
-        for m_type, modules in self.dict_module_data.items():
-            if module_id in modules:
-                return m_type
-        return None
+        hit = find_module(self.module_storage.data, module_id)
+        return hit[1].get("module_type") if hit else None
 
     def get_button_channels(self, button_address: str) -> int | None:
         """Return the operation-point count for a physical button address.
@@ -728,13 +738,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self, module_id: str, channel: int, direction: str = "up", default: float = 30.0
     ) -> float:
         """Fetch travel time for a shutter channel."""
+        hit = find_module(self.module_storage.data, module_id)
+        if hit is None or hit[1].get("module_type") != "roller_module":
+            return default
         try:
-            ch = self.dict_module_data.get("roller_module", {}).get(module_id, {}).get(
-                "channels", []
-            )[int(channel) - 1]
+            ch = hit[1].get("channels", [])[int(channel) - 1]
             ot = ch.get(f"operation_time_{direction}")
             return float(ot) if ot and float(ot) > 0 else default
-        except (IndexError, ValueError, KeyError):
+        except (IndexError, ValueError, KeyError, TypeError):
             return default
 
     # ------------------------------------------------------------------
@@ -911,13 +922,43 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         known.add(f"{DOMAIN}_module_scan_button")
         return known
 
-    def _merge_discovered_modules(self, discovered: dict[str, Any]) -> None:
-        """Integrate newly discovered hardware into the registry."""
-        for m_type, modules in discovered.items():
-            target = self.dict_module_data.setdefault(m_type, {})
-            for addr, info in modules.items():
-                if addr not in target:
-                    target[addr] = info
+    def _rebuild_dict_module_data(self) -> None:
+        """Regenerate the grouped ``dict_module_data`` view from the Store.
+
+        The Store holds the authoritative flat ``{address: entry}`` dict
+        (nikobus-connect 0.4.0 Option-A shape). Many call sites — the
+        library's scan planner, ``router.build_routing``, the actuator's
+        dimmer check, the polling loop, and ``NikobusAPI._module_data`` —
+        still expect the old nested ``{module_type: {address: entry}}``
+        shape. Deriving it from the Store keeps a single source of truth.
+
+        Mutates ``self.dict_module_data`` in place so captured references
+        (``NikobusAPI``, ``NikobusActuator``) stay valid.
+        """
+        grouped: dict[str, dict[str, Any]] = {}
+        modules = self.module_storage.data.get("nikobus_module") or {}
+        if isinstance(modules, dict):
+            for address, entry in modules.items():
+                if not isinstance(entry, dict):
+                    continue
+                module_type = entry.get("module_type") or "other_module"
+                addr_upper = str(address).upper()
+                bucket = grouped.setdefault(module_type, {})
+                merged = dict(entry)
+                merged.setdefault("address", addr_upper)
+                bucket[addr_upper] = merged
+
+        self.dict_module_data.clear()
+        self.dict_module_data.update(grouped)
+
+    async def _async_on_module_save(self) -> None:
+        """Persist the Store after discovery/user edits, then refresh derived views."""
+        await self.module_storage.async_save()
+        self._rebuild_dict_module_data()
+        # Clear the cached router spec so newly-discovered modules show up.
+        domain_data = self.hass.data.get(DOMAIN, {})
+        entry_data = domain_data.get(self.config_entry.entry_id, {})
+        entry_data.pop("routing", None)
 
     async def _handle_discovery_finished(self) -> None:
         """Signal discovery completion; optionally reload the config entry."""
