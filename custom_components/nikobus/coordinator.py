@@ -295,6 +295,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     async def _event_callback(self, message: str) -> None:
         """Route non-feedback bus events (buttons, ACKs, discovery frames)."""
+        _LOGGER.debug(
+            "Nikobus press frame: %s  (raw bytes hex: %s)",
+            message,
+            message.encode().hex(),
+        )
         if message.startswith("#N"):
             # Extract the 6-char address after the "#N" prefix
             if self.nikobus_actuator and len(message) >= 8:

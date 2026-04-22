@@ -33,15 +33,15 @@
             "reconfigure": {
                 "data": {
                     "connection_string": "Connection (serial port or IP:port)",
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data::prior_gen3%]",
-                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data::refresh_interval%]"
+                    "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
+                    "prior_gen3": "PC-Link is older than Gen 3",
+                    "refresh_interval": "Polling interval (seconds)"
                 },
                 "data_description": {
                     "connection_string": "Serial device path or TCP address of the PC-Link bridge",
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data_description::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data_description::prior_gen3%]",
-                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data_description::refresh_interval%]"
+                    "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
+                    "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
                 },
                 "description": "Update the connection string or hardware settings. The connection will be re-tested.",
                 "title": "Reconfigure Nikobus"
@@ -147,12 +147,12 @@
             },
             "hardware": {
                 "data": {
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data::prior_gen3%]"
+                    "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
+                    "prior_gen3": "PC-Link is older than Gen 3"
                 },
                 "data_description": {
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data_description::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data_description::prior_gen3%]"
+                    "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
                 },
                 "description": "Update your hardware settings. The integration will reload automatically.",
                 "title": "Hardware Configuration"
@@ -169,7 +169,7 @@
             },
             "polling": {
                 "data": {
-                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data::refresh_interval%]"
+                    "refresh_interval": "Polling interval (seconds)"
                 },
                 "data_description": {
                     "refresh_interval": "How often to read module states from the bus (60–3600 s)."
