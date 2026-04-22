@@ -100,7 +100,8 @@
         "abort": {
             "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw.",
             "discovery_done": "Ontdekking voltooid. De integratie wordt herladen; nieuwe entiteiten verschijnen zo dadelijk.",
-            "discovery_error": "Ontdekking mislukt: {error}"
+            "discovery_error": "Ontdekking mislukt: {error}",
+            "no_modules": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit."
         }
     },
     "entity": {
@@ -164,6 +165,9 @@
         },
         "no_loaded_entry": {
             "message": "Geen geladen Nikobus-integratie gevonden. Stel er één in voordat u deze actie aanroept."
+        },
+        "no_modules_known": {
+            "message": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit en probeer dan opnieuw modules te scannen."
         }
     }
 }

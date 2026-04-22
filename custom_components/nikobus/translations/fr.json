@@ -100,7 +100,8 @@
         "abort": {
             "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer.",
             "discovery_done": "Découverte terminée. L'intégration est en cours de rechargement, les nouvelles entités apparaîtront sous peu.",
-            "discovery_error": "Échec de la découverte : {error}"
+            "discovery_error": "Échec de la découverte : {error}",
+            "no_modules": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link."
         }
     },
     "entity": {
@@ -164,6 +165,9 @@
         },
         "no_loaded_entry": {
             "message": "Aucune intégration Nikobus chargée. Configurez-en une avant d'appeler cette action."
+        },
+        "no_modules_known": {
+            "message": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link, puis relancez le scan des modules."
         }
     }
 }

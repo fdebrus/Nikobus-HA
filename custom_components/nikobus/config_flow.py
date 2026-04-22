@@ -395,6 +395,14 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         if coordinator is None:
             return self.async_abort(reason="not_loaded")
 
+        # Gate: the module scan walks the list of known output modules.
+        # Without a prior PC Link inventory (or a legacy-file migration)
+        # that list is empty and the scan has nothing to do. Steer the
+        # user to run the inventory first instead of silently finishing
+        # with zero records.
+        if self._discovery_task is None and not coordinator.has_known_output_modules:
+            return self.async_abort(reason="no_modules")
+
         if self._discovery_task is None:
             self._discovery_kind = "module_scan"
             self._discovery_task = self.hass.async_create_task(
