@@ -2,8 +2,9 @@
 to the ``.storage/nikobus.modules`` Store introduced with nikobus-connect 0.4.0.
 
 The migration only runs when the Store is empty. After a successful convert,
-the source JSON is renamed to ``<name>.migrated.bak`` — never deleted —
-so users retain an escape hatch for one release.
+the source JSON is renamed to ``<name>.migrated`` — never deleted — so users
+retain an escape hatch for one release. Matches the button-side convention
+in ``__init__.py`` (``nikobus_button_config.json`` → ``.migrated``).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from .nkbstorage import NikobusModuleStorage
 _LOGGER = logging.getLogger(__name__)
 
 LEGACY_FILENAME = "nikobus_module_config.json"
-_MIGRATED_SUFFIX = ".migrated.bak"
+_MIGRATED_SUFFIX = ".migrated"
 
 # Types the legacy file groups modules under. Anything else is kept verbatim
 # under its own ``module_type`` bucket on the flat entry.
@@ -141,7 +142,7 @@ async def async_migrate_legacy_module_config(
     Side effects on success:
       * ``store.data["nikobus_module"]`` is replaced with the converted entries.
       * ``store.async_save()`` is awaited.
-      * The source file is renamed to ``<config>/<LEGACY_FILENAME>.migrated.bak``.
+      * The source file is renamed to ``<config>/<LEGACY_FILENAME>.migrated``.
     """
     if not store.is_empty:
         _LOGGER.debug(
