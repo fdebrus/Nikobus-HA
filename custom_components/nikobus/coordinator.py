@@ -616,6 +616,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         channels = hit[1].get("channels")
         return len(channels) if isinstance(channels, list) else 0
 
+    @property
+    def has_known_output_modules(self) -> bool:
+        """True if at least one output-capable module is known.
+
+        Gates the full module scan: without any known output modules the
+        scan has nothing to walk. A PC Link inventory (or a migration
+        from the legacy config file) must run first to populate storage.
+        """
+        return any(
+            isinstance(mods, dict) and mods
+            for m_type, mods in self.dict_module_data.items()
+            if m_type in MODULE_TYPES
+        )
+
     def get_module_type(self, module_id: str) -> str | None:
         """Return the hardware type of the specified module."""
         hit = find_module(self.module_storage.data, module_id)
@@ -1171,7 +1185,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         str(addr).upper() for addr in modules.keys()
                     )
             total = len(self._discovery_module_order)
-            message = f"Scanning {total} modules…" if total else "Scanning modules…"
+            if total == 0:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="no_modules_known",
+                )
+            message = f"Scanning {total} modules…"
 
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
