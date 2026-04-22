@@ -134,7 +134,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # the library emits via its on_progress callback (0.3.5+).
         self.discovery_phase: str = DISCOVERY_PHASE_IDLE
         self.discovery_sub_phase: str = DISCOVERY_SUB_PHASE_IDLE
-        self.discovery_status_message: str = ""
+        self.discovery_status_message: str = "Idle"
         self.discovery_current_module: str | None = None
         self.discovery_modules_done: int = 0
         self.discovery_modules_total: int = 0
@@ -1017,18 +1017,21 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     # ------------------------------------------------------------------
 
     @property
-    def discovery_progress_percent(self) -> int:
+    def discovery_progress_percent(self) -> float:
         """Overall progress estimate (0-100) across all discovery sub-phases.
 
         Phases are stacked by weight (see const.DISCOVERY_WEIGHT_*):
         inventory → identity → register_scan → finalizing. Within
         register_scan, progress is (completed_modules + partial_current) /
-        total_modules.
+        total_modules. Returned as a float with ~0.1 resolution so the UI
+        can show sub-percent movement — each of the 240 register ticks in
+        a module only advances the bar by a fraction of a percent, so an
+        integer-rounded value looks frozen for tens of seconds at a time.
         """
         if self.discovery_sub_phase in (DISCOVERY_SUB_PHASE_IDLE, DISCOVERY_SUB_PHASE_ERROR):
-            return 0
+            return 0.0
         if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_FINISHED:
-            return 100
+            return 100.0
 
         # Cumulative floor — everything before the current phase is "done".
         floor = 0
@@ -1065,12 +1068,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         else:
             # Older libraries may still drive the legacy-phase field only.
             if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
-                return 10
+                return 10.0
             if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
-                return 40
-            return 0
+                return 40.0
+            return 0.0
 
-        return min(99, int(floor + phase_frac * phase_weight))
+        return min(99.9, round(floor + phase_frac * phase_weight, 1))
 
     def _update_discovery_state(
         self,
