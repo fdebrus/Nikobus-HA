@@ -178,8 +178,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: NikobusConfigEntry) -> None:
-    """Reload the integration when the user changes options."""
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Reload the integration when the user changes options.
+
+    Scheduled as a background task rather than awaited, because HA awaits
+    update listeners before closing the options flow and responding to
+    the frontend. A reload triggered by the discovery options flow is
+    slow (unload + re-forward setup to every platform, rebuilding
+    entities for every freshly-discovered module/button); awaiting it
+    here causes the flow-close HTTP request to time out, which the UI
+    renders as a generic "Invalid flow specified" error. Firing the
+    reload as a task lets the flow finalize immediately; entities
+    refresh when the reload completes in the background.
+    """
+    hass.async_create_task(hass.config_entries.async_reload(entry.entry_id))
 
 
 def _register_hub_device(hass: HomeAssistant, entry: NikobusConfigEntry) -> None:
