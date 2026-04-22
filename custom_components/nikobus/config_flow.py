@@ -475,7 +475,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         options = [
             {
                 "value": addr,
-                "label": self._module_label(addr, entry),
+                "label": _module_label(addr, entry),
             }
             for addr, entry in sorted(
                 modules.items(),
