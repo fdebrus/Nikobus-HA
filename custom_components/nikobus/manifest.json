@@ -12,7 +12,7 @@
   "requirements": [
     "aiofiles>=25.1.0",
     "pyserial-asyncio-fast>=0.16",
-    "nikobus-connect==0.4.4"
+    "nikobus-connect==0.4.10"
   ],
   "loggers": ["nikobus", "nikobus_connect"]
 }
