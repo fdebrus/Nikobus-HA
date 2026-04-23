@@ -11,7 +11,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .button import register_wall_button_devices
+from .button import op_point_display_name, register_wall_button_devices
 from .const import DOMAIN, EVENT_BUTTON_PRESSED
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
@@ -71,7 +71,7 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         bus_addr = op_point["bus_address"]
         self._physical_address = physical_address
         self._key_label = key_label
-        name = op_point.get("description") or f"Push button {key_label}"
+        name = op_point_display_name(physical_address, key_label, op_point)
         super().__init__(
             coordinator=coordinator,
             address=bus_addr,
