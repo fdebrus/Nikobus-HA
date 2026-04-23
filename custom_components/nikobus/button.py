@@ -98,6 +98,24 @@ def _hub_device_info() -> dr.DeviceInfo:
     )
 
 
+def op_point_display_name(
+    physical_address: str, key_label: str, op_point: dict[str, Any]
+) -> str:
+    """Build a UI-visible name for an op-point's device entry.
+
+    IR op-points (storage keys starting with ``IR:``) get the receiver's
+    bus address appended so the same IR code registered on different
+    receivers remains distinguishable in the device list — the
+    library-generated description ("IR code 30A #I30A") is identical for
+    every receiver that learned the same code. Wall keys keep the
+    library description verbatim; it already carries the channel label.
+    """
+    if key_label.startswith("IR:"):
+        ir_code = key_label[len("IR:"):]
+        return f"IR {ir_code} on {physical_address}"
+    return op_point.get("description") or f"Push button {key_label}"
+
+
 class NikobusPcLinkInventoryButton(ButtonEntity):
     """Bridge button that starts a PC Link inventory discovery."""
 
@@ -155,7 +173,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         self._physical_address = physical_address
         self._key_label = key_label
 
-        name = op_point.get("description") or f"Push button {key_label}"
+        name = op_point_display_name(physical_address, key_label, op_point)
 
         super().__init__(
             coordinator=coordinator,
