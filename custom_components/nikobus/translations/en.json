@@ -197,7 +197,7 @@
             },
             "edit_channel": {
                 "title": "Module {address} — channel {channel}",
-                "description": "Configure how this channel appears in Home Assistant. Set `entity_type` to `none` to hide the channel entirely.",
+                "description": "Configure how this channel appears in Home Assistant. Pick **Disabled (hide channel)** in the Entity type dropdown to skip creating an entity for this channel.",
                 "data": {
                     "entity_type": "Entity type",
                     "description": "Channel description",
@@ -219,6 +219,29 @@
                 }
             },
             "name": "Query module inventory"
+        }
+    },
+    "selector": {
+        "entity_type_switch_module": {
+            "options": {
+                "default": "Default (switch)",
+                "light": "Light",
+                "disabled": "Disabled (hide channel)"
+            }
+        },
+        "entity_type_dimmer_module": {
+            "options": {
+                "default": "Default (light)",
+                "disabled": "Disabled (hide channel)"
+            }
+        },
+        "entity_type_roller_module": {
+            "options": {
+                "default": "Default (cover)",
+                "switch": "Switch",
+                "light": "Light",
+                "disabled": "Disabled (hide channel)"
+            }
         }
     }
 }

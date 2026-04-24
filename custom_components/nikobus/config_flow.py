@@ -57,22 +57,9 @@ _MODULE_ENTITY_TYPES: dict[str, list[str]] = {
 }
 
 # The implicit default entity type a channel resolves to when no explicit
-# override is stored — kept in sync with ``router._resolve_entity_type``.
-_MODULE_DEFAULT_ENTITY_TYPE: dict[str, str] = {
-    "switch_module": "switch",
-    "dimmer_module": "light",
-    "roller_module": "cover",
-}
-
-
-def _entity_type_label(module_type: str, value: str) -> str:
-    """Human-readable label for an entity-type dropdown value."""
-    if value == "default":
-        resolved = _MODULE_DEFAULT_ENTITY_TYPE.get(module_type, "switch")
-        return f"Default ({resolved})"
-    if value == "disabled":
-        return "Disabled (hide channel)"
-    return value.capitalize()
+# override is stored — declared in router._resolve_entity_type. The
+# translations/*.json selector.entity_type_<module_type>.options.default
+# labels ("Default (switch)" / …) document the mapping to the user.
 
 _HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
 
@@ -687,11 +674,13 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                 default=current_entity_type,
             ): SelectSelector(
                 SelectSelectorConfig(
-                    options=[
-                        {"value": v, "label": _entity_type_label(module_type, v)}
-                        for v in allowed
-                    ],
+                    options=list(allowed),
                     mode=SelectSelectorMode.DROPDOWN,
+                    # Labels come from translations/*.json under
+                    # selector.entity_type_<module_type>.options.<value>.
+                    # One key per module_type so the "Default (…)" suffix
+                    # can name the module's hardware-default entity type.
+                    translation_key=f"entity_type_{module_type}",
                 )
             ),
             vol.Optional(
