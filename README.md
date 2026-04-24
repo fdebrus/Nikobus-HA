@@ -16,10 +16,10 @@ This custom integration connects Home Assistant to your Nikobus installation so 
 
 Before installing:
 
-- Collect the module addresses from the Nikobus software (needed to build the config files).
+- Home Assistant connects to a **PC-Link (05-200)** — that's the required bus interface. Module addresses are discovered automatically once the integration is connected, so there's no need to collect them up front.
 - Ensure only **one** client is connected to the Nikobus bus at any time (do not run the Nikobus PC software in parallel).
-- Decide how you will connect: directly to a USB/serial adapter (e.g., `/dev/ttyUSB0`) or via a TCP bridge (e.g., `192.168.2.50:9999`).
-- If you have a Feedback Module and a PC-Link, confirm you can connect through it; otherwise plan to use polling with a custom refresh interval.
+- Decide how HA will reach the PC-Link: directly over a USB/serial adapter (e.g. `/dev/ttyUSB0`) or via a TCP bridge (e.g. `192.168.2.50:9999`).
+- If you have a **Feedback Module (05-207)** wired to the PC-Link, note it: you'll enable a toggle during setup so state changes are pushed in real time instead of polled. Without one, HA polls the bus on a configurable interval.
 
 ## Supported Modules and Features
 
@@ -32,9 +32,9 @@ Before installing:
 - **Modules with Digital Interfaces** (PC-Logic `05-201`, Audio Distribution `05-205`, Digital Interface `05-206`)
   - Each digital entry is discovered as a button; HA entities are created after restart.
 - **PC-Link Module** `05-200`
-  - Can be used to connect Home Assistant with a configurable refresh interval.
+  - The bus interface Home Assistant connects to (serial or via a TCP bridge). Required — all communication goes through the PC-Link.
 - **Feedback Module** `05-207`
-  - Can be used for connectivity and for status refresh based on its internal mechanism when combined with PC-Link. Without PC-Link, use a custom refresh interval.
+  - Optional companion to the PC-Link. When present and wired to the PC-Link, it pushes module state changes to Home Assistant in real time, so no polling is needed. Without one, HA polls the bus on a configurable interval (60–3600 s).
 - **Nikobus Buttons** (physical switches, IR, Feedback, Remote)
   - Populated automatically via the **Discover modules & buttons** and **Scan all module links** buttons on the Nikobus Bridge device.
   - Button press events can be used as triggers in Home Assistant automations.
