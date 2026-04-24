@@ -113,8 +113,15 @@ def build_routing(
                     )
                     continue
                 channel_description = channel_info.get("description", "")
-                
-                # Skip channels explicitly marked as unused
+
+                # Skip channels explicitly marked as unused.
+                #   * ``entity_type: "disabled"`` — set from the "Customize a
+                #     module" options flow to hide a channel.
+                #   * ``description`` prefixed with ``not_in_use`` — the
+                #     legacy convention from hand-edited config files; still
+                #     honoured for backwards compatibility.
+                if channel_info.get("entity_type") == "disabled":
+                    continue
                 if channel_description.startswith("not_in_use"):
                     continue
 

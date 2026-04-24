@@ -37,11 +37,42 @@ from nikobus_connect.discovery import find_module
 _LOGGER = logging.getLogger(__name__)
 
 # Module hardware capabilities: which HA entity types each module type can back.
+#
+# Per-module dropdown choices in the "Customize a module" options flow:
+#
+#   - "default"  — use the module's natural entity type (switch, light, or
+#                  cover depending on the module). Stored as absent
+#                  ``entity_type`` on the channel; the router's
+#                  ``_resolve_entity_type`` falls through to the hardware
+#                  default.
+#   - a concrete override (``switch`` / ``light`` / ``cover``) — only listed
+#     when the hardware can actually back that entity type.
+#   - "disabled" — skip the channel entirely (no HA entity created). Checked
+#                  in ``router.py`` alongside the legacy ``not_in_use``
+#                  description-prefix convention.
 _MODULE_ENTITY_TYPES: dict[str, list[str]] = {
-    "switch_module": ["switch", "light", "none"],
-    "dimmer_module": ["light", "none"],
-    "roller_module": ["cover", "switch", "light", "none"],
+    "switch_module": ["default", "light", "disabled"],
+    "dimmer_module": ["default", "disabled"],
+    "roller_module": ["default", "switch", "light", "disabled"],
 }
+
+# The implicit default entity type a channel resolves to when no explicit
+# override is stored — kept in sync with ``router._resolve_entity_type``.
+_MODULE_DEFAULT_ENTITY_TYPE: dict[str, str] = {
+    "switch_module": "switch",
+    "dimmer_module": "light",
+    "roller_module": "cover",
+}
+
+
+def _entity_type_label(module_type: str, value: str) -> str:
+    """Human-readable label for an entity-type dropdown value."""
+    if value == "default":
+        resolved = _MODULE_DEFAULT_ENTITY_TYPE.get(module_type, "switch")
+        return f"Default ({resolved})"
+    if value == "disabled":
+        return "Disabled (hide channel)"
+    return value.capitalize()
 
 _HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
 
@@ -606,9 +637,13 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "invalid_hex_address"
             else:
                 entity_type = user_input.get("entity_type")
-                if entity_type and entity_type != "none":
+                if entity_type and entity_type != "default":
+                    # "disabled" and concrete overrides ("switch" / "light" /
+                    # "cover") are stored verbatim on the channel.
                     channel["entity_type"] = entity_type
                 else:
+                    # "default" — drop the override so the router falls
+                    # through to the hardware default.
                     channel.pop("entity_type", None)
 
                 channel["description"] = (
@@ -629,10 +664,15 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                 self._edit_channel_index = None
                 return await self.async_step_edit_module()
 
-        allowed = _MODULE_ENTITY_TYPES.get(module_type, ["switch", "light", "none"])
-        current_entity_type = channel.get("entity_type") or "none"
+        allowed = _MODULE_ENTITY_TYPES.get(module_type, ["default", "light", "disabled"])
+        # Absent entity_type on the channel resolves to the default at runtime,
+        # so present it that way in the dropdown too. Any pre-existing value
+        # that no longer appears in the module's allowed list (e.g. a roller
+        # channel stored as "switch" that is no longer offered) falls back to
+        # "default" rather than silently sticking on an off-list value.
+        current_entity_type = channel.get("entity_type") or "default"
         if current_entity_type not in allowed:
-            current_entity_type = allowed[0]
+            current_entity_type = "default"
 
         schema_dict: dict[Any, Any] = {
             vol.Required(
@@ -640,7 +680,10 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                 default=current_entity_type,
             ): SelectSelector(
                 SelectSelectorConfig(
-                    options=[{"value": v, "label": v.capitalize()} for v in allowed],
+                    options=[
+                        {"value": v, "label": _entity_type_label(module_type, v)}
+                        for v in allowed
+                    ],
                     mode=SelectSelectorMode.DROPDOWN,
                 )
             ),
