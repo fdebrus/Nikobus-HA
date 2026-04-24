@@ -466,11 +466,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 )
             elif sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
                 if module_address:
+                    # Library supplies ``register_total`` (a count starting
+                    # at register 0x10). Show the actual upper bound rather
+                    # than the legacy hard-coded 0xFF — some modules scan
+                    # much narrower ranges, and the early-stop heuristic
+                    # revises ``register_total`` downward once it fires.
+                    # Fall back to 0xFF only when the library did not send
+                    # a register_total (older lib versions / pre-scan tick).
+                    if register_total:
+                        top_register = 0x10 + register_total - 1
+                    else:
+                        top_register = 0xFF
                     message = (
                         f"Scanning module {module_address} "
                         f"({module_index}/{module_total}) — "
-                        f"register 0x{int(register or 0):02X} of 0xFF "
-                        f"({decoded_records} records)"
+                        f"register 0x{int(register or 0):02X} of "
+                        f"0x{top_register:02X} ({decoded_records} records)"
                     )
                 else:
                     message = f"Scanning modules ({module_index}/{module_total})"
