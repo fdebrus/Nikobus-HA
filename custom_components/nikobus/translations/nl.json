@@ -59,6 +59,7 @@
                 "description": "Wat wilt u doen?",
                 "menu_options": {
                     "hardware": "Hardware-instellingen wijzigen",
+                    "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)",
                     "discovery_pc_link": "Modules en knoppen ontdekken (PC Link-inventaris)",
                     "discovery_modules": "Alle modules scannen voor knoppenkoppelingen"
                 }
@@ -88,6 +89,33 @@
             "discovery_pc_link": {
                 "title": "PC Link-inventaris",
                 "description": "Het PC Link-register wordt gescand op modules en knoppen.\n\n**Voortgang:** {percent}%\n\n{message}"
+            },
+            "configure_modules": {
+                "title": "Een Nikobus-module aanpassen",
+                "description": "Kies een module om te bewerken. Velden uit de ontdekking (model, adres, aantal kanalen) blijven alleen-lezen; alleen gebruikersvelden (beschrijvingen, entiteitstypes, LED-triggers, looptijden) kunnen hier worden gewijzigd.",
+                "data": {
+                    "module": "Module"
+                }
+            },
+            "edit_module": {
+                "title": "Module {address} ({module_type})",
+                "description": "Model: {model}. Bewerk de beschrijving van de module of kies een kanaal om aan te passen.",
+                "data": {
+                    "description": "Modulebeschrijving",
+                    "channel": "Kanaal"
+                }
+            },
+            "edit_channel": {
+                "title": "Module {address} — kanaal {channel}",
+                "description": "Stel in hoe dit kanaal in Home Assistant verschijnt. Kies **Disabled (hide channel)** in de entiteitstype-keuzelijst om geen entiteit voor dit kanaal aan te maken.",
+                "data": {
+                    "entity_type": "Entiteitstype",
+                    "description": "Kanaalbeschrijving",
+                    "led_on": "LED-aan trigger (6-hex busadres, optioneel)",
+                    "led_off": "LED-uit trigger (6-hex busadres, optioneel)",
+                    "operation_time_up": "Looptijd omhoog (seconden)",
+                    "operation_time_down": "Looptijd omlaag (seconden)"
+                }
             },
             "discovery_modules": {
                 "title": "Modules scannen",

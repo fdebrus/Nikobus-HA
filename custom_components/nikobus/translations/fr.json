@@ -59,6 +59,7 @@
                 "description": "Que souhaitez-vous faire ?",
                 "menu_options": {
                     "hardware": "Modifier la configuration matérielle",
+                    "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)",
                     "discovery_pc_link": "Découvrir les modules et boutons (inventaire PC Link)",
                     "discovery_modules": "Scanner tous les modules pour les liens de boutons"
                 }
@@ -88,6 +89,33 @@
             "discovery_pc_link": {
                 "title": "Inventaire PC Link",
                 "description": "Analyse du registre PC Link pour trouver les modules et boutons.\n\n**Progression :** {percent}%\n\n{message}"
+            },
+            "configure_modules": {
+                "title": "Personnaliser un module Nikobus",
+                "description": "Choisissez un module à modifier. Les champs issus de la découverte (modèle, adresse, nombre de canaux) restent en lecture seule ; seuls les champs utilisateur (descriptions, types d'entité, déclencheurs LED, temps de course) peuvent être modifiés ici.",
+                "data": {
+                    "module": "Module"
+                }
+            },
+            "edit_module": {
+                "title": "Module {address} ({module_type})",
+                "description": "Modèle : {model}. Modifiez la description du module ou choisissez un canal à personnaliser.",
+                "data": {
+                    "description": "Description du module",
+                    "channel": "Canal"
+                }
+            },
+            "edit_channel": {
+                "title": "Module {address} — canal {channel}",
+                "description": "Configurez l'apparence de ce canal dans Home Assistant. Sélectionnez **Disabled (hide channel)** dans la liste Type d'entité pour ne pas créer d'entité pour ce canal.",
+                "data": {
+                    "entity_type": "Type d'entité",
+                    "description": "Description du canal",
+                    "led_on": "Déclencheur LED allumée (adresse bus 6-hex, optionnel)",
+                    "led_off": "Déclencheur LED éteinte (adresse bus 6-hex, optionnel)",
+                    "operation_time_up": "Temps de course à l'ouverture (secondes)",
+                    "operation_time_down": "Temps de course à la fermeture (secondes)"
+                }
             },
             "discovery_modules": {
                 "title": "Scan des modules",
