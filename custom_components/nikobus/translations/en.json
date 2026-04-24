@@ -220,5 +220,28 @@
             },
             "name": "Query module inventory"
         }
+    },
+    "selector": {
+        "entity_type_switch_module": {
+            "options": {
+                "default": "Default (switch)",
+                "light": "Light",
+                "disabled": "Disabled (hide channel)"
+            }
+        },
+        "entity_type_dimmer_module": {
+            "options": {
+                "default": "Default (light)",
+                "disabled": "Disabled (hide channel)"
+            }
+        },
+        "entity_type_roller_module": {
+            "options": {
+                "default": "Default (cover)",
+                "switch": "Switch",
+                "light": "Light",
+                "disabled": "Disabled (hide channel)"
+            }
+        }
     }
 }

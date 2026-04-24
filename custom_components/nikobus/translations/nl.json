@@ -107,7 +107,7 @@
             },
             "edit_channel": {
                 "title": "Module {address} — kanaal {channel}",
-                "description": "Stel in hoe dit kanaal in Home Assistant verschijnt. Kies **Disabled (hide channel)** in de entiteitstype-keuzelijst om geen entiteit voor dit kanaal aan te maken.",
+                "description": "Stel in hoe dit kanaal in Home Assistant verschijnt. Kies **Uitgeschakeld (kanaal verbergen)** in de entiteitstype-keuzelijst om geen entiteit voor dit kanaal aan te maken.",
                 "data": {
                     "entity_type": "Entiteitstype",
                     "description": "Kanaalbeschrijving",
@@ -196,6 +196,29 @@
         },
         "no_modules_known": {
             "message": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit en probeer dan opnieuw modules te scannen."
+        }
+    },
+    "selector": {
+        "entity_type_switch_module": {
+            "options": {
+                "default": "Standaard (schakelaar)",
+                "light": "Lamp",
+                "disabled": "Uitgeschakeld (kanaal verbergen)"
+            }
+        },
+        "entity_type_dimmer_module": {
+            "options": {
+                "default": "Standaard (lamp)",
+                "disabled": "Uitgeschakeld (kanaal verbergen)"
+            }
+        },
+        "entity_type_roller_module": {
+            "options": {
+                "default": "Standaard (rolluik)",
+                "switch": "Schakelaar",
+                "light": "Lamp",
+                "disabled": "Uitgeschakeld (kanaal verbergen)"
+            }
         }
     }
 }

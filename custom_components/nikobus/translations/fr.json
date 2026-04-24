@@ -107,7 +107,7 @@
             },
             "edit_channel": {
                 "title": "Module {address} — canal {channel}",
-                "description": "Configurez l'apparence de ce canal dans Home Assistant. Sélectionnez **Disabled (hide channel)** dans la liste Type d'entité pour ne pas créer d'entité pour ce canal.",
+                "description": "Configurez l'apparence de ce canal dans Home Assistant. Sélectionnez **Désactivé (masquer le canal)** dans la liste Type d'entité pour ne pas créer d'entité pour ce canal.",
                 "data": {
                     "entity_type": "Type d'entité",
                     "description": "Description du canal",
@@ -196,6 +196,29 @@
         },
         "no_modules_known": {
             "message": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link, puis relancez le scan des modules."
+        }
+    },
+    "selector": {
+        "entity_type_switch_module": {
+            "options": {
+                "default": "Par défaut (interrupteur)",
+                "light": "Lumière",
+                "disabled": "Désactivé (masquer le canal)"
+            }
+        },
+        "entity_type_dimmer_module": {
+            "options": {
+                "default": "Par défaut (lumière)",
+                "disabled": "Désactivé (masquer le canal)"
+            }
+        },
+        "entity_type_roller_module": {
+            "options": {
+                "default": "Par défaut (volet)",
+                "switch": "Interrupteur",
+                "light": "Lumière",
+                "disabled": "Désactivé (masquer le canal)"
+            }
         }
     }
 }
