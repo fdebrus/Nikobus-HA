@@ -410,8 +410,12 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
         if self._discovery_task is None:
             self._discovery_kind = "pc_link"
+            # auto_reload=True: let the coordinator schedule its own
+            # background reload when discovery finishes. The options flow
+            # terminates with async_abort (no update-listener round-trip),
+            # so we can't rely on the listener to kick off a reload here.
             self._discovery_task = self.hass.async_create_task(
-                coordinator.start_pc_link_inventory(auto_reload=False)
+                coordinator.start_pc_link_inventory(auto_reload=True)
             )
 
         return await self._progress_step("discovery_pc_link")
@@ -436,8 +440,11 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
         if self._discovery_task is None:
             self._discovery_kind = "module_scan"
+            # auto_reload=True: same rationale as the PC Link step above
+            # — the coordinator handles reload asynchronously once
+            # discovery finishes; the flow terminates via async_abort.
             self._discovery_task = self.hass.async_create_task(
-                coordinator.start_module_scan(auto_reload=False)
+                coordinator.start_module_scan(auto_reload=True)
             )
 
         return await self._progress_step("discovery_modules")
@@ -735,16 +742,25 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         """Finalize the flow after a successful discovery.
 
-        Use ``async_create_entry`` with empty options so HA closes the
-        flow cleanly via its standard success dialog. The coordinator's
-        auto-reload (triggered by the options update listener) picks up
-        the newly-discovered entities. This avoids the "Invalid flow
-        specified" error that async_abort + manual reload can cause.
+        Abort with the ``discovery_done`` reason so HA closes the flow
+        via a plain terminal response — no options persistence, no
+        update listener invocation, no awaiting of the reload.
+
+        Entity refresh is delegated to the coordinator:
+        ``_handle_discovery_finished`` schedules the config-entry reload
+        via ``hass.async_create_task`` (see ``coordinator.py``), so it
+        runs independently of the flow lifecycle. This keeps the
+        flow-close HTTP response fast enough for the frontend to render
+        the success dialog instead of falling back to its generic
+        "Invalid flow specified" error.
+
+        (The previous ``async_create_entry`` version kept the flow
+        dependent on the options update listener, which — even after
+        it was made fire-and-forget in #288 — was still entangled with
+        the ``async_show_progress_done → next_step → create_entry``
+        hand-off on the flow-manager side.)
         """
-        # Merge back the existing options so the update listener fires
-        # even if self._options is empty.
-        merged = {**self.config_entry.options, **self._options}
-        return self.async_create_entry(title="", data=merged)
+        return self.async_abort(reason="discovery_done")
 
     async def async_step_discovery_error(
         self, user_input: dict[str, Any] | None = None
