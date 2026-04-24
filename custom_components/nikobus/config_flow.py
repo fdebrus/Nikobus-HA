@@ -439,21 +439,40 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     async def _progress_step(
         self, step_id: str
     ) -> config_entries.FlowResult:
-        """Poll the background discovery task and show a progress spinner.
+        """Show a progress spinner until the discovery task completes.
 
-        HA only re-runs the flow step when the ``progress_task`` completes.
-        To refresh the displayed progress during a long-running discovery, we
-        pass a short "poll" task (sleep 1s) as the ``progress_task``. HA
-        re-runs the step when that poll task completes, which lets us read
-        the latest coordinator state and return a new spinner with updated
-        description placeholders. Meanwhile the real discovery task runs
-        independently; once it finishes, the next invocation transitions to
-        the done/error step.
+        Passes the real discovery task itself as ``progress_task`` so
+        HA re-runs this step exactly once — when the task finishes —
+        and we transition to the terminal step. No intermediate
+        re-renders while the scan is running.
+
+        The earlier implementation created a fresh 1-second
+        ``asyncio.sleep`` task as ``progress_task`` on every call to
+        refresh the dialog text mid-scan. On long scans that piled
+        up hundreds of short-lived tasks and a handful of race
+        windows: a poll task could fire after we'd already returned
+        ``PROGRESS_DONE``, HA would re-enter a flow whose state had
+        moved on, and the frontend rendered "Invalid flow specified"
+        even when nothing crashed server-side. See the prior attempts
+        in #288 (fire-and-forget reload) and #294 (abort instead of
+        create_entry) — both were real fixes but missed this layer.
+
+        The trade-off is that the progress-dialog description is
+        static for the duration of the scan. Live per-register detail
+        is surfaced via the **Discovery Status** and **Discovery
+        Progress** sensors on the Nikobus Bridge device, which are
+        what the user should watch during a long scan.
         """
         coordinator = self._coordinator()
         task = self._discovery_task
 
-        if task is not None and task.done():
+        if task is None:
+            # The caller always creates the task before we get here; treat
+            # a missing task as an error rather than spinning forever.
+            _LOGGER.error("Discovery progress step reached without a task")
+            return self.async_show_progress_done(next_step_id="discovery_error")
+
+        if task.done():
             self._discovery_task = None
             try:
                 task.result()
@@ -470,9 +489,6 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         percent = coordinator.discovery_progress_percent if coordinator else 0
         display = raw_message or "Starting…"
 
-        # Short poll task so HA re-runs this step every 1s to refresh the UI.
-        poll_task = self.hass.async_create_task(asyncio.sleep(1))
-
         kwargs: dict[str, Any] = {
             "step_id": step_id,
             "progress_action": "discovery",
@@ -482,7 +498,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             },
         }
         try:
-            return self.async_show_progress(progress_task=poll_task, **kwargs)
+            return self.async_show_progress(progress_task=task, **kwargs)
         except TypeError:
             # Older HA without progress_task support — fall back to plain call.
             return self.async_show_progress(**kwargs)
