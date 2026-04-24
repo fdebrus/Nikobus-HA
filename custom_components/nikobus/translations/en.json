@@ -197,7 +197,7 @@
             },
             "edit_channel": {
                 "title": "Module {address} — channel {channel}",
-                "description": "Configure how this channel appears in Home Assistant. Set `entity_type` to `none` to hide the channel entirely.",
+                "description": "Configure how this channel appears in Home Assistant. Pick **Disabled (hide channel)** in the Entity type dropdown to skip creating an entity for this channel.",
                 "data": {
                     "entity_type": "Entity type",
                     "description": "Channel description",
