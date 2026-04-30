@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -18,12 +18,15 @@ _LOGGER = logging.getLogger(__name__)
 class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
     """Base entity for Nikobus devices with targeted refresh support."""
 
+    _attr_has_entity_name = True
+
     def __init__(
         self,
         coordinator: NikobusDataCoordinator,
         address: str,
         name: str,
         model: str,
+        via_device: tuple[str, str] | None = None,
     ) -> None:
         """Initialize the entity with shared device information."""
         super().__init__(coordinator)
@@ -32,12 +35,15 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         self._device_model = model
 
         # Platinum Architecture: Groups channels under a single physical device.
-        self._attr_device_info = dr.DeviceInfo(
+        device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, self._address)},
             name=self._device_name,
             manufacturer=BRAND,
             model=self._device_model,
         )
+        if via_device is not None:
+            device_info["via_device"] = via_device
+        self._attr_device_info = device_info
 
     @property
     def available(self) -> bool:
@@ -62,7 +68,7 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         )
 
 
-def device_entry_diagnostics(device: dr.DeviceEntry) -> Dict[str, Any]:
+def device_entry_diagnostics(device: dr.DeviceEntry) -> dict[str, Any]:
     """Return diagnostics data for a Nikobus device entry."""
     return {
         "id": device.id,

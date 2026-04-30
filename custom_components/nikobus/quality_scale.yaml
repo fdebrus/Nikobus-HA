@@ -1,11 +1,6 @@
 rules:
   # Bronze
-  action-setup:
-    status: exempt
-    comment: |
-      The only service (query_module_inventory) is registered inside
-      async_setup_entry because it requires a loaded coordinator to
-      operate on.
+  action-setup: done
   appropriate-polling: done
   brands:
     status: exempt
@@ -15,8 +10,10 @@ rules:
   config-flow-test-coverage:
     status: todo
     comment: |
-      Existing tests cover coordinator and protocol layers; a dedicated
-      test module for config/options flow is planned.
+      Existing tests cover protocol/listener/command/coordinator/sensor.
+      A dedicated test_config_flow.py with the full success / cannot_connect /
+      unknown / already_configured / hardware-branch / reconfigure matrix is
+      pending the test-infrastructure swap to pytest-homeassistant-custom-component.
   dependency-transparency: done
   docs-actions: done
   docs-high-level-description: done
@@ -36,12 +33,11 @@ rules:
   docs-configuration-parameters: done
   docs-installation-parameters: done
   entity-unavailable: done
+  entity-category: done
+  entity-disabled-by-default: done
   integration-owner: done
   log-when-unavailable: done
-  parallel-updates:
-    status: todo
-    comment: |
-      PARALLEL_UPDATES is not yet declared in the platform modules.
+  parallel-updates: done
   reauthentication-flow:
     status: exempt
     comment: |
@@ -50,8 +46,9 @@ rules:
   test-coverage:
     status: todo
     comment: |
-      Core flows have tests; broader coverage (reconfigure flow, error
-      branches) is planned.
+      Core flows have tests but per-platform tests with snapshots and the
+      diagnostics test require the test-infrastructure swap to
+      pytest-homeassistant-custom-component (planned, separate PR).
 
   # Gold
   devices: done
@@ -66,21 +63,19 @@ rules:
     status: exempt
     comment: See `discovery`.
   docs-data-update: done
-  docs-examples: todo
-  docs-known-limitations: todo
+  docs-examples: done
+  docs-known-limitations: done
   docs-supported-devices: done
   docs-supported-functions: done
   docs-troubleshooting: done
   docs-use-cases: done
   dynamic-devices: done
-  entity-category: done
   entity-device-class: done
-  entity-disabled-by-default: todo
   entity-translations: done
   exception-translations: done
-  icon-translations: todo
+  icon-translations: done
   reconfiguration-flow: done
-  repair-issues: todo
+  repair-issues: done
   stale-devices: done
 
   # Platinum
@@ -89,4 +84,15 @@ rules:
     status: exempt
     comment: |
       The Nikobus protocol runs over a serial/TCP link, not HTTP.
-  strict-typing: todo
+  strict-typing:
+    status: todo
+    comment: |
+      py.typed marker is in place and mypy.ini declares strict mode for
+      custom_components.nikobus.*. Code-side: PEP 585/604 forms used
+      throughout, asyncio.Task[None] generics declared, broad except
+      blocks re-raise CancelledError, ad-hoc Any removed in favour of
+      typed Event / NikobusDataCoordinator / CALLBACK_TYPE. The
+      remaining mypy diagnostics involve homeassistant.* generics that
+      mypy can only resolve when an installed HA package provides the
+      stubs; those will be cleared when the integration enters HA
+      core's strict-typing CI.

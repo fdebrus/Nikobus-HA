@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+)
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -21,8 +32,98 @@ from .const import (
 from .coordinator import NikobusConfigEntry
 from .exceptions import NikobusConnectionError
 from nikobus_connect import NikobusConnect
+from nikobus_connect.discovery import find_module
 
 _LOGGER = logging.getLogger(__name__)
+
+# Module hardware capabilities: which HA entity types each module type can back.
+#
+# Per-module dropdown choices in the "Customize a module" options flow:
+#
+#   - "default"  — use the module's natural entity type (switch, light, or
+#                  cover depending on the module). Stored as absent
+#                  ``entity_type`` on the channel; the router's
+#                  ``_resolve_entity_type`` falls through to the hardware
+#                  default.
+#   - a concrete override (``switch`` / ``light`` / ``cover``) — only listed
+#     when the hardware can actually back that entity type.
+#   - "disabled" — skip the channel entirely (no HA entity created). Checked
+#                  in ``router.py`` alongside the legacy ``not_in_use``
+#                  description-prefix convention.
+_MODULE_ENTITY_TYPES: dict[str, list[str]] = {
+    "switch_module": ["default", "light", "disabled"],
+    "dimmer_module": ["default", "disabled"],
+    "roller_module": ["default", "switch", "light", "disabled"],
+}
+
+# The implicit default entity type a channel resolves to when no explicit
+# override is stored — declared in router._resolve_entity_type. The
+# translations/*.json selector.entity_type_<module_type>.options.default
+# labels ("Default (switch)" / …) document the mapping to the user.
+
+_HEX_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
+
+
+def _validate_optional_hex6(value: Any) -> str:
+    """Accept an empty string or a 6-char hex bus address."""
+    if value is None:
+        return ""
+    text = str(value).strip().upper()
+    if text == "":
+        return ""
+    if not _HEX_RE.match(text):
+        raise vol.Invalid("invalid_hex_address")
+    return text
+
+
+_MODULE_TYPE_ORDER: dict[str, int] = {
+    "switch_module": 0,
+    "dimmer_module": 1,
+    "roller_module": 2,
+}
+
+
+def _module_type_order(module_type: str | None) -> int:
+    return _MODULE_TYPE_ORDER.get(module_type or "", 99)
+
+
+def _module_label(address: str, entry: dict[str, Any]) -> str:
+    """Render a user-facing label for the module picker."""
+    desc = entry.get("description") or f"Module {address}"
+    module_type = entry.get("module_type") or "module"
+    pretty_type = module_type.replace("_", " ").title()
+    return f"{pretty_type} — {address} — {desc}"
+
+
+def _set_or_drop(mapping: dict[str, Any], key: str, value: str) -> None:
+    """Store ``value`` when non-empty; otherwise remove the key entirely."""
+    if value:
+        mapping[key] = value
+    else:
+        mapping.pop(key, None)
+
+
+def _set_time_or_drop(mapping: dict[str, Any], key: str, value: Any) -> None:
+    """Store an operation-time value (as a string, to match legacy shape)."""
+    if value in (None, ""):
+        mapping.pop(key, None)
+        return
+    try:
+        as_int = int(float(value))
+    except (TypeError, ValueError):
+        mapping.pop(key, None)
+        return
+    if as_int <= 0:
+        mapping.pop(key, None)
+        return
+    mapping[key] = str(as_int)
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 # ---------------------------------------------------------------------------
 # Reusable schema fragments
@@ -228,8 +329,10 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         self._options: dict[str, Any] = {}
-        self._discovery_task: asyncio.Task | None = None
+        self._discovery_task: asyncio.Task[None] | None = None
         self._discovery_kind: str | None = None  # "pc_link" or "module_scan"
+        self._edit_module_address: str | None = None
+        self._edit_channel_index: int | None = None
 
     def _current(self) -> dict[str, Any]:
         """Merge entry data + options so defaults reflect the live settings."""
@@ -248,6 +351,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             step_id="init",
             menu_options=[
                 "hardware",
+                "configure_modules",
                 "discovery_pc_link",
                 "discovery_modules",
             ],
@@ -293,8 +397,12 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
         if self._discovery_task is None:
             self._discovery_kind = "pc_link"
+            # auto_reload=True: let the coordinator schedule its own
+            # background reload when discovery finishes. The options flow
+            # terminates with async_abort (no update-listener round-trip),
+            # so we can't rely on the listener to kick off a reload here.
             self._discovery_task = self.hass.async_create_task(
-                coordinator.start_pc_link_inventory(auto_reload=False)
+                coordinator.start_pc_link_inventory(auto_reload=True)
             )
 
         return await self._progress_step("discovery_pc_link")
@@ -309,10 +417,21 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         if coordinator is None:
             return self.async_abort(reason="not_loaded")
 
+        # Gate: the module scan walks the list of known output modules.
+        # Without a prior PC Link inventory (or a legacy-file migration)
+        # that list is empty and the scan has nothing to do. Steer the
+        # user to run the inventory first instead of silently finishing
+        # with zero records.
+        if self._discovery_task is None and not coordinator.has_known_output_modules:
+            return self.async_abort(reason="no_modules")
+
         if self._discovery_task is None:
             self._discovery_kind = "module_scan"
+            # auto_reload=True: same rationale as the PC Link step above
+            # — the coordinator handles reload asynchronously once
+            # discovery finishes; the flow terminates via async_abort.
             self._discovery_task = self.hass.async_create_task(
-                coordinator.start_module_scan(auto_reload=False)
+                coordinator.start_module_scan(auto_reload=True)
             )
 
         return await self._progress_step("discovery_modules")
@@ -320,21 +439,40 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     async def _progress_step(
         self, step_id: str
     ) -> config_entries.FlowResult:
-        """Poll the background discovery task and show a progress spinner.
+        """Show a progress spinner until the discovery task completes.
 
-        HA only re-runs the flow step when the ``progress_task`` completes.
-        To refresh the displayed progress during a long-running discovery, we
-        pass a short "poll" task (sleep 1s) as the ``progress_task``. HA
-        re-runs the step when that poll task completes, which lets us read
-        the latest coordinator state and return a new spinner with updated
-        description placeholders. Meanwhile the real discovery task runs
-        independently; once it finishes, the next invocation transitions to
-        the done/error step.
+        Passes the real discovery task itself as ``progress_task`` so
+        HA re-runs this step exactly once — when the task finishes —
+        and we transition to the terminal step. No intermediate
+        re-renders while the scan is running.
+
+        The earlier implementation created a fresh 1-second
+        ``asyncio.sleep`` task as ``progress_task`` on every call to
+        refresh the dialog text mid-scan. On long scans that piled
+        up hundreds of short-lived tasks and a handful of race
+        windows: a poll task could fire after we'd already returned
+        ``PROGRESS_DONE``, HA would re-enter a flow whose state had
+        moved on, and the frontend rendered "Invalid flow specified"
+        even when nothing crashed server-side. See the prior attempts
+        in #288 (fire-and-forget reload) and #294 (abort instead of
+        create_entry) — both were real fixes but missed this layer.
+
+        The trade-off is that the progress-dialog description is
+        static for the duration of the scan. Live per-register detail
+        is surfaced via the **Discovery Status** and **Discovery
+        Progress** sensors on the Nikobus Bridge device, which are
+        what the user should watch during a long scan.
         """
         coordinator = self._coordinator()
         task = self._discovery_task
 
-        if task is not None and task.done():
+        if task is None:
+            # The caller always creates the task before we get here; treat
+            # a missing task as an error rather than spinning forever.
+            _LOGGER.error("Discovery progress step reached without a task")
+            return self.async_show_progress_done(next_step_id="discovery_error")
+
+        if task.done():
             self._discovery_task = None
             try:
                 task.result()
@@ -351,9 +489,6 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         percent = coordinator.discovery_progress_percent if coordinator else 0
         display = raw_message or "Starting…"
 
-        # Short poll task so HA re-runs this step every 1s to refresh the UI.
-        poll_task = self.hass.async_create_task(asyncio.sleep(1))
-
         kwargs: dict[str, Any] = {
             "step_id": step_id,
             "progress_action": "discovery",
@@ -363,26 +498,274 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             },
         }
         try:
-            return self.async_show_progress(progress_task=poll_task, **kwargs)
+            return self.async_show_progress(progress_task=task, **kwargs)
         except TypeError:
             # Older HA without progress_task support — fall back to plain call.
             return self.async_show_progress(**kwargs)
+
+    # --- Module customization ----------------------------------------------
+
+    async def async_step_configure_modules(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Let the user pick a module to customize."""
+        coordinator = self._coordinator()
+        if coordinator is None:
+            return self.async_abort(reason="not_loaded")
+
+        modules = coordinator.module_storage.data.get("nikobus_module") or {}
+        if not modules:
+            return self.async_abort(reason="no_modules")
+
+        if user_input is not None:
+            self._edit_module_address = str(user_input["module"]).upper()
+            return await self.async_step_edit_module()
+
+        options = [
+            {
+                "value": addr,
+                "label": _module_label(addr, entry),
+            }
+            for addr, entry in sorted(
+                modules.items(),
+                key=lambda kv: (
+                    _module_type_order(kv[1].get("module_type")),
+                    kv[0],
+                ),
+            )
+        ]
+
+        return self.async_show_form(
+            step_id="configure_modules",
+            data_schema=vol.Schema({
+                vol.Required("module"): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN)
+                ),
+            }),
+        )
+
+    async def async_step_edit_module(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Edit module-level description; pick a channel or finish."""
+        coordinator = self._coordinator()
+        if coordinator is None or self._edit_module_address is None:
+            return self.async_abort(reason="not_loaded")
+
+        module_data = coordinator.module_storage.data
+        hit = find_module(module_data, self._edit_module_address)
+        if hit is None:
+            return self.async_abort(reason="module_not_found")
+        address, entry = hit
+
+        channels = entry.get("channels", [])
+
+        if user_input is not None:
+            # Persist the module-level description verbatim.
+            new_desc = (user_input.get("description") or "").strip()
+            if new_desc:
+                entry["description"] = new_desc
+
+            selected = user_input.get("channel")
+            await coordinator._async_on_module_save()
+
+            if selected and selected != "done":
+                try:
+                    self._edit_channel_index = int(selected)
+                except ValueError:
+                    return await self.async_step_edit_module()
+                return await self.async_step_edit_channel()
+
+            # Done — close the flow. The entry's update listener reloads.
+            merged = {**self.config_entry.options, **self._options}
+            return self.async_create_entry(title="", data=merged)
+
+        channel_options = [
+            {
+                "value": str(idx),
+                "label": (
+                    f"Channel {idx}: "
+                    f"{ch.get('description') or '(no description)'}"
+                ),
+            }
+            for idx, ch in enumerate(channels, start=1)
+            if isinstance(ch, dict)
+        ]
+        channel_options.append({"value": "done", "label": "Finish editing"})
+
+        return self.async_show_form(
+            step_id="edit_module",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "description",
+                    default=entry.get("description") or "",
+                ): TextSelector(TextSelectorConfig()),
+                vol.Required("channel", default="done"): SelectSelector(
+                    SelectSelectorConfig(
+                        options=channel_options,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
+            }),
+            description_placeholders={
+                "address": address,
+                "module_type": entry.get("module_type", "unknown"),
+                "model": entry.get("model") or "unknown",
+            },
+        )
+
+    async def async_step_edit_channel(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Edit a single channel's user-owned fields."""
+        coordinator = self._coordinator()
+        if (
+            coordinator is None
+            or self._edit_module_address is None
+            or self._edit_channel_index is None
+        ):
+            return self.async_abort(reason="not_loaded")
+
+        hit = find_module(coordinator.module_storage.data, self._edit_module_address)
+        if hit is None:
+            return self.async_abort(reason="module_not_found")
+        address, entry = hit
+        module_type = entry.get("module_type", "switch_module")
+        idx = self._edit_channel_index
+        channels = entry.get("channels", [])
+        if not (1 <= idx <= len(channels)) or not isinstance(channels[idx - 1], dict):
+            return self.async_abort(reason="channel_not_found")
+        channel = channels[idx - 1]
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                led_on = _validate_optional_hex6(user_input.get("led_on", ""))
+                led_off = _validate_optional_hex6(user_input.get("led_off", ""))
+            except vol.Invalid:
+                errors["base"] = "invalid_hex_address"
+            else:
+                entity_type = user_input.get("entity_type")
+                if entity_type and entity_type != "default":
+                    # "disabled" and concrete overrides ("switch" / "light" /
+                    # "cover") are stored verbatim on the channel.
+                    channel["entity_type"] = entity_type
+                else:
+                    # "default" — drop the override so the router falls
+                    # through to the hardware default.
+                    channel.pop("entity_type", None)
+
+                channel["description"] = (
+                    user_input.get("description") or channel.get("description", "")
+                )
+                _set_or_drop(channel, "led_on", led_on)
+                _set_or_drop(channel, "led_off", led_off)
+
+                if module_type == "roller_module":
+                    up = user_input.get("operation_time_up")
+                    down = user_input.get("operation_time_down")
+                    _set_time_or_drop(channel, "operation_time_up", up)
+                    _set_time_or_drop(channel, "operation_time_down", down)
+
+                await coordinator._async_on_module_save()
+                # Return to the module step so the user can edit another
+                # channel or finish.
+                self._edit_channel_index = None
+                return await self.async_step_edit_module()
+
+        allowed = _MODULE_ENTITY_TYPES.get(module_type, ["default", "light", "disabled"])
+        # Absent entity_type on the channel resolves to the default at runtime,
+        # so present it that way in the dropdown too. Any pre-existing value
+        # that no longer appears in the module's allowed list (e.g. a roller
+        # channel stored as "switch" that is no longer offered) falls back to
+        # "default" rather than silently sticking on an off-list value.
+        current_entity_type = channel.get("entity_type") or "default"
+        if current_entity_type not in allowed:
+            current_entity_type = "default"
+
+        schema_dict: dict[Any, Any] = {
+            vol.Required(
+                "entity_type",
+                default=current_entity_type,
+            ): SelectSelector(
+                SelectSelectorConfig(
+                    options=list(allowed),
+                    mode=SelectSelectorMode.DROPDOWN,
+                    # Labels come from translations/*.json under
+                    # selector.entity_type_<module_type>.options.<value>.
+                    # One key per module_type so the "Default (…)" suffix
+                    # can name the module's hardware-default entity type.
+                    translation_key=f"entity_type_{module_type}",
+                )
+            ),
+            vol.Optional(
+                "description",
+                default=channel.get("description") or "",
+            ): TextSelector(TextSelectorConfig()),
+            vol.Optional(
+                "led_on",
+                default=channel.get("led_on") or "",
+            ): TextSelector(TextSelectorConfig()),
+            vol.Optional(
+                "led_off",
+                default=channel.get("led_off") or "",
+            ): TextSelector(TextSelectorConfig()),
+        }
+
+        if module_type == "roller_module":
+            schema_dict[vol.Optional(
+                "operation_time_up",
+                default=_coerce_int(channel.get("operation_time_up"), 30),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=600, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+                )
+            )
+            schema_dict[vol.Optional(
+                "operation_time_down",
+                default=_coerce_int(channel.get("operation_time_down"), 30),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=1, max=600, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+                )
+            )
+
+        return self.async_show_form(
+            step_id="edit_channel",
+            data_schema=vol.Schema(schema_dict),
+            description_placeholders={
+                "address": address,
+                "channel": str(idx),
+                "module_type": module_type,
+            },
+            errors=errors,
+        )
 
     async def async_step_discovery_done(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         """Finalize the flow after a successful discovery.
 
-        Use ``async_create_entry`` with empty options so HA closes the
-        flow cleanly via its standard success dialog. The coordinator's
-        auto-reload (triggered by the options update listener) picks up
-        the newly-discovered entities. This avoids the "Invalid flow
-        specified" error that async_abort + manual reload can cause.
+        Abort with the ``discovery_done`` reason so HA closes the flow
+        via a plain terminal response — no options persistence, no
+        update listener invocation, no awaiting of the reload.
+
+        Entity refresh is delegated to the coordinator:
+        ``_handle_discovery_finished`` schedules the config-entry reload
+        via ``hass.async_create_task`` (see ``coordinator.py``), so it
+        runs independently of the flow lifecycle. This keeps the
+        flow-close HTTP response fast enough for the frontend to render
+        the success dialog instead of falling back to its generic
+        "Invalid flow specified" error.
+
+        (The previous ``async_create_entry`` version kept the flow
+        dependent on the options update listener, which — even after
+        it was made fire-and-forget in #288 — was still entangled with
+        the ``async_show_progress_done → next_step → create_entry``
+        hand-off on the flow-manager side.)
         """
-        # Merge back the existing options so the update listener fires
-        # even if self._options is empty.
-        merged = {**self.config_entry.options, **self._options}
-        return self.async_create_entry(title="", data=merged)
+        return self.async_abort(reason="discovery_done")
 
     async def async_step_discovery_error(
         self, user_input: dict[str, Any] | None = None

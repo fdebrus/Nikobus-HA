@@ -1,32 +1,36 @@
-"""Nikobus Configuration Handler - Load / Write configuration files for Nikobus."""
+"""Nikobus Configuration Handler - Load / Write configuration files for Nikobus.
 
+As of nikobus-connect 0.4.0 the module store lives in the HA Store
+(``.storage/nikobus.modules``). This handler only manages the scene config
+file today; the module/button paths are intentionally absent.
+"""
+
+from __future__ import annotations
+
+import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 from aiofiles import open as aio_open
+from homeassistant.core import HomeAssistant
 
-from .exceptions import NikobusDataError  # Updated import
+from .exceptions import NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
-_LOAD_TRANSFORMS: Dict[str, str] = {
-    "button": "_transform_button_data",
-    "module": "_transform_module_data",
-}
-_WRITE_TRANSFORMS: Dict[str, str] = {
-    "button": "_transform_button_data_for_writing",
-}
+_LOAD_TRANSFORMS: dict[str, str] = {}
+_WRITE_TRANSFORMS: dict[str, str] = {}
 
 
 class NikobusConfig:
     """Handles the loading and saving of Nikobus configuration data."""
 
-    def __init__(self, hass: Any) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         """Initialize the configuration handler."""
         self._hass = hass
 
-    async def load_json_data(self, file_name: str, data_type: str) -> dict:
+    async def load_json_data(self, file_name: str, data_type: str) -> dict[str, Any]:
         """Load JSON data from a file and transform it based on the data type."""
         file_path = self._hass.config.path(file_name)
         _LOGGER.info("Loading %s data from %s", data_type, file_path)
@@ -45,11 +49,13 @@ class NikobusConfig:
             _LOGGER.error("Failed to decode JSON in %s file: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to decode JSON in {data_type} file: {err}") from err
 
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
 
-    async def load_optional_json_data(self, file_name: str, data_type: str) -> dict:
+    async def load_optional_json_data(self, file_name: str, data_type: str) -> dict[str, Any]:
         """Load JSON data from a file, returning an empty dict if it does not exist."""
         file_path = self._hass.config.path(file_name)
         _LOGGER.debug("Loading optional %s data from %s", data_type, file_path)
@@ -71,6 +77,8 @@ class NikobusConfig:
             raise NikobusDataError(
                 f"Failed to decode JSON in optional {data_type} file: {err}"
             ) from err
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Failed to load optional %s data: %s", data_type, err, exc_info=True
@@ -79,112 +87,25 @@ class NikobusConfig:
                 f"Failed to load optional {data_type} data: {err}"
             ) from err
 
-    def _transform_loaded_data(self, data: dict, data_type: str) -> dict:
+    def _transform_loaded_data(self, data: dict[str, Any], data_type: str) -> dict[str, Any]:
         """Transform the loaded JSON data based on the data type."""
         transform_name = _LOAD_TRANSFORMS.get(data_type)
         if not transform_name:
             return data
         return getattr(self, transform_name)(data)
 
-    def _transform_button_data(self, data: dict) -> dict:
-        """Transform button data from a list to a dictionary.
-
-        Also migrates legacy field names from nikobus-connect < 0.1.4:
-            discovered_info  → linked_button
-            discovered_links → linked_modules
-        """
-        if "nikobus_button" in data:
-            for button in data["nikobus_button"]:
-                if isinstance(button, dict):
-                    if "discovered_info" in button:
-                        button["linked_button"] = button.pop("discovered_info")
-                    if "discovered_links" in button:
-                        button["linked_modules"] = button.pop("discovered_links")
-            data["nikobus_button"] = {
-                button["address"]: button for button in data["nikobus_button"]
-            }
-        else:
-            _LOGGER.warning("'nikobus_button' key not found in button data")
-        return data
-
-    def _transform_module_data(self, data: dict) -> dict:
-        """Transform module data from a list to a dictionary."""
-        for key in ["switch_module", "dimmer_module", "roller_module", "other_module"]:
-            if key not in data:
-                continue
-            modules = data[key]
-            if isinstance(modules, list):
-                data[key] = {
-                    module["address"]: self._normalize_module_channels(module)
-                    for module in modules
-                    if module.get("address")
-                }
-            elif isinstance(modules, dict):
-                normalized: dict[str, dict[str, Any]] = {}
-                for address, module in modules.items():
-                    if not isinstance(module, dict):
-                        _LOGGER.warning(
-                            "Skipping module %s with invalid data type: %s",
-                            address,
-                            type(module),
-                        )
-                        continue
-                    module_data = dict(module)
-                    module_data.setdefault("address", address)
-                    normalized[address] = self._normalize_module_channels(module_data)
-                data[key] = normalized
-            else:
-                _LOGGER.warning(
-                    "Unsupported module data type for %s: %s", key, type(modules)
-                )
-                data[key] = {}
-        return data
-
-    @staticmethod
-    def _normalize_module_channels(module: dict[str, Any]) -> dict[str, Any]:
-        """Normalize module channel definitions to a list of channel dicts."""
-        channels = module.get("channels", [])
-        if isinstance(channels, int):
-            module["channels"] = [
-                {"description": f"Channel {idx}"} for idx in range(1, channels + 1)
-            ]
-            return module
-        if isinstance(channels, list):
-            module["channels"] = [
-                channel if isinstance(channel, dict) else {"description": str(channel)}
-                for channel in channels
-            ]
-            return module
-        module["channels"] = []
-        return module
-
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:
         """Handle the case where the configuration file is not found."""
-        if data_type == "module":
-            _LOGGER.info(
-                "Module configuration file not found: %s. "
-                "Run PC-Link inventory discovery to populate it.",
-                file_path,
-            )
-        elif data_type == "button":
-            _LOGGER.info(
-                "Button configuration file not found: %s. "
-                "A new file will be created upon discovering the first button.",
-                file_path,
-            )
-        else:
-            _LOGGER.info(
-                "%s configuration file not found: %s. Skipping.",
-                data_type.capitalize(),
-                file_path,
-            )
+        _LOGGER.info(
+            "%s configuration file not found: %s. Skipping.",
+            data_type.capitalize(),
+            file_path,
+        )
 
     @staticmethod
     async def _create_empty_config(file_path: str, data_type: str) -> None:
         """Create an empty skeleton config file so the library can update it later."""
-        _EMPTY_SKELETONS = {
-            "module": {},
-            "button": {"nikobus_button": []},
+        _EMPTY_SKELETONS: dict[str, dict[str, Any]] = {
             "scene": {},
         }
         skeleton = _EMPTY_SKELETONS.get(data_type, {})
@@ -195,7 +116,9 @@ class NikobusConfig:
         except OSError as err:
             _LOGGER.warning("Could not create empty %s config: %s", data_type, err)
 
-    async def write_json_data(self, file_name: str, data_type: str, data: dict) -> None:
+    async def write_json_data(
+        self, file_name: str, data_type: str, data: dict[str, Any]
+    ) -> None:
         """Write data to a JSON file, transforming it into a list format if necessary."""
         file_path = self._hass.config.path(file_name)
 
@@ -232,6 +155,8 @@ class NikobusConfig:
                 f"Failed to serialize {data_type} data to JSON: {err}"
             ) from err
 
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error(
                 "Unexpected error writing %s data to file %s: %s",
@@ -253,18 +178,11 @@ class NikobusConfig:
         except OSError:
             pass
 
-    def _transform_data_for_writing(self, data_type: str, data: dict) -> dict:
+    def _transform_data_for_writing(
+        self, data_type: str, data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Transform the data for writing based on the data type."""
         transform_name = _WRITE_TRANSFORMS.get(data_type)
         if not transform_name:
             return data
         return getattr(self, transform_name)(data)
-
-    def _transform_button_data_for_writing(self, data: dict) -> dict:
-        """Transform button data from a dictionary back to a list for saving."""
-        button_data_list = []
-        for address, details in data.get("nikobus_button", {}).items():
-            entry = dict(details)
-            entry["address"] = address
-            button_data_list.append(entry)
-        return {"nikobus_button": button_data_list}

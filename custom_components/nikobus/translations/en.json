@@ -33,15 +33,15 @@
             "reconfigure": {
                 "data": {
                     "connection_string": "Connection (serial port or IP:port)",
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data::prior_gen3%]",
-                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data::refresh_interval%]"
+                    "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
+                    "prior_gen3": "PC-Link is older than Gen 3",
+                    "refresh_interval": "Polling interval (seconds)"
                 },
                 "data_description": {
                     "connection_string": "Serial device path or TCP address of the PC-Link bridge",
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data_description::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data_description::prior_gen3%]",
-                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data_description::refresh_interval%]"
+                    "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
+                    "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
                 },
                 "description": "Update the connection string or hardware settings. The connection will be re-tested.",
                 "title": "Reconfigure Nikobus"
@@ -69,13 +69,38 @@
         },
         "sensor": {
             "connection": {
-                "name": "Connection"
+                "name": "Connection",
+                "state": {
+                    "connected": "Connected",
+                    "reconnecting": "Reconnecting",
+                    "disconnected": "Disconnected"
+                }
             },
             "discovery_progress": {
                 "name": "Discovery progress"
             },
             "discovery_status": {
-                "name": "Discovery status"
+                "name": "Discovery status",
+                "state": {
+                    "idle": "Idle",
+                    "pc_link": "PC Link inventory",
+                    "module_scan": "Scanning modules",
+                    "finished": "Finished",
+                    "error": "Error"
+                }
+            }
+        }
+    },
+    "issues": {
+        "no_buttons_configured": {
+            "title": "No Nikobus buttons configured",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Discover Nikobus modules and buttons",
+                        "description": "Home Assistant has not detected any Nikobus buttons. Run a PC-Link inventory discovery now to populate the configuration."
+                    }
+                }
             }
         }
     },
@@ -91,13 +116,25 @@
         },
         "initialization_error": {
             "message": "Failed to initialize Nikobus components: {error}"
+        },
+        "no_loaded_entry": {
+            "message": "No loaded Nikobus integration found. Set one up before calling this action."
+        },
+        "no_modules_known": {
+            "message": "No Nikobus modules are configured yet. Run a PC-Link inventory discovery first, then retry the module scan."
         }
     },
     "options": {
         "abort": {
             "discovery_done": "Discovery finished. The integration is reloading and the newly-discovered entities will appear shortly.",
             "discovery_error": "Discovery failed: {error}",
-            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."
+            "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
+            "no_modules": "No Nikobus modules are configured yet. Run a PC-Link inventory discovery first.",
+            "module_not_found": "The selected module was not found in storage.",
+            "channel_not_found": "The selected channel was not found."
+        },
+        "error": {
+            "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty)."
         },
         "progress": {
             "discovery": "{message}"
@@ -113,12 +150,12 @@
             },
             "hardware": {
                 "data": {
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data::prior_gen3%]"
+                    "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
+                    "prior_gen3": "PC-Link is older than Gen 3"
                 },
                 "data_description": {
-                    "has_feedbackmodule": "[%key:component::nikobus::config::step::hardware::data_description::has_feedbackmodule%]",
-                    "prior_gen3": "[%key:component::nikobus::config::step::hardware::data_description::prior_gen3%]"
+                    "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
                 },
                 "description": "Update your hardware settings. The integration will reload automatically.",
                 "title": "Hardware Configuration"
@@ -126,6 +163,7 @@
             "init": {
                 "description": "What would you like to do?",
                 "menu_options": {
+                    "configure_modules": "Customize a module (description, entity type, LED triggers, travel time)",
                     "discovery_modules": "Scan all modules for button links",
                     "discovery_pc_link": "Discover modules & buttons (PC Link inventory)",
                     "hardware": "Change hardware settings"
@@ -134,13 +172,40 @@
             },
             "polling": {
                 "data": {
-                    "refresh_interval": "[%key:component::nikobus::config::step::polling::data::refresh_interval%]"
+                    "refresh_interval": "Polling interval (seconds)"
                 },
                 "data_description": {
                     "refresh_interval": "How often to read module states from the bus (60–3600 s)."
                 },
                 "description": "How often should Home Assistant poll the Nikobus bus for state changes?",
                 "title": "Polling Interval"
+            },
+            "configure_modules": {
+                "title": "Customize a Nikobus module",
+                "description": "Pick a module to edit. Discovery-owned fields (model, address, channel count) stay read-only; only user-facing fields (descriptions, entity types, LED triggers, travel times) can be changed here.",
+                "data": {
+                    "module": "Module"
+                }
+            },
+            "edit_module": {
+                "title": "Module {address} ({module_type})",
+                "description": "Model: {model}. Edit the module description or pick a channel to customize.",
+                "data": {
+                    "description": "Module description",
+                    "channel": "Channel"
+                }
+            },
+            "edit_channel": {
+                "title": "Module {address} — channel {channel}",
+                "description": "Configure how this channel appears in Home Assistant. Pick **Disabled (hide channel)** in the Entity type dropdown to skip creating an entity for this channel.",
+                "data": {
+                    "entity_type": "Entity type",
+                    "description": "Channel description",
+                    "led_on": "LED-on trigger (6-hex bus address, optional)",
+                    "led_off": "LED-off trigger (6-hex bus address, optional)",
+                    "operation_time_up": "Travel time up (seconds)",
+                    "operation_time_down": "Travel time down (seconds)"
+                }
             }
         }
     },
@@ -154,6 +219,29 @@
                 }
             },
             "name": "Query module inventory"
+        }
+    },
+    "selector": {
+        "entity_type_switch_module": {
+            "options": {
+                "default": "Default (switch)",
+                "light": "Light",
+                "disabled": "Disabled (hide channel)"
+            }
+        },
+        "entity_type_dimmer_module": {
+            "options": {
+                "default": "Default (light)",
+                "disabled": "Disabled (hide channel)"
+            }
+        },
+        "entity_type_roller_module": {
+            "options": {
+                "default": "Default (cover)",
+                "switch": "Switch",
+                "light": "Light",
+                "disabled": "Disabled (hide channel)"
+            }
         }
     }
 }

@@ -13,12 +13,31 @@ from custom_components.nikobus.coordinator import NikobusDataCoordinator
 # Minimal coordinator-like object for testing pure state methods
 # ---------------------------------------------------------------------------
 
+class _FakeModuleStorage:
+    """Duck-type NikobusModuleStorage with only the .data attribute."""
+
+    def __init__(self, data: dict | None = None):
+        self.data = data or {"nikobus_module": {}}
+
+
 class _FakeCoord:
     """Duck-type a NikobusDataCoordinator with only the state buffer attributes."""
 
     def __init__(self, states: dict | None = None, module_data: dict | None = None):
         self.nikobus_module_states: dict = states or {}
         self.dict_module_data: dict = module_data or {}
+        # ``module_storage.data`` is the 0.4.0 flat store. Build it from the
+        # legacy nested ``module_data`` when the caller provides one, so
+        # existing tests keep working without ceremony.
+        flat: dict[str, dict] = {}
+        for module_type, modules in (module_data or {}).items():
+            if not isinstance(modules, dict):
+                continue
+            for addr, entry in modules.items():
+                if not isinstance(entry, dict):
+                    continue
+                flat[str(addr).upper()] = {**entry, "module_type": module_type}
+        self.module_storage = _FakeModuleStorage({"nikobus_module": flat})
         self.nikobus_command = None
 
     async def async_event_handler(self, event: str, data: dict) -> None:

@@ -59,6 +59,7 @@
                 "description": "Wat wilt u doen?",
                 "menu_options": {
                     "hardware": "Hardware-instellingen wijzigen",
+                    "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)",
                     "discovery_pc_link": "Modules en knoppen ontdekken (PC Link-inventaris)",
                     "discovery_modules": "Alle modules scannen voor knoppenkoppelingen"
                 }
@@ -89,6 +90,33 @@
                 "title": "PC Link-inventaris",
                 "description": "Het PC Link-register wordt gescand op modules en knoppen.\n\n**Voortgang:** {percent}%\n\n{message}"
             },
+            "configure_modules": {
+                "title": "Een Nikobus-module aanpassen",
+                "description": "Kies een module om te bewerken. Velden uit de ontdekking (model, adres, aantal kanalen) blijven alleen-lezen; alleen gebruikersvelden (beschrijvingen, entiteitstypes, LED-triggers, looptijden) kunnen hier worden gewijzigd.",
+                "data": {
+                    "module": "Module"
+                }
+            },
+            "edit_module": {
+                "title": "Module {address} ({module_type})",
+                "description": "Model: {model}. Bewerk de beschrijving van de module of kies een kanaal om aan te passen.",
+                "data": {
+                    "description": "Modulebeschrijving",
+                    "channel": "Kanaal"
+                }
+            },
+            "edit_channel": {
+                "title": "Module {address} — kanaal {channel}",
+                "description": "Stel in hoe dit kanaal in Home Assistant verschijnt. Kies **Uitgeschakeld (kanaal verbergen)** in de entiteitstype-keuzelijst om geen entiteit voor dit kanaal aan te maken.",
+                "data": {
+                    "entity_type": "Entiteitstype",
+                    "description": "Kanaalbeschrijving",
+                    "led_on": "LED-aan trigger (6-hex busadres, optioneel)",
+                    "led_off": "LED-uit trigger (6-hex busadres, optioneel)",
+                    "operation_time_up": "Looptijd omhoog (seconden)",
+                    "operation_time_down": "Looptijd omlaag (seconden)"
+                }
+            },
             "discovery_modules": {
                 "title": "Modules scannen",
                 "description": "Elk uitgangsmodule wordt gescand op knoppenkoppelingen.\n\n**Voortgang:** {percent}%\n\n{message}"
@@ -100,16 +128,29 @@
         "abort": {
             "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw.",
             "discovery_done": "Ontdekking voltooid. De integratie wordt herladen; nieuwe entiteiten verschijnen zo dadelijk.",
-            "discovery_error": "Ontdekking mislukt: {error}"
+            "discovery_error": "Ontdekking mislukt: {error}",
+            "no_modules": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit."
         }
     },
     "entity": {
         "sensor": {
             "connection": {
-                "name": "Verbinding"
+                "name": "Verbinding",
+                "state": {
+                    "connected": "Verbonden",
+                    "reconnecting": "Opnieuw verbinden",
+                    "disconnected": "Verbinding verbroken"
+                }
             },
             "discovery_status": {
-                "name": "Ontdekkingsstatus"
+                "name": "Ontdekkingsstatus",
+                "state": {
+                    "idle": "Inactief",
+                    "pc_link": "PC Link-inventaris",
+                    "module_scan": "Modules scannen",
+                    "finished": "Voltooid",
+                    "error": "Fout"
+                }
             },
             "discovery_progress": {
                 "name": "Ontdekkingsvoortgang"
@@ -121,6 +162,62 @@
             },
             "scan_all_module_links": {
                 "name": "Alle modulekoppelingen scannen"
+            }
+        }
+    },
+    "issues": {
+        "no_buttons_configured": {
+            "title": "Geen Nikobus-knoppen geconfigureerd",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Nikobus-modules en -knoppen ontdekken",
+                        "description": "Home Assistant heeft geen Nikobus-knoppen gedetecteerd. Voer nu een PC-Link-inventaris uit om de configuratie aan te vullen."
+                    }
+                }
+            }
+        }
+    },
+    "exceptions": {
+        "communication_error": {
+            "message": "Communicatie met Nikobus mislukt: {error}"
+        },
+        "discovery_already_running": {
+            "message": "Er is al een Nikobus-ontdekking bezig."
+        },
+        "discovery_not_initialized": {
+            "message": "Nikobus-ontdekking is niet geïnitialiseerd."
+        },
+        "initialization_error": {
+            "message": "Initialisatie van Nikobus-componenten mislukt: {error}"
+        },
+        "no_loaded_entry": {
+            "message": "Geen geladen Nikobus-integratie gevonden. Stel er één in voordat u deze actie aanroept."
+        },
+        "no_modules_known": {
+            "message": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit en probeer dan opnieuw modules te scannen."
+        }
+    },
+    "selector": {
+        "entity_type_switch_module": {
+            "options": {
+                "default": "Standaard (schakelaar)",
+                "light": "Lamp",
+                "disabled": "Uitgeschakeld (kanaal verbergen)"
+            }
+        },
+        "entity_type_dimmer_module": {
+            "options": {
+                "default": "Standaard (lamp)",
+                "disabled": "Uitgeschakeld (kanaal verbergen)"
+            }
+        },
+        "entity_type_roller_module": {
+            "options": {
+                "default": "Standaard (rolluik)",
+                "switch": "Schakelaar",
+                "light": "Lamp",
+                "disabled": "Uitgeschakeld (kanaal verbergen)"
             }
         }
     }

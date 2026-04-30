@@ -59,6 +59,7 @@
                 "description": "Que souhaitez-vous faire ?",
                 "menu_options": {
                     "hardware": "Modifier la configuration matérielle",
+                    "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)",
                     "discovery_pc_link": "Découvrir les modules et boutons (inventaire PC Link)",
                     "discovery_modules": "Scanner tous les modules pour les liens de boutons"
                 }
@@ -89,6 +90,33 @@
                 "title": "Inventaire PC Link",
                 "description": "Analyse du registre PC Link pour trouver les modules et boutons.\n\n**Progression :** {percent}%\n\n{message}"
             },
+            "configure_modules": {
+                "title": "Personnaliser un module Nikobus",
+                "description": "Choisissez un module à modifier. Les champs issus de la découverte (modèle, adresse, nombre de canaux) restent en lecture seule ; seuls les champs utilisateur (descriptions, types d'entité, déclencheurs LED, temps de course) peuvent être modifiés ici.",
+                "data": {
+                    "module": "Module"
+                }
+            },
+            "edit_module": {
+                "title": "Module {address} ({module_type})",
+                "description": "Modèle : {model}. Modifiez la description du module ou choisissez un canal à personnaliser.",
+                "data": {
+                    "description": "Description du module",
+                    "channel": "Canal"
+                }
+            },
+            "edit_channel": {
+                "title": "Module {address} — canal {channel}",
+                "description": "Configurez l'apparence de ce canal dans Home Assistant. Sélectionnez **Désactivé (masquer le canal)** dans la liste Type d'entité pour ne pas créer d'entité pour ce canal.",
+                "data": {
+                    "entity_type": "Type d'entité",
+                    "description": "Description du canal",
+                    "led_on": "Déclencheur LED allumée (adresse bus 6-hex, optionnel)",
+                    "led_off": "Déclencheur LED éteinte (adresse bus 6-hex, optionnel)",
+                    "operation_time_up": "Temps de course à l'ouverture (secondes)",
+                    "operation_time_down": "Temps de course à la fermeture (secondes)"
+                }
+            },
             "discovery_modules": {
                 "title": "Scan des modules",
                 "description": "Analyse de chaque module de sortie pour récupérer les liens de boutons.\n\n**Progression :** {percent}%\n\n{message}"
@@ -100,16 +128,29 @@
         "abort": {
             "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer.",
             "discovery_done": "Découverte terminée. L'intégration est en cours de rechargement, les nouvelles entités apparaîtront sous peu.",
-            "discovery_error": "Échec de la découverte : {error}"
+            "discovery_error": "Échec de la découverte : {error}",
+            "no_modules": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link."
         }
     },
     "entity": {
         "sensor": {
             "connection": {
-                "name": "Connexion"
+                "name": "Connexion",
+                "state": {
+                    "connected": "Connecté",
+                    "reconnecting": "Reconnexion en cours",
+                    "disconnected": "Déconnecté"
+                }
             },
             "discovery_status": {
-                "name": "Statut de la découverte"
+                "name": "Statut de la découverte",
+                "state": {
+                    "idle": "Inactif",
+                    "pc_link": "Inventaire PC Link",
+                    "module_scan": "Analyse des modules",
+                    "finished": "Terminé",
+                    "error": "Erreur"
+                }
             },
             "discovery_progress": {
                 "name": "Progression de la découverte"
@@ -121,6 +162,62 @@
             },
             "scan_all_module_links": {
                 "name": "Scanner les liens des modules"
+            }
+        }
+    },
+    "issues": {
+        "no_buttons_configured": {
+            "title": "Aucun bouton Nikobus configuré",
+            "fix_flow": {
+                "step": {
+                    "confirm": {
+                        "title": "Découvrir les modules et boutons Nikobus",
+                        "description": "Home Assistant n'a détecté aucun bouton Nikobus. Lancez maintenant un inventaire PC-Link pour compléter la configuration."
+                    }
+                }
+            }
+        }
+    },
+    "exceptions": {
+        "communication_error": {
+            "message": "Communication avec Nikobus échouée : {error}"
+        },
+        "discovery_already_running": {
+            "message": "Une découverte Nikobus est déjà en cours."
+        },
+        "discovery_not_initialized": {
+            "message": "La découverte Nikobus n'est pas initialisée."
+        },
+        "initialization_error": {
+            "message": "Échec de l'initialisation des composants Nikobus : {error}"
+        },
+        "no_loaded_entry": {
+            "message": "Aucune intégration Nikobus chargée. Configurez-en une avant d'appeler cette action."
+        },
+        "no_modules_known": {
+            "message": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link, puis relancez le scan des modules."
+        }
+    },
+    "selector": {
+        "entity_type_switch_module": {
+            "options": {
+                "default": "Par défaut (interrupteur)",
+                "light": "Lumière",
+                "disabled": "Désactivé (masquer le canal)"
+            }
+        },
+        "entity_type_dimmer_module": {
+            "options": {
+                "default": "Par défaut (lumière)",
+                "disabled": "Désactivé (masquer le canal)"
+            }
+        },
+        "entity_type_roller_module": {
+            "options": {
+                "default": "Par défaut (volet)",
+                "switch": "Interrupteur",
+                "light": "Lumière",
+                "disabled": "Désactivé (masquer le canal)"
             }
         }
     }

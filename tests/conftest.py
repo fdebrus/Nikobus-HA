@@ -60,7 +60,12 @@ _mod(
     HomeAssistant=type("HomeAssistant", (), {}),
     callback=_ha_callback,
 )
-_mod("homeassistant.config_entries", ConfigEntry=type("ConfigEntry", (), {}))
+class _ConfigEntry:
+    def __class_getitem__(cls, item):
+        return cls
+
+
+_mod("homeassistant.config_entries", ConfigEntry=_ConfigEntry)
 _mod(
     "homeassistant.exceptions",
     HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
@@ -88,6 +93,38 @@ _mod(
 
 # homeassistant.helpers.entity_registry
 _mod("homeassistant.helpers.entity_registry", async_get=lambda hass: None)
+
+# homeassistant.helpers.issue_registry — used by coordinator.refresh_repair_issues
+class _IssueSeverity:
+    WARNING = "warning"
+    ERROR = "error"
+
+
+_mod(
+    "homeassistant.helpers.issue_registry",
+    IssueSeverity=_IssueSeverity,
+    async_create_issue=lambda *a, **kw: None,
+    async_delete_issue=lambda *a, **kw: None,
+)
+
+# homeassistant.helpers.storage — for NikobusButtonStorage / NikobusModuleStorage.
+# Coordinator only instantiates these; tests that need persistence override via
+# drop-in fakes, so a minimal no-op Store suffices here.
+class _Store:
+    def __class_getitem__(cls, item):
+        return cls
+
+    def __init__(self, hass, version, key):
+        self._data = None
+
+    async def async_load(self):
+        return None
+
+    async def async_save(self, data):
+        self._data = data
+
+
+_mod("homeassistant.helpers.storage", Store=_Store)
 
 # homeassistant.helpers.event
 _mod("homeassistant.helpers.event", async_call_later=lambda *a, **kw: (lambda: None))
@@ -148,7 +185,30 @@ _mod(
 
 # homeassistant.components — stubs for sensor (and future platforms)
 _mod("homeassistant.components")
-_mod("homeassistant.components.sensor", SensorEntity=type("SensorEntity", (), {}), DOMAIN="sensor")
+class _SensorDeviceClass:
+    ENUM = "enum"
+
+
+_mod(
+    "homeassistant.components.sensor",
+    SensorEntity=type("SensorEntity", (), {}),
+    SensorDeviceClass=_SensorDeviceClass,
+    DOMAIN="sensor",
+)
+_mod(
+    "homeassistant.helpers.entity",
+    EntityCategory=type("EntityCategory", (), {"DIAGNOSTIC": "diagnostic"}),
+)
+_mod(
+    "homeassistant.const",
+    PERCENTAGE="%",
+    EntityCategory=type("EntityCategory", (), {"DIAGNOSTIC": "diagnostic"}),
+)
+_mod(
+    "homeassistant.helpers.entity_platform",
+    AddEntitiesCallback=type("AddEntitiesCallback", (), {}),
+    AddConfigEntryEntitiesCallback=type("AddConfigEntryEntitiesCallback", (), {}),
+)
 _mod("homeassistant.components.binary_sensor", BinarySensorEntity=type("BinarySensorEntity", (), {}), DOMAIN="binary_sensor")
 
 # ---------------------------------------------------------------------------

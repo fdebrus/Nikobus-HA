@@ -11,11 +11,17 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
-from nikobus_connect.discovery import NikobusDiscovery, InventoryQueryType
+from nikobus_connect.discovery import (
+    NikobusDiscovery,
+    InventoryQueryType,
+    find_module,
+    find_operation_point,
+)
 from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
 from .const import (
@@ -30,13 +36,27 @@ from .const import (
     DISCOVERY_PHASE_IDLE,
     DISCOVERY_PHASE_MODULE_SCAN,
     DISCOVERY_PHASE_PC_LINK,
+    DISCOVERY_SUB_PHASE_ERROR,
+    DISCOVERY_SUB_PHASE_FINALIZING,
+    DISCOVERY_SUB_PHASE_FINISHED,
+    DISCOVERY_SUB_PHASE_IDENTITY,
+    DISCOVERY_SUB_PHASE_IDLE,
+    DISCOVERY_SUB_PHASE_INVENTORY,
+    DISCOVERY_SUB_PHASE_REGISTER_SCAN,
+    DISCOVERY_WEIGHT_FINALIZING,
+    DISCOVERY_WEIGHT_IDENTITY,
+    DISCOVERY_WEIGHT_INVENTORY,
+    DISCOVERY_WEIGHT_REGISTER_SCAN,
     DOMAIN,
+    ISSUE_NO_BUTTONS_CONFIGURED,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
     SIGNAL_DISCOVERY_STATE,
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
+from .nkbmigration import async_migrate_legacy_module_config
+from .nkbstorage import NikobusButtonStorage, NikobusModuleStorage
 
 # Typed config entry alias used across the integration. A plain alias
 # (instead of PEP 695 `type X = ...`) keeps compatibility with older
@@ -77,11 +97,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         self.nikobus_connection = NikobusConnect(self.connection_string)
         self.nikobus_config = NikobusConfig(hass)
+        self.button_storage = NikobusButtonStorage(hass)
+        self.module_storage = NikobusModuleStorage(hass)
         self.api: NikobusAPI | None = None
 
+        # ``dict_module_data`` is a derived view of ``module_storage.data``,
+        # grouped by ``module_type`` for the library's scan planner and for
+        # the router/actuator/polling code. It is rebuilt after every load
+        # or save via ``_rebuild_dict_module_data``.
         self.dict_module_data: dict[str, Any] = {}
-        self.dict_button_data: dict[str, Any] = {}
+        self.dict_button_data: dict[str, Any] = {"nikobus_button": {}}
         self.dict_scene_data: dict[str, Any] = {}
+
+        # Lazy cache: (module_address_upper, channel) -> [button records that trigger it]
+        self._controlled_by_index: dict[tuple[str, int], list[dict[str, Any]]] | None = None
 
         self.nikobus_actuator: NikobusActuator | None = None
         self.nikobus_listener: NikobusEventListener | None = None
@@ -100,25 +129,26 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._reload_task = None
 
         # --- Discovery progress tracking (for UI) ---
+        # `discovery_phase` stays on the legacy enum for backward-compat with
+        # automations; `discovery_sub_phase` carries the fine-grained state
+        # the library emits via its on_progress callback (0.3.5+).
         self.discovery_phase: str = DISCOVERY_PHASE_IDLE
-        self.discovery_status_message: str = ""
+        self.discovery_sub_phase: str = DISCOVERY_SUB_PHASE_IDLE
+        self.discovery_status_message: str = "Idle"
         self.discovery_current_module: str | None = None
         self.discovery_modules_done: int = 0
         self.discovery_modules_total: int = 0
         self.discovery_registers_done: int = 0
         self.discovery_registers_total: int = 0
+        self.discovery_register_current: int | None = None
+        self.discovery_decoded_records: int = 0
         self.discovery_last_error: str | None = None
         self._discovery_finished_event: asyncio.Event = asyncio.Event()
         self._discovery_finished_event.set()  # idle = already set
         self._discovery_auto_reload: bool = True
-        self._discovery_progress_task: asyncio.Task | None = None
         self._discovery_module_order: list[str] = []
-        self._module_scan_frame_count: int = 0
-        self._module_scan_last_index: int = -1
-        # Monkey-patch state for counting commands sent during discovery
-        self._original_send_command = None
         self._stopping: bool = False
-        self._reconnect_task: asyncio.Task | None = None
+        self._reconnect_task: asyncio.Task[None] | None = None
         self._last_connected: datetime | None = None
         self._reconnect_attempts: int = 0
 
@@ -130,6 +160,31 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def nikobus_module_states(self) -> dict[str, bytearray]:
         """Return the shared module state buffer."""
         return self._module_states
+
+    def reset_discovery_counters(self) -> None:
+        """Clear the empty-block / found-data counters before a new scan."""
+        self._discovery_found_data = False
+        self._consecutive_empty_blocks = 0
+
+    def refresh_repair_issues(self) -> None:
+        """Create / clear repair issues based on the current configuration."""
+        has_buttons = bool(
+            self.dict_button_data.get("nikobus_button")
+        )
+        issue_id = f"{ISSUE_NO_BUTTONS_CONFIGURED}_{self.config_entry.entry_id}"
+        if has_buttons:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_NO_BUTTONS_CONFIGURED,
+            data={"entry_id": self.config_entry.entry_id},
+        )
 
     @property
     def connection_status(self) -> str:
@@ -158,30 +213,31 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             raise
 
         try:
-            self.dict_module_data = await self.nikobus_config.load_json_data(
-                "nikobus_module_config.json", "module"
-            )
-            discovered_modules = await self.nikobus_config.load_optional_json_data(
-                "nikobus_module_discovered.json", "module"
-            )
-            if discovered_modules:
-                self._merge_discovered_modules(discovered_modules)
+            # Module data now lives in .storage/nikobus.modules. On first
+            # startup after upgrading to 0.4.0, migrate any legacy
+            # nikobus_module_config.json into the store, then rename it.
+            await self.module_storage.async_load()
+            await async_migrate_legacy_module_config(self.hass, self.module_storage)
+            self._rebuild_dict_module_data()
 
-            self.dict_button_data = await self.nikobus_config.load_json_data(
-                "nikobus_button_config.json", "button"
-            ) or {"nikobus_button": {}}
+            self.dict_button_data = await self.button_storage.async_load()
             self.dict_scene_data = await self.nikobus_config.load_json_data(
                 "nikobus_scene_config.json", "scene"
             )
 
             # 1. Create actuator and discovery (needed before listener)
             self.nikobus_actuator = NikobusActuator(
-                self.hass, self, self.dict_button_data, self.dict_module_data
+                self.hass, self, self.dict_button_data, self.module_storage.data
             )
             self.nikobus_discovery = NikobusDiscovery(
                 self,
                 config_dir=self.hass.config.config_dir,
                 create_task=self.hass.async_create_task,
+                button_data=self.dict_button_data,
+                on_button_save=self.button_storage.async_save,
+                module_data=self.module_storage.data,
+                on_module_save=self._async_on_module_save,
+                on_progress=self._handle_discovery_progress,
             )
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
 
@@ -211,6 +267,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         except NikobusDataError:
             raise
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.exception("Failed to initialize Nikobus components")
             raise HomeAssistantError(
@@ -237,6 +295,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     async def _event_callback(self, message: str) -> None:
         """Route non-feedback bus events (buttons, ACKs, discovery frames)."""
+        _LOGGER.debug(
+            "Nikobus press frame: %s  (raw bytes hex: %s)",
+            message,
+            message.encode().hex(),
+        )
         if message.startswith("#N"):
             # Extract the 6-char address after the "#N" prefix
             if self.nikobus_actuator and len(message) >= 8:
@@ -275,6 +338,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 "nikobus_refreshed",
                 {"impacted_module_address": address, "impacted_module_group": group},
             )
+        except asyncio.CancelledError:
+            raise
         except Exception as err:
             _LOGGER.error("Feedback callback error: %s", err)
 
@@ -295,10 +360,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if not self.nikobus_discovery or not self.discovery_running:
             return
         if self.inventory_query_type == InventoryQueryType.MODULE:
+            # Progress tracking is driven by the library's on_progress
+            # callback (0.3.5+). Here we only forward the raw frame.
             await self.nikobus_discovery.parse_module_inventory_response(message)
-            # Per-command progress is counted by the wrapped _send_command
-            # (see _install_command_counter); we just refresh the UI state.
-            self._update_module_scan_progress()
             return
 
         # PC Link inventory response
@@ -342,147 +406,106 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 ),
             )
 
-    def _update_module_scan_progress(self) -> None:
-        """Refresh the module-scan progress state for the UI.
+    # ------------------------------------------------------------------
+    # Phase-aware progress (consumes nikobus-connect 0.3.5+ on_progress)
+    # ------------------------------------------------------------------
 
-        Uses the pre-captured ``_discovery_module_order`` list together
-        with the library's remaining-queue length to determine the current
-        module. Per-module register progress is a monotonic counter of the
-        response frames we have received for the current module (reset on
-        module transition).
-        """
-        disc = self.nikobus_discovery
-        if disc is None:
-            return
+    _SUB_TO_LEGACY_PHASE: dict[str, str] = {
+        DISCOVERY_SUB_PHASE_IDLE: DISCOVERY_PHASE_IDLE,
+        DISCOVERY_SUB_PHASE_INVENTORY: DISCOVERY_PHASE_PC_LINK,
+        DISCOVERY_SUB_PHASE_IDENTITY: DISCOVERY_PHASE_PC_LINK,
+        DISCOVERY_SUB_PHASE_REGISTER_SCAN: DISCOVERY_PHASE_MODULE_SCAN,
+        DISCOVERY_SUB_PHASE_FINALIZING: DISCOVERY_PHASE_MODULE_SCAN,
+        DISCOVERY_SUB_PHASE_FINISHED: DISCOVERY_PHASE_FINISHED,
+        DISCOVERY_SUB_PHASE_ERROR: DISCOVERY_PHASE_ERROR,
+    }
 
-        if self.discovery_registers_total == 0:
-            self.discovery_registers_total = 240  # 0x10-0xFF
+    async def _handle_discovery_progress(self, progress: Any) -> None:
+        """Consume a ``DiscoveryProgress`` event emitted by nikobus-connect 0.3.5+.
 
-        total = self.discovery_modules_total or len(self._discovery_module_order)
-        if total == 0:
-            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
-            return
+        ``progress`` is a ``nikobus_connect.discovery.DiscoveryProgress``
+        dataclass with: ``phase``, ``module_address``, ``module_index``,
+        ``module_total``, ``register``, ``register_total``,
+        ``decoded_records``. The library emits one of the four real phases
+        (``inventory`` / ``identity`` / ``register_scan`` / ``finalizing``);
+        idle / finished / error states are handled by the caller's own
+        ``_handle_discovery_finished`` and error-path code.
 
-        queue_list = getattr(disc, "_register_scan_queue", None)
-        remaining = len(queue_list) if isinstance(queue_list, list) else 0
-
-        # How many modules have been POPPED so far (including the current one).
-        popped = total - remaining
-        current_index_0 = max(0, popped - 1)  # 0-based index of current module
-        current_index_1 = min(current_index_0 + 1, total)  # 1-based display
-        self.discovery_modules_done = current_index_0
-
-        # Reset per-module frame counter when we advance to a new module.
-        if current_index_0 != self._module_scan_last_index:
-            self._module_scan_last_index = current_index_0
-            self._module_scan_frame_count = 0
-
-        if self._discovery_module_order and current_index_0 < len(
-            self._discovery_module_order
-        ):
-            self.discovery_current_module = self._discovery_module_order[
-                current_index_0
-            ]
-        else:
-            lib_current = (
-                getattr(disc, "_module_address", None)
-                or self.discovery_module_address
-            )
-            if lib_current:
-                self.discovery_current_module = lib_current
-
-        self.discovery_registers_done = min(
-            self.discovery_registers_total,
-            self._module_scan_frame_count,
-        )
-
-        if self.discovery_current_module:
-            self._update_discovery_state(
-                message=(
-                    f"Scanning module {self.discovery_current_module} "
-                    f"({current_index_1}/{total}) — "
-                    f"{self.discovery_registers_done}/{self.discovery_registers_total}"
-                ),
-            )
-        else:
-            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
-
-    def _install_command_counter(self) -> None:
-        """Wrap the command handler's _send_command to count discovery commands.
-
-        Every inventory register query results in exactly one _send_command
-        invocation (for commands without an address, i.e., fire-and-forget).
-        Wrapping that method gives us a reliable per-command counter that
-        doesn't depend on bus frame batching.
-        """
-        handler = self.nikobus_command
-        if handler is None:
-            _LOGGER.debug("Command counter install skipped: no handler")
-            return
-        if self._original_send_command is not None:
-            _LOGGER.debug("Command counter install skipped: already installed")
-            return
-        original = handler._send_command
-        self._original_send_command = original
-        coordinator = self  # closure reference
-
-        async def _counting_send_command(*args, **kwargs):
-            result = await original(*args, **kwargs)
-            if (
-                coordinator.discovery_running
-                and coordinator.inventory_query_type == InventoryQueryType.MODULE
-            ):
-                coordinator._module_scan_frame_count = min(
-                    coordinator.discovery_registers_total or 240,
-                    coordinator._module_scan_frame_count + 1,
-                )
-            return result
-
-        handler._send_command = _counting_send_command
-        _LOGGER.debug("Command counter installed on handler %s", handler)
-
-    def _uninstall_command_counter(self) -> None:
-        """Restore the original _send_command method."""
-        handler = self.nikobus_command
-        if handler is None or self._original_send_command is None:
-            return
-        handler._send_command = self._original_send_command
-        self._original_send_command = None
-
-    def _start_progress_poller(self) -> None:
-        """Start a background task that polls progress once per second."""
-        if self._discovery_progress_task and not self._discovery_progress_task.done():
-            return
-        self._discovery_progress_task = self.hass.async_create_task(
-            self._progress_poll_loop()
-        )
-
-    def _stop_progress_poller(self) -> None:
-        """Cancel the background progress poller."""
-        task = self._discovery_progress_task
-        self._discovery_progress_task = None
-        if task and not task.done():
-            task.cancel()
-
-    async def _progress_poll_loop(self) -> None:
-        """Periodically refresh module-scan progress so the UI sees updates.
-
-        Frame callbacks alone are not enough to drive live updates because
-        the library buffers multiple chunks per frame and empty registers
-        don't always produce a frame. This loop re-reads the command queue
-        every second and publishes a fresh state message.
+        Exceptions raised here are swallowed — the library treats this
+        callback as fire-and-forget and must not be stalled by UI plumbing.
         """
         try:
-            while self.discovery_running:
-                if self.inventory_query_type == InventoryQueryType.MODULE:
-                    self._update_module_scan_progress()
+            sub_phase = str(getattr(progress, "phase", "") or DISCOVERY_SUB_PHASE_IDLE)
+            legacy_phase = self._SUB_TO_LEGACY_PHASE.get(
+                sub_phase, self.discovery_phase
+            )
+
+            module_address = getattr(progress, "module_address", None)
+            module_index = int(getattr(progress, "module_index", 0) or 0)
+            module_total = int(getattr(progress, "module_total", 0) or 0)
+            register = getattr(progress, "register", None)
+            register_total = int(getattr(progress, "register_total", 0) or 0)
+            decoded_records = int(getattr(progress, "decoded_records", 0) or 0)
+
+            registers_done = 0
+            if register is not None and register_total:
+                # Registers start at 0x10, so done-count is (current - 0x10 + 1).
+                try:
+                    cur = int(register)
+                    registers_done = max(0, cur - 0x10 + 1)
+                except (TypeError, ValueError):
+                    registers_done = 0
+
+            if sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+                message = "PC Link inventory: enumerating bus addresses…"
+            elif sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
+                message = (
+                    f"Identifying modules ({module_index}/{module_total})…"
+                    if module_total
+                    else "Identifying modules…"
+                )
+            elif sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
+                if module_address:
+                    # Library supplies ``register_total`` (a count starting
+                    # at register 0x10). Show the actual upper bound rather
+                    # than the legacy hard-coded 0xFF — some modules scan
+                    # much narrower ranges, and the early-stop heuristic
+                    # revises ``register_total`` downward once it fires.
+                    # Fall back to 0xFF only when the library did not send
+                    # a register_total (older lib versions / pre-scan tick).
+                    if register_total:
+                        top_register = 0x10 + register_total - 1
+                    else:
+                        top_register = 0xFF
+                    message = (
+                        f"Scanning module {module_address} "
+                        f"({module_index}/{module_total}) — "
+                        f"register 0x{int(register or 0):02X} of "
+                        f"0x{top_register:02X} ({decoded_records} records)"
+                    )
                 else:
-                    async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
-                await asyncio.sleep(1.0)
-        except asyncio.CancelledError:
-            return
+                    message = f"Scanning modules ({module_index}/{module_total})"
+            elif sub_phase == DISCOVERY_SUB_PHASE_FINALIZING:
+                message = f"Merging {decoded_records} discovered records…"
+            else:
+                message = self.discovery_status_message
+
+            self.discovery_sub_phase = sub_phase
+            self.discovery_decoded_records = decoded_records
+            self.discovery_register_current = (
+                int(register) if register is not None else None
+            )
+            self._update_discovery_state(
+                phase=legacy_phase,
+                message=message,
+                current_module=module_address if module_address else None,
+                modules_done=max(0, module_index - 1),
+                modules_total=module_total,
+                registers_done=registers_done,
+                registers_total=register_total or 240,
+            )
         except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.debug("Discovery progress poller error: %s", err)
+            _LOGGER.debug("Discovery progress handler error: %s", err)
 
     @staticmethod
     def _is_empty_inventory_block(message: str) -> bool:
@@ -544,6 +567,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                             buf = bytearray(12)
                             self._module_states[normalized] = buf
                         buf[start : start + 6] = bytes.fromhex(state_hex[:12])
+                except asyncio.CancelledError:
+                    raise
                 except Exception as err:
                     _LOGGER.error("Error refreshing %s group %d: %s", normalized, g, err)
 
@@ -596,45 +621,161 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     def get_module_channel_count(self, module_id: str) -> int:
         """Return the channel count for a module (from config)."""
-        for modules in self.dict_module_data.values():
-            if data := modules.get(module_id):
-                return len(data.get("channels", []))
-        return 0
+        hit = find_module(self.module_storage.data, module_id)
+        if hit is None:
+            return 0
+        channels = hit[1].get("channels")
+        return len(channels) if isinstance(channels, list) else 0
+
+    @property
+    def has_known_output_modules(self) -> bool:
+        """True if at least one output-capable module is known.
+
+        Gates the full module scan: without any known output modules the
+        scan has nothing to walk. A PC Link inventory (or a migration
+        from the legacy config file) must run first to populate storage.
+        """
+        return any(
+            isinstance(mods, dict) and mods
+            for m_type, mods in self.dict_module_data.items()
+            if m_type in MODULE_TYPES
+        )
 
     def get_module_type(self, module_id: str) -> str | None:
         """Return the hardware type of the specified module."""
-        for m_type, modules in self.dict_module_data.items():
-            if module_id in modules:
-                return m_type
-        return None
+        hit = find_module(self.module_storage.data, module_id)
+        return hit[1].get("module_type") if hit else None
 
     def get_button_channels(self, button_address: str) -> int | None:
         """Return the operation-point count for a physical button address.
 
         Called by nikobus-connect decoders to derive the push-button (bus)
         address from the physical device address found in module firmware.
-        Looks up ``linked_button[].address`` across all button entries.
+        Looks up the top-level ``channels`` field on the physical entry
+        (schema v2).
         """
         normalized = (button_address or "").upper()
-        for button in (self.dict_button_data or {}).get("nikobus_button", {}).values():
-            for info in button.get("linked_button") or []:
-                if isinstance(info, dict) and (info.get("address") or "").upper() == normalized:
-                    ch = info.get("channels")
-                    if isinstance(ch, int) and ch > 0:
-                        return ch
+        phys = (self.dict_button_data or {}).get("nikobus_button", {}).get(normalized)
+        if isinstance(phys, dict):
+            ch = phys.get("channels")
+            if isinstance(ch, int) and ch > 0:
+                return ch
         return None
+
+    # ------------------------------------------------------------------
+    # Discovery link helpers (wall button parents + controlled_by index)
+    # ------------------------------------------------------------------
+
+    def get_wall_button_info(self, bus_address: str) -> dict[str, Any] | None:
+        """Return the physical-button record a soft button (bus address) belongs to.
+
+        Shape: ``{type, model, address, channels, key}``. Returns ``None`` when
+        the bus address is not part of any discovered physical button.
+        """
+        hit = find_operation_point(self.dict_button_data, bus_address)
+        if hit is None:
+            return None
+        physical_addr, key_label, _op_point = hit
+        phys = (self.dict_button_data or {}).get("nikobus_button", {}).get(physical_addr)
+        if not isinstance(phys, dict):
+            return None
+        return {
+            "type": phys.get("type"),
+            "model": phys.get("model"),
+            "address": physical_addr,
+            "channels": phys.get("channels"),
+            "key": key_label,
+        }
+
+    def get_button_linked_outputs(self, bus_address: str) -> list[dict[str, Any]]:
+        """Return flattened output links for a soft button (bus address).
+
+        Each item: ``{module_address, channel, mode, t1, t2}``.
+        """
+        hit = find_operation_point(self.dict_button_data, bus_address)
+        if hit is None:
+            return []
+        _physical_addr, _key_label, op_point = hit
+        flattened: list[dict[str, Any]] = []
+        for link in op_point.get("linked_modules") or []:
+            if not isinstance(link, dict):
+                continue
+            module_address = link.get("module_address")
+            for out in link.get("outputs") or []:
+                if not isinstance(out, dict):
+                    continue
+                flattened.append({
+                    "module_address": module_address,
+                    "channel": out.get("channel"),
+                    "mode": out.get("mode"),
+                    "t1": out.get("t1"),
+                    "t2": out.get("t2"),
+                })
+        return flattened
+
+    def _build_controlled_by_index(self) -> dict[tuple[str, int], list[dict[str, Any]]]:
+        """Build a (module_address_upper, channel) -> list[button record] index."""
+        index: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        buttons = (self.dict_button_data or {}).get("nikobus_button", {})
+        for physical_addr, phys in buttons.items():
+            if not isinstance(phys, dict):
+                continue
+            op_points = phys.get("operation_points") or {}
+            if not isinstance(op_points, dict):
+                continue
+            for key_label, op_point in op_points.items():
+                if not isinstance(op_point, dict):
+                    continue
+                bus_addr = op_point.get("bus_address") or ""
+                description = op_point.get("description") or f"Button {bus_addr}"
+                for link in op_point.get("linked_modules") or []:
+                    if not isinstance(link, dict):
+                        continue
+                    module_address = link.get("module_address")
+                    if not module_address:
+                        continue
+                    module_key = str(module_address).upper()
+                    for out in link.get("outputs") or []:
+                        if not isinstance(out, dict):
+                            continue
+                        channel = out.get("channel")
+                        if not isinstance(channel, int):
+                            continue
+                        index.setdefault((module_key, channel), []).append({
+                            "bus_address": bus_addr,
+                            "description": description,
+                            "mode": out.get("mode"),
+                            "t1": out.get("t1"),
+                            "t2": out.get("t2"),
+                            "wall_button_address": physical_addr,
+                            "wall_button_key": key_label,
+                        })
+        return index
+
+    def get_controlled_by(self, module_address: str, channel: int) -> list[dict[str, Any]]:
+        """Return the buttons that trigger a given ``(module_address, channel)``."""
+        if self._controlled_by_index is None:
+            self._controlled_by_index = self._build_controlled_by_index()
+        return self._controlled_by_index.get(
+            (str(module_address).upper(), int(channel)), []
+        )
+
+    def invalidate_controlled_by_index(self) -> None:
+        """Drop the cached controlled-by index — call after discovery updates."""
+        self._controlled_by_index = None
 
     def get_cover_operation_time(
         self, module_id: str, channel: int, direction: str = "up", default: float = 30.0
     ) -> float:
         """Fetch travel time for a shutter channel."""
+        hit = find_module(self.module_storage.data, module_id)
+        if hit is None or hit[1].get("module_type") != "roller_module":
+            return default
         try:
-            ch = self.dict_module_data.get("roller_module", {}).get(module_id, {}).get(
-                "channels", []
-            )[int(channel) - 1]
+            ch = hit[1].get("channels", [])[int(channel) - 1]
             ot = ch.get(f"operation_time_{direction}")
             return float(ot) if ot and float(ot) > 0 else default
-        except (IndexError, ValueError, KeyError):
+        except (IndexError, ValueError, KeyError, TypeError):
             return default
 
     # ------------------------------------------------------------------
@@ -693,6 +834,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.async_update_listeners()
             try:
                 await self.nikobus_connection.connect()
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.warning("Reconnect %d failed: %s — retrying in %ds", attempt, err, delay)
                 try:
@@ -728,6 +871,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 self.async_update_listeners()
                 _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempt)
                 return
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.error("Subsystem restart failed after reconnect: %s — retrying", err)
                 await self.nikobus_connection.disconnect()
@@ -753,7 +898,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         # 1. Cancel background tasks FIRST.
         for task_attr in ("_reconnect_task", "_reload_task"):
-            task: asyncio.Task | None = getattr(self, task_attr, None)
+            task: asyncio.Task[None] | None = getattr(self, task_attr, None)
             if task and not task.done():
                 task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -788,9 +933,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         for specs in routing.values():
             for spec in specs:
                 known.add(build_unique_id(spec.domain, spec.kind, spec.address, spec.channel))
-        for addr in self.dict_button_data.get("nikobus_button", {}):
-            known.add(f"{DOMAIN}_button_{addr}")
-            known.add(f"{DOMAIN}_push_button_{addr}")
+        for phys in self.dict_button_data.get("nikobus_button", {}).values():
+            if not isinstance(phys, dict):
+                continue
+            for op_point in (phys.get("operation_points") or {}).values():
+                if not isinstance(op_point, dict):
+                    continue
+                if bus_addr := op_point.get("bus_address"):
+                    known.add(f"{DOMAIN}_button_{bus_addr}")
+                    known.add(f"{DOMAIN}_push_button_{bus_addr}")
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")
@@ -801,22 +952,56 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         known.add(f"{DOMAIN}_module_scan_button")
         return known
 
-    def _merge_discovered_modules(self, discovered: dict[str, Any]) -> None:
-        """Integrate newly discovered hardware into the registry."""
-        for m_type, modules in discovered.items():
-            target = self.dict_module_data.setdefault(m_type, {})
-            for addr, info in modules.items():
-                if addr not in target:
-                    target[addr] = info
+    def _rebuild_dict_module_data(self) -> None:
+        """Regenerate the grouped ``dict_module_data`` view from the Store.
+
+        The Store holds the authoritative flat ``{address: entry}`` dict
+        (nikobus-connect 0.4.0 Option-A shape). Many call sites — the
+        library's scan planner, ``router.build_routing``, the actuator's
+        dimmer check, the polling loop, and ``NikobusAPI._module_data`` —
+        still expect the old nested ``{module_type: {address: entry}}``
+        shape. Deriving it from the Store keeps a single source of truth.
+
+        Mutates ``self.dict_module_data`` in place so captured references
+        (``NikobusAPI``, ``NikobusActuator``) stay valid.
+        """
+        grouped: dict[str, dict[str, Any]] = {}
+        modules = self.module_storage.data.get("nikobus_module") or {}
+        if isinstance(modules, dict):
+            for address, entry in modules.items():
+                if not isinstance(entry, dict):
+                    continue
+                module_type = entry.get("module_type") or "other_module"
+                addr_upper = str(address).upper()
+                bucket = grouped.setdefault(module_type, {})
+                merged = dict(entry)
+                merged.setdefault("address", addr_upper)
+                bucket[addr_upper] = merged
+
+        self.dict_module_data.clear()
+        self.dict_module_data.update(grouped)
+
+    async def _async_on_module_save(self) -> None:
+        """Persist the Store after discovery/user edits, then refresh derived views."""
+        await self.module_storage.async_save()
+        self._rebuild_dict_module_data()
+        # Clear the cached router spec so newly-discovered modules show up.
+        domain_data = self.hass.data.get(DOMAIN, {})
+        entry_data = domain_data.get(self.config_entry.entry_id, {})
+        entry_data.pop("routing", None)
 
     async def _handle_discovery_finished(self) -> None:
         """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
-        self._stop_progress_poller()
-        self._uninstall_command_counter()
+        self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
+        self.discovery_register_current = None
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
-            message="Discovery finished",
+            message=(
+                f"Discovery finished — {self.discovery_decoded_records} records decoded."
+                if self.discovery_decoded_records
+                else "Discovery finished"
+            ),
         )
         self._discovery_finished_event.set()
 
@@ -831,6 +1016,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         async def _reload() -> None:
             try:
                 await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 _LOGGER.error("Failed to reload config entry after discovery: %s", err)
 
@@ -841,27 +1028,63 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     # ------------------------------------------------------------------
 
     @property
-    def discovery_progress_percent(self) -> int:
-        """Overall progress estimate (0-100) for the current discovery phase."""
-        if self.discovery_phase == DISCOVERY_PHASE_IDLE:
-            return 0
-        if self.discovery_phase == DISCOVERY_PHASE_FINISHED:
-            return 100
-        if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
-            if self.discovery_registers_total:
-                pct = int(
-                    (self.discovery_registers_done / self.discovery_registers_total) * 100
-                )
-                return min(99, pct)
-            return 10
-        if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
+    def discovery_progress_percent(self) -> float:
+        """Overall progress estimate (0-100) across all discovery sub-phases.
+
+        Phases are stacked by weight (see const.DISCOVERY_WEIGHT_*):
+        inventory → identity → register_scan → finalizing. Within
+        register_scan, progress is (completed_modules + partial_current) /
+        total_modules. Returned as a float with ~0.1 resolution so the UI
+        can show sub-percent movement — each of the 240 register ticks in
+        a module only advances the bar by a fraction of a percent, so an
+        integer-rounded value looks frozen for tens of seconds at a time.
+        """
+        if self.discovery_sub_phase in (DISCOVERY_SUB_PHASE_IDLE, DISCOVERY_SUB_PHASE_ERROR):
+            return 0.0
+        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_FINISHED:
+            return 100.0
+
+        # Cumulative floor — everything before the current phase is "done".
+        floor = 0
+        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+            floor = 0
+            phase_weight = DISCOVERY_WEIGHT_INVENTORY
+            phase_frac = 0.5  # can't measure inventory fraction directly
+        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
+            floor = DISCOVERY_WEIGHT_INVENTORY
+            phase_weight = DISCOVERY_WEIGHT_IDENTITY
             total = self.discovery_modules_total or 1
             done = self.discovery_modules_done
-            per_module = 0
+            phase_frac = min(1.0, done / total)
+        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
+            floor = DISCOVERY_WEIGHT_INVENTORY + DISCOVERY_WEIGHT_IDENTITY
+            phase_weight = DISCOVERY_WEIGHT_REGISTER_SCAN
+            total = self.discovery_modules_total or 1
+            done = self.discovery_modules_done
+            per_module = 0.0
             if self.discovery_registers_total:
-                per_module = self.discovery_registers_done / self.discovery_registers_total
-            return min(99, int(((done + per_module) / total) * 100))
-        return 0
+                per_module = min(
+                    1.0,
+                    self.discovery_registers_done / self.discovery_registers_total,
+                )
+            phase_frac = min(1.0, (done + per_module) / total)
+        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_FINALIZING:
+            floor = (
+                DISCOVERY_WEIGHT_INVENTORY
+                + DISCOVERY_WEIGHT_IDENTITY
+                + DISCOVERY_WEIGHT_REGISTER_SCAN
+            )
+            phase_weight = DISCOVERY_WEIGHT_FINALIZING
+            phase_frac = 0.5
+        else:
+            # Older libraries may still drive the legacy-phase field only.
+            if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
+                return 10.0
+            if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
+                return 40.0
+            return 0.0
+
+        return min(99.9, round(floor + phase_frac * phase_weight, 1))
 
     def _update_discovery_state(
         self,
@@ -922,14 +1145,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             registers_total=92,
             error=None,
         )
-        self._start_progress_poller()
         try:
             await self.nikobus_discovery.start_inventory_discovery()
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
+        except asyncio.CancelledError:
+            self.discovery_running = False
+            self._discovery_finished_event.set()
+            raise
         except Exception as err:
-            self._stop_progress_poller()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"PC Link inventory failed: {err}",
@@ -974,15 +1199,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         str(addr).upper() for addr in modules.keys()
                     )
             total = len(self._discovery_module_order)
-            message = f"Scanning {total} modules…" if total else "Scanning modules…"
+            if total == 0:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="no_modules_known",
+                )
+            message = f"Scanning {total} modules…"
 
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
-        self._module_scan_frame_count = 0
-        # Initialize to 0 so the first poll tick (current_index_0 == 0)
-        # does not reset the counter and discard the initial increments.
-        self._module_scan_last_index = 0
-        self._install_command_counter()
+        self.discovery_decoded_records = 0
+        self.discovery_register_current = None
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_MODULE_SCAN,
             message=message,
@@ -990,18 +1217,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             modules_done=0,
             modules_total=total,
             registers_done=0,
-            registers_total=0,
+            registers_total=240,
             error=None,
         )
-        self._start_progress_poller()
         try:
             await self.nikobus_discovery.query_module_inventory(target)
             # The library returns after queueing commands; wait for the
             # on_discovery_finished callback to actually fire.
             await self._discovery_finished_event.wait()
+        except asyncio.CancelledError:
+            self.discovery_running = False
+            self._discovery_finished_event.set()
+            raise
         except Exception as err:
-            self._stop_progress_poller()
-            self._uninstall_command_counter()
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"Module scan failed: {err}",

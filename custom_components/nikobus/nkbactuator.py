@@ -1,5 +1,7 @@
 """Nikobus Button Press Events Handling"""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
@@ -7,9 +9,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import timezone as _tz
 from datetime import datetime
-from typing import Dict, Optional, Tuple, Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
+from nikobus_connect.discovery import find_module, find_operation_point
+
 from .const import (
     BUTTON_TIMER_THRESHOLDS,
     DIMMER_DELAY,
@@ -18,6 +22,9 @@ from .const import (
     REFRESH_DELAY,
     SHORT_PRESS,
 )
+
+if TYPE_CHECKING:
+    from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,10 +36,10 @@ class PressState:
     press_start: float
     last_press_time: float
     press_id: str
-    module_address: Optional[str]
-    channel: Optional[int]
-    release_task: Optional[asyncio.Task] = None
-    timer_tasks: Dict[int, asyncio.Task] = field(default_factory=dict)
+    module_address: str | None
+    channel: int | None
+    release_task: asyncio.Task[None] | None = None
+    timer_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
     last_timer_threshold: int = 0
 
 
@@ -42,18 +49,23 @@ class NikobusActuator:
     def __init__(
         self,
         hass: HomeAssistant,
-        coordinator: Any,
-        dict_button_data: dict,
-        dict_module_data: dict,
+        coordinator: NikobusDataCoordinator,
+        dict_button_data: dict[str, Any],
+        module_data: dict[str, Any],
     ) -> None:
-        """Initialize the Nikobus actuator."""
+        """Initialize the Nikobus actuator.
+
+        ``module_data`` is the live caller-owned dict wrapped by the Store
+        (``{"nikobus_module": {addr: entry}}``). We hold a reference rather
+        than a copy so ``on_module_save`` mutations are visible immediately.
+        """
         self._hass = hass
         self._coordinator = coordinator
         self._dict_button_data = dict_button_data
-        self._dict_module_data = dict_module_data
+        self._module_data = module_data
         self._debounce_time_ms = 150
-        self._press_states: Dict[str, PressState] = {}
-        self._module_refresh_tasks: Dict[str, asyncio.Task] = {}
+        self._press_states: dict[str, PressState] = {}
+        self._module_refresh_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def handle_button_press(self, address: str) -> None:
         """Handle incoming button frames with debounce and duration tracking."""
@@ -171,44 +183,50 @@ class NikobusActuator:
         self._hass.async_create_task(self.button_discovery(state.address, press_context=press_context))
         self._press_states.pop(state.address, None)
 
-    async def button_discovery(self, address: str, press_context: Optional[Dict[str, Any]] = None) -> None:
+    async def button_discovery(self, address: str, press_context: dict[str, Any] | None = None) -> None:
         """Identify impacted modules and trigger targeted refreshes."""
-        button_data = self._dict_button_data.get("nikobus_button", {}).get(address)
+        hit = find_operation_point(self._dict_button_data, address)
+        if hit is None:
+            _LOGGER.debug("Press from unknown button %s — run discovery to populate it", address)
+            return
+        _physical_addr, _key_label, op_point = hit
+        await self.process_button_modules(op_point, address, press_context)
 
-        if button_data:
-            await self.process_button_modules(button_data, address, press_context)
-        else:
-            # Auto-discovery for unconfigured buttons
-            new_button = {
-                "description": f"DISCOVERED - Nikobus Button #N{address}",
-                "address": address,
-                "impacted_module": [{"address": "", "group": ""}],
-            }
-            self._dict_button_data.setdefault("nikobus_button", {})[address] = new_button
-            try:
-                await self._coordinator.nikobus_config.write_json_data(
-                    "nikobus_button_config.json", "button", self._dict_button_data
-                )
-            except Exception as err:
-                _LOGGER.warning("Failed to persist discovered button %s to config: %s", address, err)
+    def _derive_impacted_modules(self, op_point: dict[str, Any]) -> list[tuple[str, str]]:
+        """Return the unique (module_address, group) pairs this op-point affects.
 
-    async def process_button_modules(self, button_data: Dict[str, Any], button_address: str, press_context: Optional[Dict[str, Any]]) -> None:
-        """Refresh states for specific modules impacted by this button."""
-        op_time = float(button_data.get("operation_time", 0))
-        press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
-        
-        impacted_modules = button_data.get("impacted_module", [])
-        
-        _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted_modules))
-
-        for module_info in impacted_modules:
-            addr = (module_info.get("address") or "").upper()
-            group = module_info.get("group", "")
-            if not addr or not group:
+        Derived from ``linked_modules`` — channels 1-6 live in feedback group 1,
+        7-12 in group 2.
+        """
+        seen: set[tuple[str, str]] = set()
+        for link in op_point.get("linked_modules") or []:
+            if not isinstance(link, dict):
                 continue
+            module_address = (link.get("module_address") or "").upper()
+            if not module_address:
+                continue
+            for out in link.get("outputs") or []:
+                if not isinstance(out, dict):
+                    continue
+                channel = out.get("channel")
+                if not isinstance(channel, int):
+                    continue
+                group = "1" if channel <= 6 else "2"
+                seen.add((module_address, group))
+        return list(seen)
 
-            # Determine if this specific module is a dimmer BEFORE debouncing
-            is_dimmer = addr in self._dict_module_data.get("dimmer_module", {})
+    async def process_button_modules(self, op_point: dict[str, Any], button_address: str, press_context: dict[str, Any] | None) -> None:
+        """Refresh states for specific modules impacted by this op-point."""
+        press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
+
+        impacted = self._derive_impacted_modules(op_point)
+        _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted))
+
+        for addr, group in impacted:
+
+            # Determine if this specific module is a dimmer BEFORE debouncing.
+            hit = find_module(self._module_data, addr)
+            is_dimmer = hit is not None and hit[1].get("module_type") == "dimmer_module"
             requires_long_press = is_dimmer
             is_initial_press = press_context is not None and press_context.get("duration_s") == 0.0
 
@@ -227,7 +245,6 @@ class NikobusActuator:
                 duration=(press_context or {}).get("duration_s"),
                 bucket=(press_context or {}).get("bucket"),
                 extra={
-                    "button_operation_time": op_time,
                     "impacted_module_address": addr,
                     "impacted_module_group": group,
                 }
@@ -262,6 +279,8 @@ class NikobusActuator:
                                 _LOGGER.debug("[%s] Step 1 Success for %s: %s", m_press_id, m_addr, new_state)
                                 self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
                                 await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
+                        except asyncio.CancelledError:
+                            raise
                         except Exception as err:
                             _LOGGER.debug("[%s] Step 1 Quick fetch failed for %s: %s", m_press_id, m_addr, err)
 
@@ -316,32 +335,26 @@ class NikobusActuator:
         
         self._hass.bus.async_fire(event_type, payload)
 
-    def _derive_button_context(self, address: str) -> Tuple[Optional[str], Optional[int]]:
-        """Determine primary module/channel link for a button from config."""
-        button_data = self._dict_button_data.get("nikobus_button", {}).get(address, {})
-        impacted = button_data.get("impacted_module") or []
-        links = button_data.get("linked_modules") or []
-
-        # Try impacted_module first, skipping empty placeholder entries
-        module_addr = None
-        for entry in impacted:
-            if entry.get("address"):
-                module_addr = entry["address"]
-                break
-
-        channel = None
-
-        # Fall back to linked_modules if no configured impacted_module
-        if not module_addr and links:
-            first_link = links[0]
-            module_addr = first_link.get("module_address")
-            outputs = first_link.get("outputs")
+    def _derive_button_context(self, address: str) -> tuple[str | None, int | None]:
+        """Determine the primary (module_address, channel) link from discovery."""
+        hit = find_operation_point(self._dict_button_data, address)
+        if hit is None:
+            return (None, None)
+        _physical_addr, _key_label, op_point = hit
+        for link in op_point.get("linked_modules") or []:
+            if not isinstance(link, dict):
+                continue
+            module_addr = link.get("module_address")
+            if not module_addr:
+                continue
+            channel: int | None = None
+            outputs = link.get("outputs")
             if isinstance(outputs, list) and outputs:
                 ch_val = outputs[0].get("channel")
                 if isinstance(ch_val, int):
                     channel = ch_val
-
-        return (module_addr.upper() if module_addr else None, channel)
+            return (module_addr.upper(), channel)
+        return (None, None)
 
     def _get_bucket(self, duration: float) -> int:
         """Map press duration to a discrete bucket (0-3)."""
