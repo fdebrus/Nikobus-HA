@@ -153,9 +153,24 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                     module_task["delay"] = max(module_task["delay"], op_time + 3.0)
 
         # 3. Commit updates to hardware
+        # All rollers in the scene share the same stop deadline: the
+        # longest per-channel ``op_time + 3 s`` across every impacted
+        # cover, regardless of which module it sits on. This gives each
+        # cover the most generous buffer the scene asks for, which
+        # absorbs bus contention when several modules are commanded
+        # back to back. The previous per-module max meant a cover with
+        # the longest op_time on a busy bus could see its stop fire
+        # before the motor reached the end-stop — manifesting as a
+        # cover that froze at e.g. 86 % when the same scene worked
+        # cleanly when triggered manually on an idle bus.
+        global_delay = max(
+            (info["delay"] for info in roller_tasks.values()),
+            default=0.0,
+        )
+
         for module_id, final_state in module_updates.items():
             await self._apply_module_state(module_id, final_state)
-            
+
             # 4. Schedule roller release if needed
             if module_id in roller_tasks:
                 task_info = roller_tasks[module_id]
@@ -163,7 +178,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 self._module_tokens[module_id] = token
                 task = self.hass.async_create_task(
                     self._delayed_roller_stop(
-                        module_id, final_state, task_info["indexes"], task_info["delay"], token
+                        module_id, final_state, task_info["indexes"], global_delay, token
                     )
                 )
                 self._roller_stop_tasks.append(task)
