@@ -354,7 +354,7 @@ After the migration runs:
 
 ## Protocol
 
-Frame-level details live in [`docs/nikobus-protocol.md`](docs/nikobus-protocol.md). The protocol implementation itself ships in the [`nikobus-connect`](https://github.com/fdebrus/nikobus-connect) pip library (transport, `$`-frame framer + CRC16/CRC8, `#N` button-frame listener, discovery engine). Nothing in this repository implements wire-level protocol code anymore; it wires the library into Home Assistant.
+The integration communicates with Nikobus hardware over its serial bus (directly via USB/serial or through a TCP bridge). The implementation details are contained within the source code of this repository. This work was developed independently for the sole purpose of interoperability between Home Assistant and Nikobus hardware that the user already owns, in line with Article 6 of Directive 2009/24/EC.
 
 ## How the Integration Works
 
