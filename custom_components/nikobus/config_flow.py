@@ -87,6 +87,48 @@ def _module_type_order(module_type: str | None) -> int:
     return _MODULE_TYPE_ORDER.get(module_type or "", 99)
 
 
+# User-overridable module classifications shown in the
+# Customize-a-module step. Mirrors the buckets the router
+# recognises (switch / dimmer / roller). ``other_module`` is
+# included so users with a misclassified non-output module
+# (PC Logic, Feedback, etc.) can park it there until library
+# discovery learns its real type.
+_OVERRIDABLE_MODULE_TYPES: tuple[str, ...] = (
+    "switch_module",
+    "dimmer_module",
+    "roller_module",
+    "other_module",
+)
+
+# Default channel count by module_type — matches the library's
+# inventory defaults (mapping.DEVICE_TYPES). Only used when the
+# user changes ``module_type`` and the existing ``channels`` list
+# is shorter than the new type's expected count: we extend it to
+# the right length with ``not_in_use`` placeholders so the router
+# can build the full set of entities for the new classification.
+# Existing channel entries are preserved verbatim — never
+# truncated, never overwritten.
+_DEFAULT_CHANNELS_BY_TYPE: dict[str, int] = {
+    "switch_module": 12,
+    "dimmer_module": 12,
+    "roller_module": 6,
+    "other_module": 0,
+}
+
+
+def _make_default_channel(module_type: str, index: int) -> dict[str, Any]:
+    """Build a placeholder channel entry for a freshly-padded slot.
+
+    Mirrors ``nikobus_connect.discovery.fileio._default_channel`` so a
+    re-discovery merge doesn't see drift between user-padded entries
+    and library-padded ones.
+    """
+    channel: dict[str, Any] = {"description": f"not_in_use output_{index}"}
+    if module_type == "roller_module":
+        channel["operation_time_up"] = "30"
+    return channel
+
+
 def _module_label(address: str, entry: dict[str, Any]) -> str:
     """Render a user-facing label for the module picker."""
     desc = entry.get("description") or f"Module {address}"
@@ -566,6 +608,36 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             if new_desc:
                 entry["description"] = new_desc
 
+            # Persist a manual module_type override.
+            #
+            # Discovery normally owns ``module_type`` and re-merges it
+            # from the inventory's ``device_type`` byte every time the
+            # user runs *Discover modules & buttons*. That round-trip
+            # clobbers any UI override done here — by design today (see
+            # ``nikobus_connect.discovery.fileio.merge_module_inventory``
+            # at the line ``existing["module_type"] = module_type``). A
+            # follow-up library change will respect non-`other_module`
+            # values written by the integration; until that lands, this
+            # override survives until the next inventory run, which is
+            # enough to unblock users hitting a misreported device_type
+            # byte (e.g. dimmer self-reported as roller).
+            new_type = (user_input.get("module_type") or "").strip()
+            if new_type and new_type != entry.get("module_type"):
+                entry["module_type"] = new_type
+                expected = _DEFAULT_CHANNELS_BY_TYPE.get(new_type, 0)
+                channels_list = entry.get("channels")
+                if not isinstance(channels_list, list):
+                    channels_list = []
+                # Extend (never truncate) to the new type's default
+                # channel count. Preserves user-edited descriptions /
+                # entity_type / LED triggers / travel times on every
+                # existing slot.
+                while len(channels_list) < expected:
+                    channels_list.append(
+                        _make_default_channel(new_type, len(channels_list) + 1)
+                    )
+                entry["channels"] = channels_list
+
             selected = user_input.get("channel")
             await coordinator._async_on_module_save()
 
@@ -593,6 +665,10 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         ]
         channel_options.append({"value": "done", "label": "Finish editing"})
 
+        current_type = entry.get("module_type") or "other_module"
+        if current_type not in _OVERRIDABLE_MODULE_TYPES:
+            current_type = "other_module"
+
         return self.async_show_form(
             step_id="edit_module",
             data_schema=vol.Schema({
@@ -600,6 +676,16 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                     "description",
                     default=entry.get("description") or "",
                 ): TextSelector(TextSelectorConfig()),
+                vol.Required(
+                    "module_type",
+                    default=current_type,
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(_OVERRIDABLE_MODULE_TYPES),
+                        mode=SelectSelectorMode.DROPDOWN,
+                        translation_key="module_type",
+                    )
+                ),
                 vol.Required("channel", default="done"): SelectSelector(
                     SelectSelectorConfig(
                         options=channel_options,

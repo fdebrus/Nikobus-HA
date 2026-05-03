@@ -189,9 +189,10 @@
             },
             "edit_module": {
                 "title": "Module {address} ({module_type})",
-                "description": "Model: {model}. Edit the module description or pick a channel to customize.",
+                "description": "Model: {model}. Edit the module description, override the module type if discovery misclassified it, or pick a channel to customize. Note: re-running *Discover modules & buttons* may overwrite a manual type override until the library learns to respect it.",
                 "data": {
                     "description": "Module description",
+                    "module_type": "Module type",
                     "channel": "Channel"
                 }
             },
@@ -222,6 +223,14 @@
         }
     },
     "selector": {
+        "module_type": {
+            "options": {
+                "switch_module": "Switch module",
+                "dimmer_module": "Dimmer module",
+                "roller_module": "Roller / shutter module",
+                "other_module": "Other (PC Logic / Feedback / unclassified)"
+            }
+        },
         "entity_type_switch_module": {
             "options": {
                 "default": "Default (switch)",
