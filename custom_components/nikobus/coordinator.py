@@ -1189,15 +1189,36 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self._discovery_module_order = [target]
         else:
             target = "ALL"
-            # Count configured output modules for progress display.
+            # Build the list of addresses we expect the library to walk
+            # during the "ALL" scan, mirroring the library's own
+            # queue-builder filter (nikobus_connect/discovery/discovery.py
+            # ~line 1115). The library excludes pc_link / feedback_module
+            # / other_module; we use the same filter here so the progress
+            # total matches what the library actually scans.
+            #
+            # ``pc_logic`` is intentionally NOT excluded as of
+            # nikobus-connect 0.4.11 — the library now register-scans
+            # 05-201 modules with the PcLogicDecoder (currently a
+            # logging stub) so installs that route button → output via
+            # PC-Logic can capture the BP-cell data needed for the real
+            # decoder. If we excluded pc_logic here, the no-modules-known
+            # gate below could falsely reject scans on installs that
+            # have a PC-Logic but no other output modules.
             self._discovery_module_order = []
             for m_type, modules in self.dict_module_data.items():
-                if m_type in ("pc_link", "pc_logic", "feedback_module", "other_module"):
+                if m_type in ("pc_link", "feedback_module", "other_module"):
                     continue
                 if isinstance(modules, dict):
                     self._discovery_module_order.extend(
                         str(addr).upper() for addr in modules.keys()
                     )
+            _LOGGER.debug(
+                "start_module_scan ALL — dict_module_data buckets=%s, "
+                "queue=%s",
+                {k: list(v.keys()) if isinstance(v, dict) else v
+                 for k, v in self.dict_module_data.items()},
+                self._discovery_module_order,
+            )
             total = len(self._discovery_module_order)
             if total == 0:
                 raise HomeAssistantError(
