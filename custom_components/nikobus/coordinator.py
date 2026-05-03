@@ -1192,21 +1192,29 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             # Build the list of addresses we expect the library to walk
             # during the "ALL" scan, mirroring the library's own
             # queue-builder filter (nikobus_connect/discovery/discovery.py
-            # ~line 1115). The library excludes pc_link / feedback_module
-            # / other_module; we use the same filter here so the progress
+            # ~line 1115). The library excludes feedback_module /
+            # other_module; we use the same filter here so the progress
             # total matches what the library actually scans.
             #
             # ``pc_logic`` is intentionally NOT excluded as of
-            # nikobus-connect 0.4.11 — the library now register-scans
-            # 05-201 modules with the PcLogicDecoder (currently a
-            # logging stub) so installs that route button → output via
-            # PC-Logic can capture the BP-cell data needed for the real
-            # decoder. If we excluded pc_logic here, the no-modules-known
-            # gate below could falsely reject scans on installs that
-            # have a PC-Logic but no other output modules.
+            # nikobus-connect 0.4.11 — the library register-scans
+            # 05-201 modules with the PcLogicDecoder so installs that
+            # route button → output via PC-Logic can capture the
+            # BP-cell data needed for the real decoder.
+            #
+            # ``pc_link`` is intentionally NOT excluded as of
+            # nikobus-connect 0.5.0 — the library now register-scans
+            # 05-200 modules too, with PcLinkDecoder emitting
+            # structured "PC-Link module-registry record" and
+            # "PC-Link link record" INFO log lines. Stage 2a is
+            # visibility-only (decoder returns None — no merge yet),
+            # but the queue alignment must match either way so the
+            # progress total stays correct and the no-modules-known
+            # gate below doesn't falsely reject scans on installs
+            # that have only a PC-Link.
             self._discovery_module_order = []
             for m_type, modules in self.dict_module_data.items():
-                if m_type in ("pc_link", "feedback_module", "other_module"):
+                if m_type in ("feedback_module", "other_module"):
                     continue
                 if isinstance(modules, dict):
                     self._discovery_module_order.extend(
