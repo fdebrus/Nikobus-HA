@@ -99,9 +99,10 @@
             },
             "edit_module": {
                 "title": "Module {address} ({module_type})",
-                "description": "Model: {model}. Bewerk de beschrijving van de module of kies een kanaal om aan te passen.",
+                "description": "Model: {model}. Bewerk de beschrijving, corrigeer het moduletype als de ontdekking het verkeerd heeft geclassificeerd, of kies een kanaal om aan te passen. Let op: opnieuw *Modules en knoppen ontdekken* uitvoeren kan een handmatig overschreven type weer wegschrijven totdat de bibliotheek dit respecteert.",
                 "data": {
                     "description": "Modulebeschrijving",
+                    "module_type": "Moduletype",
                     "channel": "Kanaal"
                 }
             },
@@ -199,6 +200,14 @@
         }
     },
     "selector": {
+        "module_type": {
+            "options": {
+                "switch_module": "Schakelmodule",
+                "dimmer_module": "Dimmermodule",
+                "roller_module": "Rolluik / zonweringsmodule",
+                "other_module": "Overig (PC Logic / Feedback / niet geclassificeerd)"
+            }
+        },
         "entity_type_switch_module": {
             "options": {
                 "default": "Standaard (schakelaar)",

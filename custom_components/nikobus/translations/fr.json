@@ -99,9 +99,10 @@
             },
             "edit_module": {
                 "title": "Module {address} ({module_type})",
-                "description": "Modèle : {model}. Modifiez la description du module ou choisissez un canal à personnaliser.",
+                "description": "Modèle : {model}. Modifiez la description du module, corrigez le type si la découverte s'est trompée, ou choisissez un canal à personnaliser. Note : relancer *Découvrir les modules et boutons* peut écraser un type forcé manuellement, jusqu'à ce que la bibliothèque apprenne à le respecter.",
                 "data": {
                     "description": "Description du module",
+                    "module_type": "Type de module",
                     "channel": "Canal"
                 }
             },
@@ -199,6 +200,14 @@
         }
     },
     "selector": {
+        "module_type": {
+            "options": {
+                "switch_module": "Module d'interrupteurs",
+                "dimmer_module": "Module variateur",
+                "roller_module": "Module volet / store",
+                "other_module": "Autre (PC Logic / Feedback / non classé)"
+            }
+        },
         "entity_type_switch_module": {
             "options": {
                 "default": "Par défaut (interrupteur)",
