@@ -1,0 +1,156 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly in the integration.
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. To keep things efficient, please fill in **every required field** below — most of them point you at exactly where to find the value.
+
+        For setup help / "how do I…" / general questions, post on the [HA community thread](https://community.home-assistant.io/t/custom-component-nikobus/732832) instead.
+
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Before opening
+      options:
+        - label: I have searched [existing issues](https://github.com/fdebrus/Nikobus-HA/issues?q=is%3Aissue) and didn't find a duplicate.
+          required: true
+        - label: I have read the [README](https://github.com/fdebrus/Nikobus-HA#readme).
+          required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What's broken
+      description: One or two sentences describing the bug from the user's perspective.
+      placeholder: e.g. "Pressing the wall button no longer toggles the light in HA — but it did before the 2.0 upgrade."
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps from a freshly-restarted HA, including which buttons / services / automations you triggered.
+      placeholder: |
+        1. Settings → Devices & Services → Nikobus → Configure → Discover modules & buttons
+        2. Wait for completion
+        3. Press wall button at address 3AC4A9
+        4. Observe …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs actual behaviour
+      placeholder: |
+        Expected: light.living_room turns on when button 3AC4A9 is pressed.
+        Actual: nothing happens; light state stays off until the next polling cycle (~2 min later).
+    validations:
+      required: true
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Nikobus integration version
+      description: From `Settings → Devices & Services → Nikobus → ⋮ → Information`, or `manifest.json` (`"version"` field).
+      placeholder: "2.0.2"
+    validations:
+      required: true
+
+  - type: input
+    id: library_version
+    attributes:
+      label: nikobus-connect library version
+      description: From `Settings → System → Logs` at HA startup (look for `nikobus_connect …`), or run `pip show nikobus-connect` inside your HA Python env. The pin in `manifest.json` is what was *requested* — the actual installed version may differ on dev installs.
+      placeholder: "0.5.1"
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant Core version
+      description: From `Settings → About`.
+      placeholder: "2026.4.5"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ha_install
+    attributes:
+      label: HA installation type
+      options:
+        - Home Assistant OS (HAOS)
+        - Home Assistant Supervised
+        - Home Assistant Container (Docker)
+        - Home Assistant Core (manual install)
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: How HA connects to the PC-Link
+      options:
+        - USB / serial adapter (e.g. `/dev/ttyUSB0`, `COM3`)
+        - TCP bridge (e.g. `192.168.1.50:9999`)
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware mix on the bus
+      description: |
+        List the Niko module models in your install (one per line). At minimum, list anything other than standard switch / dimmer / roller modules — feedback module, PC-Link, PC-Logic, modular interface (05-206), pushbutton/switch interface (05-056 / 05-057 / 05-058), audio link (05-205), RF transmitters, etc. The more specific, the easier it is to spot hardware-specific bugs.
+      placeholder: |
+        2× 05-000-02 (Switch module, 12-ch)
+        1× 05-007-02 (Dimmer)
+        4× 05-001-02 (Roller / shutter)
+        1× 05-200 (PC-Link)
+        1× 05-201 (PC-Logic)
+        1× 05-205 (Audio Distribution)
+        Wall buttons: ~10× 05-346, 2× 05-348 (IR), 1× 05-349 (8-OP)
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: |
+        Enable debug logging for the integration (see below), restart HA, reproduce the bug, then paste the relevant log section here.
+
+        ```yaml
+        # configuration.yaml
+        logger:
+          default: warning
+          logs:
+            custom_components.nikobus: debug
+            nikobus_connect: debug
+            nikobus_connect.discovery: debug
+        ```
+
+        For a long log, attach the file instead of pasting (drag-and-drop the `.log` file into this comment box).
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: diagnostics_attached
+    attributes:
+      label: Diagnostics download
+      description: |
+        Attach the **Download Diagnostics** file from `Settings → Devices & Services → Nikobus → ⋮ → Download Diagnostics`. It bundles the integration's storage state, redacted; no credentials.
+      options:
+        - label: I have attached the diagnostics download to this issue.
+          required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else worth knowing — what changed recently, what you've already tried, links to forum threads, screenshots, etc.

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Home Assistant community thread
+    url: https://community.home-assistant.io/t/custom-component-nikobus/732832
+    about: For general questions, setup help, "how do I…", and exchanging tips with other users — please post on the community thread first. The GitHub issue tracker is for bug reports and feature requests against the integration code.
+  - name: Nikobus integration documentation
+    url: https://github.com/fdebrus/Nikobus-HA#readme
+    about: Setup guide, supported modules, discovery walkthrough, troubleshooting tips. Worth a re-read before opening an issue.
