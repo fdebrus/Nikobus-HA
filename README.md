@@ -252,7 +252,7 @@ All module and button data lives in Home Assistant's own storage (`.storage/niko
 
 ### 1. Discover modules and buttons
 
-Open the **Nikobus Bridge** device page and press **Discover modules & buttons** (or trigger the same from **Configure → Discover modules & buttons (PC Link inventory)**). This walks the PC Link registry, identifies every module (switch / dimmer / shutter / feedback / PC-logic), and creates every physical wall button found on the bus as its own HA device.
+Open the **Nikobus Bridge** device page and press **Discover modules & buttons**. This walks the PC Link registry, identifies every module (switch / dimmer / shutter / feedback / PC-logic), and creates every physical wall button found on the bus as its own HA device.
 
 A large install takes several minutes end-to-end — the per-register ACK timeout in the library is 1.5 s, so slow modules stretch the scan. Two diagnostic sensors on the Bridge device track progress:
 
@@ -277,9 +277,9 @@ Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 
 ### 3. Scan module links
 
-Press **Scan all module links** on the Bridge device (or **Configure → Scan all modules for button links**). This walks every output module and records which button addresses drive which channels, populating the `linked_modules` metadata on each button entity.
+Press **Scan all module links** on the Bridge device. This walks every output module and records which button addresses drive which channels, populating the `linked_modules` metadata on each button entity.
 
-The button is greyed out until a PC Link inventory has run — scanning links against zero known modules does nothing. Likewise the options-flow item aborts with a "Run a PC-Link inventory first" message.
+The button is greyed out until a PC Link inventory has run — scanning links against zero known modules does nothing.
 
 ### Repair issues
 
