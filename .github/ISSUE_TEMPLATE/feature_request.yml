@@ -1,0 +1,46 @@
+name: Feature request
+description: Suggest a new capability or enhancement to the integration.
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! Please describe what you'd like to do and why — the "why" is often more important than the "what" because it lets us find the simplest design that solves the actual need.
+
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Before opening
+      options:
+        - label: I have searched [existing issues](https://github.com/fdebrus/Nikobus-HA/issues?q=is%3Aissue) (open and closed) and didn't find this proposal.
+          required: true
+
+  - type: textarea
+    id: feature
+    attributes:
+      label: What you'd like to do
+      description: One or two sentences on the feature itself.
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Why — the underlying need
+      description: |
+        What are you trying to accomplish in your home? Concrete scenarios help; "I want to be able to do X so that Y happens" is much easier to design for than "the integration should support Z".
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Workarounds you've tried, or other integrations / scripts that solve part of the problem today.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Hardware specifics, screenshots, links to forum discussions, etc.

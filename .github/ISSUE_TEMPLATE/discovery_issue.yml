@@ -1,0 +1,150 @@
+name: Discovery / scan issue
+description: A button isn't found, a module is misclassified, linked_modules is empty, or "Scan all module links" produces wrong results.
+labels:
+  - discovery
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when something is wrong with **discovery output** — buttons not appearing, modules ending up as covers when they should be lights, `linked_modules` empty, "unknown device detected" warnings in the log, etc.
+
+        Discovery issues are the hardest to debug remotely. The required attachments below are the bare minimum needed to reproduce on the maintainer's side; please don't skip them.
+
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Before opening
+      options:
+        - label: I have searched [existing issues](https://github.com/fdebrus/Nikobus-HA/issues?q=is%3Aissue) and didn't find a duplicate.
+          required: true
+        - label: I have run **Discover modules & buttons** (PC Link inventory) **and** **Scan all module links**, in that order, on the Nikobus Bridge device.
+          required: true
+
+  - type: textarea
+    id: symptom
+    attributes:
+      label: What's missing or wrong
+      description: |
+        Describe what you expected to see vs what discovery actually produced. Include specific bus addresses where possible — both the user-facing one (e.g. "BP9: Bed rechts") and the inventory address from your Niko PC software (e.g. `3AC4A9`) if you have access to it.
+      placeholder: |
+        BP9 (3AC4A9, bedroom door right) is in the device list after PC Link inventory, but its `linked_outputs` attribute is empty even though the button physically controls light L1 on module 9105 channel 4.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: symptom_class
+    attributes:
+      label: Symptom category (tick all that apply)
+      options:
+        - label: Button device exists in HA but `linked_outputs` is empty.
+        - label: Button device doesn't exist in HA at all (PC Link inventory missed it).
+        - label: Module misclassified (e.g. dimmer rendered as cover entities, or vice versa).
+        - label: '"Unknown device detected: Type 0x__ at Address ______" warnings in the log.'
+        - label: Scan terminates earlier than expected.
+        - label: Scan completes but no records / very few records found across all modules.
+        - label: Other (describe in "What's missing or wrong" above).
+
+  - type: input
+    id: integration_version
+    attributes:
+      label: Nikobus integration version
+      placeholder: "2.0.2"
+    validations:
+      required: true
+
+  - type: input
+    id: library_version
+    attributes:
+      label: nikobus-connect library version
+      description: From `Settings → System → Logs` at HA startup, or `pip show nikobus-connect`. Discovery behaviour changes meaningfully between library versions; please be precise.
+      placeholder: "0.5.1"
+    validations:
+      required: true
+
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant Core version
+      placeholder: "2026.4.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware mix on the bus
+      description: |
+        List every Niko module model in your install (one per line). Discovery issues often correlate with specific hardware variants the library doesn't yet recognise — the more specific the list, the faster we can map it.
+      placeholder: |
+        2× 05-000-02 (Switch module, 12-ch)
+        1× 05-007-02 (Dimmer)
+        4× 05-001-02 (Roller / shutter)
+        1× 05-200 (PC-Link)
+        1× 05-201 (PC-Logic) — used as central routing
+        Wall buttons: ~10× 05-346, 2× 05-348 (IR), 1× 05-349 (8-OP)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: storage_attached
+    attributes:
+      label: Storage files attached
+      description: |
+        Attach **both** files. They live in `<config>/.storage/` (HA's storage directory). Safe to share — addresses only, no credentials.
+      options:
+        - label: I have attached `.storage/nikobus.modules` to this issue.
+          required: true
+        - label: I have attached `.storage/nikobus.buttons` to this issue.
+          required: true
+
+  - type: checkboxes
+    id: log_attached
+    attributes:
+      label: Debug log of "Scan all module links" attached
+      description: |
+        Required. Enable debug logging, restart HA, click **Scan all module links** on the Nikobus Bridge device, wait for it to fully complete (several minutes for ~12 modules), then save the log file and attach it to this issue. The library's debug output is the only way to root-cause register-level issues.
+
+        ```yaml
+        # configuration.yaml
+        logger:
+          default: warning
+          logs:
+            custom_components.nikobus: debug
+            nikobus_connect: debug
+            nikobus_connect.discovery: debug
+        ```
+      options:
+        - label: I have attached the debug log of a fresh `Scan all module links` run.
+          required: true
+
+  - type: checkboxes
+    id: diagnostics_attached
+    attributes:
+      label: Diagnostics download
+      description: From `Settings → Devices & Services → Nikobus → ⋮ → Download Diagnostics`.
+      options:
+        - label: I have attached the diagnostics download.
+          required: true
+
+  - type: textarea
+    id: pc_software
+    attributes:
+      label: Niko PC-software cross-reference (highly recommended)
+      description: |
+        If you have access to your install's `.nbc` config file from the Niko PC-software, **attaching its export is enormously useful** — it's the ground truth that lets us verify what discovery should have produced.
+
+        Alternatively, screenshots of:
+        - The PC-software's address-list / device-inventory view (one row per device with model + address).
+        - The connection list / programming view for any specific BP, button, or module mentioned in "What's missing or wrong" above.
+
+        Without this, we're often guessing at what your install actually contains.
+      placeholder: |
+        Attached: Beukenbos20150822.nkb.json (Niko PC-software config export).
+        Screenshots: address-list view, BP9 connection grid showing it controls module 9105 ch4.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Recent changes (added new hardware? upgraded library?), what you've already tried, links to forum threads, etc.
