@@ -59,9 +59,7 @@
                 "description": "Que souhaitez-vous faire ?",
                 "menu_options": {
                     "hardware": "Modifier la configuration matérielle",
-                    "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)",
-                    "discovery_pc_link": "Découvrir les modules et boutons (inventaire PC Link)",
-                    "discovery_modules": "Scanner tous les modules pour les liens de boutons"
+                    "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)"
                 }
             },
             "hardware": {
@@ -85,10 +83,6 @@
                 "data_description": {
                     "refresh_interval": "Fréquence de lecture des états des modules (60–3600 s)."
                 }
-            },
-            "discovery_pc_link": {
-                "title": "Inventaire PC Link",
-                "description": "Analyse du registre PC Link pour trouver les modules et boutons.\n\n**Progression :** {percent}%\n\n{message}"
             },
             "configure_modules": {
                 "title": "Personnaliser un module Nikobus",
@@ -117,20 +111,10 @@
                     "operation_time_up": "Temps de course à l'ouverture (secondes)",
                     "operation_time_down": "Temps de course à la fermeture (secondes)"
                 }
-            },
-            "discovery_modules": {
-                "title": "Scan des modules",
-                "description": "Analyse de chaque module de sortie pour récupérer les liens de boutons.\n\n**Progression :** {percent}%\n\n{message}"
             }
         },
-        "progress": {
-            "discovery": "{message}"
-        },
         "abort": {
-            "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer.",
-            "discovery_done": "Découverte terminée. L'intégration est en cours de rechargement, les nouvelles entités apparaîtront sous peu.",
-            "discovery_error": "Échec de la découverte : {error}",
-            "no_modules": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link."
+            "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."
         }
     },
     "entity": {

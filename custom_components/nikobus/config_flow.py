@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from typing import Any
@@ -367,12 +366,20 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 # ---------------------------------------------------------------------------
 
 class NikobusOptionsFlow(config_entries.OptionsFlow):
-    """Change hardware/polling settings and trigger discovery with live progress."""
+    """Change hardware/polling settings and customize discovered modules.
+
+    Discovery itself (PC-Link inventory + module-link scan) is no
+    longer reachable from this options flow; both actions live on the
+    Nikobus Bridge device's button entities (`Discover modules &
+    buttons` and `Scan all module links`). Routing scans through the
+    options flow on top of the device buttons gave users two
+    different entry points for the same operation, and the flow's
+    progress-dialog → terminal-step plumbing was where the
+    "Invalid flow specified" failure mode kept resurfacing.
+    """
 
     def __init__(self) -> None:
         self._options: dict[str, Any] = {}
-        self._discovery_task: asyncio.Task[None] | None = None
-        self._discovery_kind: str | None = None  # "pc_link" or "module_scan"
         self._edit_module_address: str | None = None
         self._edit_channel_index: int | None = None
 
@@ -388,14 +395,19 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Entry point — let the user pick what to do."""
+        """Entry point — let the user pick what to do.
+
+        Discovery actions (PC-Link inventory, full module scan) live
+        on the Nikobus Bridge device's button entities, not in this
+        menu. Keeping a single entry point avoids the "two ways to do
+        the same thing" UX and the progress-flow flakiness that
+        accompanied the options-flow path.
+        """
         return self.async_show_menu(
             step_id="init",
             menu_options=[
                 "hardware",
                 "configure_modules",
-                "discovery_pc_link",
-                "discovery_modules",
             ],
         )
 
@@ -426,124 +438,6 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             step_id="polling",
             data_schema=_polling_schema(self._current()),
         )
-
-    # --- Discovery: PC Link inventory --------------------------------------
-
-    async def async_step_discovery_pc_link(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Kick off a PC Link inventory scan and show live progress."""
-        coordinator = self._coordinator()
-        if coordinator is None:
-            return self.async_abort(reason="not_loaded")
-
-        if self._discovery_task is None:
-            self._discovery_kind = "pc_link"
-            # auto_reload=True: let the coordinator schedule its own
-            # background reload when discovery finishes. The options flow
-            # terminates with async_abort (no update-listener round-trip),
-            # so we can't rely on the listener to kick off a reload here.
-            self._discovery_task = self.hass.async_create_task(
-                coordinator.start_pc_link_inventory(auto_reload=True)
-            )
-
-        return await self._progress_step("discovery_pc_link")
-
-    # --- Discovery: full module scan ---------------------------------------
-
-    async def async_step_discovery_modules(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Kick off a full module-scan discovery and show live progress."""
-        coordinator = self._coordinator()
-        if coordinator is None:
-            return self.async_abort(reason="not_loaded")
-
-        # Gate: the module scan walks the list of known output modules.
-        # Without a prior PC Link inventory (or a legacy-file migration)
-        # that list is empty and the scan has nothing to do. Steer the
-        # user to run the inventory first instead of silently finishing
-        # with zero records.
-        if self._discovery_task is None and not coordinator.has_known_output_modules:
-            return self.async_abort(reason="no_modules")
-
-        if self._discovery_task is None:
-            self._discovery_kind = "module_scan"
-            # auto_reload=True: same rationale as the PC Link step above
-            # — the coordinator handles reload asynchronously once
-            # discovery finishes; the flow terminates via async_abort.
-            self._discovery_task = self.hass.async_create_task(
-                coordinator.start_module_scan(auto_reload=True)
-            )
-
-        return await self._progress_step("discovery_modules")
-
-    async def _progress_step(
-        self, step_id: str
-    ) -> config_entries.FlowResult:
-        """Show a progress spinner until the discovery task completes.
-
-        Passes the real discovery task itself as ``progress_task`` so
-        HA re-runs this step exactly once — when the task finishes —
-        and we transition to the terminal step. No intermediate
-        re-renders while the scan is running.
-
-        The earlier implementation created a fresh 1-second
-        ``asyncio.sleep`` task as ``progress_task`` on every call to
-        refresh the dialog text mid-scan. On long scans that piled
-        up hundreds of short-lived tasks and a handful of race
-        windows: a poll task could fire after we'd already returned
-        ``PROGRESS_DONE``, HA would re-enter a flow whose state had
-        moved on, and the frontend rendered "Invalid flow specified"
-        even when nothing crashed server-side. See the prior attempts
-        in #288 (fire-and-forget reload) and #294 (abort instead of
-        create_entry) — both were real fixes but missed this layer.
-
-        The trade-off is that the progress-dialog description is
-        static for the duration of the scan. Live per-register detail
-        is surfaced via the **Discovery Status** and **Discovery
-        Progress** sensors on the Nikobus Bridge device, which are
-        what the user should watch during a long scan.
-        """
-        coordinator = self._coordinator()
-        task = self._discovery_task
-
-        if task is None:
-            # The caller always creates the task before we get here; treat
-            # a missing task as an error rather than spinning forever.
-            _LOGGER.error("Discovery progress step reached without a task")
-            return self.async_show_progress_done(next_step_id="discovery_error")
-
-        if task.done():
-            self._discovery_task = None
-            try:
-                task.result()
-            except Exception as err:
-                _LOGGER.error("Discovery failed: %s", err)
-                return self.async_show_progress_done(next_step_id="discovery_error")
-            return self.async_show_progress_done(next_step_id="discovery_done")
-
-        raw_message = (
-            coordinator.discovery_status_message
-            if coordinator
-            else "Discovery in progress…"
-        )
-        percent = coordinator.discovery_progress_percent if coordinator else 0
-        display = raw_message or "Starting…"
-
-        kwargs: dict[str, Any] = {
-            "step_id": step_id,
-            "progress_action": "discovery",
-            "description_placeholders": {
-                "message": display,
-                "percent": str(percent),
-            },
-        }
-        try:
-            return self.async_show_progress(progress_task=task, **kwargs)
-        except TypeError:
-            # Older HA without progress_task support — fall back to plain call.
-            return self.async_show_progress(**kwargs)
 
     # --- Module customization ----------------------------------------------
 
@@ -828,42 +722,3 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def async_step_discovery_done(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Finalize the flow after a successful discovery.
-
-        Abort with the ``discovery_done`` reason so HA closes the flow
-        via a plain terminal response — no options persistence, no
-        update listener invocation, no awaiting of the reload.
-
-        Entity refresh is delegated to the coordinator:
-        ``_handle_discovery_finished`` schedules the config-entry reload
-        via ``hass.async_create_task`` (see ``coordinator.py``), so it
-        runs independently of the flow lifecycle. This keeps the
-        flow-close HTTP response fast enough for the frontend to render
-        the success dialog instead of falling back to its generic
-        "Invalid flow specified" error.
-
-        (The previous ``async_create_entry`` version kept the flow
-        dependent on the options update listener, which — even after
-        it was made fire-and-forget in #288 — was still entangled with
-        the ``async_show_progress_done → next_step → create_entry``
-        hand-off on the flow-manager side.)
-        """
-        return self.async_abort(reason="discovery_done")
-
-    async def async_step_discovery_error(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.FlowResult:
-        """Close the flow after a failed discovery, surfacing the error."""
-        coordinator = self._coordinator()
-        err = (
-            coordinator.discovery_last_error
-            if coordinator
-            else "Unknown error"
-        ) or "Unknown error"
-        return self.async_abort(
-            reason="discovery_error",
-            description_placeholders={"error": err},
-        )

@@ -59,9 +59,7 @@
                 "description": "Wat wilt u doen?",
                 "menu_options": {
                     "hardware": "Hardware-instellingen wijzigen",
-                    "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)",
-                    "discovery_pc_link": "Modules en knoppen ontdekken (PC Link-inventaris)",
-                    "discovery_modules": "Alle modules scannen voor knoppenkoppelingen"
+                    "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)"
                 }
             },
             "hardware": {
@@ -85,10 +83,6 @@
                 "data_description": {
                     "refresh_interval": "Hoe vaak modulestatussen worden gelezen (60–3600 s)."
                 }
-            },
-            "discovery_pc_link": {
-                "title": "PC Link-inventaris",
-                "description": "Het PC Link-register wordt gescand op modules en knoppen.\n\n**Voortgang:** {percent}%\n\n{message}"
             },
             "configure_modules": {
                 "title": "Een Nikobus-module aanpassen",
@@ -117,20 +111,10 @@
                     "operation_time_up": "Looptijd omhoog (seconden)",
                     "operation_time_down": "Looptijd omlaag (seconden)"
                 }
-            },
-            "discovery_modules": {
-                "title": "Modules scannen",
-                "description": "Elk uitgangsmodule wordt gescand op knoppenkoppelingen.\n\n**Voortgang:** {percent}%\n\n{message}"
             }
         },
-        "progress": {
-            "discovery": "{message}"
-        },
         "abort": {
-            "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw.",
-            "discovery_done": "Ontdekking voltooid. De integratie wordt herladen; nieuwe entiteiten verschijnen zo dadelijk.",
-            "discovery_error": "Ontdekking mislukt: {error}",
-            "no_modules": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit."
+            "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
         }
     },
     "entity": {

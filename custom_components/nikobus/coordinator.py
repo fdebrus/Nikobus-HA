@@ -518,8 +518,23 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         return len(message) < 9 or message[7:9].upper() == "FF"
 
     async def _abort_discovery_early(self) -> None:
-        """Stop the PC-Link inventory scan ahead of schedule."""
-        # Drain remaining discovery commands so they are not sent on the bus.
+        """Stop the PC-Link inventory scan ahead of schedule.
+
+        Drains the remaining queued discovery commands so they aren't
+        sent on the bus, and updates the UI to surface the early-stop
+        state. Does **not** call ``_handle_discovery_finished`` here —
+        the library's deferred ``_finalize_inventory_phase`` is
+        already scheduled and will fire its ``on_discovery_finished``
+        callback (wired to ``_handle_discovery_finished`` in
+        ``connect()``) once its inventory-timeout elapses (~10 s
+        after the last frame). That single completion path drives
+        the reload.
+
+        Calling ``_handle_discovery_finished`` here as well caused
+        a dual-reload cycle on every inventory click: an immediate
+        reload from the early-stop, followed ~10 s later by a
+        second reload when the deferred finalize fired post-reload.
+        """
         if self.nikobus_command and hasattr(self.nikobus_command, "_command_queue"):
             drained = 0
             while not self.nikobus_command._command_queue.empty():
@@ -530,7 +545,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     break
             if drained:
                 _LOGGER.debug("Drained %d queued discovery commands", drained)
-        await self._handle_discovery_finished()
+        # Surface the transitional state in the UI so the small gap
+        # before the library's deferred finalize fires doesn't look
+        # like the integration is stuck.
+        self._update_discovery_state(
+            phase=DISCOVERY_PHASE_PC_LINK,
+            message="PC Link inventory: stopping early; finalising…",
+        )
 
     # ------------------------------------------------------------------
     # Data update

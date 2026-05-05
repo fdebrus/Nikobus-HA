@@ -126,28 +126,14 @@
     },
     "options": {
         "abort": {
-            "discovery_done": "Discovery finished. The integration is reloading and the newly-discovered entities will appear shortly.",
-            "discovery_error": "Discovery failed: {error}",
             "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
-            "no_modules": "No Nikobus modules are configured yet. Run a PC-Link inventory discovery first.",
             "module_not_found": "The selected module was not found in storage.",
             "channel_not_found": "The selected channel was not found."
         },
         "error": {
             "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty)."
         },
-        "progress": {
-            "discovery": "{message}"
-        },
         "step": {
-            "discovery_modules": {
-                "description": "Scanning each output module for button links.\n\n**Progress:** {percent}%\n\n{message}",
-                "title": "Module Scan"
-            },
-            "discovery_pc_link": {
-                "description": "Scanning the PC Link registry for modules and buttons.\n\n**Progress:** {percent}%\n\n{message}",
-                "title": "PC Link Inventory"
-            },
             "hardware": {
                 "data": {
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
@@ -164,8 +150,6 @@
                 "description": "What would you like to do?",
                 "menu_options": {
                     "configure_modules": "Customize a module (description, entity type, LED triggers, travel time)",
-                    "discovery_modules": "Scan all modules for button links",
-                    "discovery_pc_link": "Discover modules & buttons (PC Link inventory)",
                     "hardware": "Change hardware settings"
                 },
                 "title": "Nikobus"
