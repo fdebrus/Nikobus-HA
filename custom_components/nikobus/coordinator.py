@@ -511,11 +511,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def _is_empty_inventory_block(message: str) -> bool:
         """Check whether a $2E/$1E inventory response carries no device data.
 
-        The first data byte after the PC-Link address indicates the record
-        type (0x03 = module, 0x04+ = button).  A value of 0xFF means the
-        registry slot is unused.
+        Aligns with nikobus-connect's two empty-classification paths so the
+        ``_discovery_found_data`` gate doesn't get opened by a register
+        whose first byte is ``0x00`` — a real-world install
+        (2026-05-06 trace, register ``A0``) returned
+        ``$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC`` with the leading
+        ``00`` byte, which the library logged as
+        ``reason=empty_register`` but HA-side previously treated as data,
+        flipping the gate True and letting the next three FF-prefixed
+        empty registers trip the early-stop before any real record had
+        been seen.
+
+        Empty markers per nikobus-connect:
+          * first record byte ``FF`` → ``Empty PC Link registry block``
+          * first record byte ``00`` → ``Discovery skipped reason=empty_register``
         """
-        return len(message) < 9 or message[7:9].upper() == "FF"
+        if len(message) < 9:
+            return True
+        return message[7:9].upper() in ("FF", "00")
 
     async def _abort_discovery_early(self) -> None:
         """Stop the PC-Link inventory scan ahead of schedule.

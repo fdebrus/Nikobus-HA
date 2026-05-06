@@ -357,6 +357,15 @@ class TestIsEmptyInventoryBlock(unittest.TestCase):
         msg = "$1EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000"
         self.assertTrue(self._check(msg))
 
+    def test_zero_first_byte_is_empty(self):
+        # nikobus-connect 0.5.x logs ``reason=empty_register`` when the
+        # first record byte is 00 — HA must agree so ``_discovery_found_data``
+        # doesn't flip True on a register the library considers empty.
+        # 2026-05-06 trace: register A0 returned this exact frame and the
+        # gate opened prematurely, letting later FF empties trip the threshold.
+        msg = "$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC"
+        self.assertTrue(self._check(msg))
+
 
 # ---------------------------------------------------------------------------
 # Early termination of PC Link discovery
@@ -375,6 +384,9 @@ class TestDiscoveryEarlyTermination(unittest.IsolatedAsyncioTestCase):
         coord.inventory_query_type = InventoryQueryType.PC_LINK
         coord._discovery_found_data = False
         coord._consecutive_empty_blocks = 0
+        coord.discovery_registers_done = 0
+        coord.discovery_registers_total = 96
+        coord._update_discovery_state = MagicMock()
         coord.nikobus_command = MagicMock()
         coord.nikobus_command._command_queue = asyncio.Queue()
 
@@ -397,19 +409,27 @@ class TestDiscoveryEarlyTermination(unittest.IsolatedAsyncioTestCase):
 
     async def test_abort_after_consecutive_empties_following_data(self):
         coord = self._make_coordinator_stub()
+        # Pre-load the queue so the abort path has commands to drain.
+        for i in range(5):
+            coord.nikobus_command._command_queue.put_nowait({"command": f"$1410F586{i:02X}04"})
         data = "$2EF58603000000030000006C0E000001000000F938E8"
         empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
 
-        # First: a real data response
+        # First: a real data response opens the gate.
         await coord._discovery_frame_callback(data)
         self.assertTrue(coord._discovery_found_data)
         self.assertEqual(coord._consecutive_empty_blocks, 0)
 
-        # Then: 3 consecutive empties → should trigger abort
+        # Then: 3 consecutive empties → early-stop drains the queue.
+        # ``_abort_discovery_early`` deliberately does NOT call
+        # ``_handle_discovery_finished`` (see coordinator commit 686fb9c —
+        # the library's deferred ``_finalize_inventory_phase`` is the sole
+        # reload trigger). The observable effect is the drained queue.
         for _ in range(3):
             await coord._discovery_frame_callback(empty)
 
-        coord._handle_discovery_finished.assert_awaited_once()
+        self.assertEqual(coord.nikobus_command._command_queue.qsize(), 0)
+        coord._handle_discovery_finished.assert_not_awaited()
 
     async def test_data_resets_empty_counter(self):
         coord = self._make_coordinator_stub()
@@ -452,6 +472,25 @@ class TestDiscoveryEarlyTermination(unittest.IsolatedAsyncioTestCase):
         await coord._discovery_frame_callback(data)
 
         coord.nikobus_discovery.parse_inventory_response.assert_not_awaited()
+
+    async def test_zero_byte_register_does_not_open_gate(self):
+        # Real-install regression (2026-05-06): the user's PC-Link returned
+        # register A0 as ``$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC``
+        # (first record byte = 00), then A1/A2/A3 as ``$2E8280FF...``
+        # (first record byte = FF). Before the fix, A0's ``00`` looked like
+        # data, flipped ``_discovery_found_data`` True, and the next three
+        # FF empties tripped the early-stop before any real record arrived.
+        coord = self._make_coordinator_stub()
+        zero_byte_empty = "$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC"
+        ff_empty = "$2E8280FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA2BE5D"
+
+        await coord._discovery_frame_callback(zero_byte_empty)
+        for _ in range(3):
+            await coord._discovery_frame_callback(ff_empty)
+
+        # Gate must stay closed and the queue must not be drained.
+        self.assertFalse(coord._discovery_found_data)
+        coord._handle_discovery_finished.assert_not_awaited()
 
     async def test_module_query_does_not_trigger_early_termination(self):
         coord = self._make_coordinator_stub()
