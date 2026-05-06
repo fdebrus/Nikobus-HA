@@ -511,11 +511,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def _is_empty_inventory_block(message: str) -> bool:
         """Check whether a $2E/$1E inventory response carries no device data.
 
-        The first data byte after the PC-Link address indicates the record
-        type (0x03 = module, 0x04+ = button).  A value of 0xFF means the
-        registry slot is unused.
+        Aligns with nikobus-connect's two empty-classification paths so the
+        ``_discovery_found_data`` gate doesn't get opened by a register
+        whose first byte is ``0x00`` — a real-world install
+        (2026-05-06 trace, register ``A0``) returned
+        ``$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC`` with the leading
+        ``00`` byte, which the library logged as
+        ``reason=empty_register`` but HA-side previously treated as data,
+        flipping the gate True and letting the next three FF-prefixed
+        empty registers trip the early-stop before any real record had
+        been seen.
+
+        Empty markers per nikobus-connect:
+          * first record byte ``FF`` → ``Empty PC Link registry block``
+          * first record byte ``00`` → ``Discovery skipped reason=empty_register``
         """
-        return len(message) < 9 or message[7:9].upper() == "FF"
+        if len(message) < 9:
+            return True
+        return message[7:9].upper() in ("FF", "00")
 
     async def _abort_discovery_early(self) -> None:
         """Stop the PC-Link inventory scan ahead of schedule.
@@ -948,7 +961,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities."""
-        from .router import build_routing, build_unique_id
+        from .router import build_routing, build_unique_id, INPUT_MODULE_TYPES
         known: set[str] = set()
         routing = build_routing(self.dict_module_data)
         for specs in routing.values():
@@ -963,6 +976,31 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 if bus_addr := op_point.get("bus_address"):
                     known.add(f"{DOMAIN}_button_{bus_addr}")
                     known.add(f"{DOMAIN}_push_button_{bus_addr}")
+        # Input-class modules (PC-Logic, Modular Interface) skip ``build_routing``
+        # because they don't drive output relays — emit their input-channel
+        # button unique IDs directly so orphan-cleanup doesn't remove them.
+        for module_type in INPUT_MODULE_TYPES:
+            bucket = self.dict_module_data.get(module_type) or {}
+            if not isinstance(bucket, dict):
+                continue
+            for address, module_data in bucket.items():
+                if not isinstance(module_data, dict):
+                    continue
+                channels = module_data.get("channels") or []
+                if not isinstance(channels, list):
+                    continue
+                addr_upper = str(address).upper()
+                for channel_index, channel_info in enumerate(channels, start=1):
+                    if not isinstance(channel_info, dict):
+                        continue
+                    if channel_info.get("entity_type") == "disabled":
+                        continue
+                    desc = channel_info.get("description") or ""
+                    if isinstance(desc, str) and desc.startswith("not_in_use"):
+                        continue
+                    known.add(
+                        f"{DOMAIN}_input_button_{addr_upper}_{channel_index}"
+                    )
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")

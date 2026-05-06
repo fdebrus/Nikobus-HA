@@ -22,6 +22,31 @@ _CAPABILITIES = {
     "dimmer_module": {"light"},
 }
 
+# Module types whose channels are *inputs* (presses on the bus), not
+# output relays. Each channel of these modules surfaces as a button
+# entity in ``custom_components/nikobus/button.py``; ``build_routing``
+# below skips them so they don't get rendered as switch / light / cover
+# entities by mistake.
+#
+#   * ``pc_logic`` — Master PC-Logic component (05-201). DEVICE_TYPES
+#     entry gained ``Channels: 6`` in nikobus-connect 0.5.10; the six
+#     channels correspond to the LM01–LM06 local inputs in the Niko
+#     PC software.
+#   * ``interface_module`` — Modular Interface 6 inputs (05-206).
+#     Promoted out of ``other_module`` into its own bucket in 0.5.10.
+INPUT_MODULE_TYPES: frozenset[str] = frozenset({"pc_logic", "interface_module"})
+
+# Module types we recognise but for which no entity schema is validated
+# yet — the inventory record alone makes the device visible in the HA
+# device registry, but no platform creates entities for it.
+#
+#   * ``audio_module`` — Audio Distribution module (05-205). Promoted
+#     out of ``other_module`` into its own bucket in nikobus-connect
+#     0.5.10. Input/output schema not yet validated; creating switches
+#     for it (the previous fall-through behaviour) was wrong, so the
+#     router skips it explicitly.
+OPAQUE_MODULE_TYPES: frozenset[str] = frozenset({"audio_module"})
+
 
 @dataclass(frozen=True)
 class EntitySpec:
@@ -97,6 +122,14 @@ def build_routing(
     routing: dict[str, list[EntitySpec]] = {"cover": [], "switch": [], "light": []}
 
     for module_type, modules in dict_module_data.items():
+        # Input-class modules (PC-Logic, Modular Interface) and opaque
+        # modules (Audio Distribution) don't drive output relays; the
+        # button platform handles input modules and audio modules don't
+        # surface entities yet. Skip both so we don't create phantom
+        # switch entities for their channels.
+        if module_type in INPUT_MODULE_TYPES or module_type in OPAQUE_MODULE_TYPES:
+            continue
+
         modules_map = _modules_to_address_map(modules)
 
         for address, module_data in modules_map.items():
