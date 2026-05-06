@@ -15,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .const import BRAND, DOMAIN, HUB_IDENTIFIER, SIGNAL_DISCOVERY_STATE
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
+from .router import INPUT_MODULE_TYPES, OPAQUE_MODULE_TYPES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +38,16 @@ async def async_setup_entry(
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
     register_wall_button_devices(hass, entry, buttons)
     entities.extend(_iter_button_entities(coordinator, buttons))
+
+    # Input-class modules (PC-Logic, Modular Interface) — register one
+    # device per module address and one button entity per channel.
+    register_input_module_devices(hass, entry, coordinator.dict_module_data)
+    entities.extend(_iter_input_module_entities(coordinator))
+
+    # Opaque modules (Audio Distribution) — register the device so it's
+    # visible in HA's device registry, but don't create any entities
+    # for it yet (input/output schema not validated).
+    register_opaque_module_devices(hass, entry, coordinator.dict_module_data)
 
     async_add_entities(entities)
 
@@ -97,6 +108,110 @@ def _hub_device_info() -> dr.DeviceInfo:
         manufacturer=BRAND,
         model="PC-Link Bridge",
     )
+
+
+def _iter_module_records(
+    dict_module_data: dict[str, Any], module_types: frozenset[str]
+):
+    """Yield ``(module_type, address, module_data)`` for the requested buckets."""
+    for module_type in module_types:
+        bucket = dict_module_data.get(module_type)
+        if not isinstance(bucket, dict):
+            continue
+        for address, module_data in bucket.items():
+            if isinstance(module_data, dict):
+                yield module_type, str(address).upper(), module_data
+
+
+def register_input_module_devices(
+    hass: HomeAssistant,
+    entry: NikobusConfigEntry,
+    dict_module_data: dict[str, Any],
+) -> None:
+    """Register one device per PC-Logic / Modular Interface module.
+
+    Each input module groups its N input channels (LM01–LM06 on PC-Logic,
+    six inputs on the Modular Interface) under a single parent device in
+    the registry, mirroring the wall-button device layout.
+    """
+    device_registry = dr.async_get(hass)
+    for module_type, address, module_data in _iter_module_records(
+        dict_module_data, INPUT_MODULE_TYPES
+    ):
+        description = str(
+            module_data.get("description") or f"{module_type} ({address})"
+        )
+        model = str(module_data.get("model") or module_type)
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, address)},
+            manufacturer=BRAND,
+            name=description,
+            model=model,
+            via_device=(DOMAIN, HUB_IDENTIFIER),
+        )
+
+
+def register_opaque_module_devices(
+    hass: HomeAssistant,
+    entry: NikobusConfigEntry,
+    dict_module_data: dict[str, Any],
+) -> None:
+    """Register a placeholder device per Audio Distribution module.
+
+    Audio modules surface no entities yet (input/output schema not
+    validated), but registering the device keeps them visible in the HA
+    device registry so users can confirm discovery saw them.
+    """
+    device_registry = dr.async_get(hass)
+    for module_type, address, module_data in _iter_module_records(
+        dict_module_data, OPAQUE_MODULE_TYPES
+    ):
+        description = str(
+            module_data.get("description") or f"{module_type} ({address})"
+        )
+        model = str(module_data.get("model") or module_type)
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, address)},
+            manufacturer=BRAND,
+            name=description,
+            model=model,
+            via_device=(DOMAIN, HUB_IDENTIFIER),
+        )
+
+
+def _iter_input_module_entities(coordinator: NikobusDataCoordinator):
+    """Yield one NikobusInputEntity per channel of every input-class module."""
+    for module_type, address, module_data in _iter_module_records(
+        coordinator.dict_module_data, INPUT_MODULE_TYPES
+    ):
+        module_desc = str(
+            module_data.get("description") or f"{module_type} ({address})"
+        )
+        module_model = str(module_data.get("model") or module_type)
+        channels = module_data.get("channels") or []
+        if not isinstance(channels, list):
+            continue
+        for channel_index, channel_info in enumerate(channels, start=1):
+            if not isinstance(channel_info, dict):
+                continue
+            if channel_info.get("entity_type") == "disabled":
+                continue
+            channel_description = str(
+                channel_info.get("description") or f"Input {channel_index}"
+            )
+            if channel_description.startswith("not_in_use"):
+                continue
+            yield NikobusInputEntity(
+                coordinator,
+                module_type=module_type,
+                module_address=address,
+                channel=channel_index,
+                channel_description=channel_description,
+                module_description=module_desc,
+                module_model=module_model,
+            )
 
 
 def op_point_display_name(
@@ -238,4 +353,78 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         Stateless entity: Ignore general coordinator updates to reduce log noise.
         This prevents the "Targeted refresh received" log for buttons during polling.
         """
+        pass
+
+
+class NikobusInputEntity(NikobusEntity, ButtonEntity):
+    """One ButtonEntity per input channel of a PC-Logic / Modular Interface.
+
+    Input-class modules (PC-Logic 05-201, Modular Interface 05-206) feed
+    six dry-contact inputs onto the Nikobus bus. Each input is surfaced as
+    a stateless button so users can see the device, attach automations to
+    its press events, and confirm discovery saw the module.
+
+    TODO(input-routing): the on-bus press-frame format for LM/IM inputs
+    is not yet known. Until ``coordinator.async_event_handler`` learns to
+    route those frames, the UI press handler is a no-op (only logs) — it
+    cannot fake a press onto the bus the way ``NikobusButtonEntity`` does.
+    Library work is needed to sniff and document the press-frame layout.
+    """
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        *,
+        module_type: str,
+        module_address: str,
+        channel: int,
+        channel_description: str,
+        module_description: str,
+        module_model: str,
+    ) -> None:
+        """Initialize an input-channel button entity."""
+        super().__init__(
+            coordinator=coordinator,
+            address=module_address,
+            name=module_description,
+            model=module_model,
+            via_device=(DOMAIN, HUB_IDENTIFIER),
+        )
+        self._module_type = module_type
+        self._channel = channel
+        self._channel_description = channel_description
+        self._attr_name = channel_description
+        self._attr_unique_id = (
+            f"{DOMAIN}_input_button_{module_address}_{channel}"
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose channel and parent-module info."""
+        parent_attrs = super().extra_state_attributes or {}
+        return {
+            **parent_attrs,
+            "channel": self._channel,
+            "channel_description": self._channel_description,
+            "module_type": self._module_type,
+        }
+
+    async def async_press(self) -> None:
+        """UI press handler — no bus action until input routing is wired.
+
+        See class docstring TODO: the press-frame format for input-class
+        modules is unknown, so we can't dispatch ``ha_button_pressed``
+        with a meaningful address yet.
+        """
+        _LOGGER.warning(
+            "UI press on Nikobus input %s ch%d (module %s) ignored — "
+            "input-module press routing is not yet implemented",
+            self._address,
+            self._channel,
+            self._module_type,
+        )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Stateless entity: ignore polling updates to reduce log noise."""
         pass
