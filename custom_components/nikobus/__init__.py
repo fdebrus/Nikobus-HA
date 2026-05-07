@@ -76,7 +76,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         if not module_address:
             _LOGGER.info("Starting manual Nikobus PC-Link inventory discovery")
-            coordinator.reset_discovery_counters()
             await coordinator.nikobus_discovery.start_inventory_discovery()
         else:
             _LOGGER.info("Starting manual Nikobus discovery for module: %s", module_address)
