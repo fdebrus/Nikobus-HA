@@ -68,10 +68,6 @@ _LOGGER = logging.getLogger(__name__)
 # Module types supported for polling
 MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
 
-# After finding real device data in the PC Link registry, abort the scan
-# once this many consecutive empty (0xFF) blocks are encountered.
-_DISCOVERY_EMPTY_THRESHOLD = 3
-
 
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
@@ -124,8 +120,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_module = None
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
-        self._discovery_found_data: bool = False
-        self._consecutive_empty_blocks: int = 0
         self._reload_task = None
 
         # --- Discovery progress tracking (for UI) ---
@@ -160,11 +154,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     def nikobus_module_states(self) -> dict[str, bytearray]:
         """Return the shared module state buffer."""
         return self._module_states
-
-    def reset_discovery_counters(self) -> None:
-        """Clear the empty-block / found-data counters before a new scan."""
-        self._discovery_found_data = False
-        self._consecutive_empty_blocks = 0
 
     def refresh_repair_issues(self) -> None:
         """Create / clear repair issues based on the current configuration."""
@@ -365,7 +354,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             await self.nikobus_discovery.parse_module_inventory_response(message)
             return
 
-        # PC Link inventory response
+        # PC Link inventory response. nikobus-connect 0.5.13+ stops the
+        # sweep itself on the first all-FF response (matching what Niko's
+        # PC software does), so the previous HA-side
+        # "3-consecutive-empty-blocks" early-stop is redundant and was
+        # removed. The per-module Stage-2 register scan has its own
+        # consecutive-give-up logic in the library and is unrelated.
         await self.nikobus_discovery.parse_inventory_response(message)
 
         # Count this frame toward the PC Link progress bar.
@@ -374,37 +368,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_registers_done + 1,
         )
         devices_found = len(getattr(self.nikobus_discovery, "discovered_devices", {}) or {})
-
-        # Early termination: stop scanning after consecutive empty registry blocks.
-        if self._is_empty_inventory_block(message):
-            if self._discovery_found_data:
-                self._consecutive_empty_blocks += 1
-                if self._consecutive_empty_blocks >= _DISCOVERY_EMPTY_THRESHOLD:
-                    _LOGGER.info(
-                        "PC Link inventory: %d consecutive empty blocks — stopping early",
-                        self._consecutive_empty_blocks,
-                    )
-                    await self._abort_discovery_early()
-                    return
-            self._update_discovery_state(
-                phase=DISCOVERY_PHASE_PC_LINK,
-                message=(
-                    f"PC Link inventory: {self.discovery_registers_done}/"
-                    f"{self.discovery_registers_total} registers, "
-                    f"{devices_found} device(s) found"
-                ),
-            )
-        else:
-            self._discovery_found_data = True
-            self._consecutive_empty_blocks = 0
-            self._update_discovery_state(
-                phase=DISCOVERY_PHASE_PC_LINK,
-                message=(
-                    f"PC Link inventory: {self.discovery_registers_done}/"
-                    f"{self.discovery_registers_total} registers, "
-                    f"{devices_found} device(s) found"
-                ),
-            )
+        self._update_discovery_state(
+            phase=DISCOVERY_PHASE_PC_LINK,
+            message=(
+                f"PC Link inventory: {self.discovery_registers_done}/"
+                f"{self.discovery_registers_total} registers, "
+                f"{devices_found} device(s) found"
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Phase-aware progress (consumes nikobus-connect 0.3.5+ on_progress)
@@ -506,65 +477,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
         except Exception as err:  # pragma: no cover - defensive
             _LOGGER.debug("Discovery progress handler error: %s", err)
-
-    @staticmethod
-    def _is_empty_inventory_block(message: str) -> bool:
-        """Check whether a $2E/$1E inventory response carries no device data.
-
-        Aligns with nikobus-connect's two empty-classification paths so the
-        ``_discovery_found_data`` gate doesn't get opened by a register
-        whose first byte is ``0x00`` — a real-world install
-        (2026-05-06 trace, register ``A0``) returned
-        ``$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC`` with the leading
-        ``00`` byte, which the library logged as
-        ``reason=empty_register`` but HA-side previously treated as data,
-        flipping the gate True and letting the next three FF-prefixed
-        empty registers trip the early-stop before any real record had
-        been seen.
-
-        Empty markers per nikobus-connect:
-          * first record byte ``FF`` → ``Empty PC Link registry block``
-          * first record byte ``00`` → ``Discovery skipped reason=empty_register``
-        """
-        if len(message) < 9:
-            return True
-        return message[7:9].upper() in ("FF", "00")
-
-    async def _abort_discovery_early(self) -> None:
-        """Stop the PC-Link inventory scan ahead of schedule.
-
-        Drains the remaining queued discovery commands so they aren't
-        sent on the bus, and updates the UI to surface the early-stop
-        state. Does **not** call ``_handle_discovery_finished`` here —
-        the library's deferred ``_finalize_inventory_phase`` is
-        already scheduled and will fire its ``on_discovery_finished``
-        callback (wired to ``_handle_discovery_finished`` in
-        ``connect()``) once its inventory-timeout elapses (~10 s
-        after the last frame). That single completion path drives
-        the reload.
-
-        Calling ``_handle_discovery_finished`` here as well caused
-        a dual-reload cycle on every inventory click: an immediate
-        reload from the early-stop, followed ~10 s later by a
-        second reload when the deferred finalize fired post-reload.
-        """
-        if self.nikobus_command and hasattr(self.nikobus_command, "_command_queue"):
-            drained = 0
-            while not self.nikobus_command._command_queue.empty():
-                try:
-                    self.nikobus_command._command_queue.get_nowait()
-                    drained += 1
-                except asyncio.QueueEmpty:
-                    break
-            if drained:
-                _LOGGER.debug("Drained %d queued discovery commands", drained)
-        # Surface the transitional state in the UI so the small gap
-        # before the library's deferred finalize fires doesn't look
-        # like the integration is stuck.
-        self._update_discovery_state(
-            phase=DISCOVERY_PHASE_PC_LINK,
-            message="PC Link inventory: stopping early; finalising…",
-        )
 
     # ------------------------------------------------------------------
     # Data update
@@ -1188,12 +1100,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 translation_domain=DOMAIN,
                 translation_key="discovery_already_running",
             )
-        self._discovery_found_data = False
-        self._consecutive_empty_blocks = 0
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
         # PC Link inventory scans register range 0xA4-0xFF = 92 frames.
-        # This is a rough total; early termination may stop the scan sooner.
+        # The library aborts the sweep at the first all-FF response
+        # (nikobus-connect 0.5.13+), so this is a soft upper bound.
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_PC_LINK,
             message="Scanning PC Link registry for modules and buttons…",

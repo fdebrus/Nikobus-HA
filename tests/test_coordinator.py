@@ -325,146 +325,66 @@ class TestGetCoverOperationTime(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# _is_empty_inventory_block
+# Discovery frame routing
 # ---------------------------------------------------------------------------
+#
+# The previous HA-side "3 consecutive empty blocks" early-stop was removed
+# when nikobus-connect 0.5.13 took over inventory termination: the library
+# now drains its own queue on the first all-FF response (matching Niko's PC
+# software). HA's job is reduced to forwarding every $2E/$1E frame to the
+# library and updating UI progress. These tests pin that contract.
 
-class TestIsEmptyInventoryBlock(unittest.TestCase):
-    """Test the static helper that classifies $2E inventory responses."""
-
-    _check = staticmethod(NikobusDataCoordinator._is_empty_inventory_block)
-
-    def test_all_ff_payload_is_empty(self):
-        msg = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
-        self.assertTrue(self._check(msg))
-
-    def test_near_ff_payload_is_empty(self):
-        msg = "$2EF586FFFFFFFFFFFFFFFFBFFFFFFFFFFFFFFF3A4806"
-        self.assertTrue(self._check(msg))
-
-    def test_module_record_is_not_empty(self):
-        msg = "$2EF58603000000030000006C0E000001000000F938E8"
-        self.assertFalse(self._check(msg))
-
-    def test_button_record_is_not_empty(self):
-        msg = "$2EF5860400000006000080B44318000100000028AB77"
-        self.assertFalse(self._check(msg))
-
-    def test_short_message_is_empty(self):
-        self.assertTrue(self._check("$2EF586"))
-        self.assertTrue(self._check(""))
-
-    def test_1e_prefix_all_ff_is_empty(self):
-        msg = "$1EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF00000"
-        self.assertTrue(self._check(msg))
-
-    def test_zero_first_byte_is_empty(self):
-        # nikobus-connect 0.5.x logs ``reason=empty_register`` when the
-        # first record byte is 00 — HA must agree so ``_discovery_found_data``
-        # doesn't flip True on a register the library considers empty.
-        # 2026-05-06 trace: register A0 returned this exact frame and the
-        # gate opened prematurely, letting later FF empties trip the threshold.
-        msg = "$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC"
-        self.assertTrue(self._check(msg))
-
-
-# ---------------------------------------------------------------------------
-# Early termination of PC Link discovery
-# ---------------------------------------------------------------------------
-
-class TestDiscoveryEarlyTermination(unittest.IsolatedAsyncioTestCase):
-    """Verify that the coordinator aborts PC Link inventory after consecutive empties."""
+class TestDiscoveryFrameRouting(unittest.IsolatedAsyncioTestCase):
+    """HA forwards inventory frames to the library and never short-circuits."""
 
     def _make_coordinator_stub(self):
-        """Build a minimal duck-typed coordinator with the discovery fields."""
         coord = MagicMock()
         coord.nikobus_discovery = MagicMock()
         coord.nikobus_discovery.parse_inventory_response = AsyncMock()
         coord.nikobus_discovery.parse_module_inventory_response = AsyncMock()
+        coord.nikobus_discovery.discovered_devices = {}
         coord.discovery_running = True
         coord.inventory_query_type = InventoryQueryType.PC_LINK
-        coord._discovery_found_data = False
-        coord._consecutive_empty_blocks = 0
         coord.discovery_registers_done = 0
         coord.discovery_registers_total = 96
         coord._update_discovery_state = MagicMock()
         coord.nikobus_command = MagicMock()
         coord.nikobus_command._command_queue = asyncio.Queue()
 
-        # Wire up the real methods under test
-        coord._is_empty_inventory_block = NikobusDataCoordinator._is_empty_inventory_block
         coord._handle_discovery_finished = AsyncMock()
-        coord._abort_discovery_early = lambda self_=coord: NikobusDataCoordinator._abort_discovery_early(self_)
         coord._discovery_frame_callback = lambda msg, self_=coord: NikobusDataCoordinator._discovery_frame_callback(self_, msg)
         return coord
 
-    async def test_no_abort_before_data_found(self):
+    async def test_all_ff_frame_forwarded_to_library_drain(self):
+        """Library's drain (0.5.13+) runs in parse_inventory_response;
+        HA forwards the frame and never drains itself."""
         coord = self._make_coordinator_stub()
-        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
-
-        # Send 5 empties — should NOT abort because no data has been found yet.
-        for _ in range(5):
-            await coord._discovery_frame_callback(empty)
-
-        coord._handle_discovery_finished.assert_not_awaited()
-
-    async def test_abort_after_consecutive_empties_following_data(self):
-        coord = self._make_coordinator_stub()
-        # Pre-load the queue so the abort path has commands to drain.
         for i in range(5):
             coord.nikobus_command._command_queue.put_nowait({"command": f"$1410F586{i:02X}04"})
-        data = "$2EF58603000000030000006C0E000001000000F938E8"
-        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
 
-        # First: a real data response opens the gate.
-        await coord._discovery_frame_callback(data)
-        self.assertTrue(coord._discovery_found_data)
-        self.assertEqual(coord._consecutive_empty_blocks, 0)
+        # Simulate the library draining on first all-FF response.
+        async def fake_parse(_message: str) -> None:
+            while not coord.nikobus_command._command_queue.empty():
+                coord.nikobus_command._command_queue.get_nowait()
+        coord.nikobus_discovery.parse_inventory_response.side_effect = fake_parse
 
-        # Then: 3 consecutive empties → early-stop drains the queue.
-        # ``_abort_discovery_early`` deliberately does NOT call
-        # ``_handle_discovery_finished`` (see coordinator commit 686fb9c —
-        # the library's deferred ``_finalize_inventory_phase`` is the sole
-        # reload trigger). The observable effect is the drained queue.
-        for _ in range(3):
-            await coord._discovery_frame_callback(empty)
+        all_ff = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
+        await coord._discovery_frame_callback(all_ff)
 
+        coord.nikobus_discovery.parse_inventory_response.assert_awaited_once_with(all_ff)
         self.assertEqual(coord.nikobus_command._command_queue.qsize(), 0)
         coord._handle_discovery_finished.assert_not_awaited()
 
-    async def test_data_resets_empty_counter(self):
+    async def test_frame_forwarded_when_discovery_running(self):
         coord = self._make_coordinator_stub()
-        data = "$2EF58603000000010000000747000003000000BF8DA1"
-        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
-
-        # Data → 2 empties → data again → counter should reset
-        await coord._discovery_frame_callback(data)
-        await coord._discovery_frame_callback(empty)
-        await coord._discovery_frame_callback(empty)
-        self.assertEqual(coord._consecutive_empty_blocks, 2)
-
-        await coord._discovery_frame_callback(data)
-        self.assertEqual(coord._consecutive_empty_blocks, 0)
-
-        coord._handle_discovery_finished.assert_not_awaited()
-
-    async def test_abort_drains_command_queue(self):
-        coord = self._make_coordinator_stub()
-        # Pre-fill the queue with fake discovery commands
-        for i in range(10):
-            coord.nikobus_command._command_queue.put_nowait({"command": f"$1410F586{i:02X}04", "address": None})
-        self.assertEqual(coord.nikobus_command._command_queue.qsize(), 10)
-
         data = "$2EF58603000000030000006C0E000001000000F938E8"
-        empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
 
         await coord._discovery_frame_callback(data)
-        for _ in range(3):
-            await coord._discovery_frame_callback(empty)
 
-        # Queue should be drained
-        self.assertEqual(coord.nikobus_command._command_queue.qsize(), 0)
+        coord.nikobus_discovery.parse_inventory_response.assert_awaited_once_with(data)
+        self.assertEqual(coord.discovery_registers_done, 1)
 
-    async def test_skipped_after_discovery_not_running(self):
+    async def test_frame_dropped_when_discovery_not_running(self):
         coord = self._make_coordinator_stub()
         coord.discovery_running = False
         data = "$2EF58603000000030000006C0E000001000000F938E8"
@@ -473,38 +393,18 @@ class TestDiscoveryEarlyTermination(unittest.IsolatedAsyncioTestCase):
 
         coord.nikobus_discovery.parse_inventory_response.assert_not_awaited()
 
-    async def test_zero_byte_register_does_not_open_gate(self):
-        # Real-install regression (2026-05-06): the user's PC-Link returned
-        # register A0 as ``$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC``
-        # (first record byte = 00), then A1/A2/A3 as ``$2E8280FF...``
-        # (first record byte = FF). Before the fix, A0's ``00`` looked like
-        # data, flipped ``_discovery_found_data`` True, and the next three
-        # FF empties tripped the early-stop before any real record arrived.
-        coord = self._make_coordinator_stub()
-        zero_byte_empty = "$2E828000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3AE3CC"
-        ff_empty = "$2E8280FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA2BE5D"
-
-        await coord._discovery_frame_callback(zero_byte_empty)
-        for _ in range(3):
-            await coord._discovery_frame_callback(ff_empty)
-
-        # Gate must stay closed and the queue must not be drained.
-        self.assertFalse(coord._discovery_found_data)
-        coord._handle_discovery_finished.assert_not_awaited()
-
-    async def test_module_query_does_not_trigger_early_termination(self):
+    async def test_module_query_uses_module_parser(self):
         coord = self._make_coordinator_stub()
         coord.inventory_query_type = InventoryQueryType.MODULE
-
         empty = "$2EF586FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFCC98D0"
-        coord._discovery_found_data = True  # pretend data was found
 
         for _ in range(5):
             await coord._discovery_frame_callback(empty)
 
-        # Module queries use a different parser and don't trigger early abort
-        coord._handle_discovery_finished.assert_not_awaited()
+        # Module queries route to a different parser and never invoke the
+        # PC-Link inventory path.
         coord.nikobus_discovery.parse_module_inventory_response.assert_awaited()
+        coord.nikobus_discovery.parse_inventory_response.assert_not_awaited()
 
 
 if __name__ == "__main__":
