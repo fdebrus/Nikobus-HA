@@ -10,7 +10,7 @@ import voluptuous as vol
 from aiofiles import open as aio_open
 
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
@@ -42,9 +42,28 @@ PLATFORMS: Final[list[str]] = [
 
 SERVICE_QUERY_MODULE_INVENTORY: Final = "query_module_inventory"
 SERVICE_SEND_BUTTON_PRESS: Final = "send_button_press"
+SERVICE_DETECT_STALE_INVENTORY: Final = "detect_stale_inventory"
+SERVICE_PURGE_STALE_INVENTORY: Final = "purge_stale_inventory"
+
+# Default per-module probe budget. The library's
+# ``NikobusDiscovery.detect_stale_inventory`` polls each candidate module
+# with a $1012/$1017 read and waits this long for an ACK before flagging
+# the module absent. Worst-case wall-clock budget is roughly
+# ``len(switch+dimmer+roller modules) * timeout`` — at the default 0.6 s
+# an 8-module install needs about five seconds.
+DEFAULT_DETECT_PROBE_TIMEOUT: Final[float] = 0.6
+
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
 SEND_BUTTON_PRESS_SCHEMA = vol.Schema({
     vol.Required("address"): cv.string,
+})
+DETECT_STALE_INVENTORY_SCHEMA = vol.Schema({
+    vol.Optional("timeout", default=DEFAULT_DETECT_PROBE_TIMEOUT): vol.All(
+        vol.Coerce(float), vol.Range(min=0.1, max=5.0)
+    ),
+})
+PURGE_STALE_INVENTORY_SCHEMA = vol.Schema({
+    vol.Required("addresses"): vol.All(cv.ensure_list, [cv.string], vol.Length(min=1)),
 })
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -114,6 +133,91 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_SEND_BUTTON_PRESS,
         handle_send_button_press,
         SEND_BUTTON_PRESS_SCHEMA,
+    )
+
+    async def handle_detect_stale_inventory(call: ServiceCall) -> ServiceResponse:
+        """Probe known output modules for liveness; return the manifest.
+
+        Wraps ``NikobusDiscovery.detect_stale_inventory`` (nikobus-connect
+        0.5.16+). The library deliberately doesn't mutate storage —
+        ``purge_stale_inventory`` consumes this manifest after the user
+        confirms which addresses to remove.
+        """
+        coordinator = _loaded_coordinator(hass)
+        if coordinator is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_loaded_entry",
+            )
+        if coordinator.nikobus_discovery is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_not_initialized",
+            )
+        if coordinator.discovery_running:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
+
+        timeout = float(call.data.get("timeout", DEFAULT_DETECT_PROBE_TIMEOUT))
+        _LOGGER.info(
+            "Detecting stale Nikobus inventory (probe timeout=%.2fs)", timeout
+        )
+        manifest: dict = await coordinator.nikobus_discovery.detect_stale_inventory(
+            timeout=timeout
+        )
+        absent = manifest.get("absent_modules") or []
+        orphaned = manifest.get("orphaned_buttons") or []
+        _LOGGER.info(
+            "Stale-inventory probe done: checked=%d present=%d absent=%d orphaned_buttons=%d",
+            len(manifest.get("checked") or []),
+            len(manifest.get("present_modules") or []),
+            len(absent),
+            len(orphaned),
+        )
+        return manifest
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DETECT_STALE_INVENTORY,
+        handle_detect_stale_inventory,
+        DETECT_STALE_INVENTORY_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+
+    async def handle_purge_stale_inventory(call: ServiceCall) -> ServiceResponse:
+        """Remove the given addresses from the persisted module + button stores.
+
+        Delegates to ``coordinator.purge_inventory_addresses`` so the
+        storage write path lives next to the storage objects themselves.
+        Trust-the-input: the user (or a UI flow built on top of
+        ``detect_stale_inventory``) supplies the address list.
+        """
+        coordinator = _loaded_coordinator(hass)
+        if coordinator is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_loaded_entry",
+            )
+
+        result = await coordinator.purge_inventory_addresses(
+            call.data.get("addresses") or []
+        )
+        _LOGGER.info(
+            "Purged stale Nikobus inventory: modules=%s buttons=%s not_found=%s",
+            result["removed_modules"],
+            result["removed_buttons"],
+            result["not_found"],
+        )
+        return result
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_PURGE_STALE_INVENTORY,
+        handle_purge_stale_inventory,
+        PURGE_STALE_INVENTORY_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
     )
     return True
 

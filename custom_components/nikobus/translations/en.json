@@ -204,6 +204,26 @@
                 }
             },
             "name": "Query module inventory"
+        },
+        "detect_stale_inventory": {
+            "description": "Probes every known output module (switch, dimmer, roller) on the bus and reports which ones don't respond. Returns a manifest with checked / present / absent module lists plus orphaned button addresses. Does not modify configuration; pair with purge_stale_inventory after reviewing the results.",
+            "fields": {
+                "timeout": {
+                    "description": "Per-module probe timeout. Worst-case scan time is roughly N modules × timeout.",
+                    "name": "Probe timeout (seconds)"
+                }
+            },
+            "name": "Detect stale inventory"
+        },
+        "purge_stale_inventory": {
+            "description": "Removes the given addresses from the persisted module and button stores, then reloads the integration so entities for the purged addresses are dropped. Run detect_stale_inventory first to obtain the list of safe-to-remove addresses.",
+            "fields": {
+                "addresses": {
+                    "description": "List of module / button addresses to remove (matched case-insensitively against both stores).",
+                    "name": "Addresses"
+                }
+            },
+            "name": "Purge stale inventory"
         }
     },
     "selector": {

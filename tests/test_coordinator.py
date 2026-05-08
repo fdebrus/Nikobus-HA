@@ -407,5 +407,117 @@ class TestDiscoveryFrameRouting(unittest.IsolatedAsyncioTestCase):
         coord.nikobus_discovery.parse_inventory_response.assert_not_awaited()
 
 
+# ---------------------------------------------------------------------------
+# Stale-inventory purge (companion to the library's detect_stale_inventory)
+# ---------------------------------------------------------------------------
+
+class TestPurgeInventoryAddresses(unittest.IsolatedAsyncioTestCase):
+    """Verify the storage write path that consumes detect_stale_inventory()."""
+
+    def _make_coordinator_stub(self):
+        coord = MagicMock()
+        coord.module_storage = MagicMock()
+        coord.module_storage.data = {
+            "nikobus_module": {
+                "AABB": {"module_type": "switch_module", "model": "05-002-02"},
+                "CCDD": {"module_type": "dimmer_module", "model": "05-007-02"},
+            }
+        }
+        coord.module_storage.async_save = AsyncMock()
+        coord.button_storage = MagicMock()
+        coord.button_storage.async_save = AsyncMock()
+        coord.dict_button_data = {
+            "nikobus_button": {
+                "AABBCC": {"type": "Button", "operation_points": {}},
+                "DDEEFF": {"type": "Button", "operation_points": {}},
+            }
+        }
+        coord._rebuild_dict_module_data = MagicMock()
+
+        coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_test"
+        coord.hass = MagicMock()
+        coord.hass.data = {}
+        coord.hass.config_entries.async_reload = MagicMock()
+        coord.hass.async_create_task = MagicMock()
+
+        coord.purge_inventory_addresses = lambda addrs, self_=coord: \
+            NikobusDataCoordinator.purge_inventory_addresses(self_, addrs)
+        return coord
+
+    async def test_removes_module_address(self):
+        coord = self._make_coordinator_stub()
+        result = await coord.purge_inventory_addresses(["AABB"])
+
+        self.assertEqual(result["removed_modules"], ["AABB"])
+        self.assertEqual(result["removed_buttons"], [])
+        self.assertEqual(result["not_found"], [])
+        self.assertNotIn("AABB", coord.module_storage.data["nikobus_module"])
+        # The other module is untouched.
+        self.assertIn("CCDD", coord.module_storage.data["nikobus_module"])
+        coord.module_storage.async_save.assert_awaited_once()
+        coord.button_storage.async_save.assert_awaited_once()
+        coord._rebuild_dict_module_data.assert_called_once()
+        coord.hass.async_create_task.assert_called_once()
+
+    async def test_removes_button_address(self):
+        coord = self._make_coordinator_stub()
+        result = await coord.purge_inventory_addresses(["DDEEFF"])
+
+        self.assertEqual(result["removed_buttons"], ["DDEEFF"])
+        self.assertEqual(result["removed_modules"], [])
+        self.assertNotIn("DDEEFF", coord.dict_button_data["nikobus_button"])
+        coord.hass.async_create_task.assert_called_once()
+
+    async def test_normalises_case_and_whitespace(self):
+        coord = self._make_coordinator_stub()
+        result = await coord.purge_inventory_addresses(["  aabb  ", "ddeeff"])
+
+        # Both inputs match after upper-case + strip.
+        self.assertEqual(set(result["removed_modules"]), {"AABB"})
+        self.assertEqual(set(result["removed_buttons"]), {"DDEEFF"})
+
+    async def test_unknown_address_reported_as_not_found(self):
+        coord = self._make_coordinator_stub()
+        result = await coord.purge_inventory_addresses(["AABB", "9999"])
+
+        self.assertEqual(result["removed_modules"], ["AABB"])
+        self.assertEqual(result["not_found"], ["9999"])
+
+    async def test_no_op_when_nothing_matches_skips_save_and_reload(self):
+        coord = self._make_coordinator_stub()
+        result = await coord.purge_inventory_addresses(["9999", "8888"])
+
+        self.assertEqual(result["removed_modules"], [])
+        self.assertEqual(result["removed_buttons"], [])
+        self.assertEqual(set(result["not_found"]), {"9999", "8888"})
+        coord.module_storage.async_save.assert_not_awaited()
+        coord.button_storage.async_save.assert_not_awaited()
+        coord._rebuild_dict_module_data.assert_not_called()
+        coord.hass.async_create_task.assert_not_called()
+
+    async def test_address_in_both_stores_removed_from_both(self):
+        coord = self._make_coordinator_stub()
+        # Synthesize an address that exists as both a module key and a
+        # button key — would be a hash collision in practice but the
+        # purge logic shouldn't care; both stores get the pop.
+        coord.module_storage.data["nikobus_module"]["1234"] = {"module_type": "switch_module"}
+        coord.dict_button_data["nikobus_button"]["1234"] = {"type": "Button"}
+
+        result = await coord.purge_inventory_addresses(["1234"])
+
+        self.assertEqual(result["removed_modules"], ["1234"])
+        self.assertEqual(result["removed_buttons"], ["1234"])
+        self.assertEqual(result["not_found"], [])
+
+    async def test_empty_input_is_no_op(self):
+        coord = self._make_coordinator_stub()
+        result = await coord.purge_inventory_addresses([])
+
+        self.assertEqual(result, {"removed_modules": [], "removed_buttons": [], "not_found": []})
+        coord.module_storage.async_save.assert_not_awaited()
+        coord.hass.async_create_task.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -738,6 +738,65 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         return self.get_bytearray_state(addr, ch)
 
     # ------------------------------------------------------------------
+    # Stale-inventory management
+    # ------------------------------------------------------------------
+
+    async def purge_inventory_addresses(self, addresses: list[str]) -> dict[str, list[str]]:
+        """Remove the given addresses from the persisted module + button stores.
+
+        Each address is tried as both a module-store key and a button-store
+        key; whichever matches is removed. The library deliberately doesn't
+        mutate storage in ``detect_stale_inventory`` — this is the
+        HA-side companion that consumes the manifest after the user has
+        confirmed which addresses to drop.
+
+        Saves both stores when at least one address was removed and
+        schedules a config-entry reload so platforms drop entities for
+        the purged addresses and the routing cache is rebuilt. Returns a
+        breakdown of what happened so the caller can report results.
+        """
+        normalised = [
+            str(addr).strip().upper() for addr in addresses if str(addr).strip()
+        ]
+        modules = self.module_storage.data.setdefault("nikobus_module", {})
+        buttons = self.dict_button_data.setdefault("nikobus_button", {})
+        removed_modules: list[str] = []
+        removed_buttons: list[str] = []
+        not_found: list[str] = []
+
+        for addr in normalised:
+            hit = False
+            if addr in modules:
+                modules.pop(addr, None)
+                removed_modules.append(addr)
+                hit = True
+            if addr in buttons:
+                buttons.pop(addr, None)
+                removed_buttons.append(addr)
+                hit = True
+            if not hit:
+                not_found.append(addr)
+
+        if removed_modules or removed_buttons:
+            await self.module_storage.async_save()
+            await self.button_storage.async_save()
+            self._rebuild_dict_module_data()
+            domain_data = self.hass.data.get(DOMAIN, {})
+            entry_data = domain_data.get(self.config_entry.entry_id, {})
+            entry_data.pop("routing", None)
+            # Reload so platforms drop entities for the purged addresses.
+            # Schedule rather than await — matches ``_async_options_updated``.
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            )
+
+        return {
+            "removed_modules": removed_modules,
+            "removed_buttons": removed_buttons,
+            "not_found": not_found,
+        }
+
+    # ------------------------------------------------------------------
     # Event / dispatcher
     # ------------------------------------------------------------------
 
