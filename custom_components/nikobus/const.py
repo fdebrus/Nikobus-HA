@@ -56,6 +56,7 @@ DISCOVERY_WEIGHT_FINALIZING: Final[int] = 5
 # Repair issues
 # =============================================================================
 ISSUE_NO_BUTTONS_CONFIGURED: Final[str] = "no_buttons_configured"
+ISSUE_STALE_INVENTORY_PRESENT: Final[str] = "stale_inventory_present"
 
 # =============================================================================
 # Configuration Keys
