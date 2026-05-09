@@ -338,6 +338,13 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         if wall_info:
             attrs["wall_button_model"] = wall_info.get("model")
             attrs["wall_button_type"] = wall_info.get("type")
+            # ``status`` comes from post-discovery reconciliation
+            # (coordinator._reconcile_post_discovery): one of "active",
+            # "legacy_orphan", "legacy_undecoded". Surface only the
+            # non-default flags so healthy buttons aren't cluttered.
+            status = wall_info.get("status")
+            if status and status != "active":
+                attrs["wall_button_status"] = status
         return attrs
 
     async def async_press(self) -> None:

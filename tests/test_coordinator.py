@@ -519,5 +519,255 @@ class TestPurgeInventoryAddresses(unittest.IsolatedAsyncioTestCase):
         coord.hass.async_create_task.assert_not_called()
 
 
+# ---------------------------------------------------------------------------
+# Post-discovery stale-inventory reconciliation (issue #319)
+# ---------------------------------------------------------------------------
+
+class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
+    """Verify the reconciliation that fires from _handle_discovery_finished.
+
+    Three behaviours pinned: (1) absent modules get evicted from the store,
+    (2) buttons whose linked_modules are entirely absent are tagged
+    ``legacy_orphan``, (3) buttons with no linked_modules are tagged
+    ``legacy_undecoded``.
+    """
+
+    def _make_coordinator_stub(
+        self,
+        *,
+        modules: dict | None = None,
+        buttons: dict | None = None,
+        manifest: dict | None = None,
+        has_method: bool = True,
+    ):
+        coord = MagicMock()
+        coord.module_storage = MagicMock()
+        coord.module_storage.data = {"nikobus_module": dict(modules or {})}
+        coord.module_storage.async_save = AsyncMock()
+        coord.button_storage = MagicMock()
+        coord.button_storage.async_save = AsyncMock()
+        coord.dict_button_data = {"nikobus_button": dict(buttons or {})}
+        coord._rebuild_dict_module_data = MagicMock()
+        coord.invalidate_controlled_by_index = MagicMock()
+        coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_test"
+        coord.hass = MagicMock()
+        coord.hass.data = {}
+        if has_method:
+            coord.nikobus_discovery = MagicMock()
+            coord.nikobus_discovery.detect_stale_inventory = AsyncMock(
+                return_value=manifest or {
+                    "checked": [],
+                    "present_modules": [],
+                    "absent_modules": [],
+                    "orphaned_buttons": [],
+                }
+            )
+        else:
+            # Library lacks the method (older nikobus-connect): the spec
+            # requires graceful skip-with-warning.
+            class _OldDiscovery:
+                pass
+            coord.nikobus_discovery = _OldDiscovery()
+
+        coord._collect_button_linked_modules = staticmethod(
+            NikobusDataCoordinator._collect_button_linked_modules
+        )
+        coord._reconcile_post_discovery = lambda self_=coord: \
+            NikobusDataCoordinator._reconcile_post_discovery(self_)
+        return coord
+
+    @staticmethod
+    def _button(*module_addrs: str) -> dict:
+        """Build a minimal physical-button record with one op-point linked
+        to the given module addresses."""
+        if module_addrs:
+            op_points = {
+                "1A": {
+                    "bus_address": "AABBCC",
+                    "linked_modules": [
+                        {"module_address": addr, "outputs": [{"channel": 1}]}
+                        for addr in module_addrs
+                    ],
+                }
+            }
+        else:
+            op_points = {"1A": {"bus_address": "AABBCC", "linked_modules": []}}
+        return {"type": "Button", "operation_points": op_points}
+
+    async def test_absent_module_is_evicted_from_store(self):
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"},
+                     "CCDD": {"module_type": "dimmer_module"}},
+            manifest={
+                "checked": ["AABB", "CCDD"],
+                "present_modules": ["AABB"],
+                "absent_modules": ["CCDD"],
+                "orphaned_buttons": [],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
+        self.assertNotIn("CCDD", coord.module_storage.data["nikobus_module"])
+        coord.module_storage.async_save.assert_awaited_once()
+        coord.button_storage.async_save.assert_awaited_once()
+
+    async def test_button_linked_to_absent_module_only_is_legacy_orphan(self):
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"}},
+            buttons={"112233": self._button("CCDD")},  # CCDD will be absent
+            manifest={
+                "checked": ["AABB", "CCDD"],
+                "present_modules": ["AABB"],
+                "absent_modules": ["CCDD"],
+                "orphaned_buttons": ["112233"],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(
+            coord.dict_button_data["nikobus_button"]["112233"]["status"],
+            "legacy_orphan",
+        )
+
+    async def test_button_with_no_linked_modules_is_legacy_undecoded(self):
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"}},
+            buttons={"112233": self._button()},  # no linked_modules
+            manifest={
+                "checked": ["AABB"],
+                "present_modules": ["AABB"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(
+            coord.dict_button_data["nikobus_button"]["112233"]["status"],
+            "legacy_undecoded",
+        )
+
+    async def test_button_with_at_least_one_present_link_is_active(self):
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"},
+                     "CCDD": {"module_type": "switch_module"}},
+            # Linked to one absent + one present module → still active.
+            buttons={"112233": self._button("AABB", "CCDD")},
+            manifest={
+                "checked": ["AABB", "CCDD"],
+                "present_modules": ["AABB"],
+                "absent_modules": ["CCDD"],
+                "orphaned_buttons": [],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(
+            coord.dict_button_data["nikobus_button"]["112233"]["status"],
+            "active",
+        )
+
+    async def test_module_address_comparison_is_case_insensitive(self):
+        # Storage might hold lowercase addresses (legacy data); manifest
+        # always returns upper-case. Reconciliation must still match.
+        coord = self._make_coordinator_stub(
+            modules={"aabb": {"module_type": "switch_module"}},
+            manifest={
+                "checked": ["AABB"],
+                "present_modules": [],
+                "absent_modules": ["AABB"],
+                "orphaned_buttons": [],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(coord.module_storage.data["nikobus_module"], {})
+
+    async def test_skips_when_library_lacks_detect_method(self):
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"}},
+            buttons={"112233": self._button("AABB")},
+            has_method=False,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        # Nothing saved, nothing tagged — graceful no-op.
+        coord.module_storage.async_save.assert_not_awaited()
+        coord.button_storage.async_save.assert_not_awaited()
+        self.assertNotIn(
+            "status", coord.dict_button_data["nikobus_button"]["112233"]
+        )
+
+    async def test_skips_when_no_discovery_attached(self):
+        coord = self._make_coordinator_stub()
+        coord.nikobus_discovery = None
+
+        await coord._reconcile_post_discovery()
+
+        coord.module_storage.async_save.assert_not_awaited()
+
+    async def test_probe_failure_is_logged_and_swallowed(self):
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"}},
+        )
+        coord.nikobus_discovery.detect_stale_inventory = AsyncMock(
+            side_effect=RuntimeError("bus busy")
+        )
+
+        # Should not raise.
+        await coord._reconcile_post_discovery()
+
+        # Storage stays untouched on probe failure.
+        self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
+        coord.module_storage.async_save.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Helper: _collect_button_linked_modules
+# ---------------------------------------------------------------------------
+
+class TestCollectButtonLinkedModules(unittest.TestCase):
+    """Pure-function unit tests for the helper that drives bucket assignment."""
+
+    _collect = staticmethod(NikobusDataCoordinator._collect_button_linked_modules)
+
+    def test_no_op_points_returns_empty_set(self):
+        self.assertEqual(self._collect({}), set())
+        self.assertEqual(self._collect({"operation_points": {}}), set())
+
+    def test_collects_addresses_across_all_op_points(self):
+        phys = {
+            "operation_points": {
+                "1A": {"linked_modules": [
+                    {"module_address": "aabb", "outputs": [{"channel": 1}]},
+                ]},
+                "1B": {"linked_modules": [
+                    {"module_address": "CCDD", "outputs": [{"channel": 2}]},
+                ]},
+            }
+        }
+        self.assertEqual(self._collect(phys), {"AABB", "CCDD"})
+
+    def test_skips_links_without_module_address(self):
+        phys = {
+            "operation_points": {
+                "1A": {"linked_modules": [
+                    {"module_address": "AABB", "outputs": []},
+                    {"outputs": [{"channel": 1}]},  # malformed
+                    "garbage",  # malformed
+                ]}
+            }
+        }
+        self.assertEqual(self._collect(phys), {"AABB"})
+
+
 if __name__ == "__main__":
     unittest.main()

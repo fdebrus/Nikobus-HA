@@ -631,6 +631,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             "address": physical_addr,
             "channels": phys.get("channels"),
             "key": key_label,
+            "status": phys.get("status"),
         }
 
     def get_button_linked_outputs(self, bus_address: str) -> list[dict[str, Any]]:
@@ -1020,11 +1021,128 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         entry_data = domain_data.get(self.config_entry.entry_id, {})
         entry_data.pop("routing", None)
 
+    @staticmethod
+    def _collect_button_linked_modules(phys: dict[str, Any]) -> set[str]:
+        """Union of every module address referenced by any of a button's op-points."""
+        linked: set[str] = set()
+        op_points = phys.get("operation_points") or {}
+        if not isinstance(op_points, dict):
+            return linked
+        for op_point in op_points.values():
+            if not isinstance(op_point, dict):
+                continue
+            for link in op_point.get("linked_modules") or []:
+                if not isinstance(link, dict):
+                    continue
+                addr = link.get("module_address")
+                if addr:
+                    linked.add(str(addr).upper())
+        return linked
+
+    async def _reconcile_post_discovery(self) -> None:
+        """Probe every output module + tag buttons by reachability.
+
+        Runs after the library finalizes its inventory + register-scan
+        merge. The library merges *additively* (it adds discovered records
+        but never evicts), so without this step a previous owner's
+        residue (a second-hand PC-Link, a re-keyed install, etc.) would
+        persist forever in the local stores. ``detect_stale_inventory``
+        (nikobus-connect 0.5.16+) probes each output module with a
+        ``$1012`` read; modules that don't ACK get evicted. Buttons are
+        then tagged into one of three buckets:
+
+          * ``active`` — at least one ``linked_modules`` entry resolves
+            to a present module.
+          * ``legacy_orphan`` — every linked module is in the absent set.
+          * ``legacy_undecoded`` — no ``linked_modules`` survived the
+            scan (decoder may catch up later; flag surfaces it).
+
+        Buttons stay in the store regardless of bucket — the ``status``
+        field is the marker for HA UI / diagnostics.
+        """
+        if self.nikobus_discovery is None:
+            return
+        if not hasattr(self.nikobus_discovery, "detect_stale_inventory"):
+            _LOGGER.warning(
+                "nikobus-connect lacks detect_stale_inventory — install >= 0.5.16; "
+                "skipping post-discovery reconciliation"
+            )
+            return
+
+        try:
+            manifest = await self.nikobus_discovery.detect_stale_inventory(timeout=0.6)
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.error("detect_stale_inventory probe failed: %s", err)
+            return
+
+        absent = {str(a).upper() for a in (manifest.get("absent_modules") or [])}
+        present = {str(a).upper() for a in (manifest.get("present_modules") or [])}
+        checked = manifest.get("checked") or []
+
+        # Replace-with-current-discovery: drop modules the probe says
+        # aren't on the bus. Other module types (PC-Logic, feedback,
+        # audio, interface) are intentionally excluded by the library
+        # from probing and stay in the store untouched.
+        modules = self.module_storage.data.setdefault("nikobus_module", {})
+        evicted: list[str] = []
+        for addr in list(modules.keys()):
+            if str(addr).upper() in absent:
+                modules.pop(addr, None)
+                evicted.append(str(addr).upper())
+
+        # Tag every physical-button record.
+        bucket_counts = {"active": 0, "legacy_orphan": 0, "legacy_undecoded": 0}
+        buttons = self.dict_button_data.setdefault("nikobus_button", {})
+        for phys in buttons.values():
+            if not isinstance(phys, dict):
+                continue
+            linked = self._collect_button_linked_modules(phys)
+            if not linked:
+                status = "legacy_undecoded"
+            elif linked.issubset(absent):
+                status = "legacy_orphan"
+            else:
+                status = "active"
+            phys["status"] = status
+            bucket_counts[status] += 1
+
+        # Persist. Both stores save unconditionally so the ``status``
+        # field on buttons + the eviction on modules land on disk.
+        await self.module_storage.async_save()
+        await self.button_storage.async_save()
+        self._rebuild_dict_module_data()
+        domain_data = self.hass.data.get(DOMAIN, {})
+        entry_data = domain_data.get(self.config_entry.entry_id, {})
+        entry_data.pop("routing", None)
+        self.invalidate_controlled_by_index()
+
+        _LOGGER.info(
+            "Post-discovery reconciliation: probed=%d present=%d absent=%d evicted=%d "
+            "| buttons active=%d legacy_orphan=%d legacy_undecoded=%d",
+            len(checked),
+            len(present),
+            len(absent),
+            len(evicted),
+            bucket_counts["active"],
+            bucket_counts["legacy_orphan"],
+            bucket_counts["legacy_undecoded"],
+        )
+        if evicted:
+            _LOGGER.info("Evicted stale modules: %s", evicted)
+
     async def _handle_discovery_finished(self) -> None:
         """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
         self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
         self.discovery_register_current = None
+
+        # Replace-with-current-discovery semantics: probe each output
+        # module on the bus, evict any that don't ACK, and tag buttons
+        # by reachability bucket. The library's merge is additive —
+        # without this step pre-0.5.13 residue (issue #319) survives
+        # every subsequent scan.
+        await self._reconcile_post_discovery()
+
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
             message=(
