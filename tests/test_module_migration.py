@@ -263,8 +263,8 @@ class TestMigrationScenarios(unittest.TestCase):
         # Source renamed, not deleted.
         self.assertFalse(os.path.exists(legacy_path))
         self.assertTrue(
-            os.path.exists(legacy_path + ".migrated.bak"),
-            "Source file should be renamed to .migrated.bak",
+            os.path.exists(legacy_path + ".migrated"),
+            "Source file should be renamed to .migrated",
         )
         # Exactly one save call — no double-write.
         self.assertEqual(len(store.saved_snapshots), 1)
@@ -283,17 +283,29 @@ class TestMigrationScenarios(unittest.TestCase):
 
     # -- Scenario C: populated Store + present JSON ----------------------
 
-    def test_skips_when_store_already_populated(self):
+    # -- Scenario C: populated Store + present JSON ----------------------
+    #
+    # Per the discussion on the in-place rename gap: when discovery has
+    # already populated the Store, we no longer bail. Instead we overlay
+    # user-editable fields from the legacy file onto matching entries
+    # (so descriptions, LED triggers, travel times, entity_type carry
+    # over) without touching discovery-owned fields (model, module_type,
+    # channel count). The source file is still renamed afterwards so it
+    # stops being authoritative.
+
+    def test_overlays_module_description_onto_populated_store(self):
         legacy_path = self._write_legacy({
             "switch_module": [
-                {"description": "S1", "address": "C9A5", "channels": []}
+                {"description": "Living Room Lights", "model": "05-000-02",
+                 "address": "C9A5", "channels": []}
             ]
         })
         store = _InMemoryModuleStore({
             "nikobus_module": {
-                "ABCD": {
+                "C9A5": {
                     "module_type": "switch_module",
-                    "description": "user-edited",
+                    "description": "Compact Switch Module (C9A5)",  # discovery default
+                    "model": "05-002-02",  # discovery sets this
                     "channels": [],
                 }
             }
@@ -301,14 +313,154 @@ class TestMigrationScenarios(unittest.TestCase):
 
         migrated = _run(nkbmigration.async_migrate_legacy_module_config(self.hass, store))
 
-        self.assertFalse(migrated)
-        # Store untouched.
-        self.assertIn("ABCD", store.data["nikobus_module"])
-        self.assertNotIn("C9A5", store.data["nikobus_module"])
-        self.assertEqual(store.saved_snapshots, [])
-        # Legacy file left in place for one more release.
-        self.assertTrue(os.path.exists(legacy_path))
-        self.assertFalse(os.path.exists(legacy_path + ".migrated.bak"))
+        self.assertTrue(migrated)
+        entry = store.data["nikobus_module"]["C9A5"]
+        # User-editable field overlaid:
+        self.assertEqual(entry["description"], "Living Room Lights")
+        # Discovery-owned field NOT overwritten by legacy:
+        self.assertEqual(entry["model"], "05-002-02")
+        # File renamed:
+        self.assertFalse(os.path.exists(legacy_path))
+        self.assertTrue(os.path.exists(legacy_path + ".migrated"))
+
+    def test_overlays_channel_user_fields_onto_populated_store(self):
+        legacy_path = self._write_legacy({
+            "switch_module": [{
+                "description": "Kitchen", "address": "AABB",
+                "channels": [
+                    {"description": "Counter", "entity_type": "light",
+                     "led_on": "1A2B3C", "led_off": "4D5E6F"},
+                    {"description": "Pendant"},
+                ],
+            }],
+            "roller_module": [{
+                "description": "Office Blinds", "address": "CCDD",
+                "channels": [
+                    {"description": "South window", "operation_time": "30"},
+                ],
+            }],
+        })
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "AABB": {
+                    "module_type": "switch_module",
+                    "description": "Compact Switch Module",
+                    "channels": [
+                        {"description": "Channel 1"},  # discovery default
+                        {"description": "Channel 2"},
+                    ],
+                },
+                "CCDD": {
+                    "module_type": "roller_module",
+                    "description": "Roller Module",
+                    "channels": [{"description": "Channel 1"}],
+                },
+            }
+        })
+
+        migrated = _run(nkbmigration.async_migrate_legacy_module_config(self.hass, store))
+
+        self.assertTrue(migrated)
+        ch0 = store.data["nikobus_module"]["AABB"]["channels"][0]
+        self.assertEqual(ch0["description"], "Counter")
+        self.assertEqual(ch0["entity_type"], "light")
+        self.assertEqual(ch0["led_on"], "1A2B3C")
+        self.assertEqual(ch0["led_off"], "4D5E6F")
+        # Roller travel time gets split via convert_legacy_to_flat then
+        # overlaid:
+        roller_ch = store.data["nikobus_module"]["CCDD"]["channels"][0]
+        self.assertEqual(roller_ch["operation_time_up"], "30")
+        self.assertEqual(roller_ch["operation_time_down"], "30")
+        self.assertFalse(os.path.exists(legacy_path))
+        self.assertTrue(os.path.exists(legacy_path + ".migrated"))
+
+    def test_legacy_address_not_in_store_is_skipped_not_added(self):
+        legacy_path = self._write_legacy({
+            "switch_module": [
+                {"description": "Ghost", "address": "9999", "channels": []}
+            ]
+        })
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "AABB": {
+                    "module_type": "switch_module",
+                    "description": "Real",
+                    "channels": [],
+                }
+            }
+        })
+
+        migrated = _run(nkbmigration.async_migrate_legacy_module_config(self.hass, store))
+
+        self.assertTrue(migrated)
+        # Ghost address from legacy must NOT land in the Store — discovery
+        # is the source of truth for what exists.
+        self.assertNotIn("9999", store.data["nikobus_module"])
+        self.assertIn("AABB", store.data["nikobus_module"])
+        # File still renamed.
+        self.assertTrue(os.path.exists(legacy_path + ".migrated"))
+
+    def test_legacy_extra_channels_silently_dropped(self):
+        # 05-057 4→2 channel-count correction: legacy says 4 channels,
+        # discovery says 2. Overlay applies to indices 0-1 only; legacy
+        # entries for indices 2-3 are dropped without complaint.
+        self._write_legacy({
+            "switch_module": [{
+                "description": "05-057 device", "address": "1F2E",
+                "channels": [
+                    {"description": "Ch1 user"},
+                    {"description": "Ch2 user"},
+                    {"description": "Ch3 ghost"},
+                    {"description": "Ch4 ghost"},
+                ],
+            }]
+        })
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "1F2E": {
+                    "module_type": "switch_module",
+                    "description": "05-057",
+                    "channels": [
+                        {"description": "Channel 1"},
+                        {"description": "Channel 2"},
+                    ],
+                }
+            }
+        })
+
+        migrated = _run(nkbmigration.async_migrate_legacy_module_config(self.hass, store))
+
+        self.assertTrue(migrated)
+        channels = store.data["nikobus_module"]["1F2E"]["channels"]
+        self.assertEqual(len(channels), 2)
+        self.assertEqual(channels[0]["description"], "Ch1 user")
+        self.assertEqual(channels[1]["description"], "Ch2 user")
+
+    def test_overlay_does_not_clobber_with_empty_legacy_values(self):
+        # If the legacy file has empty-string description for a channel,
+        # don't blow away whatever discovery set.
+        self._write_legacy({
+            "switch_module": [{
+                "description": "Studio", "address": "5678",
+                "channels": [{"description": ""}],
+            }]
+        })
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "5678": {
+                    "module_type": "switch_module",
+                    "description": "Compact",
+                    "channels": [{"description": "discovered ch"}],
+                }
+            }
+        })
+
+        _run(nkbmigration.async_migrate_legacy_module_config(self.hass, store))
+
+        self.assertEqual(
+            store.data["nikobus_module"]["5678"]["channels"][0]["description"],
+            "discovered ch",
+        )
 
 
 if __name__ == "__main__":
