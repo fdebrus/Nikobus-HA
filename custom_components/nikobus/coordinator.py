@@ -1080,7 +1080,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             return
 
         try:
-            manifest = await self.nikobus_discovery.detect_stale_inventory(timeout=0.6)
+            # No explicit timeout — defer to the library default. 0.5.18+
+            # raised it to 2.0 s after real-install reports (issue #319,
+            # nikobus-connect#53) showed 0.6 s false-negatives output
+            # modules whose ACK arrives while the bus is still draining
+            # from discovery. Hard-coding 0.6 s here would silently
+            # override that fix.
+            manifest = await self.nikobus_discovery.detect_stale_inventory()
         except Exception as err:  # pragma: no cover - defensive
             _LOGGER.error("detect_stale_inventory probe failed: %s", err)
             return
