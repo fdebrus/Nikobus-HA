@@ -1,10 +1,19 @@
 """One-shot migration from the legacy ``nikobus_module_config.json`` file
 to the ``.storage/nikobus.modules`` Store introduced with nikobus-connect 0.4.0.
 
-The migration only runs when the Store is empty. After a successful convert,
-the source JSON is renamed to ``<name>.migrated`` — never deleted — so users
-retain an escape hatch for one release. Matches the button-side convention
-in ``__init__.py`` (``nikobus_button_config.json`` → ``.migrated``).
+Two flavours, picked by Store state:
+
+* **Empty Store** — full import. The legacy entries replace the empty
+  Store and the source file is renamed to ``.migrated``.
+
+* **Populated Store** — overlay user-editable fields (module / channel
+  descriptions, entity_type, LED triggers, roller travel times) onto
+  matching Store entries by address + channel index. Modules in the
+  legacy file whose addresses aren't in the Store get an INFO log but
+  are skipped — the Store is the authority for what exists. The source
+  file is still renamed afterwards so it stops being a confusing
+  artifact and the rename matches the button-side migration in
+  ``__init__.py`` (``nikobus_button_config.json`` → ``.migrated``).
 """
 
 from __future__ import annotations
@@ -27,6 +36,20 @@ _MIGRATED_SUFFIX = ".migrated"
 # Types the legacy file groups modules under. Anything else is kept verbatim
 # under its own ``module_type`` bucket on the flat entry.
 _OUTPUT_MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
+
+# Fields the user can edit via the options flow. Discovery-owned fields
+# (``model``, ``module_type``, ``discovered_info``, channel count) are
+# intentionally NOT in this set — overlaying those would let stale legacy
+# data clobber what discovery just established.
+_USER_MODULE_FIELDS: tuple[str, ...] = ("description",)
+_USER_CHANNEL_FIELDS: tuple[str, ...] = (
+    "description",
+    "entity_type",
+    "led_on",
+    "led_off",
+    "operation_time_up",
+    "operation_time_down",
+)
 
 
 def convert_legacy_to_flat(legacy: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -131,26 +154,74 @@ def _convert_channel(module_type: str, channel: dict[str, Any]) -> dict[str, Any
     return out
 
 
+def _overlay_user_fields(
+    store_modules: dict[str, dict[str, Any]],
+    legacy_flat: dict[str, dict[str, Any]],
+) -> tuple[int, int, list[str]]:
+    """Apply user-editable fields from the legacy file onto matching Store entries.
+
+    Returns ``(modules_overlaid, channels_overlaid, no_match)`` where
+    ``no_match`` is the list of legacy addresses with no Store counterpart.
+    Channels are matched by index — legacy channels beyond the Store's
+    channel-count are silently dropped, which is the correct behaviour for
+    cases like the 05-057 channel-3/4 over-count fix.
+    """
+    modules_overlaid = 0
+    channels_overlaid = 0
+    no_match: list[str] = []
+
+    for legacy_addr, legacy_entry in legacy_flat.items():
+        store_entry = store_modules.get(str(legacy_addr).upper())
+        if not isinstance(store_entry, dict):
+            no_match.append(legacy_addr)
+            continue
+
+        modules_overlaid += 1
+        for field in _USER_MODULE_FIELDS:
+            value = legacy_entry.get(field)
+            if value not in (None, ""):
+                store_entry[field] = value
+
+        legacy_channels = legacy_entry.get("channels") or []
+        store_channels = store_entry.get("channels") or []
+        if not isinstance(legacy_channels, list) or not isinstance(store_channels, list):
+            continue
+        for index, legacy_channel in enumerate(legacy_channels):
+            if index >= len(store_channels):
+                # Legacy file claims more channels than discovery — drop the
+                # extras rather than letting them re-introduce phantom
+                # entities (e.g. the 05-057 4→2 channel-count correction).
+                break
+            store_channel = store_channels[index]
+            if not isinstance(legacy_channel, dict) or not isinstance(store_channel, dict):
+                continue
+            for field in _USER_CHANNEL_FIELDS:
+                value = legacy_channel.get(field)
+                if value not in (None, ""):
+                    store_channel[field] = value
+                    channels_overlaid += 1
+
+    return modules_overlaid, channels_overlaid, no_match
+
+
 async def async_migrate_legacy_module_config(
     hass: HomeAssistant, store: NikobusModuleStorage
 ) -> bool:
     """Run the one-shot migration.
 
-    Returns ``True`` when a migration was performed, ``False`` otherwise
-    (store already populated, no legacy file, or file unreadable).
+    Returns ``True`` when something was applied (full import or overlay),
+    ``False`` otherwise (no legacy file present or file unreadable).
 
     Side effects on success:
-      * ``store.data["nikobus_module"]`` is replaced with the converted entries.
-      * ``store.async_save()`` is awaited.
-      * The source file is renamed to ``<config>/<LEGACY_FILENAME>.migrated``.
+      * **Empty Store path** — ``store.data["nikobus_module"]`` is replaced
+        with the converted entries.
+      * **Populated Store path** — user-editable fields from the legacy
+        file are overlaid onto matching Store entries by address + channel
+        index. Discovery-owned fields (``model``, ``module_type``,
+        ``discovered_info``, channel count) are NOT touched.
+      * In both cases ``store.async_save()`` is awaited and the source
+        file is renamed to ``<config>/<LEGACY_FILENAME>.migrated``.
     """
-    if not store.is_empty:
-        _LOGGER.debug(
-            "Module store already populated (%d entries) — skipping legacy migration",
-            len(store.data.get("nikobus_module", {})),
-        )
-        return False
-
     source_path = hass.config.path(LEGACY_FILENAME)
     if not os.path.exists(source_path):
         _LOGGER.debug(
@@ -171,38 +242,64 @@ async def async_migrate_legacy_module_config(
         return False
 
     flat = convert_legacy_to_flat(legacy)
-    if not flat:
-        _LOGGER.info(
-            "Legacy module config at %s contained no convertible entries — "
-            "leaving store empty and renaming the source anyway",
-            source_path,
-        )
-
-    store.data["nikobus_module"] = flat
-    await store.async_save()
-
     backup_path = source_path + _MIGRATED_SUFFIX
+
+    if store.is_empty:
+        if not flat:
+            _LOGGER.info(
+                "Legacy module config at %s contained no convertible entries — "
+                "leaving store empty and renaming the source anyway",
+                source_path,
+            )
+        store.data["nikobus_module"] = flat
+        await store.async_save()
+        _try_rename(source_path, backup_path, len(flat), "imported")
+    else:
+        store_modules = store.data.setdefault("nikobus_module", {})
+        modules_overlaid, channels_overlaid, no_match = _overlay_user_fields(
+            store_modules, flat
+        )
+        if modules_overlaid or channels_overlaid:
+            await store.async_save()
+        _LOGGER.info(
+            "Overlaid user-edited fields from %s onto Store: modules=%d channels=%d "
+            "no_match=%d (Store had %d entries before).",
+            source_path,
+            modules_overlaid,
+            channels_overlaid,
+            len(no_match),
+            len(store_modules),
+        )
+        if no_match:
+            _LOGGER.info(
+                "Legacy addresses with no Store counterpart (skipped): %s",
+                no_match,
+            )
+        _try_rename(source_path, backup_path, modules_overlaid, "overlaid")
+
+    return True
+
+
+def _try_rename(source_path: str, backup_path: str, count: int, action: str) -> None:
+    """Rename the legacy file out of the way; log loudly on failure."""
     try:
         os.replace(source_path, backup_path)
     except OSError as err:
-        # Rename failure is non-fatal — the data is already in the Store.
-        # Log loudly so the user knows the file is still there on disk.
         _LOGGER.warning(
-            "Migrated %d modules to the Store, but could not rename %s to %s: %s. "
-            "The integration will now ignore the source file; you can rename or "
+            "%s %d modules from %s, but could not rename to %s: %s. "
+            "The integration will now ignore the source file; rename or "
             "remove it manually.",
-            len(flat),
+            action.capitalize(),
+            count,
             source_path,
             backup_path,
             err,
         )
-        return True
-
+        return
     _LOGGER.info(
-        "Migrated %d modules from %s to the .storage/nikobus.modules Store. "
-        "Source renamed to %s.",
-        len(flat),
+        "%s %d modules from %s. Source renamed to %s.",
+        action.capitalize(),
+        count,
         source_path,
         backup_path,
     )
-    return True
