@@ -605,6 +605,8 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         return {"type": "Button", "operation_points": op_points}
 
     async def test_absent_module_is_evicted_from_store(self):
+        # Combined predicate: CCDD is absent from BOTH the sweep and the
+        # probe → evicted. AABB is in the sweep → kept.
         coord = self._make_coordinator_stub(
             modules={"AABB": {"module_type": "switch_module"},
                      "CCDD": {"module_type": "dimmer_module"}},
@@ -614,6 +616,8 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
                 "absent_modules": ["CCDD"],
                 "orphaned_buttons": [],
             },
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"AABB": {"category": "Module"}},
         )
 
         await coord._reconcile_post_discovery()
@@ -624,15 +628,19 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         coord.button_storage.async_save.assert_awaited_once()
 
     async def test_button_linked_to_absent_module_only_is_legacy_orphan(self):
+        # CCDD is absent from BOTH sweep and probe → evicted. The button
+        # only linked to CCDD has zero remaining links → legacy_orphan.
         coord = self._make_coordinator_stub(
             modules={"AABB": {"module_type": "switch_module"}},
-            buttons={"112233": self._button("CCDD")},  # CCDD will be absent
+            buttons={"112233": self._button("CCDD")},
             manifest={
                 "checked": ["AABB", "CCDD"],
                 "present_modules": ["AABB"],
                 "absent_modules": ["CCDD"],
                 "orphaned_buttons": ["112233"],
             },
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"AABB": {"category": "Module"}},
         )
 
         await coord._reconcile_post_discovery()
@@ -662,10 +670,11 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_button_with_at_least_one_present_link_is_active(self):
+        # Button linked to AABB (in sweep, kept) + CCDD (absent in both,
+        # evicted). At least one link survives → active.
         coord = self._make_coordinator_stub(
             modules={"AABB": {"module_type": "switch_module"},
                      "CCDD": {"module_type": "switch_module"}},
-            # Linked to one absent + one present module → still active.
             buttons={"112233": self._button("AABB", "CCDD")},
             manifest={
                 "checked": ["AABB", "CCDD"],
@@ -673,6 +682,8 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
                 "absent_modules": ["CCDD"],
                 "orphaned_buttons": [],
             },
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"AABB": {"category": "Module"}},
         )
 
         await coord._reconcile_post_discovery()
@@ -684,7 +695,8 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
 
     async def test_module_address_comparison_is_case_insensitive(self):
         # Storage might hold lowercase addresses (legacy data); manifest
-        # always returns upper-case. Reconciliation must still match.
+        # and discovered_devices are upper-case. Reconciliation must
+        # still match — combined predicate keeps that contract.
         coord = self._make_coordinator_stub(
             modules={"aabb": {"module_type": "switch_module"}},
             manifest={
@@ -693,11 +705,17 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
                 "absent_modules": ["AABB"],
                 "orphaned_buttons": [],
             },
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            # Sweep needs to be non-empty for eviction to fire; pin a
+            # different address so the lower-case 'aabb' is the one
+            # being tested for case-insensitive eviction.
+            discovered_devices={"FFFF": {"category": "Module"}},
         )
 
         await coord._reconcile_post_discovery()
 
-        self.assertEqual(coord.module_storage.data["nikobus_module"], {})
+        self.assertNotIn("aabb", coord.module_storage.data["nikobus_module"])
+        self.assertNotIn("AABB", coord.module_storage.data["nikobus_module"])
 
     async def test_skips_when_library_lacks_detect_method(self):
         coord = self._make_coordinator_stub(
@@ -739,33 +757,75 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         coord.module_storage.async_save.assert_not_awaited()
 
     # ------------------------------------------------------------------
-    # Replace-with-current-discovery semantics (nikobus-connect 0.5.17)
+    # Combined sweep ∪ probe predicate (issue #319 regression set)
     # ------------------------------------------------------------------
 
-    async def test_pc_link_sweep_evicts_modules_not_in_discovered_devices(self):
-        # AABB ACKs the probe (so it'd survive step 1) but is no longer
-        # in the PC-Link's current project — discovered_devices doesn't
-        # list it, so step 2 evicts it.
+    async def test_module_in_sweep_with_probe_timeout_is_kept(self):
+        # IKIKN's 8110 regression: real switch_module surfaced by the
+        # PC-Link inventory sweep, but its $1012 ACK arrived past the
+        # probe's 2.0 s timeout. Probe reports it as ``absent``. Under
+        # the combined predicate, sweep presence is sufficient to keep
+        # the module — probe timeout alone must NOT evict.
         coord = self._make_coordinator_stub(
-            modules={
-                "AABB": {"module_type": "switch_module"},
-                "CCDD": {"module_type": "switch_module"},
-            },
+            modules={"8110": {"module_type": "switch_module"}},
             manifest={
-                "checked": ["AABB", "CCDD"],
-                "present_modules": ["AABB", "CCDD"],
-                "absent_modules": [],
+                "checked": ["8110"],
+                "present_modules": [],
+                "absent_modules": ["8110"],
                 "orphaned_buttons": [],
             },
             inventory_query_type=InventoryQueryType.PC_LINK,
-            discovered_devices={"CCDD": {"category": "Module"}},
+            discovered_devices={"8110": {"category": "Module"}},
         )
 
         await coord._reconcile_post_discovery()
 
-        self.assertNotIn("AABB", coord.module_storage.data["nikobus_module"])
-        self.assertIn("CCDD", coord.module_storage.data["nikobus_module"])
-        coord.module_storage.async_save.assert_awaited_once()
+        self.assertIn("8110", coord.module_storage.data["nikobus_module"])
+
+    async def test_module_only_in_probe_present_is_kept(self):
+        # Edge case: module wired and ACKing the bus, but not in the
+        # current PC-Link project (so absent from the sweep). Combined
+        # predicate keeps it — user can purge_stale_inventory if they
+        # want it gone.
+        coord = self._make_coordinator_stub(
+            modules={"7777": {"module_type": "switch_module"}},
+            manifest={
+                "checked": ["7777"],
+                "present_modules": ["7777"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            # Sweep contains a different module so eviction-step is
+            # eligible to fire; 7777 is missing from it.
+            discovered_devices={"AAAA": {"category": "Module"}},
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertIn("7777", coord.module_storage.data["nikobus_module"])
+
+    async def test_module_in_neither_sweep_nor_probe_present_is_evicted(self):
+        # IKIKN's 3D28: the previous owner's residue. Not in current
+        # sweep, doesn't ACK probe → evicted. The intended behaviour
+        # of post-discovery reconciliation.
+        coord = self._make_coordinator_stub(
+            modules={"3D28": {"module_type": "switch_module"},
+                     "AABB": {"module_type": "switch_module"}},
+            manifest={
+                "checked": ["3D28", "AABB"],
+                "present_modules": ["AABB"],
+                "absent_modules": ["3D28"],
+                "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"AABB": {"category": "Module"}},
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertNotIn("3D28", coord.module_storage.data["nikobus_module"])
+        self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
 
     async def test_module_scan_does_not_evict_modules_not_in_discovered_devices(self):
         # Same Store + same single-module sweep output, but the user ran
@@ -814,41 +874,6 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
         self.assertIn("CCDD", coord.module_storage.data["nikobus_module"])
-
-    async def test_button_linked_only_to_replace_evicted_module_is_legacy_orphan(self):
-        # AABB ACKs the probe but isn't in the current sweep, so step 2
-        # evicts it. A button whose only link points at AABB should be
-        # tagged ``legacy_orphan`` even though AABB never appeared in
-        # the manifest's ``absent_modules`` list.
-        coord = self._make_coordinator_stub(
-            modules={
-                "AABB": {"module_type": "switch_module"},
-                "CCDD": {"module_type": "switch_module"},
-            },
-            buttons={
-                "112233": self._button("AABB"),
-                "445566": self._button("CCDD"),
-            },
-            manifest={
-                "checked": ["AABB", "CCDD"],
-                "present_modules": ["AABB", "CCDD"],
-                "absent_modules": [],
-                "orphaned_buttons": [],
-            },
-            inventory_query_type=InventoryQueryType.PC_LINK,
-            discovered_devices={"CCDD": {"category": "Module"}},
-        )
-
-        await coord._reconcile_post_discovery()
-
-        self.assertEqual(
-            coord.dict_button_data["nikobus_button"]["112233"]["status"],
-            "legacy_orphan",
-        )
-        self.assertEqual(
-            coord.dict_button_data["nikobus_button"]["445566"]["status"],
-            "active",
-        )
 
     async def test_pc_link_sweep_ignores_non_module_categories(self):
         # discovered_devices also contains buttons under category="Button".

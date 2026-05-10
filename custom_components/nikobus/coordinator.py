@@ -1046,24 +1046,30 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         merge. The library merges *additively* (it adds discovered records
         but never evicts), so without this step a previous owner's
         residue (a second-hand PC-Link, a re-keyed install, etc.) would
-        persist forever in the local stores. Two eviction passes run:
+        persist forever in the local stores.
 
-        1. **Probe** — ``detect_stale_inventory`` (nikobus-connect
-           0.5.16+) probes each output module with a ``$1012`` read;
-           modules that don't ACK get evicted.
-        2. **Replace-with-current-discovery** — when the user just ran a
-           full PC-Link inventory sweep, any module address absent from
-           the sweep's ``discovered_devices`` is also evicted. This
-           catches residue that ACKs on the bus but is no longer in the
-           PC-Link's active project, which the probe alone can't see —
-           and which entered the store at the read layer once
-           nikobus-connect 0.5.17 dropped its all-FF terminator.
+        **Eviction predicate (combined sweep ∪ probe).** A module survives
+        if EITHER the just-completed PC-Link sweep surfaced it OR
+        ``detect_stale_inventory`` reported it as ``present_modules``.
+        Only modules absent from BOTH signals are evicted. This is
+        deliberately conservative: probe-only eviction false-negatived
+        real modules whose ``$1012`` ACK arrived past the timeout on a
+        busy bus (issue #319 — IKIKN's 8110 evicted at 2.0 s with
+        nikobus-connect 0.5.18). Sweep-only eviction would miss residue
+        that's wired and ACKs but no longer in the PC-Link's project.
+
+        Eviction only runs when the user just performed a full PC-Link
+        sweep (``InventoryQueryType.PC_LINK``) AND the sweep produced at
+        least one module. Per-module scans never trigger eviction —
+        their ``discovered_devices`` only covers a single address, so
+        applying sweep-based logic would catastrophically drop the rest
+        of the store.
 
         Buttons are then tagged into one of three buckets:
 
           * ``active`` — at least one ``linked_modules`` entry resolves
-            to a present module.
-          * ``legacy_orphan`` — every linked module is in the absent set.
+            to a surviving module.
+          * ``legacy_orphan`` — every linked module was evicted.
           * ``legacy_undecoded`` — no ``linked_modules`` survived the
             scan (decoder may catch up later; flag surfaces it).
 
@@ -1095,29 +1101,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         present = {str(a).upper() for a in (manifest.get("present_modules") or [])}
         checked = manifest.get("checked") or []
 
-        # Step 1 — probe-based eviction. ``detect_stale_inventory`` only
-        # probes output modules (switch / dimmer / roller); PC-Logic,
-        # feedback, audio and interface modules are skipped by the library
-        # and stay in the store untouched here.
-        modules = self.module_storage.data.setdefault("nikobus_module", {})
-        evicted: list[str] = []
-        for addr in list(modules.keys()):
-            if str(addr).upper() in absent:
-                modules.pop(addr, None)
-                evicted.append(str(addr).upper())
-
-        # Step 2 — replace-with-current-discovery. Since nikobus-connect
-        # 0.5.17 the PC-Link inventory sweep no longer early-stops on
-        # all-FF blocks, which means residue from previous installs can
-        # enter the store at the read layer. The probe in step 1 only
-        # catches modules that don't ACK on the bus; modules that DO ACK
-        # but aren't in the PC-Link's current project would otherwise
-        # survive forever. Drop any module address absent from the
-        # just-completed sweep — but only when the user actually ran a
-        # full PC-Link sweep, and only when the sweep produced at least
-        # one module (so a failed read can't catastrophically empty the
-        # store).
-        replace_evicted: list[str] = []
+        # Snapshot the current PC-Link sweep, when applicable. Empty for
+        # per-module scans — eviction is gated on a non-empty value.
+        currently_swept: set[str] = set()
         if self.inventory_query_type == InventoryQueryType.PC_LINK:
             discovered = getattr(self.nikobus_discovery, "discovered_devices", None)
             if isinstance(discovered, dict):
@@ -1126,16 +1112,21 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     for addr, dev in discovered.items()
                     if isinstance(dev, dict) and dev.get("category") == "Module"
                 }
-                if currently_swept:
-                    for addr in list(modules.keys()):
-                        if str(addr).upper() not in currently_swept:
-                            modules.pop(addr, None)
-                            replace_evicted.append(str(addr).upper())
 
-        # Tag every physical-button record. ``gone`` covers both eviction
-        # reasons so a button whose only link points at a replace-evicted
-        # module is correctly classified as ``legacy_orphan``.
-        gone = absent | set(replace_evicted)
+        modules = self.module_storage.data.setdefault("nikobus_module", {})
+        evicted: list[str] = []
+
+        if currently_swept:
+            # Combined predicate: keep if EITHER signal says "real".
+            keep = currently_swept | present
+            for addr in list(modules.keys()):
+                if str(addr).upper() not in keep:
+                    modules.pop(addr, None)
+                    evicted.append(str(addr).upper())
+
+        # Tag every physical-button record. A button is orphaned only
+        # when none of its linked modules survived eviction.
+        remaining = {str(a).upper() for a in modules.keys()}
         bucket_counts = {"active": 0, "legacy_orphan": 0, "legacy_undecoded": 0}
         buttons = self.dict_button_data.setdefault("nikobus_button", {})
         for phys in buttons.values():
@@ -1144,7 +1135,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             linked = self._collect_button_linked_modules(phys)
             if not linked:
                 status = "legacy_undecoded"
-            elif linked.issubset(gone):
+            elif not (linked & remaining):
                 status = "legacy_orphan"
             else:
                 status = "active"
@@ -1163,23 +1154,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         _LOGGER.info(
             "Post-discovery reconciliation: probed=%d present=%d absent=%d "
-            "evicted_by_probe=%d evicted_by_sweep=%d "
-            "| buttons active=%d legacy_orphan=%d legacy_undecoded=%d",
+            "swept=%d evicted=%d | buttons active=%d legacy_orphan=%d "
+            "legacy_undecoded=%d",
             len(checked),
             len(present),
             len(absent),
+            len(currently_swept),
             len(evicted),
-            len(replace_evicted),
             bucket_counts["active"],
             bucket_counts["legacy_orphan"],
             bucket_counts["legacy_undecoded"],
         )
         if evicted:
-            _LOGGER.info("Evicted stale modules (probe): %s", evicted)
-        if replace_evicted:
             _LOGGER.info(
-                "Evicted modules absent from current PC-Link sweep: %s",
-                replace_evicted,
+                "Evicted modules (absent from sweep AND probe): %s", evicted
             )
 
     async def _handle_discovery_finished(self) -> None:
@@ -1188,11 +1176,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
         self.discovery_register_current = None
 
-        # Two-step residue defence: probe-evict modules that don't ACK,
-        # then (on a full PC-Link sweep) evict anything absent from the
-        # sweep's discovered_devices. The library's merge is additive,
-        # so without this step pre-0.5.13 residue + post-0.5.17 mid-
-        # project FF-gap residue (issue #319) survives every scan.
+        # Combined sweep ∪ probe residue defence: a module survives if
+        # the just-completed PC-Link sweep surfaced it OR the bus probe
+        # ACKed it. Only modules absent from BOTH signals are evicted.
+        # Probe-only eviction false-negatived real modules at 2.0 s on
+        # busy buses (issue #319 — IKIKN's 8110 evicted on 2.0.18).
         await self._reconcile_post_discovery()
 
         self._update_discovery_state(
