@@ -912,6 +912,94 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
         self.assertNotIn("3D28", coord.module_storage.data["nikobus_module"])
 
+    async def test_status_messages_track_probe_progress(self):
+        # During the probe phase the diagnostic message used to freeze
+        # on the last inventory frame ("PC Link inventory: 27/240
+        # registers, 23 device(s) found") for the full 5-15 s window.
+        # Verify _reconcile_post_discovery now pushes descriptive
+        # messages at every state transition: probe preparation, each
+        # retry attempt, the bus-quiet wait, and reconciliation.
+        absent_then_present = [
+            {
+                "checked": ["8110"],
+                "present_modules": [],
+                "absent_modules": ["8110"],
+                "orphaned_buttons": [],
+            },
+            {
+                "checked": ["8110"],
+                "present_modules": ["8110"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
+        ]
+        coord = self._make_coordinator_stub(
+            modules={"8110": {"module_type": "switch_module"}},
+            manifest_sequence=absent_then_present,
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"8110": {"category": "Module"}},
+        )
+
+        await coord._reconcile_post_discovery()
+
+        messages = [
+            call.kwargs.get("message")
+            for call in coord._update_discovery_state.call_args_list
+            if call.kwargs.get("message") is not None
+        ]
+        # Probe-phase progression: preparation → attempt 1 → bus-quiet
+        # wait → attempt 2 → reconciling. (No eviction message because
+        # 8110 ACKed on attempt 2 → no stale modules.)
+        self.assertTrue(
+            any("Inventory complete" in m for m in messages),
+            f"missing preparation message; got {messages}",
+        )
+        self.assertTrue(
+            any("attempt 1/2" in m for m in messages),
+            f"missing attempt 1 message; got {messages}",
+        )
+        self.assertTrue(
+            any("slow to respond" in m and "quieten" in m for m in messages),
+            f"missing bus-quiet wait message; got {messages}",
+        )
+        self.assertTrue(
+            any("attempt 2/2" in m for m in messages),
+            f"missing attempt 2 message; got {messages}",
+        )
+        self.assertTrue(
+            any("Reconciling" in m for m in messages),
+            f"missing reconciling message; got {messages}",
+        )
+
+    async def test_status_message_reports_eviction_count(self):
+        # When the predicate evicts at least one module, the user should
+        # see the count surfaced in the diagnostic message rather than
+        # finding it only in the log.
+        absent_manifest = {
+            "checked": ["3D28"],
+            "present_modules": [],
+            "absent_modules": ["3D28"],
+            "orphaned_buttons": [],
+        }
+        coord = self._make_coordinator_stub(
+            modules={"3D28": {"module_type": "switch_module"}},
+            manifest_sequence=[absent_manifest, absent_manifest],
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"3D28": {"category": "Module"}},
+        )
+
+        await coord._reconcile_post_discovery()
+
+        messages = [
+            call.kwargs.get("message")
+            for call in coord._update_discovery_state.call_args_list
+            if call.kwargs.get("message") is not None
+        ]
+        self.assertTrue(
+            any("Evicted 1 stale module" in m for m in messages),
+            f"missing eviction count message; got {messages}",
+        )
+
     async def test_module_only_in_probe_present_is_kept(self):
         # Edge case: module wired and ACKing the bus, but not in the
         # current PC-Link project (so absent from the sweep). Combined

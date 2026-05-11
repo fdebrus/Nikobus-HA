@@ -43,6 +43,13 @@ DISCOVERY_SUB_PHASE_INVENTORY: Final[str] = "inventory"
 DISCOVERY_SUB_PHASE_IDENTITY: Final[str] = "identity"
 DISCOVERY_SUB_PHASE_REGISTER_SCAN: Final[str] = "register_scan"
 DISCOVERY_SUB_PHASE_FINALIZING: Final[str] = "finalizing"
+# Post-discovery residue probe + eviction (HA-side, fires from
+# ``_reconcile_post_discovery``). The library's discovery itself is
+# done by this point, but the integration still has 5-15 s of work
+# (bus probe + retries + eviction); a distinct sub-phase keeps the
+# diagnostic status meaningful rather than freezing on the last
+# inventory frame.
+DISCOVERY_SUB_PHASE_PROBING: Final[str] = "probing"
 DISCOVERY_SUB_PHASE_FINISHED: Final[str] = "finished"
 DISCOVERY_SUB_PHASE_ERROR: Final[str] = "error"
 
