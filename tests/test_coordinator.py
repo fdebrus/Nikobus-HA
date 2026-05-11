@@ -533,9 +533,11 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
     """
 
     async def asyncSetUp(self) -> None:
-        # The reconciliation retry loop sleeps _PROBE_RETRY_DELAY_S
-        # between attempts. Skip the real wait in tests — assertions
-        # only care about predicate behaviour, not wallclock.
+        # Defensive: patch ``asyncio.sleep`` in the coordinator module
+        # so any reconciliation-path sleep can't wedge a test. With
+        # nikobus-connect 0.5.20 owning the outer retry loop, the
+        # coordinator no longer sleeps during reconciliation — but
+        # keeping the patch costs nothing and protects future code.
         self._sleep_patcher = patch(
             "custom_components.nikobus.coordinator.asyncio.sleep",
             new=AsyncMock(),
@@ -552,7 +554,6 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         modules: dict | None = None,
         buttons: dict | None = None,
         manifest: dict | None = None,
-        manifest_sequence: list[dict] | None = None,
         has_method: bool = True,
         inventory_query_type=None,
         discovered_devices: dict | None = None,
@@ -581,37 +582,12 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
                 "absent_modules": [],
                 "orphaned_buttons": [],
             }
-            if manifest_sequence is not None:
-                # Each retry attempt gets its own manifest. AsyncMock with
-                # side_effect=list yields the next value per call.
-                coord.nikobus_discovery.detect_stale_inventory = AsyncMock(
-                    side_effect=list(manifest_sequence)
-                )
-            else:
-                coord.nikobus_discovery.detect_stale_inventory = AsyncMock(
-                    return_value=default_manifest
-                )
+            coord.nikobus_discovery.detect_stale_inventory = AsyncMock(
+                return_value=default_manifest
+            )
             coord.nikobus_discovery.discovered_devices = (
                 dict(discovered_devices) if discovered_devices is not None else None
             )
-
-        # Mimic what ``_async_on_module_save`` does at library merge
-        # time: capture the modules-only sweep into a coordinator-owned
-        # snapshot. ``_reconcile_post_discovery`` reads THIS, never
-        # ``discovered_devices`` directly (issue #319: the library
-        # clears discovered_devices before firing on_discovery_finished,
-        # so reading it from the post-discovery callback is too late).
-        if (
-            inventory_query_type == InventoryQueryType.PC_LINK
-            and discovered_devices is not None
-        ):
-            coord._last_pc_link_sweep = {
-                str(addr).upper()
-                for addr, dev in discovered_devices.items()
-                if isinstance(dev, dict) and dev.get("category") == "Module"
-            }
-        else:
-            coord._last_pc_link_sweep = set()
 
         if not has_method:
             # Library lacks the method (older nikobus-connect): the spec
@@ -623,8 +599,19 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         coord._collect_button_linked_modules = staticmethod(
             NikobusDataCoordinator._collect_button_linked_modules
         )
-        coord._reconcile_post_discovery = lambda self_=coord: \
-            NikobusDataCoordinator._reconcile_post_discovery(self_)
+        # Bind ``_reconcile_post_discovery`` to forward the sweep state
+        # the way ``_handle_discovery_finished`` does in production:
+        # via the kwargs that nikobus-connect 0.5.20 passes through
+        # ``on_discovery_finished``. Tests can override by calling the
+        # method with explicit args.
+        bound_devices = (
+            dict(discovered_devices) if discovered_devices is not None else None
+        )
+        bound_qtype = inventory_query_type
+        coord._reconcile_post_discovery = (
+            lambda self_=coord, devices=bound_devices, qtype=bound_qtype:
+            NikobusDataCoordinator._reconcile_post_discovery(self_, devices, qtype)
+        )
         return coord
 
     @staticmethod
@@ -801,56 +788,45 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
     # Combined sweep ∪ probe predicate (issue #319 regression set)
     # ------------------------------------------------------------------
 
-    async def test_retry_recovers_slow_module(self):
-        # IKIKN's 8110: real switch_module that fails the first probe
-        # call (bus still draining post-discovery) but ACKs on the
-        # retry after the bus-quiet delay. Module is in sweep, so the
-        # second attempt's ``present`` adds it to present_anywhere
-        # and the predicate keeps it.
+    async def test_passes_outer_retry_kwargs_to_library(self):
+        # nikobus-connect 0.5.20 owns the outer retry loop. We pass
+        # ``outer_attempts=2, outer_delay=3.0`` (tuning from IKIKN
+        # forensic) and trust the library to do retries + bus-quiet
+        # delays + dedup-safe re-queue. No HA-side loop.
         coord = self._make_coordinator_stub(
             modules={"8110": {"module_type": "switch_module"}},
-            manifest_sequence=[
-                # Attempt 1: bus is busy, probe times out.
-                {
-                    "checked": ["8110"],
-                    "present_modules": [],
-                    "absent_modules": ["8110"],
-                    "orphaned_buttons": [],
-                },
-                # Attempt 2: bus quiet, probe ACKs.
-                {
-                    "checked": ["8110"],
-                    "present_modules": ["8110"],
-                    "absent_modules": [],
-                    "orphaned_buttons": [],
-                },
-            ],
+            manifest={
+                "checked": ["8110"],
+                "present_modules": ["8110"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
             inventory_query_type=InventoryQueryType.PC_LINK,
             discovered_devices={"8110": {"category": "Module"}},
         )
 
         await coord._reconcile_post_discovery()
 
-        self.assertIn("8110", coord.module_storage.data["nikobus_module"])
-        # Library was called exactly twice; the retry was needed.
-        self.assertEqual(
-            coord.nikobus_discovery.detect_stale_inventory.await_count, 2
+        coord.nikobus_discovery.detect_stale_inventory.assert_awaited_once_with(
+            outer_attempts=2,
+            outer_delay=3.0,
         )
+        self.assertIn("8110", coord.module_storage.data["nikobus_module"])
 
     async def test_all_retries_failing_evicts_module_in_sweep(self):
         # 3D28-style residue surfaced by the 0.5.18 no-terminator
         # sweep: in discovered_devices but physically not on the bus.
-        # Every probe attempt times out → absent_everywhere → predicate
-        # subtracts it from currently_swept → evicted.
-        absent_manifest = {
-            "checked": ["3D28"],
-            "present_modules": [],
-            "absent_modules": ["3D28"],
-            "orphaned_buttons": [],
-        }
+        # Library-side outer retries (PR #55 in nikobus-connect 0.5.20)
+        # confirm it's genuinely absent. Predicate: evict everything
+        # in ``absent_modules``.
         coord = self._make_coordinator_stub(
             modules={"3D28": {"module_type": "switch_module"}},
-            manifest_sequence=[absent_manifest, absent_manifest],
+            manifest={
+                "checked": ["3D28"],
+                "present_modules": [],
+                "absent_modules": ["3D28"],
+                "orphaned_buttons": [],
+            },
             inventory_query_type=InventoryQueryType.PC_LINK,
             discovered_devices={"3D28": {"category": "Module"}},
         )
@@ -859,21 +835,19 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("3D28", coord.module_storage.data["nikobus_module"])
 
-    async def test_early_exit_when_first_attempt_clears_everyone(self):
-        # Healthy install: every probed module ACKs on the first call.
-        # Predicate should NOT retry — only one detect_stale_inventory
-        # call, no asyncio.sleep, fast reconciliation.
+    async def test_healthy_install_no_evictions_single_probe_call(self):
+        # Every probed module ACKs. Library's outer retry loop early-
+        # exits internally; from our side we just see a clean manifest
+        # with all addresses in ``present_modules``. No evictions.
         coord = self._make_coordinator_stub(
             modules={"AABB": {"module_type": "switch_module"},
                      "CCDD": {"module_type": "switch_module"}},
-            manifest_sequence=[
-                {
-                    "checked": ["AABB", "CCDD"],
-                    "present_modules": ["AABB", "CCDD"],
-                    "absent_modules": [],
-                    "orphaned_buttons": [],
-                },
-            ],
+            manifest={
+                "checked": ["AABB", "CCDD"],
+                "present_modules": ["AABB", "CCDD"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
             inventory_query_type=InventoryQueryType.PC_LINK,
             discovered_devices={"AABB": {"category": "Module"},
                                 "CCDD": {"category": "Module"}},
@@ -887,15 +861,13 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
         self.assertIn("CCDD", coord.module_storage.data["nikobus_module"])
 
-    async def test_reconcile_uses_last_pc_link_sweep_not_discovered_devices(self):
-        # Issue #319 regression pin — 2.0.20 IKIKN log showed swept=0
-        # even with a snapshot at callback entry, because the library
-        # clears ``discovered_devices`` BEFORE firing
-        # ``on_discovery_finished``. The fix moved capture to
-        # ``_async_on_module_save`` (earlier in the library's call
-        # chain). ``_reconcile_post_discovery`` must read
-        # ``_last_pc_link_sweep`` and NEVER touch ``discovered_devices``,
-        # so eviction works even when the library has wiped the dict.
+    async def test_reconcile_uses_kwargs_for_sweep_state(self):
+        # nikobus-connect 0.5.20 passes ``discovered_devices`` and
+        # ``inventory_query_type`` through the callback (PR #55). The
+        # reconciliation reads its sweep set from those kwargs — no
+        # instance-state lifecycle dependency. Pin: passing the kwargs
+        # produces eviction; passing ``None`` produces no eviction
+        # even with stale instance state present.
         coord = self._make_coordinator_stub(
             modules={"AABB": {"module_type": "switch_module"},
                      "3D28": {"module_type": "switch_module"}},
@@ -905,105 +877,31 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
                 "absent_modules": ["3D28"],
                 "orphaned_buttons": [],
             },
-            inventory_query_type=None,  # library-cleared by callback time
-            discovered_devices={},      # library-cleared by callback time
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"AABB": {"category": "Module"},
+                                "3D28": {"category": "Module"}},
         )
-        # _async_on_module_save captured the sweep earlier:
-        coord._last_pc_link_sweep = {"AABB", "3D28"}
 
         await coord._reconcile_post_discovery()
 
-        # Probe says 3D28 absent → absent_everywhere. Predicate uses
-        # the captured sweep snapshot, NOT the empty discovered_devices,
-        # so 3D28 is correctly evicted; AABB is in present_anywhere.
         self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
         self.assertNotIn("3D28", coord.module_storage.data["nikobus_module"])
-
-    async def test_async_on_module_save_captures_sweep_during_pc_link(self):
-        # Direct pin on the library-merge capture path. When the
-        # library invokes ``on_module_save`` during a PC-Link inventory
-        # cycle, we must snapshot ``discovered_devices`` (modules
-        # only) into ``_last_pc_link_sweep`` — that's the only moment
-        # the library's dict is still populated.
-        coord = MagicMock()
-        coord.inventory_query_type = InventoryQueryType.PC_LINK
-        coord.nikobus_discovery = MagicMock()
-        coord.nikobus_discovery.discovered_devices = {
-            "823D": {"category": "Module", "module_type": "pc_link"},
-            "8110": {"category": "Module", "module_type": "switch_module"},
-            "1CEC": {"category": "Module", "module_type": "switch_module"},
-            "3D28": {"category": "Module", "module_type": "switch_module"},
-            "1843B4": {"category": "Button"},  # must be filtered out
-        }
-        coord.module_storage = MagicMock()
-        coord.module_storage.async_save = AsyncMock()
-        coord._rebuild_dict_module_data = MagicMock()
-        coord.config_entry = MagicMock()
-        coord.config_entry.entry_id = "entry_test"
-        coord.hass = MagicMock()
-        coord.hass.data = {}
-        coord._last_pc_link_sweep = set()
-
-        await NikobusDataCoordinator._async_on_module_save(coord)
-
-        self.assertEqual(
-            coord._last_pc_link_sweep,
-            {"823D", "8110", "1CEC", "3D28"},
-        )
-
-    async def test_async_on_module_save_does_not_capture_during_module_scan(self):
-        # Per-module register scans must NOT clobber the snapshot —
-        # their ``discovered_devices`` only covers a single address,
-        # so capturing here would shrink the sweep to one entry and
-        # cause every other module to be evicted on the next reconcile.
-        coord = MagicMock()
-        coord.inventory_query_type = InventoryQueryType.MODULE
-        coord.nikobus_discovery = MagicMock()
-        coord.nikobus_discovery.discovered_devices = {
-            "8110": {"category": "Module", "module_type": "switch_module"},
-        }
-        coord.module_storage = MagicMock()
-        coord.module_storage.async_save = AsyncMock()
-        coord._rebuild_dict_module_data = MagicMock()
-        coord.config_entry = MagicMock()
-        coord.config_entry.entry_id = "entry_test"
-        coord.hass = MagicMock()
-        coord.hass.data = {}
-        # Snapshot from a previous PC-Link cycle:
-        coord._last_pc_link_sweep = {"823D", "8110", "1CEC", "3D28"}
-
-        await NikobusDataCoordinator._async_on_module_save(coord)
-
-        # Untouched.
-        self.assertEqual(
-            coord._last_pc_link_sweep,
-            {"823D", "8110", "1CEC", "3D28"},
-        )
 
     async def test_status_messages_track_probe_progress(self):
         # During the probe phase the diagnostic message used to freeze
         # on the last inventory frame ("PC Link inventory: 27/240
         # registers, 23 device(s) found") for the full 5-15 s window.
-        # Verify _reconcile_post_discovery now pushes descriptive
-        # messages at every state transition: probe preparation, each
-        # retry attempt, the bus-quiet wait, and reconciliation.
-        absent_then_present = [
-            {
-                "checked": ["8110"],
-                "present_modules": [],
-                "absent_modules": ["8110"],
-                "orphaned_buttons": [],
-            },
-            {
+        # Verify _reconcile_post_discovery pushes descriptive messages
+        # at the two transitions: probing → reconciling. (Retry-loop
+        # messages are gone — the library owns retries now.)
+        coord = self._make_coordinator_stub(
+            modules={"8110": {"module_type": "switch_module"}},
+            manifest={
                 "checked": ["8110"],
                 "present_modules": ["8110"],
                 "absent_modules": [],
                 "orphaned_buttons": [],
             },
-        ]
-        coord = self._make_coordinator_stub(
-            modules={"8110": {"module_type": "switch_module"}},
-            manifest_sequence=absent_then_present,
             inventory_query_type=InventoryQueryType.PC_LINK,
             discovered_devices={"8110": {"category": "Module"}},
         )
@@ -1015,24 +913,9 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
             for call in coord._update_discovery_state.call_args_list
             if call.kwargs.get("message") is not None
         ]
-        # Probe-phase progression: preparation → attempt 1 → bus-quiet
-        # wait → attempt 2 → reconciling. (No eviction message because
-        # 8110 ACKed on attempt 2 → no stale modules.)
         self.assertTrue(
-            any("Inventory complete" in m for m in messages),
-            f"missing preparation message; got {messages}",
-        )
-        self.assertTrue(
-            any("attempt 1/2" in m for m in messages),
-            f"missing attempt 1 message; got {messages}",
-        )
-        self.assertTrue(
-            any("slow to respond" in m and "quieten" in m for m in messages),
-            f"missing bus-quiet wait message; got {messages}",
-        )
-        self.assertTrue(
-            any("attempt 2/2" in m for m in messages),
-            f"missing attempt 2 message; got {messages}",
+            any("Probing modules" in m for m in messages),
+            f"missing probing message; got {messages}",
         )
         self.assertTrue(
             any("Reconciling" in m for m in messages),
@@ -1043,15 +926,14 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         # When the predicate evicts at least one module, the user should
         # see the count surfaced in the diagnostic message rather than
         # finding it only in the log.
-        absent_manifest = {
-            "checked": ["3D28"],
-            "present_modules": [],
-            "absent_modules": ["3D28"],
-            "orphaned_buttons": [],
-        }
         coord = self._make_coordinator_stub(
             modules={"3D28": {"module_type": "switch_module"}},
-            manifest_sequence=[absent_manifest, absent_manifest],
+            manifest={
+                "checked": ["3D28"],
+                "present_modules": [],
+                "absent_modules": ["3D28"],
+                "orphaned_buttons": [],
+            },
             inventory_query_type=InventoryQueryType.PC_LINK,
             discovered_devices={"3D28": {"category": "Module"}},
         )
