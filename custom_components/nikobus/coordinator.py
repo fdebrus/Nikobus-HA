@@ -68,6 +68,15 @@ _LOGGER = logging.getLogger(__name__)
 # Module types supported for polling
 MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
 
+# Post-discovery reconciliation: outer probe loop. ``detect_stale_inventory``
+# already does N internal retries per address (library 0.5.19: attempts=3),
+# but on heavily-loaded buses (issue #319 — IKIKN's install) those back-to-
+# back attempts all fail because the bus is still draining post-discovery
+# traffic. The HA-side outer loop re-calls the probe after a bus-quiet
+# delay so slow-but-real modules get a second chance.
+_PROBE_RETRY_ATTEMPTS = 2
+_PROBE_RETRY_DELAY_S = 3.0
+
 
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
@@ -1048,22 +1057,33 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         residue (a second-hand PC-Link, a re-keyed install, etc.) would
         persist forever in the local stores.
 
-        **Eviction predicate (combined sweep ∪ probe).** A module survives
-        if EITHER the just-completed PC-Link sweep surfaced it OR
-        ``detect_stale_inventory`` reported it as ``present_modules``.
-        Only modules absent from BOTH signals are evicted. This is
-        deliberately conservative: probe-only eviction false-negatived
-        real modules whose ``$1012`` ACK arrived past the timeout on a
-        busy bus (issue #319 — IKIKN's 8110 evicted at 2.0 s with
-        nikobus-connect 0.5.18). Sweep-only eviction would miss residue
-        that's wired and ACKs but no longer in the PC-Link's project.
+        **Sweep snapshot before await.** ``inventory_query_type`` and
+        ``discovered_devices`` are captured *before* awaiting the probe
+        because the library resets both during the probe phase. Reading
+        them afterwards yields stale data — concretely, IKIKN's 2.0.19
+        log showed ``swept=0`` even though the library had just dumped
+        4 modules in ``discovered_devices`` a millisecond before
+        ``on_discovery_finished`` fired (issue #319).
+
+        **Eviction predicate.** A module survives if any of:
+
+          * It ACKed the probe in at least one retry attempt
+            (``present_anywhere``), OR
+          * It's in the just-completed PC-Link sweep AND didn't fail
+            every retry attempt (``currently_swept - absent_everywhere``).
+
+        Phrased the other way: a module is evicted iff it fails every
+        probe attempt AND isn't kept by any other signal. The retry
+        loop runs ``detect_stale_inventory`` up to N times with a
+        bus-quiet delay between attempts — modules whose ACK is delayed
+        by sustained bus contention (IKIKN's 8110: real switch_module,
+        timed out 3× internal library retries on first call) get a
+        second chance once discovery traffic has fully drained.
 
         Eviction only runs when the user just performed a full PC-Link
-        sweep (``InventoryQueryType.PC_LINK``) AND the sweep produced at
+        sweep (``InventoryQueryType.PC_LINK``) and the sweep produced at
         least one module. Per-module scans never trigger eviction —
-        their ``discovered_devices`` only covers a single address, so
-        applying sweep-based logic would catastrophically drop the rest
-        of the store.
+        their ``discovered_devices`` only covers a single address.
 
         Buttons are then tagged into one of three buckets:
 
@@ -1085,24 +1105,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
             return
 
-        try:
-            # No explicit timeout — defer to the library default. 0.5.18+
-            # raised it to 2.0 s after real-install reports (issue #319,
-            # nikobus-connect#53) showed 0.6 s false-negatives output
-            # modules whose ACK arrives while the bus is still draining
-            # from discovery. Hard-coding 0.6 s here would silently
-            # override that fix.
-            manifest = await self.nikobus_discovery.detect_stale_inventory()
-        except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.error("detect_stale_inventory probe failed: %s", err)
-            return
-
-        absent = {str(a).upper() for a in (manifest.get("absent_modules") or [])}
-        present = {str(a).upper() for a in (manifest.get("present_modules") or [])}
-        checked = manifest.get("checked") or []
-
-        # Snapshot the current PC-Link sweep, when applicable. Empty for
-        # per-module scans — eviction is gated on a non-empty value.
+        # --- Snapshot BEFORE the probe await --------------------------
+        # The library resets ``inventory_query_type`` and/or
+        # ``discovered_devices`` while ``detect_stale_inventory`` runs,
+        # so we capture the sweep state up-front. Reading them after
+        # the probe yields an empty set on every install (issue #319).
         currently_swept: set[str] = set()
         if self.inventory_query_type == InventoryQueryType.PC_LINK:
             discovered = getattr(self.nikobus_discovery, "discovered_devices", None)
@@ -1113,19 +1120,70 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     if isinstance(dev, dict) and dev.get("category") == "Module"
                 }
 
+        # --- Probe with HA-side retries -------------------------------
+        # The library does N internal retries per probe (attempts=3 in
+        # 0.5.19), but on heavily-loaded buses even three back-to-back
+        # attempts can all fail when the bus is still draining post-
+        # discovery traffic. We re-call detect_stale_inventory after a
+        # bus-quiet delay; a module counts as "present" if it ACKed in
+        # ANY outer attempt.
+        present_anywhere: set[str] = set()
+        checked_addrs: set[str] = set()
+        manifest: dict = {}
+
+        for attempt in range(1, _PROBE_RETRY_ATTEMPTS + 1):
+            try:
+                manifest = await self.nikobus_discovery.detect_stale_inventory()
+            except Exception as err:  # pragma: no cover - defensive
+                _LOGGER.error(
+                    "detect_stale_inventory attempt %d/%d failed: %s",
+                    attempt,
+                    _PROBE_RETRY_ATTEMPTS,
+                    err,
+                )
+                if attempt == 1:
+                    return  # nothing to act on — bail
+                break
+
+            attempt_present = {
+                str(a).upper() for a in (manifest.get("present_modules") or [])
+            }
+            attempt_checked = {
+                str(a).upper() for a in (manifest.get("checked") or [])
+            }
+            present_anywhere |= attempt_present
+            checked_addrs |= attempt_checked
+
+            # Early exit: every probed module has ACKed by now.
+            if not (checked_addrs - present_anywhere):
+                break
+            if attempt < _PROBE_RETRY_ATTEMPTS:
+                _LOGGER.debug(
+                    "detect_stale_inventory attempt %d: %d module(s) still "
+                    "unconfirmed; waiting %.1fs for bus to quiesce before retry",
+                    attempt,
+                    len(checked_addrs - present_anywhere),
+                    _PROBE_RETRY_DELAY_S,
+                )
+                await asyncio.sleep(_PROBE_RETRY_DELAY_S)
+
+        absent_everywhere = checked_addrs - present_anywhere
+        # Use the last manifest for "this attempt's" log counts; the
+        # combined predicate uses the union/intersection across attempts.
+        absent_last = {str(a).upper() for a in (manifest.get("absent_modules") or [])}
+        checked_last = manifest.get("checked") or []
+
+        # --- Eviction --------------------------------------------------
         modules = self.module_storage.data.setdefault("nikobus_module", {})
         evicted: list[str] = []
-
         if currently_swept:
-            # Combined predicate: keep if EITHER signal says "real".
-            keep = currently_swept | present
+            keep = present_anywhere | (currently_swept - absent_everywhere)
             for addr in list(modules.keys()):
                 if str(addr).upper() not in keep:
                     modules.pop(addr, None)
                     evicted.append(str(addr).upper())
 
-        # Tag every physical-button record. A button is orphaned only
-        # when none of its linked modules survived eviction.
+        # --- Button bucketing ----------------------------------------
         remaining = {str(a).upper() for a in modules.keys()}
         bucket_counts = {"active": 0, "legacy_orphan": 0, "legacy_undecoded": 0}
         buttons = self.dict_button_data.setdefault("nikobus_button", {})
@@ -1153,12 +1211,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.invalidate_controlled_by_index()
 
         _LOGGER.info(
-            "Post-discovery reconciliation: probed=%d present=%d absent=%d "
-            "swept=%d evicted=%d | buttons active=%d legacy_orphan=%d "
-            "legacy_undecoded=%d",
-            len(checked),
-            len(present),
-            len(absent),
+            "Post-discovery reconciliation: probed=%d present_anywhere=%d "
+            "absent_everywhere=%d swept=%d evicted=%d | buttons active=%d "
+            "legacy_orphan=%d legacy_undecoded=%d",
+            len(checked_last),
+            len(present_anywhere),
+            len(absent_everywhere),
             len(currently_swept),
             len(evicted),
             bucket_counts["active"],
@@ -1167,7 +1225,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         )
         if evicted:
             _LOGGER.info(
-                "Evicted modules (absent from sweep AND probe): %s", evicted
+                "Evicted modules (failed every probe attempt AND not "
+                "kept by sweep): %s", evicted
             )
 
     async def _handle_discovery_finished(self) -> None:
@@ -1176,11 +1235,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
         self.discovery_register_current = None
 
-        # Combined sweep ∪ probe residue defence: a module survives if
-        # the just-completed PC-Link sweep surfaced it OR the bus probe
-        # ACKed it. Only modules absent from BOTH signals are evicted.
-        # Probe-only eviction false-negatived real modules at 2.0 s on
-        # busy buses (issue #319 — IKIKN's 8110 evicted on 2.0.18).
+        # Residue defence: snapshot the sweep state BEFORE awaiting the
+        # probe (library resets it during the await), then probe with
+        # HA-side retries so slow-but-real modules get a second chance
+        # once the bus has quiesced. Evict only modules that fail every
+        # probe attempt AND aren't kept by the snapshotted sweep.
         await self._reconcile_post_discovery()
 
         self._update_discovery_state(
