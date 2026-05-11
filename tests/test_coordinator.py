@@ -594,7 +594,26 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
             coord.nikobus_discovery.discovered_devices = (
                 dict(discovered_devices) if discovered_devices is not None else None
             )
+
+        # Mimic what ``_async_on_module_save`` does at library merge
+        # time: capture the modules-only sweep into a coordinator-owned
+        # snapshot. ``_reconcile_post_discovery`` reads THIS, never
+        # ``discovered_devices`` directly (issue #319: the library
+        # clears discovered_devices before firing on_discovery_finished,
+        # so reading it from the post-discovery callback is too late).
+        if (
+            inventory_query_type == InventoryQueryType.PC_LINK
+            and discovered_devices is not None
+        ):
+            coord._last_pc_link_sweep = {
+                str(addr).upper()
+                for addr, dev in discovered_devices.items()
+                if isinstance(dev, dict) and dev.get("category") == "Module"
+            }
         else:
+            coord._last_pc_link_sweep = set()
+
+        if not has_method:
             # Library lacks the method (older nikobus-connect): the spec
             # requires graceful skip-with-warning.
             class _OldDiscovery:
@@ -868,13 +887,15 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
         self.assertIn("CCDD", coord.module_storage.data["nikobus_module"])
 
-    async def test_snapshot_captured_before_probe_await(self):
-        # Bug A regression pin (issue #319 — IKIKN's 2.0.19 log showed
-        # ``swept=0``). The library resets discovered_devices /
-        # inventory_query_type DURING the long detect_stale_inventory
-        # await. Our snapshot must capture the sweep state BEFORE
-        # awaiting the probe; otherwise the eviction gate sees an
-        # empty currently_swept and no eviction fires.
+    async def test_reconcile_uses_last_pc_link_sweep_not_discovered_devices(self):
+        # Issue #319 regression pin — 2.0.20 IKIKN log showed swept=0
+        # even with a snapshot at callback entry, because the library
+        # clears ``discovered_devices`` BEFORE firing
+        # ``on_discovery_finished``. The fix moved capture to
+        # ``_async_on_module_save`` (earlier in the library's call
+        # chain). ``_reconcile_post_discovery`` must read
+        # ``_last_pc_link_sweep`` and NEVER touch ``discovered_devices``,
+        # so eviction works even when the library has wiped the dict.
         coord = self._make_coordinator_stub(
             modules={"AABB": {"module_type": "switch_module"},
                      "3D28": {"module_type": "switch_module"}},
@@ -884,33 +905,80 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
                 "absent_modules": ["3D28"],
                 "orphaned_buttons": [],
             },
-            inventory_query_type=InventoryQueryType.PC_LINK,
-            discovered_devices={"AABB": {"category": "Module"},
-                                "3D28": {"category": "Module"}},
+            inventory_query_type=None,  # library-cleared by callback time
+            discovered_devices={},      # library-cleared by callback time
         )
-
-        # Simulate the library resetting state during the probe await.
-        async def reset_during_probe(*_a, **_kw):
-            coord.inventory_query_type = None
-            coord.nikobus_discovery.discovered_devices = {}
-            return {
-                "checked": ["AABB", "3D28"],
-                "present_modules": ["AABB"],
-                "absent_modules": ["3D28"],
-                "orphaned_buttons": [],
-            }
-
-        coord.nikobus_discovery.detect_stale_inventory = AsyncMock(
-            side_effect=reset_during_probe
-        )
+        # _async_on_module_save captured the sweep earlier:
+        coord._last_pc_link_sweep = {"AABB", "3D28"}
 
         await coord._reconcile_post_discovery()
 
-        # Snapshot was taken before the await, so currently_swept
-        # contained 3D28 and AABB. Probe says 3D28 absent everywhere →
-        # 3D28 evicted. AABB is in present_anywhere → kept.
+        # Probe says 3D28 absent → absent_everywhere. Predicate uses
+        # the captured sweep snapshot, NOT the empty discovered_devices,
+        # so 3D28 is correctly evicted; AABB is in present_anywhere.
         self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
         self.assertNotIn("3D28", coord.module_storage.data["nikobus_module"])
+
+    async def test_async_on_module_save_captures_sweep_during_pc_link(self):
+        # Direct pin on the library-merge capture path. When the
+        # library invokes ``on_module_save`` during a PC-Link inventory
+        # cycle, we must snapshot ``discovered_devices`` (modules
+        # only) into ``_last_pc_link_sweep`` — that's the only moment
+        # the library's dict is still populated.
+        coord = MagicMock()
+        coord.inventory_query_type = InventoryQueryType.PC_LINK
+        coord.nikobus_discovery = MagicMock()
+        coord.nikobus_discovery.discovered_devices = {
+            "823D": {"category": "Module", "module_type": "pc_link"},
+            "8110": {"category": "Module", "module_type": "switch_module"},
+            "1CEC": {"category": "Module", "module_type": "switch_module"},
+            "3D28": {"category": "Module", "module_type": "switch_module"},
+            "1843B4": {"category": "Button"},  # must be filtered out
+        }
+        coord.module_storage = MagicMock()
+        coord.module_storage.async_save = AsyncMock()
+        coord._rebuild_dict_module_data = MagicMock()
+        coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_test"
+        coord.hass = MagicMock()
+        coord.hass.data = {}
+        coord._last_pc_link_sweep = set()
+
+        await NikobusDataCoordinator._async_on_module_save(coord)
+
+        self.assertEqual(
+            coord._last_pc_link_sweep,
+            {"823D", "8110", "1CEC", "3D28"},
+        )
+
+    async def test_async_on_module_save_does_not_capture_during_module_scan(self):
+        # Per-module register scans must NOT clobber the snapshot —
+        # their ``discovered_devices`` only covers a single address,
+        # so capturing here would shrink the sweep to one entry and
+        # cause every other module to be evicted on the next reconcile.
+        coord = MagicMock()
+        coord.inventory_query_type = InventoryQueryType.MODULE
+        coord.nikobus_discovery = MagicMock()
+        coord.nikobus_discovery.discovered_devices = {
+            "8110": {"category": "Module", "module_type": "switch_module"},
+        }
+        coord.module_storage = MagicMock()
+        coord.module_storage.async_save = AsyncMock()
+        coord._rebuild_dict_module_data = MagicMock()
+        coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_test"
+        coord.hass = MagicMock()
+        coord.hass.data = {}
+        # Snapshot from a previous PC-Link cycle:
+        coord._last_pc_link_sweep = {"823D", "8110", "1CEC", "3D28"}
+
+        await NikobusDataCoordinator._async_on_module_save(coord)
+
+        # Untouched.
+        self.assertEqual(
+            coord._last_pc_link_sweep,
+            {"823D", "8110", "1CEC", "3D28"},
+        )
 
     async def test_status_messages_track_probe_progress(self):
         # During the probe phase the diagnostic message used to freeze
