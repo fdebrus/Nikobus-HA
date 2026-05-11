@@ -42,6 +42,7 @@ from .const import (
     DISCOVERY_SUB_PHASE_IDENTITY,
     DISCOVERY_SUB_PHASE_IDLE,
     DISCOVERY_SUB_PHASE_INVENTORY,
+    DISCOVERY_SUB_PHASE_PROBING,
     DISCOVERY_SUB_PHASE_REGISTER_SCAN,
     DISCOVERY_WEIGHT_FINALIZING,
     DISCOVERY_WEIGHT_IDENTITY,
@@ -396,6 +397,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         DISCOVERY_SUB_PHASE_IDENTITY: DISCOVERY_PHASE_PC_LINK,
         DISCOVERY_SUB_PHASE_REGISTER_SCAN: DISCOVERY_PHASE_MODULE_SCAN,
         DISCOVERY_SUB_PHASE_FINALIZING: DISCOVERY_PHASE_MODULE_SCAN,
+        DISCOVERY_SUB_PHASE_PROBING: DISCOVERY_PHASE_PC_LINK,
         DISCOVERY_SUB_PHASE_FINISHED: DISCOVERY_PHASE_FINISHED,
         DISCOVERY_SUB_PHASE_ERROR: DISCOVERY_PHASE_ERROR,
     }
@@ -475,6 +477,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_register_current = (
                 int(register) if register is not None else None
             )
+            # PC-Link inventory walks 0xA4..0xFF = 92 frames (with the
+            # 0.5.13+ all-FF early-stop kicking in well before the end).
+            # The library reports ``register_total`` as the full 0x10..
+            # 0xFF (240) register space, which inflates the bar to ~1/3
+            # of true progress. Cap to 92 for the inventory phase so the
+            # percentage matches what the library actually scans.
+            if sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+                effective_register_total = 92
+            elif register_total:
+                effective_register_total = register_total
+            else:
+                effective_register_total = 240
             self._update_discovery_state(
                 phase=legacy_phase,
                 message=message,
@@ -482,7 +496,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 modules_done=max(0, module_index - 1),
                 modules_total=module_total,
                 registers_done=registers_done,
-                registers_total=register_total or 240,
+                registers_total=effective_register_total,
             )
         except Exception as err:  # pragma: no cover - defensive
             _LOGGER.debug("Discovery progress handler error: %s", err)
@@ -1127,11 +1141,32 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # discovery traffic. We re-call detect_stale_inventory after a
         # bus-quiet delay; a module counts as "present" if it ACKed in
         # ANY outer attempt.
+        #
+        # Status messages: the user otherwise stares at the last
+        # inventory-frame string for the full 5-15 s of probe work.
+        # Push a PROBING sub_phase + descriptive message at every state
+        # transition; snap registers_done = registers_total so the bar
+        # reads 100% (inventory done) rather than freezing at the
+        # early-stop register.
+        self.discovery_sub_phase = DISCOVERY_SUB_PHASE_PROBING
+        self._update_discovery_state(
+            phase=DISCOVERY_PHASE_PC_LINK,
+            message="Inventory complete — preparing module probe…",
+            registers_done=self.discovery_registers_total,
+        )
+
         present_anywhere: set[str] = set()
         checked_addrs: set[str] = set()
         manifest: dict = {}
 
         for attempt in range(1, _PROBE_RETRY_ATTEMPTS + 1):
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_PC_LINK,
+                message=(
+                    f"Probing modules for residue "
+                    f"(attempt {attempt}/{_PROBE_RETRY_ATTEMPTS})…"
+                ),
+            )
             try:
                 manifest = await self.nikobus_discovery.detect_stale_inventory()
             except Exception as err:  # pragma: no cover - defensive
@@ -1158,12 +1193,21 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             if not (checked_addrs - present_anywhere):
                 break
             if attempt < _PROBE_RETRY_ATTEMPTS:
+                unconfirmed = len(checked_addrs - present_anywhere)
                 _LOGGER.debug(
                     "detect_stale_inventory attempt %d: %d module(s) still "
                     "unconfirmed; waiting %.1fs for bus to quiesce before retry",
                     attempt,
-                    len(checked_addrs - present_anywhere),
+                    unconfirmed,
                     _PROBE_RETRY_DELAY_S,
+                )
+                self._update_discovery_state(
+                    phase=DISCOVERY_PHASE_PC_LINK,
+                    message=(
+                        f"{unconfirmed} module(s) slow to respond — "
+                        f"waiting {_PROBE_RETRY_DELAY_S:.0f}s for bus to "
+                        f"quieten before retry…"
+                    ),
                 )
                 await asyncio.sleep(_PROBE_RETRY_DELAY_S)
 
@@ -1174,6 +1218,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         checked_last = manifest.get("checked") or []
 
         # --- Eviction --------------------------------------------------
+        self._update_discovery_state(
+            phase=DISCOVERY_PHASE_PC_LINK,
+            message="Reconciling discovered inventory…",
+        )
         modules = self.module_storage.data.setdefault("nikobus_module", {})
         evicted: list[str] = []
         if currently_swept:
@@ -1182,6 +1230,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 if str(addr).upper() not in keep:
                     modules.pop(addr, None)
                     evicted.append(str(addr).upper())
+        if evicted:
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_PC_LINK,
+                message=f"Evicted {len(evicted)} stale module(s); finalizing…",
+            )
 
         # --- Button bucketing ----------------------------------------
         remaining = {str(a).upper() for a in modules.keys()}
@@ -1232,8 +1285,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def _handle_discovery_finished(self) -> None:
         """Signal discovery completion; optionally reload the config entry."""
         self.discovery_running = False
-        self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
         self.discovery_register_current = None
+        # Don't set ``sub_phase = FINISHED`` here — the reconciliation
+        # step that follows still has 5-15 s of bus probe + eviction
+        # work, and freezes the diagnostic message on the last inventory
+        # frame if we mark "finished" too early. The reconciler pushes
+        # its own ``DISCOVERY_SUB_PHASE_PROBING`` status updates; we
+        # land on FINISHED only after it returns.
 
         # Residue defence: snapshot the sweep state BEFORE awaiting the
         # probe (library resets it during the await), then probe with
@@ -1242,6 +1300,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # probe attempt AND aren't kept by the snapshotted sweep.
         await self._reconcile_post_discovery()
 
+        self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
             message=(
