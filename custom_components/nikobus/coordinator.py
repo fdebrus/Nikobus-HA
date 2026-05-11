@@ -131,6 +131,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
+        # Captured during _async_on_module_save when the library merges
+        # newly-discovered modules into the store. ``_reconcile_post_discovery``
+        # uses this snapshot instead of reading ``discovered_devices`` after
+        # ``on_discovery_finished`` fires — by which point the library has
+        # already cleared the dict (issue #319: 2.0.20 IKIKN log showed
+        # ``swept=0`` because the snapshot was taken too late).
+        self._last_pc_link_sweep: set[str] = set()
 
         # --- Discovery progress tracking (for UI) ---
         # `discovery_phase` stays on the legacy enum for backward-compat with
@@ -1036,7 +1043,29 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.dict_module_data.update(grouped)
 
     async def _async_on_module_save(self) -> None:
-        """Persist the Store after discovery/user edits, then refresh derived views."""
+        """Persist the Store after discovery/user edits, then refresh derived views.
+
+        Also snapshots the PC-Link sweep when this fires from a PC-Link
+        inventory cycle. The library invokes this callback right after
+        ``merge_discovered_modules`` and BEFORE clearing its internal
+        ``discovered_devices`` / ``inventory_query_type`` state, so this
+        is the last moment we can capture the sweep set. Reading those
+        attributes from ``on_discovery_finished`` is too late (the
+        library has already cleared them — issue #319: 2.0.20 IKIKN log
+        showed ``swept=0`` even with a snapshot at callback entry).
+        """
+        if (
+            self.inventory_query_type == InventoryQueryType.PC_LINK
+            and self.nikobus_discovery is not None
+        ):
+            discovered = getattr(self.nikobus_discovery, "discovered_devices", None)
+            if isinstance(discovered, dict):
+                self._last_pc_link_sweep = {
+                    str(addr).upper()
+                    for addr, dev in discovered.items()
+                    if isinstance(dev, dict) and dev.get("category") == "Module"
+                }
+
         await self.module_storage.async_save()
         self._rebuild_dict_module_data()
         # Clear the cached router spec so newly-discovered modules show up.
@@ -1119,20 +1148,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
             return
 
-        # --- Snapshot BEFORE the probe await --------------------------
-        # The library resets ``inventory_query_type`` and/or
-        # ``discovered_devices`` while ``detect_stale_inventory`` runs,
-        # so we capture the sweep state up-front. Reading them after
-        # the probe yields an empty set on every install (issue #319).
-        currently_swept: set[str] = set()
-        if self.inventory_query_type == InventoryQueryType.PC_LINK:
-            discovered = getattr(self.nikobus_discovery, "discovered_devices", None)
-            if isinstance(discovered, dict):
-                currently_swept = {
-                    str(addr).upper()
-                    for addr, dev in discovered.items()
-                    if isinstance(dev, dict) and dev.get("category") == "Module"
-                }
+        # --- Sweep snapshot --------------------------------------------
+        # Read the snapshot captured by ``_async_on_module_save`` during
+        # the library's merge step. We can NOT read
+        # ``discovered_devices`` here — the library clears it before
+        # firing ``on_discovery_finished``, so even snapshotting at
+        # callback entry yields an empty set (issue #319: 2.0.20 IKIKN
+        # log showed ``swept=0`` despite that fix). Capturing in the
+        # save callback is earlier in the library's call chain, so the
+        # dict is still populated.
+        currently_swept: set[str] = set(self._last_pc_link_sweep)
 
         # --- Probe with HA-side retries -------------------------------
         # The library does N internal retries per probe (attempts=3 in
@@ -1284,22 +1309,26 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     async def _handle_discovery_finished(self) -> None:
         """Signal discovery completion; optionally reload the config entry."""
-        self.discovery_running = False
         self.discovery_register_current = None
-        # Don't set ``sub_phase = FINISHED`` here — the reconciliation
-        # step that follows still has 5-15 s of bus probe + eviction
-        # work, and freezes the diagnostic message on the last inventory
-        # frame if we mark "finished" too early. The reconciler pushes
-        # its own ``DISCOVERY_SUB_PHASE_PROBING`` status updates; we
-        # land on FINISHED only after it returns.
+        # Don't unset ``discovery_running`` or set ``sub_phase = FINISHED``
+        # here — the reconciliation step that follows still has 5-15 s
+        # of bus probe + eviction work, and clearing the polling guard
+        # (``_async_update_data`` early-returns when
+        # ``discovery_running`` is True) lets the normal poll cycle
+        # hammer the bus alongside the probe. On heavily-loaded buses
+        # (issue #319 IKIKN 2.0.20 log) that contention false-
+        # negatived even ``1CEC`` on the retry attempt despite a clean
+        # ACK on attempt 1. We land on FINISHED + clear
+        # ``discovery_running`` only after the reconciler returns.
 
-        # Residue defence: snapshot the sweep state BEFORE awaiting the
-        # probe (library resets it during the await), then probe with
-        # HA-side retries so slow-but-real modules get a second chance
-        # once the bus has quiesced. Evict only modules that fail every
-        # probe attempt AND aren't kept by the snapshotted sweep.
+        # Residue defence: combined sweep snapshot (captured in
+        # ``_async_on_module_save``) + HA-side retry loop so slow-but-
+        # real modules get a second chance once the bus has quiesced.
+        # Evict only modules that fail every probe attempt AND aren't
+        # kept by the snapshotted sweep.
         await self._reconcile_post_discovery()
 
+        self.discovery_running = False
         self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINISHED
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_FINISHED,
@@ -1437,6 +1466,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
+        # Reset the sweep snapshot so a fresh PC-Link cycle doesn't OR
+        # with a stale set from a previous run. Repopulated by
+        # ``_async_on_module_save`` once the library merges this scan's
+        # discovered_devices.
+        self._last_pc_link_sweep = set()
         # PC Link inventory scans register range 0xA4-0xFF = 92 frames.
         # The library aborts the sweep at the first all-FF response
         # (nikobus-connect 0.5.13+), so this is a soft upper bound.
