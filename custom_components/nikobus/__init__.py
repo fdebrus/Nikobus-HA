@@ -51,15 +51,25 @@ SERVICE_PURGE_STALE_INVENTORY: Final = "purge_stale_inventory"
 # the module absent. Worst-case wall-clock budget is roughly
 # ``len(switch+dimmer+roller modules) * timeout`` — at the default 0.6 s
 # an 8-module install needs about five seconds.
-DEFAULT_DETECT_PROBE_TIMEOUT: Final[float] = 0.6
+DEFAULT_DETECT_OUTER_ATTEMPTS: Final[int] = 1
+DEFAULT_DETECT_OUTER_DELAY: Final[float] = 0.0
 
 SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
 SEND_BUTTON_PRESS_SCHEMA = vol.Schema({
     vol.Required("address"): cv.string,
 })
 DETECT_STALE_INVENTORY_SCHEMA = vol.Schema({
-    vol.Optional("timeout", default=DEFAULT_DETECT_PROBE_TIMEOUT): vol.All(
-        vol.Coerce(float), vol.Range(min=0.1, max=5.0)
+    # nikobus-connect 0.5.21 removed the per-probe ``timeout`` kwarg in
+    # favour of letting each probe run its natural ~15 s budget (3 inner
+    # attempts × 5 s). Tunable knobs are now the outer-loop pair:
+    #  * ``outer_attempts`` — how many full sweep passes (default 1)
+    #  * ``outer_delay``    — bus-quiet wait between passes (default 0)
+    # Slow installs (IKIKN-class) opt into 2-pass with a 3 s gap.
+    vol.Optional("outer_attempts", default=DEFAULT_DETECT_OUTER_ATTEMPTS): vol.All(
+        vol.Coerce(int), vol.Range(min=1, max=3)
+    ),
+    vol.Optional("outer_delay", default=DEFAULT_DETECT_OUTER_DELAY): vol.All(
+        vol.Coerce(float), vol.Range(min=0.0, max=10.0)
     ),
 })
 PURGE_STALE_INVENTORY_SCHEMA = vol.Schema({
@@ -160,12 +170,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 translation_key="discovery_already_running",
             )
 
-        timeout = float(call.data.get("timeout", DEFAULT_DETECT_PROBE_TIMEOUT))
+        outer_attempts = int(call.data.get("outer_attempts", DEFAULT_DETECT_OUTER_ATTEMPTS))
+        outer_delay = float(call.data.get("outer_delay", DEFAULT_DETECT_OUTER_DELAY))
         _LOGGER.info(
-            "Detecting stale Nikobus inventory (probe timeout=%.2fs)", timeout
+            "Detecting stale Nikobus inventory (outer_attempts=%d outer_delay=%.1fs)",
+            outer_attempts,
+            outer_delay,
         )
         manifest: dict = await coordinator.nikobus_discovery.detect_stale_inventory(
-            timeout=timeout
+            outer_attempts=outer_attempts,
+            outer_delay=outer_delay,
         )
         absent = manifest.get("absent_modules") or []
         orphaned = manifest.get("orphaned_buttons") or []
