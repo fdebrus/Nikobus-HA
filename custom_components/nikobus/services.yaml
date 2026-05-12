@@ -16,15 +16,24 @@ send_button_press:
 
 detect_stale_inventory:
   fields:
-    timeout:
-      example: 0.6
+    outer_attempts:
+      example: 1
       required: false
-      default: 0.6
+      default: 1
       selector:
         number:
-          min: 0.1
-          max: 5.0
-          step: 0.1
+          min: 1
+          max: 3
+          step: 1
+    outer_delay:
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 0.5
           unit_of_measurement: "s"
 
 purge_stale_inventory:
