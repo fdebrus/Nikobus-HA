@@ -104,12 +104,12 @@
             }
         },
         "legacy_undecoded_buttons": {
-            "title": "{count} Nikobus button(s) without decoded links",
+            "title": "{count} Nikobus button(s) flagged as legacy",
             "fix_flow": {
                 "step": {
                     "init": {
                         "title": "Review legacy Nikobus buttons",
-                        "description": "These {count} button(s) exist in your store but no module register table references them after a full Stage-2 scan. They are one of:\n\n  - Wall buttons used only for Home Assistant automations (no PC-Link action) — keep.\n  - Residue from a previous owner or removed hardware — purge.\n\nTo recover any purged button, run **Discover modules & buttons** again — the library re-adds anything currently in the PC-Link project.\n\n{candidates}\n\nLeave the list empty and submit to keep everything.",
+                        "description": "These {count} button(s) are flagged as legacy after a full Stage-2 scan. The Reason column explains why each one was flagged:\n\n  - **no decoded links** — no output module references this button. Either a wall button used only for Home Assistant automations (KEEP), or residue from a previous owner (PURGE).\n  - **residue / stale links** — the button's links live only in PC-Link / PC-Logic registry memory with no current output module recording them, or every linked module was evicted. Typically residue programming from a previous owner that DIN-button re-pairing didn't clear (PURGE).\n\nTo recover any purged button, re-run **Discover modules & buttons** and then **Scan all module links** — the library re-adds anything currently in the project.\n\n{candidates}\n\nLeave the list empty and submit to keep everything.",
                         "data": {
                             "addresses": "Buttons to remove"
                         }

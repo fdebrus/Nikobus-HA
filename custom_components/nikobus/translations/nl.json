@@ -163,12 +163,12 @@
             }
         },
         "legacy_undecoded_buttons": {
-            "title": "{count} Nikobus-knop(pen) zonder gedecodeerde koppelingen",
+            "title": "{count} Nikobus-knop(pen) gemarkeerd als verouderd",
             "fix_flow": {
                 "step": {
                     "init": {
                         "title": "Verouderde Nikobus-knoppen beoordelen",
-                        "description": "Deze {count} knop(pen) staan in je opslag, maar geen enkele modulebestand verwijst ernaar na een volledige fase-2-scan. Het gaat om:\n\n  - Wandknoppen die alleen worden gebruikt voor Home Assistant-automatiseringen (geen PC-Link-actie) — behouden.\n  - Resten van een vorige eigenaar of verwijderde hardware — opschonen.\n\nOm een gewiste knop te herstellen, voer **Modules en knoppen ontdekken** opnieuw uit — de bibliotheek voegt alles wat nog in het PC-Link-project staat opnieuw toe.\n\n{candidates}\n\nLaat de lijst leeg en bevestig om alles te behouden.",
+                        "description": "Deze {count} knop(pen) zijn als verouderd gemarkeerd na een volledige fase-2-scan. De kolom Reden legt uit waarom:\n\n  - **no decoded links** — geen output-module verwijst naar deze knop. Ofwel een wandknop die alleen wordt gebruikt voor Home Assistant-automatiseringen (behouden), ofwel resten van een vorige eigenaar (opschonen).\n  - **residue / stale links** — de koppelingen van de knop bestaan alleen in het PC-Link-/PC-Logic-registergeheugen zonder dat een huidige output-module ze opslaat, of elke gekoppelde module is verwijderd. Doorgaans residuele programmering van een vorige eigenaar die door DIN-button-koppeling niet is gewist (opschonen).\n\nOm een gewiste knop te herstellen, voer **Modules en knoppen ontdekken** opnieuw uit en daarna **Modulelinks scannen** — de bibliotheek voegt alles wat nog in het project staat opnieuw toe.\n\n{candidates}\n\nLaat de lijst leeg en bevestig om alles te behouden.",
                         "data": {
                             "addresses": "Te verwijderen knoppen"
                         }

@@ -604,6 +604,18 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         coord._collect_button_linked_modules = staticmethod(
             NikobusDataCoordinator._collect_button_linked_modules
         )
+        # Wire the 0.5.22 record_source helpers so the bucketing path
+        # uses real implementations instead of MagicMock returns (which
+        # would be truthy and skew the classifier).
+        coord._collect_button_outputs = staticmethod(
+            NikobusDataCoordinator._collect_button_outputs
+        )
+        coord._all_outputs_registry_sourced = staticmethod(
+            NikobusDataCoordinator._all_outputs_registry_sourced
+        )
+        coord._has_pc_logic_module = (
+            lambda self_=coord: NikobusDataCoordinator._has_pc_logic_module(self_)
+        )
         # Bind ``_reconcile_post_discovery`` to forward the sweep state
         # the way ``_handle_discovery_finished`` does in production:
         # via the kwargs that nikobus-connect 0.5.20 passes through
@@ -1149,6 +1161,161 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
 
         coord._surface_legacy_undecoded_buttons.assert_not_called()
 
+    # ------------------------------------------------------------------
+    # nikobus-connect 0.5.22 record_source classification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _button_with_outputs(*records: dict) -> dict:
+        """Construct a button whose 1A op-point has ``linked_modules``
+        carrying ``records`` as its outputs."""
+        return {
+            "type": "Bus push button",
+            "operation_points": {
+                "1A": {
+                    "bus_address": "AABBCC",
+                    "linked_modules": [
+                        {"module_address": "8110", "outputs": list(records)},
+                    ],
+                }
+            },
+        }
+
+    async def test_registry_only_outputs_classified_as_legacy_orphan_when_no_pc_logic(self):
+        # IKIKN scenario: every output record for this button is
+        # sourced from PC-Link / PC-Logic registry, and the install
+        # has NO PC-Logic module. Unambiguous residue programming
+        # from a previous owner — bucket as legacy_orphan.
+        coord = self._make_coordinator_stub(
+            modules={"8110": {"module_type": "switch_module"}},
+            buttons={"3C4CE8": self._button_with_outputs(
+                {"channel": 11, "mode": "M07",
+                 "payload": "0A...", "button_address": "3C4CE8",
+                 "record_source": "pc_link_registry"},
+            )},
+            manifest={
+                "checked": ["8110"],
+                "present_modules": ["8110"],
+                "absent_modules": [], "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.MODULE,
+            last_module_scan_was_full=True,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(
+            coord.dict_button_data["nikobus_button"]["3C4CE8"]["status"],
+            "legacy_orphan",
+        )
+
+    async def test_registry_only_outputs_stay_active_when_pc_logic_present(self):
+        # Same button shape, but the install has a PC-Logic module.
+        # The registry-only output could be a legitimate PC-Logic
+        # scene trigger; defer to the existing classifier. With
+        # linked target (8110) surviving the probe, the button is
+        # ``active`` and the user can adjudicate manually if needed.
+        coord = self._make_coordinator_stub(
+            modules={
+                "8110": {"module_type": "switch_module"},
+                "940C": {"module_type": "pc_logic"},
+            },
+            buttons={"3C4CE8": self._button_with_outputs(
+                {"channel": 11, "mode": "M07",
+                 "payload": "0A...", "button_address": "3C4CE8",
+                 "record_source": "pc_link_registry"},
+            )},
+            manifest={
+                "checked": ["8110"],
+                "present_modules": ["8110"],
+                "absent_modules": [], "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.MODULE,
+            last_module_scan_was_full=True,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(
+            coord.dict_button_data["nikobus_button"]["3C4CE8"]["status"],
+            "active",
+        )
+
+    async def test_mixed_record_sources_classified_active(self):
+        # One output is sourced from the output module's own table
+        # (authoritative current programming), another from PC-Link
+        # registry (potentially residue). At least one real link
+        # exists → button is active regardless of PC-Logic presence.
+        coord = self._make_coordinator_stub(
+            modules={"8110": {"module_type": "switch_module"}},
+            buttons={"AABBCC": self._button_with_outputs(
+                {"channel": 5, "mode": "M05",
+                 "payload": "FF34F4...", "button_address": "AABBCC",
+                 "record_source": "output_module_table"},
+                {"channel": 11, "mode": "M07",
+                 "payload": "0A...", "button_address": "AABBCC",
+                 "record_source": "pc_link_registry"},
+            )},
+            manifest={
+                "checked": ["8110"],
+                "present_modules": ["8110"],
+                "absent_modules": [], "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.MODULE,
+            last_module_scan_was_full=True,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(
+            coord.dict_button_data["nikobus_button"]["AABBCC"]["status"],
+            "active",
+        )
+
+    async def test_record_source_absent_falls_through_to_existing_classifier(self):
+        # Pre-0.5.22 data: outputs have no ``record_source`` field.
+        # Treat as source-unknown and let the existing
+        # linked-vs-remaining check decide. With linked module 8110
+        # surviving, this button is ``active`` — same behavior as
+        # before 0.5.22 adoption.
+        coord = self._make_coordinator_stub(
+            modules={"8110": {"module_type": "switch_module"}},
+            buttons={"AABBCC": self._button_with_outputs(
+                {"channel": 5, "mode": "M05",
+                 "payload": "FF34F4...", "button_address": "AABBCC"},
+                # No record_source key — pre-0.5.22 record shape.
+            )},
+            manifest={
+                "checked": ["8110"],
+                "present_modules": ["8110"],
+                "absent_modules": [], "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.MODULE,
+            last_module_scan_was_full=True,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        self.assertEqual(
+            coord.dict_button_data["nikobus_button"]["AABBCC"]["status"],
+            "active",
+        )
+
+    async def test_has_pc_logic_module_helper(self):
+        # Direct unit test of the topology gate.
+        coord_no_pc_logic = self._make_coordinator_stub(
+            modules={"8110": {"module_type": "switch_module"}},
+        )
+        coord_with_pc_logic = self._make_coordinator_stub(
+            modules={
+                "8110": {"module_type": "switch_module"},
+                "940C": {"module_type": "pc_logic"},
+            },
+        )
+
+        self.assertFalse(coord_no_pc_logic._has_pc_logic_module())
+        self.assertTrue(coord_with_pc_logic._has_pc_logic_module())
+
 
 class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
     """Direct tests for ``_surface_legacy_undecoded_buttons``.
@@ -1166,17 +1333,22 @@ class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
 
     @patch("custom_components.nikobus.coordinator.ir.async_create_issue")
     @patch("custom_components.nikobus.coordinator.ir.async_delete_issue")
-    def test_creates_issue_when_legacy_undecoded_buttons_present(
+    def test_creates_issue_for_both_legacy_buckets(
         self, mock_delete, mock_create
     ):
+        # Both ``legacy_undecoded`` and ``legacy_orphan`` are surfaced
+        # together for user review: undecoded = no links anywhere,
+        # orphan = residue programming or fully-evicted targets. Both
+        # warrant a "purge or keep?" decision.
         coord = self._coord_stub()
         buttons = {
             "1843B4": {"status": "legacy_undecoded",
                        "type": "Bus push button"},
             "0C2387": {"status": "legacy_undecoded",
                        "type": "RF transmitter"},
+            "AABBCC": {"status": "legacy_orphan",
+                       "type": "Bus push button"},
             "10152B": {"status": "active"},  # must be filtered out
-            "AABBCC": {"status": "legacy_orphan"},  # also filtered out
         }
 
         NikobusDataCoordinator._surface_legacy_undecoded_buttons(coord, buttons)
@@ -1189,11 +1361,13 @@ class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
             call_kwargs["translation_key"], "legacy_undecoded_buttons"
         )
         self.assertEqual(
-            call_kwargs["translation_placeholders"], {"count": "2"}
+            call_kwargs["translation_placeholders"], {"count": "3"}
         )
-        # Addresses sorted, uppercase, only the two legacy_undecoded entries.
+        # Addresses sorted, uppercase. Both buckets present, ``active``
+        # filtered out.
         self.assertEqual(
-            call_kwargs["data"]["addresses"], ["0C2387", "1843B4"]
+            call_kwargs["data"]["addresses"],
+            ["0C2387", "1843B4", "AABBCC"],
         )
         self.assertEqual(
             call_kwargs["data"]["entry_id"], "entry_test"
@@ -1201,15 +1375,15 @@ class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
 
     @patch("custom_components.nikobus.coordinator.ir.async_create_issue")
     @patch("custom_components.nikobus.coordinator.ir.async_delete_issue")
-    def test_deletes_issue_when_no_legacy_undecoded_remain(
+    def test_deletes_issue_when_no_legacy_buttons_remain(
         self, mock_delete, mock_create
     ):
+        # All buttons in ``active`` — neither legacy bucket has any
+        # entry. The Repairs issue should be cleared if previously open.
         coord = self._coord_stub()
-        # All buttons are decoded or have surviving links — issue
-        # should be cleared if it was previously open.
         buttons = {
             "1843B4": {"status": "active"},
-            "0C2387": {"status": "legacy_orphan"},
+            "0C2387": {"status": "active"},
         }
 
         NikobusDataCoordinator._surface_legacy_undecoded_buttons(coord, buttons)

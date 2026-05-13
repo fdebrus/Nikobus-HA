@@ -163,12 +163,12 @@
             }
         },
         "legacy_undecoded_buttons": {
-            "title": "{count} bouton(s) Nikobus sans liens décodés",
+            "title": "{count} bouton(s) Nikobus signalé(s) comme hérité(s)",
             "fix_flow": {
                 "step": {
                     "init": {
                         "title": "Examiner les boutons Nikobus hérités",
-                        "description": "Ces {count} bouton(s) figurent dans votre stockage mais aucune table de registre de module ne s'y réfère après un scan complet de phase 2. Il s'agit soit :\n\n  - de boutons muraux utilisés uniquement pour des automatisations Home Assistant (sans action PC-Link) — à conserver ;\n  - de résidus d'un précédent propriétaire ou de matériel supprimé — à purger.\n\nPour récupérer un bouton purgé, relancez **Découvrir les modules et boutons** — la bibliothèque réinsère tout ce qui figure encore dans le projet PC-Link.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
+                        "description": "Ces {count} bouton(s) sont signalés comme hérités après un scan complet de phase 2. La colonne Raison explique pourquoi :\n\n  - **no decoded links** — aucun module de sortie ne référence ce bouton. Soit un bouton mural utilisé uniquement pour des automatisations Home Assistant (à conserver), soit un résidu d'un précédent propriétaire (à purger).\n  - **residue / stale links** — les liens du bouton existent uniquement dans la mémoire de registre PC-Link / PC-Logic sans qu'aucun module de sortie actuel ne les enregistre, ou tous les modules liés ont été évincés. Typiquement une programmation résiduelle d'un précédent propriétaire que l'appairage DIN-button n'a pas effacée (à purger).\n\nPour récupérer un bouton purgé, relancez **Découvrir les modules et boutons** puis **Scanner les liens de tous les modules** — la bibliothèque réinsère tout ce qui figure encore dans le projet.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
                         "data": {
                             "addresses": "Boutons à supprimer"
                         }
