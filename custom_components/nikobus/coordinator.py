@@ -49,6 +49,7 @@ from .const import (
     DISCOVERY_WEIGHT_INVENTORY,
     DISCOVERY_WEIGHT_REGISTER_SCAN,
     DOMAIN,
+    ISSUE_LEGACY_UNDECODED_BUTTONS,
     ISSUE_NO_BUTTONS_CONFIGURED,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
@@ -130,6 +131,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
+        # Was the most recent ``start_module_scan`` a scan-all (every
+        # module's register table read)? Set by ``start_module_scan``;
+        # read by ``_reconcile_post_discovery`` to decide whether to
+        # surface the ``legacy_undecoded_buttons`` Repairs issue.
+        # ``legacy_undecoded`` is only a meaningful signal after the
+        # decoder has had a chance to read EVERY module's link table —
+        # before that, almost every button reads as ``legacy_undecoded``
+        # by default (no module's register table has been decoded yet).
+        self._last_module_scan_was_full: bool = False
 
         # --- Discovery progress tracking (for UI) ---
         # `discovery_phase` stays on the legacy enum for backward-compat with
@@ -1061,6 +1071,51 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     linked.add(str(addr).upper())
         return linked
 
+    def _surface_legacy_undecoded_buttons(
+        self, buttons: dict[str, Any]
+    ) -> None:
+        """Create or clear the ``legacy_undecoded_buttons`` Repairs issue.
+
+        Called from ``_reconcile_post_discovery`` *only* after a Stage-2
+        scan-all completes — that's the moment ``legacy_undecoded`` is
+        meaningful (every module's register table was just decoded; any
+        button still without ``linked_modules`` is either intentionally
+        unwired and used as an HA automation trigger, or residue from a
+        previous owner). HA cannot tell those two apart without user
+        input, so the Repairs flow renders the candidate list and lets
+        the user pick which to remove.
+
+        Issue auto-clears when the candidate list becomes empty (next
+        scan-all). Recoverable: purged buttons reappear on the next
+        PC-Link inventory if they're still in the project.
+        """
+        legacy_addrs = sorted(
+            str(addr).upper()
+            for addr, phys in buttons.items()
+            if isinstance(phys, dict)
+            and phys.get("status") == "legacy_undecoded"
+        )
+        issue_id = (
+            f"{ISSUE_LEGACY_UNDECODED_BUTTONS}_{self.config_entry.entry_id}"
+        )
+        if not legacy_addrs:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_LEGACY_UNDECODED_BUTTONS,
+            translation_placeholders={"count": str(len(legacy_addrs))},
+            data={
+                "entry_id": self.config_entry.entry_id,
+                "addresses": legacy_addrs,
+            },
+        )
+
     async def _reconcile_post_discovery(
         self,
         discovered_devices: dict | None = None,
@@ -1182,6 +1237,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 status = "active"
             phys["status"] = status
             bucket_counts[status] += 1
+
+        # Surface the legacy-undecoded Repairs issue only after a
+        # Stage-2 scan-all, when the verdict is meaningful (every
+        # output module's register table was just read, so a button
+        # still without ``linked_modules`` is genuinely either
+        # intentionally unwired or residue — and HA can't distinguish
+        # the two without user input).
+        if (
+            inventory_query_type != InventoryQueryType.PC_LINK
+            and self._last_module_scan_was_full
+        ):
+            self._surface_legacy_undecoded_buttons(buttons)
 
         # Persist. Both stores save unconditionally so the ``status``
         # field on buttons + the eviction on modules land on disk.
@@ -1377,6 +1444,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
+        # PC-Link inventory is not a register scan — reset the flag so
+        # a stale ``True`` from a prior scan-all doesn't fire the
+        # legacy-buttons Repairs issue with Stage-1-only data.
+        self._last_module_scan_was_full = False
         # PC Link inventory scans register range 0xA4-0xFF = 92 frames.
         # The library aborts the sweep at the first all-FF response
         # (nikobus-connect 0.5.13+), so this is a soft upper bound.
@@ -1426,6 +1497,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 translation_domain=DOMAIN,
                 translation_key="discovery_already_running",
             )
+
+        # Tracked for ``_reconcile_post_discovery`` — only after a
+        # scan-all is ``legacy_undecoded`` a trustworthy signal.
+        self._last_module_scan_was_full = module_address is None
 
         if module_address:
             target = module_address.strip().upper()

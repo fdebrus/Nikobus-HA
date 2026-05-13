@@ -64,6 +64,12 @@ DISCOVERY_WEIGHT_FINALIZING: Final[int] = 5
 # =============================================================================
 ISSUE_NO_BUTTONS_CONFIGURED: Final[str] = "no_buttons_configured"
 ISSUE_STALE_INVENTORY_PRESENT: Final[str] = "stale_inventory_present"
+# Surfaced after Stage-2 scan-all when one or more buttons still have
+# no decoded ``linked_modules``. We can't programmatically distinguish
+# "intentionally unwired (HA automation trigger)" from "residue from a
+# previous owner" — both look identical from the bus signal. Push the
+# decision to the user via a Repairs flow.
+ISSUE_LEGACY_UNDECODED_BUTTONS: Final[str] = "legacy_undecoded_buttons"
 
 # =============================================================================
 # Configuration Keys

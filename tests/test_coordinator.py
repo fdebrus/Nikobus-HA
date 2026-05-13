@@ -557,6 +557,7 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         has_method: bool = True,
         inventory_query_type=None,
         discovered_devices: dict | None = None,
+        last_module_scan_was_full: bool = False,
     ):
         coord = MagicMock()
         coord.module_storage = MagicMock()
@@ -574,6 +575,10 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         # Default to None so the eviction branch is inert in existing
         # tests; explicit PC_LINK + dict opt-in for the new tests below.
         coord.inventory_query_type = inventory_query_type
+        # Stage-2 scan-all completion gate for the legacy-undecoded
+        # Repairs issue. Default False — the issue only surfaces when
+        # the caller explicitly opts in via ``last_module_scan_was_full``.
+        coord._last_module_scan_was_full = last_module_scan_was_full
         if has_method:
             coord.nikobus_discovery = MagicMock()
             default_manifest = manifest or {
@@ -1066,6 +1071,156 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         await coord._reconcile_post_discovery()
 
         self.assertIn("AABB", coord.module_storage.data["nikobus_module"])
+
+    # ------------------------------------------------------------------
+    # Stage-2 scan-all → legacy_undecoded buttons Repairs issue
+    # ------------------------------------------------------------------
+
+    async def test_legacy_undecoded_repairs_surfaces_after_scan_all(self):
+        # After a Stage-2 scan-all, ``legacy_undecoded`` is a meaningful
+        # signal: every output module's register table was just read,
+        # so a button with no decoded ``linked_modules`` is either
+        # intentionally unwired (HA automation trigger) or residue —
+        # HA can't tell them apart, so it surfaces a Repairs issue and
+        # lets the user choose. We assert the helper is called with the
+        # button dict so the Repairs issue gets created downstream.
+        coord = self._make_coordinator_stub(
+            modules={},
+            buttons={"1843B4": {
+                "type": "Bus push button, 4 control buttons",
+                "model": "05-346",
+            }},
+            manifest={
+                "checked": [], "present_modules": [],
+                "absent_modules": [], "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.MODULE,
+            last_module_scan_was_full=True,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        coord._surface_legacy_undecoded_buttons.assert_called_once()
+
+    async def test_legacy_undecoded_repairs_NOT_surfaced_after_pc_link(self):
+        # After Stage-1 (PC-Link inventory), almost every button reads
+        # as ``legacy_undecoded`` by default — no module register table
+        # has been decoded yet. Surfacing the issue here would propose
+        # purging every button on a fresh install. Gate it on the
+        # scan-all flag.
+        coord = self._make_coordinator_stub(
+            modules={},
+            buttons={"1843B4": {
+                "type": "Bus push button, 4 control buttons",
+            }},
+            manifest={
+                "checked": [], "present_modules": [],
+                "absent_modules": [], "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.PC_LINK,
+            discovered_devices={"AABB": {"category": "Module"}},
+            last_module_scan_was_full=False,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        coord._surface_legacy_undecoded_buttons.assert_not_called()
+
+    async def test_legacy_undecoded_repairs_NOT_surfaced_after_single_module_scan(self):
+        # Single-module register scan only updates ``linked_modules``
+        # for buttons referenced by that one module. Other buttons may
+        # still read as ``legacy_undecoded`` simply because we haven't
+        # scanned their controlling module — not because they're
+        # residue. The verdict is only trustworthy after scan-all.
+        coord = self._make_coordinator_stub(
+            modules={},
+            buttons={"1843B4": {
+                "type": "Bus push button, 4 control buttons",
+            }},
+            manifest={
+                "checked": [], "present_modules": [],
+                "absent_modules": [], "orphaned_buttons": [],
+            },
+            inventory_query_type=InventoryQueryType.MODULE,
+            last_module_scan_was_full=False,
+        )
+
+        await coord._reconcile_post_discovery()
+
+        coord._surface_legacy_undecoded_buttons.assert_not_called()
+
+
+class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
+    """Direct tests for ``_surface_legacy_undecoded_buttons``.
+
+    Asserts the create/delete contract on the HA issue registry so the
+    Repairs UI shows up exactly when (and with what data) we expect.
+    """
+
+    def _coord_stub(self) -> MagicMock:
+        coord = MagicMock()
+        coord.hass = MagicMock()
+        coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_test"
+        return coord
+
+    @patch("custom_components.nikobus.coordinator.ir.async_create_issue")
+    @patch("custom_components.nikobus.coordinator.ir.async_delete_issue")
+    def test_creates_issue_when_legacy_undecoded_buttons_present(
+        self, mock_delete, mock_create
+    ):
+        coord = self._coord_stub()
+        buttons = {
+            "1843B4": {"status": "legacy_undecoded",
+                       "type": "Bus push button"},
+            "0C2387": {"status": "legacy_undecoded",
+                       "type": "RF transmitter"},
+            "10152B": {"status": "active"},  # must be filtered out
+            "AABBCC": {"status": "legacy_orphan"},  # also filtered out
+        }
+
+        NikobusDataCoordinator._surface_legacy_undecoded_buttons(coord, buttons)
+
+        mock_delete.assert_not_called()
+        mock_create.assert_called_once()
+        call_kwargs = mock_create.call_args.kwargs
+        self.assertEqual(call_kwargs["is_fixable"], True)
+        self.assertEqual(
+            call_kwargs["translation_key"], "legacy_undecoded_buttons"
+        )
+        self.assertEqual(
+            call_kwargs["translation_placeholders"], {"count": "2"}
+        )
+        # Addresses sorted, uppercase, only the two legacy_undecoded entries.
+        self.assertEqual(
+            call_kwargs["data"]["addresses"], ["0C2387", "1843B4"]
+        )
+        self.assertEqual(
+            call_kwargs["data"]["entry_id"], "entry_test"
+        )
+
+    @patch("custom_components.nikobus.coordinator.ir.async_create_issue")
+    @patch("custom_components.nikobus.coordinator.ir.async_delete_issue")
+    def test_deletes_issue_when_no_legacy_undecoded_remain(
+        self, mock_delete, mock_create
+    ):
+        coord = self._coord_stub()
+        # All buttons are decoded or have surviving links — issue
+        # should be cleared if it was previously open.
+        buttons = {
+            "1843B4": {"status": "active"},
+            "0C2387": {"status": "legacy_orphan"},
+        }
+
+        NikobusDataCoordinator._surface_legacy_undecoded_buttons(coord, buttons)
+
+        mock_create.assert_not_called()
+        mock_delete.assert_called_once()
+        # Same issue_id is used for both create and delete so they
+        # target the same Repairs entry.
+        delete_args = mock_delete.call_args
+        self.assertIn("legacy_undecoded_buttons", delete_args.args[2])
+        self.assertIn("entry_test", delete_args.args[2])
 
 
 # ---------------------------------------------------------------------------
