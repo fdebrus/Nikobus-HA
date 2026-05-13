@@ -102,6 +102,24 @@
                     }
                 }
             }
+        },
+        "legacy_undecoded_buttons": {
+            "title": "{count} Nikobus button(s) without decoded links",
+            "fix_flow": {
+                "step": {
+                    "init": {
+                        "title": "Review legacy Nikobus buttons",
+                        "description": "These {count} button(s) exist in your store but no module register table references them after a full Stage-2 scan. They are one of:\n\n  - Wall buttons used only for Home Assistant automations (no PC-Link action) — keep.\n  - Residue from a previous owner or removed hardware — purge.\n\nTo recover any purged button, run **Discover modules & buttons** again — the library re-adds anything currently in the PC-Link project.\n\n{candidates}\n\nLeave the list empty and submit to keep everything.",
+                        "data": {
+                            "addresses": "Buttons to remove"
+                        }
+                    }
+                },
+                "abort": {
+                    "not_loaded": "The Nikobus integration is not loaded; reload the entry and retry.",
+                    "no_candidates": "No legacy buttons remain — nothing to do."
+                }
+            }
         }
     },
     "exceptions": {

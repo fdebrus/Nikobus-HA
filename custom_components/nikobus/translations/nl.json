@@ -161,6 +161,24 @@
                     }
                 }
             }
+        },
+        "legacy_undecoded_buttons": {
+            "title": "{count} Nikobus-knop(pen) zonder gedecodeerde koppelingen",
+            "fix_flow": {
+                "step": {
+                    "init": {
+                        "title": "Verouderde Nikobus-knoppen beoordelen",
+                        "description": "Deze {count} knop(pen) staan in je opslag, maar geen enkele modulebestand verwijst ernaar na een volledige fase-2-scan. Het gaat om:\n\n  - Wandknoppen die alleen worden gebruikt voor Home Assistant-automatiseringen (geen PC-Link-actie) — behouden.\n  - Resten van een vorige eigenaar of verwijderde hardware — opschonen.\n\nOm een gewiste knop te herstellen, voer **Modules en knoppen ontdekken** opnieuw uit — de bibliotheek voegt alles wat nog in het PC-Link-project staat opnieuw toe.\n\n{candidates}\n\nLaat de lijst leeg en bevestig om alles te behouden.",
+                        "data": {
+                            "addresses": "Te verwijderen knoppen"
+                        }
+                    }
+                },
+                "abort": {
+                    "not_loaded": "De Nikobus-integratie is niet geladen; herlaad het item en probeer opnieuw.",
+                    "no_candidates": "Geen verouderde knoppen meer — niets te doen."
+                }
+            }
         }
     },
     "exceptions": {

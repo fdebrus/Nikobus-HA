@@ -161,6 +161,24 @@
                     }
                 }
             }
+        },
+        "legacy_undecoded_buttons": {
+            "title": "{count} bouton(s) Nikobus sans liens décodés",
+            "fix_flow": {
+                "step": {
+                    "init": {
+                        "title": "Examiner les boutons Nikobus hérités",
+                        "description": "Ces {count} bouton(s) figurent dans votre stockage mais aucune table de registre de module ne s'y réfère après un scan complet de phase 2. Il s'agit soit :\n\n  - de boutons muraux utilisés uniquement pour des automatisations Home Assistant (sans action PC-Link) — à conserver ;\n  - de résidus d'un précédent propriétaire ou de matériel supprimé — à purger.\n\nPour récupérer un bouton purgé, relancez **Découvrir les modules et boutons** — la bibliothèque réinsère tout ce qui figure encore dans le projet PC-Link.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
+                        "data": {
+                            "addresses": "Boutons à supprimer"
+                        }
+                    }
+                },
+                "abort": {
+                    "not_loaded": "L'intégration Nikobus n'est pas chargée ; rechargez l'entrée puis réessayez.",
+                    "no_candidates": "Aucun bouton hérité ne reste — rien à faire."
+                }
+            }
         }
     },
     "exceptions": {
