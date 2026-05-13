@@ -49,18 +49,25 @@ class NoButtonsConfiguredRepairFlow(RepairsFlow):
 
 
 class LegacyUndecodedButtonsRepairFlow(RepairsFlow):
-    """Let the user choose which legacy_undecoded buttons to remove.
+    """Let the user choose which legacy buttons to remove.
 
-    Surfaced after Stage-2 scan-all when one or more buttons have no
-    decoded ``linked_modules``. We cannot programmatically tell apart:
+    Surfaced after Stage-2 scan-all when one or more buttons land in
+    a legacy bucket:
 
-      * Wall buttons intentionally unwired in the PC-Link project and
-        used solely as HA automation triggers (KEEP).
-      * Residue from a previous owner / removed hardware (PURGE).
+      * ``legacy_undecoded`` — no decoded links across any op-point.
+        Either intentionally unwired (HA-trigger pattern, KEEP) or
+        residue with no surviving link records (PURGE).
+      * ``legacy_orphan`` — has decoded links but either every linked
+        module was just evicted, or (with nikobus-connect 0.5.22+)
+        every output record is sourced from PC-Link / PC-Logic
+        registry memory with no PC-Logic in the install (i.e.,
+        residue programming from a previous owner that DIN-button
+        re-pairing didn't clear).
 
-    The flow renders the candidate set as a markdown table and asks the
-    user to pick which addresses to remove. Recoverable: a re-run of
-    PC-Link inventory re-adds anything currently in the project.
+    The flow renders the combined candidate set as a markdown table
+    and asks the user to pick which addresses to remove. Recoverable:
+    a re-run of PC-Link inventory + Stage-2 re-adds anything currently
+    in the project.
     """
 
     def __init__(self, entry_id: str, addresses: list[str]) -> None:
@@ -77,15 +84,15 @@ class LegacyUndecodedButtonsRepairFlow(RepairsFlow):
             return self.async_abort(reason="not_loaded")
 
         buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-        # Filter candidates to those still in the store AND still
-        # ``legacy_undecoded`` — the user may have manually purged some
-        # via the service in the meantime, or another scan may have
-        # decoded their links.
+        # Filter candidates to those still in the store AND still in
+        # one of the legacy buckets — the user may have manually purged
+        # some via the service in the meantime, or another scan may
+        # have decoded their links.
         still_legacy = [
             addr
             for addr in self._candidates
             if isinstance(buttons.get(addr), dict)
-            and buttons[addr].get("status") == "legacy_undecoded"
+            and buttons[addr].get("status") in ("legacy_undecoded", "legacy_orphan")
         ]
         if not still_legacy:
             return self.async_abort(reason="no_candidates")
@@ -140,22 +147,30 @@ class LegacyUndecodedButtonsRepairFlow(RepairsFlow):
             bits.append(description)
         return " — ".join(bits)
 
-    @staticmethod
-    def _render_table(addresses: list[str], buttons: dict[str, Any]) -> str:
+    _REASON_LABELS = {
+        "legacy_undecoded": "no decoded links",
+        "legacy_orphan": "residue / stale links",
+    }
+
+    @classmethod
+    def _render_table(cls, addresses: list[str], buttons: dict[str, Any]) -> str:
         """Markdown table of candidates injected into the form description."""
-        rows = ["| Address | Type | Model | Description |",
-                "|---|---|---|---|"]
+        rows = ["| Address | Type | Model | Reason | Description |",
+                "|---|---|---|---|---|"]
         for addr in addresses:
             phys = buttons.get(addr) or {}
             btype = phys.get("type") or "Unknown"
             model = phys.get("model") or "—"
+            reason = cls._REASON_LABELS.get(phys.get("status"), "—")
             description = phys.get("description") or ""
             # Strip the auto-suffix and any pipe chars that would break
             # the table layout.
             if description.endswith(f"#N{addr}"):
                 description = description[: -len(f"#N{addr}")].rstrip()
             description = description.replace("|", "/") or "—"
-            rows.append(f"| `{addr}` | {btype} | {model} | {description} |")
+            rows.append(
+                f"| `{addr}` | {btype} | {model} | {reason} | {description} |"
+            )
         return "\n".join(rows)
 
 

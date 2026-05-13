@@ -78,6 +78,21 @@ MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
 _PROBE_OUTER_ATTEMPTS = 2
 _PROBE_OUTER_DELAY_S = 3.0
 
+# nikobus-connect 0.5.22+ tags every decoded output record with a
+# ``record_source`` field naming the scan source. ``output_module_table``
+# means the link lives in the actual switch/dimmer/roller module's own
+# table — current programming, authoritative. The two registry sources
+# below are PC-Link / PC-Logic flash registry memory; their records may
+# be residue from a previous owner's programming that was never cleared
+# by the current owner's DIN-button learn-mode re-pairing.
+#
+# A button whose EVERY output record is registry-sourced means no output
+# module currently knows about it — strong residue signal on installs
+# without PC-Logic. On installs WITH PC-Logic, a registry-only button
+# could be a legitimate PC-Logic scene trigger; the classifier gates the
+# residue verdict on ``_has_pc_logic_module`` to avoid that FP.
+_REGISTRY_SOURCES = frozenset({"pc_link_registry", "pc_logic_registry"})
+
 
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
@@ -1071,19 +1086,83 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     linked.add(str(addr).upper())
         return linked
 
+    @staticmethod
+    def _collect_button_outputs(phys: dict[str, Any]) -> list[dict[str, Any]]:
+        """Flatten every output record under every op-point of a button.
+
+        Returned dicts are the decoder's per-output records (channel,
+        mode, payload, button_address, plus nikobus-connect 0.5.22+'s
+        ``record_source``). Used by the registry-only residue check.
+        """
+        outputs: list[dict[str, Any]] = []
+        op_points = phys.get("operation_points") or {}
+        if not isinstance(op_points, dict):
+            return outputs
+        for op_point in op_points.values():
+            if not isinstance(op_point, dict):
+                continue
+            for link in op_point.get("linked_modules") or []:
+                if not isinstance(link, dict):
+                    continue
+                for out in link.get("outputs") or []:
+                    if isinstance(out, dict):
+                        outputs.append(out)
+        return outputs
+
+    @staticmethod
+    def _all_outputs_registry_sourced(outputs: list[dict[str, Any]]) -> bool:
+        """True iff every output has ``record_source`` in the registry set.
+
+        Returns False if ``outputs`` is empty, or if any output is
+        missing the field. Pre-0.5.22 records (no ``record_source``)
+        are treated as source-unknown and fall through to the existing
+        classifier — backward compat without data migration.
+        """
+        if not outputs:
+            return False
+        return all(
+            out.get("record_source") in _REGISTRY_SOURCES
+            for out in outputs
+        )
+
+    def _has_pc_logic_module(self) -> bool:
+        """True if the install has at least one PC-Logic module in the store.
+
+        Gates the registry-only residue verdict: with PC-Logic absent,
+        a button whose every output is registry-sourced is unambiguous
+        residue (no real button-to-output link exists anywhere). With
+        PC-Logic present, the same shape could be a legitimate
+        PC-Logic-only scene trigger — fall through to the existing
+        classifier and let the user adjudicate.
+        """
+        modules = self.module_storage.data.get("nikobus_module", {})
+        if not isinstance(modules, dict):
+            return False
+        return any(
+            isinstance(m, dict) and m.get("module_type") == "pc_logic"
+            for m in modules.values()
+        )
+
     def _surface_legacy_undecoded_buttons(
         self, buttons: dict[str, Any]
     ) -> None:
         """Create or clear the ``legacy_undecoded_buttons`` Repairs issue.
 
         Called from ``_reconcile_post_discovery`` *only* after a Stage-2
-        scan-all completes — that's the moment ``legacy_undecoded`` is
-        meaningful (every module's register table was just decoded; any
-        button still without ``linked_modules`` is either intentionally
-        unwired and used as an HA automation trigger, or residue from a
-        previous owner). HA cannot tell those two apart without user
-        input, so the Repairs flow renders the candidate list and lets
-        the user pick which to remove.
+        scan-all completes — that's when both legacy buckets are
+        meaningful:
+
+          * ``legacy_undecoded`` — no decoded links across any op-point.
+            Either intentionally unwired (HA-trigger pattern) or
+            residue from a previous owner. HA cannot tell those apart.
+          * ``legacy_orphan`` — has decoded links but either (a) every
+            link points to an evicted module, or (b) every output
+            record is registry-sourced with no PC-Logic in the install
+            (residue programming from a previous owner that the
+            current owner's DIN-button re-pairing didn't clear).
+
+        Both buckets warrant user review before purge. The Repairs
+        flow renders the combined candidate list with a multi-select.
 
         Issue auto-clears when the candidate list becomes empty (next
         scan-all). Recoverable: purged buttons reappear on the next
@@ -1093,7 +1172,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             str(addr).upper()
             for addr, phys in buttons.items()
             if isinstance(phys, dict)
-            and phys.get("status") == "legacy_undecoded"
+            and phys.get("status") in ("legacy_undecoded", "legacy_orphan")
         )
         issue_id = (
             f"{ISSUE_LEGACY_UNDECODED_BUTTONS}_{self.config_entry.entry_id}"
@@ -1225,13 +1304,34 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         remaining = {str(a).upper() for a in modules.keys()}
         bucket_counts = {"active": 0, "legacy_orphan": 0, "legacy_undecoded": 0}
         buttons = self.dict_button_data.setdefault("nikobus_button", {})
+        # Topology gate for the registry-only residue check. With no
+        # PC-Logic in the install, a button whose every output record
+        # is sourced from PC-Link / PC-Logic registry memory has NO
+        # output module recording the link — strong residue signal.
+        # With PC-Logic present, the same shape could be a legitimate
+        # scene trigger; defer to the existing classifier.
+        has_pc_logic = self._has_pc_logic_module()
         for phys in buttons.values():
             if not isinstance(phys, dict):
                 continue
             linked = self._collect_button_linked_modules(phys)
-            if not linked:
+            outputs = self._collect_button_outputs(phys)
+            if not outputs:
+                # No decoded links anywhere — pre-Stage-2 default OR
+                # intentionally unwired button (HA-trigger pattern).
                 status = "legacy_undecoded"
+            elif (
+                not has_pc_logic
+                and self._all_outputs_registry_sourced(outputs)
+            ):
+                # nikobus-connect 0.5.22 residue filter: every output
+                # comes from PC-Link / PC-Logic registry, and there's
+                # no PC-Logic module to potentially justify a scene
+                # trigger. Unambiguous residue programming from a
+                # previous owner — surface for purge.
+                status = "legacy_orphan"
             elif not (linked & remaining):
+                # All decoded-target modules were evicted by the probe.
                 status = "legacy_orphan"
             else:
                 status = "active"
