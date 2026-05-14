@@ -1398,6 +1398,150 @@ class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
 
 
 # ---------------------------------------------------------------------------
+# Total-blackout auto-recovery (issue #337)
+# ---------------------------------------------------------------------------
+
+class TestBlackoutAutoRecovery(unittest.IsolatedAsyncioTestCase):
+    """Pin the polling-cycle blackout detection that triggers reconnect.
+
+    On idle-induced PC-Link / FTDI sleep, every poll in a single cycle
+    times out without the serial FD raising any error — the coordinator's
+    standard reconnect supervisor (which watches FD errors) doesn't
+    notice. This tests the new aggregate-failure path that detects
+    "all polls failed" and kicks ``_handle_connection_lost`` so the
+    integration self-heals.
+    """
+
+    def _make_coord(
+        self,
+        modules: dict[str, dict],
+        *,
+        get_output_state_side_effect=None,
+    ):
+        coord = MagicMock()
+        coord.discovery_running = False
+        coord._stopping = False
+        coord.dict_module_data = modules
+        coord._module_states = {}
+        coord.nikobus_command = MagicMock()
+        coord.nikobus_command.get_output_state = AsyncMock(
+            side_effect=get_output_state_side_effect
+        )
+        coord.async_event_handler = AsyncMock()
+        coord.hass = MagicMock()
+        coord._handle_connection_lost = AsyncMock()
+
+        # Capture the background-task callable so we can assert on it.
+        # Close the coroutine arg so Python doesn't warn about an
+        # unawaited ``_handle_connection_lost()`` call slot.
+        def _consume(coro=None, *, name=None):
+            if coro is not None and hasattr(coro, "close"):
+                coro.close()
+
+        coord.hass.async_create_background_task = MagicMock(
+            side_effect=_consume
+        )
+        # Bind real _refresh_module_type so the count-tracking logic
+        # actually runs against the mocked get_output_state. The
+        # unbound staticmethod-style call hands ``coord`` in as self.
+        coord._refresh_module_type = (
+            lambda md, _coord=coord:
+            NikobusDataCoordinator._refresh_module_type(_coord, md)
+        )
+        return coord
+
+    async def test_total_blackout_triggers_reconnect(self):
+        # Every poll fails → reconnect kicked.
+        from nikobus_connect.exceptions import NikobusTimeoutError
+        coord = self._make_coord(
+            modules={"switch_module": {
+                "8110": {"channels": [{}, {}, {}, {}, {}, {}, {}]},  # 7 channels → 2 groups
+                "1CEC": {"channels": [{}, {}, {}, {}]},               # 4 channels → 1 group
+            }},
+            get_output_state_side_effect=NikobusTimeoutError("timeout"),
+        )
+
+        await NikobusDataCoordinator._async_update_data(coord)
+
+        # 8110 has 7 channels → groups (1, 2) = 2 polls
+        # 1CEC has 4 channels → groups (1,)  = 1 poll
+        # Total = 3 polls, all failed → reconnect triggered.
+        coord.hass.async_create_background_task.assert_called_once()
+        # Verify the task is for connection recovery (background task
+        # name matches our new label).
+        call_kwargs = coord.hass.async_create_background_task.call_args.kwargs
+        self.assertEqual(call_kwargs.get("name"), "nikobus_blackout_recovery")
+
+    async def test_partial_failure_no_reconnect(self):
+        # 2 of 3 polls fail; 1 succeeds → blackout NOT triggered.
+        # ``side_effect=list`` consumes one entry per call.
+        from nikobus_connect.exceptions import NikobusTimeoutError
+        coord = self._make_coord(
+            modules={"switch_module": {
+                "8110": {"channels": [{}, {}, {}, {}, {}, {}, {}]},
+                "1CEC": {"channels": [{}, {}, {}, {}]},
+            }},
+            get_output_state_side_effect=[
+                "0000FFFF0000FFFE2245",        # success — 12-hex-char state
+                NikobusTimeoutError("timeout"),
+                NikobusTimeoutError("timeout"),
+            ],
+        )
+
+        await NikobusDataCoordinator._async_update_data(coord)
+
+        # Some polls succeeded — not a blackout. No reconnect.
+        coord.hass.async_create_background_task.assert_not_called()
+
+    async def test_all_polls_succeed_no_reconnect(self):
+        coord = self._make_coord(
+            modules={"switch_module": {
+                "8110": {"channels": [{}, {}, {}, {}]},
+            }},
+            get_output_state_side_effect=lambda *args, **kw: "0000FFFF000000",
+        )
+
+        await NikobusDataCoordinator._async_update_data(coord)
+
+        coord.hass.async_create_background_task.assert_not_called()
+
+    async def test_no_modules_no_reconnect(self):
+        # Empty install (e.g., user removed all output modules) →
+        # polled=0, so blackout check skips even though failures=0.
+        coord = self._make_coord(modules={"switch_module": {}})
+
+        await NikobusDataCoordinator._async_update_data(coord)
+
+        coord.hass.async_create_background_task.assert_not_called()
+
+    async def test_discovery_running_skips_polling(self):
+        coord = self._make_coord(
+            modules={"switch_module": {"8110": {"channels": [{}, {}]}}},
+        )
+        coord.discovery_running = True
+
+        await NikobusDataCoordinator._async_update_data(coord)
+
+        # Polling guard skipped the cycle entirely; no reconnect attempt.
+        coord.hass.async_create_background_task.assert_not_called()
+        coord.nikobus_command.get_output_state.assert_not_called()
+
+    async def test_stopping_does_not_trigger_reconnect(self):
+        # If the integration is shutting down, blackout-recovery
+        # should NOT kick — we're going away anyway.
+        from nikobus_connect.exceptions import NikobusTimeoutError
+        coord = self._make_coord(
+            modules={"switch_module": {"8110": {"channels": [{}, {}]}}},
+            get_output_state_side_effect=NikobusTimeoutError("timeout"),
+        )
+        coord._stopping = True
+
+        await NikobusDataCoordinator._async_update_data(coord)
+
+        coord.hass.async_create_background_task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Helper: _collect_button_linked_modules
 # ---------------------------------------------------------------------------
 
