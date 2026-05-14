@@ -914,17 +914,42 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     # ------------------------------------------------------------------
 
     async def _handle_connection_lost(self) -> None:
-        """Called by the listener when the connection drops."""
+        """Called by the listener when the connection drops, or by the
+        blackout-recovery path in ``_async_update_data``.
+
+        Coalesces concurrent calls. The current dedup check at the
+        bottom (``_reconnect_task is None or done``) only prevents
+        double-task-creation; it does NOT prevent ``nikobus_command.
+        stop()`` from running twice mid-reconnect. That second stop
+        races with the in-flight reconnect's ``connect()`` →
+        ``_handshake()``, producing the visible
+        ``Reconnect 1 failed: Cannot send: Not connected.`` error
+        users see in HA's notification UI (issue #337).
+
+        The race surfaces specifically when blackout-detection in
+        ``_async_update_data`` triggers ``_handle_connection_lost``
+        (call #1) → reconnect's fresh ``connect()`` opens a new FD →
+        old listener's pending ``read()`` fails with
+        ``IncompleteReadError`` → listener fires
+        ``on_connection_lost`` → ``_handle_connection_lost`` (call #2)
+        → second ``command.stop()`` corrupts the handshake. Coalescing
+        at function entry collapses #2 into a no-op.
+        """
         if self._stopping:
+            return
+        if self._reconnect_task is not None and not self._reconnect_task.done():
+            _LOGGER.debug(
+                "Reconnect already in progress — coalescing duplicate "
+                "connection-lost notification"
+            )
             return
         _LOGGER.warning("Nikobus connection lost — scheduling reconnect")
         self.async_update_listeners()
         if self.nikobus_command:
             await self.nikobus_command.stop()
-        if self._reconnect_task is None or self._reconnect_task.done():
-            self._reconnect_task = self.hass.async_create_background_task(
-                self._reconnect_loop(), name="nikobus_reconnect"
-            )
+        self._reconnect_task = self.hass.async_create_background_task(
+            self._reconnect_loop(), name="nikobus_reconnect"
+        )
 
     async def _reconnect_loop(self) -> None:
         """Exponential back-off reconnect loop."""

@@ -1542,6 +1542,85 @@ class TestBlackoutAutoRecovery(unittest.IsolatedAsyncioTestCase):
 
 
 # ---------------------------------------------------------------------------
+# Concurrent reconnect coalescing (issue #337 race fix)
+# ---------------------------------------------------------------------------
+
+class TestHandleConnectionLostCoalescing(unittest.IsolatedAsyncioTestCase):
+    """Pin the early-exit dedup so concurrent ``_handle_connection_lost``
+    calls don't race on ``nikobus_command.stop()`` mid-reconnect.
+
+    The race surfaces when blackout-detection triggers reconnect (call
+    #1) → reconnect's fresh ``connect()`` opens new FD → old listener's
+    pending ``read()`` fails → listener fires ``on_connection_lost`` →
+    ``_handle_connection_lost`` (call #2) → second ``command.stop()``
+    runs concurrently with the in-flight handshake, producing the
+    visible ``Reconnect 1 failed: Cannot send: Not connected.`` error.
+    """
+
+    def _make_coord(self, reconnect_task=None):
+        coord = MagicMock()
+        coord._stopping = False
+        coord._reconnect_task = reconnect_task
+        coord.nikobus_command = MagicMock()
+        coord.nikobus_command.stop = AsyncMock()
+        coord.async_update_listeners = MagicMock()
+        coord.hass = MagicMock()
+        # Capture the background-task creation; close coroutines so
+        # we don't get unawaited-coroutine warnings from the mock.
+        def _consume(coro=None, *, name=None):
+            if coro is not None and hasattr(coro, "close"):
+                coro.close()
+            task = MagicMock()
+            task.done = MagicMock(return_value=False)
+            return task
+        coord.hass.async_create_background_task = MagicMock(side_effect=_consume)
+        return coord
+
+    async def test_first_call_creates_reconnect_task(self):
+        coord = self._make_coord()
+
+        await NikobusDataCoordinator._handle_connection_lost(coord)
+
+        coord.nikobus_command.stop.assert_awaited_once()
+        coord.hass.async_create_background_task.assert_called_once()
+
+    async def test_concurrent_call_coalesces_to_noop(self):
+        # _reconnect_task already exists and is in-flight (not done).
+        in_flight = MagicMock()
+        in_flight.done = MagicMock(return_value=False)
+        coord = self._make_coord(reconnect_task=in_flight)
+
+        await NikobusDataCoordinator._handle_connection_lost(coord)
+
+        # Critical: command.stop() must NOT run a second time —
+        # that's what races with the in-flight handshake.
+        coord.nikobus_command.stop.assert_not_awaited()
+        # And no new reconnect task is created — coalesced.
+        coord.hass.async_create_background_task.assert_not_called()
+
+    async def test_done_reconnect_task_allows_new_reconnect(self):
+        # Previous reconnect completed → a NEW connection-lost event
+        # should start a fresh reconnect.
+        completed = MagicMock()
+        completed.done = MagicMock(return_value=True)
+        coord = self._make_coord(reconnect_task=completed)
+
+        await NikobusDataCoordinator._handle_connection_lost(coord)
+
+        coord.nikobus_command.stop.assert_awaited_once()
+        coord.hass.async_create_background_task.assert_called_once()
+
+    async def test_stopping_short_circuits(self):
+        coord = self._make_coord()
+        coord._stopping = True
+
+        await NikobusDataCoordinator._handle_connection_lost(coord)
+
+        coord.nikobus_command.stop.assert_not_awaited()
+        coord.hass.async_create_background_task.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # Helper: _collect_button_linked_modules
 # ---------------------------------------------------------------------------
 
