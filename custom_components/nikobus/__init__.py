@@ -320,6 +320,33 @@ def _register_hub_device(hass: HomeAssistant, entry: NikobusConfigEntry) -> None
         name="Nikobus Bridge",
         model="PC-Link Bridge",
     )
+    _register_category_devices(hass, entry)
+
+
+def _register_category_devices(
+    hass: HomeAssistant, entry: NikobusConfigEntry
+) -> None:
+    """Register intermediate category devices for hierarchical UI grouping.
+
+    Each category device sits between the hub and the real devices,
+    parenting same-class devices into a collapsible group in HA's
+    device list. Categories with no real children get cleaned up by
+    ``_async_cleanup_orphan_entities`` (kept-when-has-children rule),
+    so empty categories don't clutter the UI.
+    """
+    from .const import CATEGORY_DEVICES  # local import to avoid cycle
+
+    device_registry = dr.async_get(hass)
+    for category_id, display_name, model in CATEGORY_DEVICES:
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, category_id)},
+            manufacturer="Niko",
+            name=display_name,
+            model=model,
+            via_device=(DOMAIN, HUB_IDENTIFIER),
+            entry_type=dr.DeviceEntryType.SERVICE,
+        )
 
 async def _async_cleanup_orphan_entities(
     hass: HomeAssistant, entry: NikobusConfigEntry, coordinator: NikobusDataCoordinator

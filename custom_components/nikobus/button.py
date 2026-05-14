@@ -12,7 +12,16 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import BRAND, DOMAIN, HUB_IDENTIFIER, SIGNAL_DISCOVERY_STATE
+from .const import (
+    BRAND,
+    CATEGORY_INTERFACES,
+    CATEGORY_REMOTES,
+    CATEGORY_SYSTEM_MODULES,
+    CATEGORY_WALL_BUTTONS,
+    DOMAIN,
+    HUB_IDENTIFIER,
+    SIGNAL_DISCOVERY_STATE,
+)
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import INPUT_MODULE_TYPES, OPAQUE_MODULE_TYPES
@@ -72,6 +81,24 @@ def _iter_button_entities(
             yield NikobusButtonEntity(coordinator, physical_addr, key_label, op_point)
 
 
+def _category_for_button_type(type_str: str) -> str:
+    """Return the category device identifier appropriate for a button's type.
+
+    Classification rule based on the discovery-supplied ``type`` field:
+
+      * ``RF`` anywhere → Remotes (RF hand-held / RF wall transmitters)
+      * ``Interface`` anywhere → Interfaces (push-button / switch /
+        universal input interfaces — non-keypad input sources)
+      * everything else → Wall buttons (physical bus push buttons)
+    """
+    lowered = type_str.lower()
+    if "rf" in lowered:
+        return CATEGORY_REMOTES
+    if "interface" in lowered:
+        return CATEGORY_INTERFACES
+    return CATEGORY_WALL_BUTTONS
+
+
 def register_wall_button_devices(
     hass: HomeAssistant,
     entry: NikobusConfigEntry,
@@ -84,6 +111,11 @@ def register_wall_button_devices(
     the discovery metadata (``{type} ({address})``) so it is identical for
     every installation; HA preserves any user rename via ``name_by_user``
     across reloads. Idempotent: safe to call from multiple platforms.
+
+    The button's ``via_device`` parent is one of the category devices —
+    Wall buttons / Remotes / Interfaces — chosen by
+    ``_category_for_button_type`` so the integration's device list
+    nests by class rather than dumping everything under the bridge.
     """
     device_registry = dr.async_get(hass)
     for physical_addr, phys in buttons.items():
@@ -91,13 +123,14 @@ def register_wall_button_devices(
             continue
         type_str = str(phys.get("type") or phys.get("model") or "Wall Button")
         model = str(phys.get("model") or phys.get("type") or "Wall Button")
+        category = _category_for_button_type(type_str)
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, physical_addr)},
             manufacturer=BRAND,
             name=f"{type_str} ({physical_addr})",
             model=model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
+            via_device=(DOMAIN, category),
         )
 
 
@@ -148,7 +181,7 @@ def register_input_module_devices(
             manufacturer=BRAND,
             name=description,
             model=model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
+            via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
         )
 
 
@@ -177,7 +210,7 @@ def register_opaque_module_devices(
             manufacturer=BRAND,
             name=description,
             model=model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
+            via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
         )
 
 
@@ -395,7 +428,7 @@ class NikobusInputEntity(NikobusEntity, ButtonEntity):
             address=module_address,
             name=module_description,
             model=module_model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
+            via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
         )
         self._module_type = module_type
         self._channel = channel

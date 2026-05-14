@@ -11,6 +11,7 @@ from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import CATEGORY_SCENES, DOMAIN
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 
@@ -77,6 +78,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             address=scene_id,
             name=description,
             model="Software Scene",
+            via_device=(DOMAIN, CATEGORY_SCENES),
         )
         self._scene_id = scene_id
         self._attr_name = description
