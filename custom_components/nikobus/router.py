@@ -4,18 +4,49 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 
-from .const import DOMAIN
+from .const import BRAND, CATEGORY_OUTPUT_MODULES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def register_output_module_devices(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    specs: Iterable["EntitySpec"],
+) -> None:
+    """Register one device per physical output module address.
+
+    Called from each output platform's ``async_setup_entry``. Deduplicates
+    by address so multi-channel modules only register once. The
+    ``via_device`` parent is the ``Output modules`` category device so the
+    integration UI nests this module under that group (PR #338).
+
+    Idempotent — ``device_registry.async_get_or_create`` returns the
+    existing record on subsequent calls with the same identifiers.
+    """
+    device_registry = dr.async_get(hass)
+    registered: set[str] = set()
+    for spec in specs:
+        if spec.address in registered:
+            continue
+        device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, spec.address)},
+            manufacturer=BRAND,
+            name=spec.module_desc,
+            model=spec.module_model,
+            via_device=(DOMAIN, CATEGORY_OUTPUT_MODULES),
+        )
+        registered.add(spec.address)
+
 _ROUTING_CACHE_KEY = "routing"
 
-# CLEANUP: Move static capabilities to module level so they are only created once in memory
 _CAPABILITIES = {
     "roller_module": {"cover", "switch", "light"},
     "switch_module": {"switch", "light"},

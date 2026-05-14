@@ -8,14 +8,13 @@ from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import BRAND, CATEGORY_OUTPUT_MODULES, DOMAIN, EVENT_BUTTON_OPERATION
+from .const import DOMAIN, EVENT_BUTTON_OPERATION
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
-from .router import build_unique_id, get_routing
+from .router import build_unique_id, get_routing, register_output_module_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,24 +28,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up Nikobus light entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    device_registry = dr.async_get(hass)
-    registered_addresses: set[str] = set()
     entities: list[LightEntity] = []
 
     routing = get_routing(hass, entry, coordinator.dict_module_data)
-    
-    for spec in routing.get("light", []):
-        if spec.address not in registered_addresses:
-            device_registry.async_get_or_create(
-                config_entry_id=entry.entry_id,
-                identifiers={(DOMAIN, spec.address)},
-                manufacturer=BRAND,
-                name=spec.module_desc,
-                model=spec.module_model,
-                via_device=(DOMAIN, CATEGORY_OUTPUT_MODULES),
-            )
-            registered_addresses.add(spec.address)
+    specs = routing.get("light", [])
+    register_output_module_devices(hass, entry, specs)
 
+    for spec in specs:
         if spec.kind == "dimmer_light":
             entities.append(
                 NikobusDimmerEntity(
