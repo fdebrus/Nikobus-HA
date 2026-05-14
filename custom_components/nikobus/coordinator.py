@@ -530,20 +530,65 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     # ------------------------------------------------------------------
 
     async def _async_update_data(self) -> None:
-        """Refresh latest data from the Nikobus system via polling."""
+        """Refresh latest data from the Nikobus system via polling.
+
+        Total-blackout auto-recovery: if every poll in a single cycle
+        fails (every output module times out), the bus is silent —
+        most likely PC-Link / FTDI idle sleep after the 120 s gap
+        between polls (issue #337). Trigger the same reconnect path
+        the user used to manually invoke (close + reopen + handshake)
+        so the integration self-heals.
+        """
         if self.discovery_running:
             return None
+        polled = 0
+        failures = 0
         try:
             for module_type in MODULE_TYPES:
                 if module_type in self.dict_module_data:
-                    await self._refresh_module_type(self.dict_module_data[module_type])
+                    polled_n, failed_n = await self._refresh_module_type(
+                        self.dict_module_data[module_type]
+                    )
+                    polled += polled_n
+                    failures += failed_n
             return None
         except NikobusDataError as err:
             _LOGGER.error("Error fetching Nikobus data: %s", err)
             raise UpdateFailed(f"Data refresh failed: {err}") from err
+        finally:
+            if (
+                polled > 0
+                and failures == polled
+                and not self._stopping
+            ):
+                _LOGGER.warning(
+                    "Nikobus poll cycle: %d/%d commands timed out — "
+                    "bus silent. Triggering reconnect (issue #337).",
+                    failures,
+                    polled,
+                )
+                # Background task — don't block the coordinator's
+                # refresh-cycle slot. ``_handle_connection_lost`` is
+                # idempotent (no-op if a reconnect task is already
+                # running) so retry-storms are prevented.
+                self.hass.async_create_background_task(
+                    self._handle_connection_lost(),
+                    name="nikobus_blackout_recovery",
+                )
 
-    async def _refresh_module_type(self, modules_dict: dict[str, Any]) -> None:
-        """Poll the bus for each module address in a collection."""
+    async def _refresh_module_type(
+        self, modules_dict: dict[str, Any]
+    ) -> tuple[int, int]:
+        """Poll each module, return (polled, failed) counts.
+
+        Per-module / per-group timeouts are still swallowed (logged
+        as ERROR) so a single transient failure doesn't block other
+        modules from refreshing in the same cycle. The aggregate
+        counts roll up to ``_async_update_data`` for blackout
+        detection.
+        """
+        polled = 0
+        failed = 0
         for address, module_data in modules_dict.items():
             normalized = str(address).upper()
             channels = module_data.get("channels", [])
@@ -551,6 +596,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             groups = (1,) if chan_count <= 6 else (1, 2)
 
             for g in groups:
+                polled += 1
                 try:
                     state_hex = await self.nikobus_command.get_output_state(normalized, g) or ""
                     if state_hex and len(state_hex) >= 12:
@@ -560,15 +606,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                             buf = bytearray(12)
                             self._module_states[normalized] = buf
                         buf[start : start + 6] = bytes.fromhex(state_hex[:12])
+                    else:
+                        failed += 1
                 except asyncio.CancelledError:
                     raise
                 except Exception as err:
+                    failed += 1
                     _LOGGER.error("Error refreshing %s group %d: %s", normalized, g, err)
 
             await self.async_event_handler(
                 "nikobus_refreshed",
                 {"impacted_module_address": normalized},
             )
+        return polled, failed
 
     # ------------------------------------------------------------------
     # State buffer accessors (delegate to library or direct buffer access)
