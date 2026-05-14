@@ -12,7 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import BRAND, DOMAIN, EVENT_BUTTON_OPERATION, HUB_IDENTIFIER
+from .const import BRAND, CATEGORY_OUTPUT_MODULES, DOMAIN, EVENT_BUTTON_OPERATION
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import build_unique_id, get_routing
@@ -43,7 +43,7 @@ async def async_setup_entry(
                 manufacturer=BRAND,
                 name=spec.module_desc,
                 model=spec.module_model,
-                via_device=(DOMAIN, HUB_IDENTIFIER),
+                via_device=(DOMAIN, CATEGORY_OUTPUT_MODULES),
             )
             registered_addresses.add(spec.address)
 

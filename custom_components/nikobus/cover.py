@@ -26,7 +26,7 @@ from .const import (
     DEFAULT_COVER_OPERATION_TIME,
     DOMAIN,
     EVENT_BUTTON_PRESSED,
-    HUB_IDENTIFIER,
+    CATEGORY_OUTPUT_MODULES,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
@@ -87,7 +87,7 @@ async def async_setup_entry(
             manufacturer=BRAND,
             name=spec.module_desc,
             model=spec.module_model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
+            via_device=(DOMAIN, CATEGORY_OUTPUT_MODULES),
         )
 
         op_time_up = _parse_operation_time(

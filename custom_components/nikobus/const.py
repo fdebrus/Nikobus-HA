@@ -10,6 +10,42 @@ BRAND: Final[str] = "Niko"
 HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
 # =============================================================================
+# Device-registry category groupings
+# =============================================================================
+# Intermediate "category" devices inserted between the hub and real devices
+# so the integration's device list nests by type instead of dumping everything
+# under one Hub node. Each category device:
+#   * has no entities of its own
+#   * uses ``via_device=hub`` so it appears under the bridge
+#   * is itself the ``via_device`` of every real device in that category
+#
+# Categories with no real children are auto-removed by
+# ``_async_cleanup_orphan_entities`` (the "kept when it has children" rule).
+CATEGORY_OUTPUT_MODULES: Final[str] = "category_output_modules"
+CATEGORY_SYSTEM_MODULES: Final[str] = "category_system_modules"
+CATEGORY_WALL_BUTTONS: Final[str] = "category_wall_buttons"
+CATEGORY_REMOTES: Final[str] = "category_remotes"
+CATEGORY_INTERFACES: Final[str] = "category_interfaces"
+CATEGORY_SCENES: Final[str] = "category_scenes"
+
+# Display metadata for each category device (identifier → (name, model)).
+# Order is the order they get registered in; HA preserves it in the device
+# list (sort is alphabetical by display name though, so order is cosmetic).
+CATEGORY_DEVICES: Final[tuple[tuple[str, str, str], ...]] = (
+    (CATEGORY_OUTPUT_MODULES, "Output modules",
+     "Switch / dimmer / roller modules"),
+    (CATEGORY_SYSTEM_MODULES, "System modules",
+     "PC-Logic, Feedback, Audio, Modular Interface"),
+    (CATEGORY_WALL_BUTTONS, "Wall buttons",
+     "Physical bus push buttons"),
+    (CATEGORY_REMOTES, "Remotes",
+     "RF transmitters"),
+    (CATEGORY_INTERFACES, "Interfaces",
+     "Push-button / switch / universal interfaces"),
+    (CATEGORY_SCENES, "Scenes", "Software scenes"),
+)
+
+# =============================================================================
 # Events
 # =============================================================================
 EVENT_BUTTON_OPERATION: Final[str] = "nikobus_button_operation"
