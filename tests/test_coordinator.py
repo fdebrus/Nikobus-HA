@@ -1563,6 +1563,8 @@ class TestHandleConnectionLostCoalescing(unittest.IsolatedAsyncioTestCase):
         coord._reconnect_task = reconnect_task
         coord.nikobus_command = MagicMock()
         coord.nikobus_command.stop = AsyncMock()
+        coord.nikobus_listener = MagicMock()
+        coord.nikobus_listener.stop = AsyncMock()
         coord.async_update_listeners = MagicMock()
         coord.hass = MagicMock()
         # Capture the background-task creation; close coroutines so
@@ -1582,6 +1584,12 @@ class TestHandleConnectionLostCoalescing(unittest.IsolatedAsyncioTestCase):
         await NikobusDataCoordinator._handle_connection_lost(coord)
 
         coord.nikobus_command.stop.assert_awaited_once()
+        # Listener MUST be stopped before the reconnect runs — its
+        # pending read() on the old reader would otherwise fail when
+        # connect() opens a new FD, and the library's read() handler
+        # calls disconnect() which sets _is_connected=False
+        # mid-handshake.
+        coord.nikobus_listener.stop.assert_awaited_once()
         coord.hass.async_create_background_task.assert_called_once()
 
     async def test_concurrent_call_coalesces_to_noop(self):
@@ -1592,9 +1600,10 @@ class TestHandleConnectionLostCoalescing(unittest.IsolatedAsyncioTestCase):
 
         await NikobusDataCoordinator._handle_connection_lost(coord)
 
-        # Critical: command.stop() must NOT run a second time —
-        # that's what races with the in-flight handshake.
+        # Critical: command.stop() AND listener.stop() must NOT run a
+        # second time — both would race with the in-flight handshake.
         coord.nikobus_command.stop.assert_not_awaited()
+        coord.nikobus_listener.stop.assert_not_awaited()
         # And no new reconnect task is created — coalesced.
         coord.hass.async_create_background_task.assert_not_called()
 

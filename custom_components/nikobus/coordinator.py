@@ -947,6 +947,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.async_update_listeners()
         if self.nikobus_command:
             await self.nikobus_command.stop()
+        if self.nikobus_listener:
+            # Stop the listener BEFORE the reconnect runs. If we leave
+            # it running, its pending ``read()`` on the old reader
+            # will fire when ``connect()`` opens a new FD — the kernel
+            # closes the supplanted reader and the read raises
+            # ``IncompleteReadError``. The library's ``connection.read()``
+            # catches that and calls ``self.disconnect()``, which sets
+            # ``_is_connected = False`` on the SHARED connection object
+            # mid-handshake. The handshake's next ``send()`` then
+            # raises ``Cannot send: Not connected.`` and the reconnect
+            # attempt fails (issue #337 follow-up to PR #341).
+            #
+            # In the listener-initiated path (real read error), the
+            # listener has already exited via its own ``break`` and
+            # ``stop()`` is a no-op. Safe in both paths.
+            await self.nikobus_listener.stop()
         self._reconnect_task = self.hass.async_create_background_task(
             self._reconnect_loop(), name="nikobus_reconnect"
         )
