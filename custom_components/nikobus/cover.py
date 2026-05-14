@@ -15,23 +15,20 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
 )
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
-    BRAND,
     DEFAULT_COVER_DEBOUNCE_DELAY,
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
     DOMAIN,
     EVENT_BUTTON_PRESSED,
-    CATEGORY_OUTPUT_MODULES,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .nkbtravelcalculator import NikobusTravelCalculator
-from .router import build_unique_id, get_routing
+from .router import build_unique_id, get_routing, register_output_module_devices
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -76,20 +73,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up Nikobus cover entities from a config entry."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    device_registry = dr.async_get(hass)
     routing = get_routing(hass, entry, coordinator.dict_module_data)
+    specs = routing.get("cover", [])
+    register_output_module_devices(hass, entry, specs)
 
     entities = []
-    for spec in routing["cover"]:
-        device_registry.async_get_or_create(
-            config_entry_id=entry.entry_id,
-            identifiers={(DOMAIN, spec.address)},
-            manufacturer=BRAND,
-            name=spec.module_desc,
-            model=spec.module_model,
-            via_device=(DOMAIN, CATEGORY_OUTPUT_MODULES),
-        )
-
+    for spec in specs:
         op_time_up = _parse_operation_time(
             spec.operation_time_up,
             DEFAULT_COVER_OPERATION_TIME,

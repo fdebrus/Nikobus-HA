@@ -375,7 +375,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 self.nikobus_discovery.handle_device_address_inventory(message)
             else:
                 await self.nikobus_discovery.query_module_inventory(message[3:7])
-        elif hasattr(self.nikobus_discovery, "process_mode_button_press"):
+        else:
             await self.nikobus_discovery.process_mode_button_press(message)
 
     async def _discovery_frame_callback(self, message: str) -> None:
@@ -1239,12 +1239,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         field is the marker for HA UI / diagnostics.
         """
         if self.nikobus_discovery is None:
-            return
-        if not hasattr(self.nikobus_discovery, "detect_stale_inventory"):
-            _LOGGER.warning(
-                "nikobus-connect lacks detect_stale_inventory — install >= 0.5.20; "
-                "skipping post-discovery reconciliation"
-            )
             return
 
         # --- Sweep snapshot --------------------------------------------
