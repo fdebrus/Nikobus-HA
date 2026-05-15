@@ -22,7 +22,7 @@
                 "data_description": {
                     "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig.",
                     "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
-                    "manual_config": "Voor installaties waarvan de firmware niet kan worden uitgelezen door de automatische ontdekking (doorgaans pre-Gen3 / Gen2 PC-Link). Bij elke start past de integratie nikobus_module_config.json en nikobus_button_config.json opnieuw toe vanuit de Home Assistant-configuratiemap. Valt terug op .migrated-varianten als de originelen door een eerdere v2-upgrade zijn hernoemd."
+                    "manual_config": "Voor installaties waarvan de firmware niet kan worden uitgelezen door de automatische ontdekking (doorgaans pre-Gen3 / Gen2 PC-Link). De bestanden nikobus_module_config.json en nikobus_button_config.json in de Home Assistant-configuratiemap zijn de declaratieve bron van waarheid: wijzigingen, toevoegingen en verwijderingen worden toegepast na het herladen van de integratie. Valt terug op .migrated-varianten als de originelen door een eerdere v2-upgrade zijn hernoemd."
                 }
             },
             "polling": {
@@ -76,7 +76,7 @@
                 "data_description": {
                     "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen.",
                     "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
-                    "manual_config": "Voor installaties die niet via automatische ontdekking kunnen worden uitgelezen (pre-Gen3 / Gen2 PC-Link). Bij elke start past de integratie nikobus_module_config.json en nikobus_button_config.json opnieuw toe vanuit de configuratiemap."
+                    "manual_config": "Voor installaties die niet via automatische ontdekking kunnen worden uitgelezen (pre-Gen3 / Gen2 PC-Link). nikobus_module_config.json en nikobus_button_config.json in de configuratiemap zijn de declaratieve bron van waarheid; wijzigingen worden toegepast na het herladen van de integratie."
                 }
             },
             "polling": {

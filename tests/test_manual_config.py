@@ -1,15 +1,16 @@
 """Tests for the manual-configuration loader (``nkbmanual``).
 
 Manual-config mode is opt-in via the config flow's ``manual_config``
-toggle. When enabled, the integration re-applies the v1 JSON files on
-every startup (no rename) so installs whose firmware auto-discovery
-cannot crack — typically pre-Gen3 / Gen2 PC-Link, per nikobus-connect
-0.5.24 CHANGELOG — can keep their inventory declarative.
+toggle. When enabled, the integration treats the v1 JSON files as the
+declarative source of truth: ``nikobus_module_config.json`` and
+``nikobus_button_config.json`` are re-applied wholesale on every
+reload, so additions, edits, and removals show up after the next
+reload.
 
-These tests pin the load shape, the merge semantics (YAML wins for
-inventory fields, options-flow edits survive), the ``.migrated``
-fallback for users who already upgraded once, and the single-key
-button-entry shape that makes the v2 router route presses correctly.
+These tests pin: full replacement (no merge), the ``.migrated``
+fallback for users who already upgraded once, the single-key
+button-entry shape that makes the v2 router fire HA events on
+presses, and the no-files / unreadable-file paths.
 """
 
 from __future__ import annotations
@@ -21,16 +22,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 # Reuse the same conftest hooks the migration tests use.
 ROOT = Path(__file__).parent.parent
 COMP = ROOT / "custom_components" / "nikobus"
 
 
-# Sanity: the real aiofiles is patched in by conftest / test_module_migration.
-# Importing test_module_migration first installs the real-file stub on the
-# module-level aiofiles object that nkbmanual / nkbmigration end up using.
+# Importing test_module_migration first installs the real-file aiofiles
+# stub that nkbmanual / nkbmigration both end up using.
 import tests.test_module_migration as _mig_tests  # noqa: F401,E402
 
 
@@ -45,7 +44,6 @@ def _load(name, path):
     return module
 
 
-# Reuse the shared NikobusModuleStorage stub by mirroring its API.
 class _InMemoryModuleStore:
     def __init__(self, initial=None):
         self._data = initial if initial is not None else {"nikobus_module": {}}
@@ -82,8 +80,8 @@ class _FakeHass:
         return fn(*args)
 
 
-# Load nkbmanual fresh (its imports of nkbmigration / nkbstorage are
-# already registered by the module-migration test bootstrap).
+# Force a fresh load so the test picks up the latest module source.
+sys.modules.pop("custom_components.nikobus.nkbmanual", None)
 nkbmanual = _load(
     "custom_components.nikobus.nkbmanual", COMP / "nkbmanual.py"
 )
@@ -109,7 +107,7 @@ class TestApplyManualConfig(unittest.TestCase):
         return path
 
     # ------------------------------------------------------------------
-    # Smoke: no files = no-op
+    # Smoke: no files = no-op, store untouched.
     # ------------------------------------------------------------------
 
     def test_no_files_returns_false(self):
@@ -125,7 +123,7 @@ class TestApplyManualConfig(unittest.TestCase):
         self.assertEqual(button_data, {"nikobus_button": {}})
 
     # ------------------------------------------------------------------
-    # Module file: applied into an empty store
+    # Modules: applied into an empty store and tagged with source.
     # ------------------------------------------------------------------
 
     def test_modules_applied_into_empty_store(self):
@@ -153,57 +151,80 @@ class TestApplyManualConfig(unittest.TestCase):
         self.assertEqual(entry["description"], "Living lights")
         self.assertEqual(entry["model"], "05-000-02")
         self.assertEqual(entry["channels"][0]["description"], "Sofa")
-        # Manual-config marker on discovered_info so diagnostics can
-        # tell apart YAML-sourced rows from auto-discovered ones.
         self.assertEqual(entry["discovered_info"]["source"], "manual_config")
         # Source file stays in place — no .migrated rename.
         self.assertTrue(os.path.exists(path))
 
     # ------------------------------------------------------------------
-    # Merge: YAML wins for inventory, options-flow edits survive
+    # Declarative semantics: removals from the file remove from the store.
     # ------------------------------------------------------------------
 
-    def test_options_flow_channel_edits_survive_reapply(self):
+    def test_module_removal_propagates_on_reapply(self):
+        # Store starts populated with TWO modules.
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "AABB": {"module_type": "switch_module", "description": "stale",
+                         "channels": []},
+                "CCDD": {"module_type": "dimmer_module", "description": "still here",
+                         "channels": []},
+            }
+        })
+        # File now only declares one of them.
+        self._write("nikobus_module_config.json", {
+            "dimmer_module": [{
+                "description": "still here",
+                "address": "CCDD",
+                "channels": [],
+            }],
+        })
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        modules = store.data["nikobus_module"]
+        self.assertNotIn("AABB", modules)
+        self.assertIn("CCDD", modules)
+
+    # ------------------------------------------------------------------
+    # Declarative semantics: YAML wins, options-flow edits do not survive.
+    # ------------------------------------------------------------------
+
+    def test_file_wins_over_options_flow_state(self):
+        # Pretend the user previously customized channel 1 via the
+        # options flow — in manual mode that state is NOT preserved
+        # across a reload; the file is authoritative.
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "AABB": {
+                    "module_type": "switch_module",
+                    "description": "stale name",
+                    "model": "05-000-02",
+                    "channels": [
+                        {"description": "Counter",
+                         "entity_type": "light",
+                         "led_on": "1A2B3C"},
+                    ],
+                }
+            }
+        })
         self._write("nikobus_module_config.json", {
             "switch_module": [{
                 "description": "Kitchen",
                 "address": "AABB",
                 "channels": [
-                    {"description": "Counter"},
-                    {"description": "Pendant"},
+                    {"description": "Counter"},  # no entity_type / led_on
                 ],
             }],
-        })
-        # Simulate a populated store with an options-flow channel edit:
-        # the user has set entity_type=light + led_on on channel 1.
-        store = _InMemoryModuleStore({
-            "nikobus_module": {
-                "AABB": {
-                    "module_type": "switch_module",
-                    "description": "Stale auto-discovery name",
-                    "model": "05-000-02",
-                    "channels": [
-                        {
-                            "description": "Counter (will be overwritten)",
-                            "entity_type": "light",
-                            "led_on": "1A2B3C",
-                        },
-                        {"description": "Pendant"},
-                    ],
-                }
-            }
         })
         button_data = {"nikobus_button": {}}
 
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
         entry = store.data["nikobus_module"]["AABB"]
-        # YAML wins for description (both module and channel level).
         self.assertEqual(entry["description"], "Kitchen")
-        self.assertEqual(entry["channels"][0]["description"], "Counter")
-        # Options-flow-only fields survive.
-        self.assertEqual(entry["channels"][0]["entity_type"], "light")
-        self.assertEqual(entry["channels"][0]["led_on"], "1A2B3C")
+        # Options-flow-only fields are wiped — file is the truth.
+        self.assertNotIn("entity_type", entry["channels"][0])
+        self.assertNotIn("led_on", entry["channels"][0])
 
     # ------------------------------------------------------------------
     # .migrated fallback for users who already upgraded once.
@@ -226,12 +247,9 @@ class TestApplyManualConfig(unittest.TestCase):
 
         self.assertTrue(changed)
         self.assertIn("0E6C", store.data["nikobus_module"])
-        self.assertEqual(
-            store.data["nikobus_module"]["0E6C"]["module_type"], "dimmer_module"
-        )
 
     # ------------------------------------------------------------------
-    # Buttons: list form (v1 canonical) — one entry → one routable record
+    # Buttons: list form (v1 canonical) — one entry → one routable record.
     # ------------------------------------------------------------------
 
     def test_button_list_form_creates_single_key_records(self):
@@ -264,7 +282,7 @@ class TestApplyManualConfig(unittest.TestCase):
         self.assertEqual(hallway["description"], "Hallway")
 
     # ------------------------------------------------------------------
-    # Buttons: dict form (v1 post-transform shape) also accepted.
+    # Buttons: dict form also accepted.
     # ------------------------------------------------------------------
 
     def test_button_dict_form_accepted(self):
@@ -286,57 +304,57 @@ class TestApplyManualConfig(unittest.TestCase):
         )
 
     # ------------------------------------------------------------------
-    # Buttons: re-apply preserves an HA-side renamed description and
-    # any auto-discovered op-points are pruned back to "1A".
+    # Declarative semantics: removing a button from the file removes it
+    # from the store on the next apply.
     # ------------------------------------------------------------------
 
-    def test_button_reapply_preserves_user_rename_and_prunes_strays(self):
+    def test_button_removal_propagates_on_reapply(self):
+        button_data = {"nikobus_button": {
+            "112233": {
+                "description": "Old hallway",
+                "channels": 1,
+                "operation_points": {"1A": {"bus_address": "112233"}},
+            },
+            "445566": {
+                "description": "Bedroom",
+                "channels": 1,
+                "operation_points": {"1A": {"bus_address": "445566"}},
+            },
+        }}
+        # File only mentions the bedroom now.
         self._write("nikobus_button_config.json", {
             "nikobus_button": [
-                {"address": "112233", "description": "#N112233"},  # placeholder
+                {"address": "445566", "description": "Bedroom"},
             ]
         })
         store = _InMemoryModuleStore()
-        button_data = {"nikobus_button": {
-            "112233": {
-                "description": "Hallway (renamed by user)",
-                "channels": 4,
-                "operation_points": {
-                    "1A": {"bus_address": "112233"},
-                    # A stray op-point from a previous auto-discovery —
-                    # manual mode owns the shape, so this gets pruned.
-                    "1B": {"bus_address": "999999"},
-                },
-            }
-        }}
 
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
-        entry = button_data["nikobus_button"]["112233"]
-        # User-set description is preserved (placeholder didn't overwrite it).
-        self.assertEqual(entry["description"], "Hallway (renamed by user)")
-        # Stray "1B" was pruned — only "1A" remains.
-        self.assertEqual(list(entry["operation_points"].keys()), ["1A"])
+        buttons = button_data["nikobus_button"]
+        self.assertNotIn("112233", buttons)
+        self.assertIn("445566", buttons)
 
     # ------------------------------------------------------------------
     # Unreadable file is logged + swallowed; the loader still returns.
     # ------------------------------------------------------------------
 
     def test_unreadable_file_logged_and_skipped(self):
-        # Invalid JSON
         path = os.path.join(self.config_dir, "nikobus_module_config.json")
         with open(path, "w", encoding="utf-8") as fh:
             fh.write("{ this is not JSON")
-
-        store = _InMemoryModuleStore()
+        store = _InMemoryModuleStore({"nikobus_module": {
+            "AABB": {"module_type": "switch_module", "channels": []},
+        }})
         button_data = {"nikobus_button": {}}
 
-        # Must not raise.
+        # Must not raise. The unreadable module file should leave the
+        # store intact (better than wiping it on a typo).
         changed = _run(
             nkbmanual.async_apply_manual_config(self.hass, store, button_data)
         )
         self.assertFalse(changed)
-        self.assertEqual(store.data, {"nikobus_module": {}})
+        self.assertIn("AABB", store.data["nikobus_module"])
 
 
 if __name__ == "__main__":

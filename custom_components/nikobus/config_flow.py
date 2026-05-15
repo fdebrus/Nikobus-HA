@@ -411,13 +411,18 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         menu. Keeping a single entry point avoids the "two ways to do
         the same thing" UX and the progress-flow flakiness that
         accompanied the options-flow path.
+
+        ``configure_modules`` is hidden in manual-config mode: the v1
+        JSON files are the declarative source of truth there, so any
+        change made through the UI would be wiped on the next reload.
+        Users wanting to customise a channel edit the file directly.
         """
+        menu_options = ["hardware"]
+        if not self._current().get(CONF_MANUAL_CONFIG, False):
+            menu_options.append("configure_modules")
         return self.async_show_menu(
             step_id="init",
-            menu_options=[
-                "hardware",
-                "configure_modules",
-            ],
+            menu_options=menu_options,
         )
 
     # --- Hardware settings (existing flow) ---------------------------------
