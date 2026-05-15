@@ -121,14 +121,55 @@ async def _apply_module_config(
     return len(flat), path
 
 
-def _build_button_entry(bus_address: str, description: str) -> dict[str, Any]:
-    """Build a v2 button record from a single v1 entry.
+def _extract_physical_info(
+    entry: dict[str, Any],
+) -> tuple[str, str, int, str, str] | None:
+    """Pull the physical-button identity out of a v1 button entry.
 
-    Each v1 entry becomes a single-key physical button (``channels=1``)
-    so the v2 router's bus-address lookup finds it. ``bus_address`` is
-    used as both the dict key and the ``operation_points["1A"]``
-    address — the router only cares about the latter for routing, but
-    keying by it gives a stable, collision-free physical identity.
+    The v1 layout is per-operation-point: each list entry is one key
+    press, and entries that share ``linked_button[0].address`` are
+    different keys of the same physical button. Returns
+    ``(physical_addr, key_label, channels, type, model)`` when the
+    entry carries that data, else ``None`` for entries that don't
+    belong to a real bus device (IR-only / scene-trigger / virtual /
+    auto-generated ``DISCOVERED -`` placeholders).
+    """
+    linked = entry.get("linked_button")
+    if not isinstance(linked, list) or not linked:
+        return None
+    info = linked[0]
+    if not isinstance(info, dict):
+        return None
+    phys = str(info.get("address") or "").strip().upper()
+    key = str(info.get("key") or "").strip().upper()
+    channels = info.get("channels")
+    if not phys or not key or not isinstance(channels, int):
+        return None
+    type_str = str(info.get("type") or "").strip() or "Button"
+    model = str(info.get("model") or "").strip()
+    return phys, key, channels, type_str, model
+
+
+def _new_physical_record(
+    physical_addr: str, type_str: str, model: str, channels: int
+) -> dict[str, Any]:
+    return {
+        "type": type_str,
+        "model": model,
+        "channels": channels,
+        "description": f"{type_str} ({physical_addr})",
+        "operation_points": {},
+    }
+
+
+def _single_key_fallback(bus_address: str, description: str) -> dict[str, Any]:
+    """Build a 1-channel synthetic record for an unlinked v1 entry.
+
+    Used for IR/virtual/scene entries that have no ``linked_button``
+    block. The v2 router routes by ``operation_points[*].bus_address``,
+    so a single op-point on a synthetic physical record (keyed by the
+    bus address itself) is enough to make those entries fire HA
+    events the way they did in v1.
     """
     label = description or f"#N{bus_address}"
     return {
@@ -148,19 +189,21 @@ def _build_button_entry(bus_address: str, description: str) -> dict[str, Any]:
 
 async def _apply_button_config(
     hass: HomeAssistant, button_data: dict[str, Any]
-) -> tuple[int, str | None]:
+) -> tuple[int, int, str | None]:
     """Replace the button store with ``nikobus_button_config.json``.
 
     Fully declarative: ``button_data["nikobus_button"]`` is wiped and
     rebuilt from the file. ``button_data`` is the live reference the
     coordinator passes (same object as ``button_storage.data``), so a
     subsequent ``async_save`` persists the result.
+
+    Returns ``(physical_buttons, total_op_points, source_path)``.
     """
     path, payload = await _read_json_with_fallback(
         hass, MANUAL_BUTTON_CONFIG_FILENAME
     )
     if path is None or not isinstance(payload, dict):
-        return 0, None
+        return 0, 0, None
 
     raw = payload.get("nikobus_button")
     # v1 files store a list of entries; the v1 NikobusConfig loader
@@ -178,15 +221,45 @@ async def _apply_button_config(
                 legacy_iter.append(merged)
 
     new_buttons: dict[str, Any] = {}
+    op_points_total = 0
+
     for entry in legacy_iter:
-        address = str(entry.get("address") or "").strip().upper()
-        if not address:
+        bus_address = str(entry.get("address") or "").strip().upper()
+        if not bus_address:
             continue
         description = str(entry.get("description") or "").strip()
-        new_buttons[address] = _build_button_entry(address, description)
+
+        physical = _extract_physical_info(entry)
+        if physical is not None:
+            phys_addr, key_label, channels, type_str, model = physical
+            phys_entry = new_buttons.get(phys_addr)
+            if phys_entry is None:
+                phys_entry = _new_physical_record(
+                    phys_addr, type_str, model, channels
+                )
+                new_buttons[phys_addr] = phys_entry
+            # Op-point conflict (two entries claiming same key on the
+            # same physical) — last entry wins. The file is the truth.
+            phys_entry["operation_points"][key_label] = {
+                "bus_address": bus_address,
+                "description": description
+                or f"Push button {key_label} #N{bus_address}",
+                "linked_modules": [],
+            }
+            op_points_total += 1
+        else:
+            # Unlinked entry — IR/virtual/scene/placeholder. Don't
+            # clobber a properly-grouped physical button that happens
+            # to use this bus address as its physical key.
+            if bus_address in new_buttons:
+                continue
+            new_buttons[bus_address] = _single_key_fallback(
+                bus_address, description
+            )
+            op_points_total += 1
 
     button_data["nikobus_button"] = new_buttons
-    return len(new_buttons), path
+    return len(new_buttons), op_points_total, path
 
 
 async def async_apply_manual_config(
@@ -219,7 +292,9 @@ async def async_apply_manual_config(
         module_path = None
 
     try:
-        buttons_loaded, button_path = await _apply_button_config(hass, button_data)
+        buttons_loaded, op_points_total, button_path = await _apply_button_config(
+            hass, button_data
+        )
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001
@@ -228,6 +303,7 @@ async def async_apply_manual_config(
             MANUAL_BUTTON_CONFIG_FILENAME,
         )
         buttons_loaded = 0
+        op_points_total = 0
         button_path = None
 
     if module_path is None and button_path is None:
@@ -242,11 +318,13 @@ async def async_apply_manual_config(
 
     _LOGGER.info(
         "Manual-config applied (declarative): modules=%d (source=%s) "
-        "buttons=%d (source=%s). Reload the integration after editing "
-        "either file to apply changes.",
+        "buttons=%d physical / %d operation-points (source=%s). "
+        "Reload the integration after editing either file to apply "
+        "changes.",
         modules_loaded,
         module_path or "—",
         buttons_loaded,
+        op_points_total,
         button_path or "—",
     )
     return True
