@@ -502,6 +502,106 @@ class TestApplyManualConfig(unittest.TestCase):
         self.assertIn("1DF1E0", buttons)
 
     # ------------------------------------------------------------------
+    # linked_modules carry through verbatim onto the matching op-point,
+    # including v1-specific extras (mode, t1, t2, payload, ir_*). This
+    # matters because a diagnostics dump on a manual-mode install
+    # should look like an auto-discovered one — same "what does this
+    # button control" cross-reference.
+    # ------------------------------------------------------------------
+
+    def test_linked_modules_preserved_on_grouped_op_point(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "004E2C",
+                    "description": "Sofa wall light up",
+                    "linked_button": [{
+                        "type": "IR Button with 4 Operation Points",
+                        "model": "05-348",
+                        "address": "0D1C80",
+                        "channels": 4,
+                        "key": "1C",
+                    }],
+                    "linked_modules": [{
+                        "module_address": "0E6C",
+                        "outputs": [{
+                            "channel": 1,
+                            "mode": "M01 (Dim on/off (2 buttons))",
+                            "t1": None,
+                            "t2": None,
+                            "payload": "FFB4000000007234",
+                            "button_address": "0D1C80",
+                            "ir_button_address": "0D1C82",
+                            "ir_code": "02A",
+                        }],
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        op_point = button_data["nikobus_button"]["0D1C80"]["operation_points"]["1C"]
+        self.assertEqual(len(op_point["linked_modules"]), 1)
+        link = op_point["linked_modules"][0]
+        self.assertEqual(link["module_address"], "0E6C")
+        # v1-specific extras pass through unchanged for diagnostics.
+        out = link["outputs"][0]
+        self.assertEqual(out["channel"], 1)
+        self.assertEqual(out["mode"], "M01 (Dim on/off (2 buttons))")
+        self.assertEqual(out["ir_code"], "02A")
+
+    def test_linked_modules_preserved_on_unlinked_entry(self):
+        # No linked_button, but linked_modules present — preserve on
+        # the synthetic single-key fallback so diagnostics stays
+        # consistent.
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "9E4E2C",
+                    "description": "IR scene trigger",
+                    "linked_modules": [{
+                        "module_address": "0E6C",
+                        "outputs": [{"channel": 1, "mode": "M01 (On / off)"}],
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        op_point = button_data["nikobus_button"]["9E4E2C"]["operation_points"]["1A"]
+        self.assertEqual(op_point["linked_modules"][0]["module_address"], "0E6C")
+
+    def test_missing_linked_modules_defaults_to_empty(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "112233",
+                    "description": "No links",
+                    "linked_button": [{
+                        "type": "Button with 4 Operation Points",
+                        "model": "05-346",
+                        "address": "1CFE4A",
+                        "channels": 4,
+                        "key": "1A",
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        op_point = button_data["nikobus_button"]["1CFE4A"]["operation_points"]["1A"]
+        self.assertEqual(op_point["linked_modules"], [])
+
+    # ------------------------------------------------------------------
     # Regression: an op-point whose bus address collides with another
     # physical's address must not eclipse the proper grouping.
     # ------------------------------------------------------------------

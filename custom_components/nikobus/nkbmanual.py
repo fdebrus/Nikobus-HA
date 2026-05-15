@@ -196,7 +196,28 @@ def _new_physical_record(
     }
 
 
-def _single_key_fallback(bus_address: str, description: str) -> dict[str, Any]:
+def _extract_linked_modules(entry: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pull ``linked_modules`` off a v1 entry, dropping non-dict items.
+
+    The v2 schema attaches ``linked_modules`` per operation-point and
+    consumes only ``module_address`` and ``outputs[].channel`` from
+    each item — extra v1 fields (``mode``, ``t1``, ``t2``,
+    ``payload``, ``button_address``, ``ir_button_address``,
+    ``ir_code``) pass through harmlessly and surface in the
+    diagnostics export, so a manual-mode user's snapshot matches an
+    auto-discovered install.
+    """
+    raw = entry.get("linked_modules")
+    if not isinstance(raw, list):
+        return []
+    return [item for item in raw if isinstance(item, dict)]
+
+
+def _single_key_fallback(
+    bus_address: str,
+    description: str,
+    linked_modules: list[dict[str, Any]],
+) -> dict[str, Any]:
     """Build a 1-channel synthetic record for an unlinked v1 entry.
 
     Used for IR/virtual/scene entries that have no ``linked_button``
@@ -215,7 +236,7 @@ def _single_key_fallback(bus_address: str, description: str) -> dict[str, Any]:
             "1A": {
                 "bus_address": bus_address,
                 "description": label,
-                "linked_modules": [],
+                "linked_modules": linked_modules,
             }
         },
     }
@@ -262,6 +283,7 @@ async def _apply_button_config(
         if not bus_address:
             continue
         description = str(entry.get("description") or "").strip()
+        linked_modules = _extract_linked_modules(entry)
 
         physical = _extract_physical_info(entry)
         if physical is not None:
@@ -278,7 +300,7 @@ async def _apply_button_config(
                 "bus_address": bus_address,
                 "description": description
                 or f"Push button {key_label} #N{bus_address}",
-                "linked_modules": [],
+                "linked_modules": linked_modules,
             }
             op_points_total += 1
         else:
@@ -288,7 +310,7 @@ async def _apply_button_config(
             if bus_address in new_buttons:
                 continue
             new_buttons[bus_address] = _single_key_fallback(
-                bus_address, description
+                bus_address, description, linked_modules
             )
             op_points_total += 1
 
