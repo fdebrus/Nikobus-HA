@@ -24,6 +24,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_MANUAL_CONFIG,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     DOMAIN,
@@ -179,6 +180,10 @@ def _hardware_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(
             CONF_PRIOR_GEN3,
             default=defaults.get(CONF_PRIOR_GEN3, False),
+        ): bool,
+        vol.Optional(
+            CONF_MANUAL_CONFIG,
+            default=defaults.get(CONF_MANUAL_CONFIG, False),
         ): bool,
     })
 
@@ -346,6 +351,10 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(
                     CONF_PRIOR_GEN3,
                     default=defaults.get(CONF_PRIOR_GEN3, False),
+                ): bool,
+                vol.Optional(
+                    CONF_MANUAL_CONFIG,
+                    default=defaults.get(CONF_MANUAL_CONFIG, False),
                 ): bool,
                 vol.Optional(
                     CONF_REFRESH_INTERVAL,

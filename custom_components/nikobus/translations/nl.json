@@ -16,11 +16,13 @@
                 "description": "Vertel ons over uw Nikobus-hardware zodat de integratie de optimale updatestrategie kan gebruiken.",
                 "data": {
                     "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
-                    "prior_gen3": "PC-Link is ouder dan Gen 3"
+                    "prior_gen3": "PC-Link is ouder dan Gen 3",
+                    "manual_config": "Handmatige configuratie gebruiken (automatische ontdekking overslaan)"
                 },
                 "data_description": {
                     "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig.",
-                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware."
+                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
+                    "manual_config": "Voor installaties waarvan de firmware niet kan worden uitgelezen door de automatische ontdekking (doorgaans pre-Gen3 / Gen2 PC-Link). Bij elke start past de integratie nikobus_module_config.json en nikobus_button_config.json opnieuw toe vanuit de Home Assistant-configuratiemap. Valt terug op .migrated-varianten als de originelen door een eerdere v2-upgrade zijn hernoemd."
                 }
             },
             "polling": {
@@ -40,6 +42,7 @@
                     "connection_string": "Verbinding (seriële poort of IP:poort)",
                     "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
                     "prior_gen3": "PC-Link is ouder dan Gen 3",
+                    "manual_config": "Handmatige configuratie gebruiken (automatische ontdekking overslaan)",
                     "refresh_interval": "Polling-interval (seconden)"
                 }
             }
@@ -67,11 +70,13 @@
                 "description": "Werk uw hardware-instellingen bij. De integratie herlaadt automatisch.",
                 "data": {
                     "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
-                    "prior_gen3": "PC-Link is ouder dan Gen 3"
+                    "prior_gen3": "PC-Link is ouder dan Gen 3",
+                    "manual_config": "Handmatige configuratie gebruiken (automatische ontdekking overslaan)"
                 },
                 "data_description": {
                     "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen.",
-                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware."
+                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
+                    "manual_config": "Voor installaties die niet via automatische ontdekking kunnen worden uitgelezen (pre-Gen3 / Gen2 PC-Link). Bij elke start past de integratie nikobus_module_config.json en nikobus_button_config.json opnieuw toe vanuit de configuratiemap."
                 }
             },
             "polling": {

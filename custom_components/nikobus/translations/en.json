@@ -11,11 +11,13 @@
             "hardware": {
                 "data": {
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
-                    "prior_gen3": "PC-Link is older than Gen 3"
+                    "prior_gen3": "PC-Link is older than Gen 3",
+                    "manual_config": "Use manual configuration (skip auto-discovery)"
                 },
                 "data_description": {
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
-                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
+                    "manual_config": "For installs whose firmware auto-discovery cannot read (typically pre-Gen3 / Gen2 PC-Link). On every startup the integration re-applies nikobus_module_config.json and nikobus_button_config.json from the Home Assistant config directory. Falls back to the .migrated variants if the originals were renamed by an earlier v2 upgrade."
                 },
                 "description": "Tell us about your Nikobus hardware so the integration can use the optimal update strategy.",
                 "title": "Hardware Configuration"
@@ -35,12 +37,14 @@
                     "connection_string": "Connection (serial port or IP:port)",
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
                     "prior_gen3": "PC-Link is older than Gen 3",
+                    "manual_config": "Use manual configuration (skip auto-discovery)",
                     "refresh_interval": "Polling interval (seconds)"
                 },
                 "data_description": {
                     "connection_string": "Serial device path or TCP address of the PC-Link bridge",
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
                     "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
+                    "manual_config": "For installs whose firmware auto-discovery cannot read (typically pre-Gen3 / Gen2 PC-Link). On every startup the integration re-applies nikobus_module_config.json and nikobus_button_config.json from the Home Assistant config directory.",
                     "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
                 },
                 "description": "Update the connection string or hardware settings. The connection will be re-tested.",
@@ -155,11 +159,13 @@
             "hardware": {
                 "data": {
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
-                    "prior_gen3": "PC-Link is older than Gen 3"
+                    "prior_gen3": "PC-Link is older than Gen 3",
+                    "manual_config": "Use manual configuration (skip auto-discovery)"
                 },
                 "data_description": {
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
-                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
+                    "manual_config": "For installs whose firmware auto-discovery cannot read (typically pre-Gen3 / Gen2 PC-Link). On every startup the integration re-applies nikobus_module_config.json and nikobus_button_config.json from the Home Assistant config directory. Falls back to the .migrated variants if the originals were renamed by an earlier v2 upgrade."
                 },
                 "description": "Update your hardware settings. The integration will reload automatically.",
                 "title": "Hardware Configuration"

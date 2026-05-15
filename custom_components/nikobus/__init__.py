@@ -24,7 +24,7 @@ from homeassistant.components import (
     sensor,
 )
 
-from .const import DOMAIN, HUB_IDENTIFIER
+from .const import CONF_MANUAL_CONFIG, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
@@ -285,7 +285,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
     # 7. One-shot: migrate legacy per-button descriptions to device name_by_user.
-    await _async_migrate_legacy_button_names(hass)
+    #    Skipped in manual-config mode: the legacy file is the live source
+    #    of truth there, so the migration's rename-on-success step would
+    #    delete the user's only inventory snapshot.
+    manual_config = entry.options.get(
+        CONF_MANUAL_CONFIG, entry.data.get(CONF_MANUAL_CONFIG, False)
+    )
+    if not manual_config:
+        await _async_migrate_legacy_button_names(hass)
 
     # 8. Surface repair issues for actionable misconfigurations.
     coordinator.refresh_repair_issues()
