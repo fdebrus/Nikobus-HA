@@ -60,15 +60,49 @@ async def _read_json_with_fallback(
 ) -> tuple[str | None, dict[str, Any] | None]:
     """Return ``(path, payload)`` for the first existing variant of ``filename``.
 
-    Tries the canonical name first, then the ``.migrated`` suffix that
-    the one-shot v1→v2 migration leaves behind. Returns ``(None, None)``
-    when neither exists or both are unreadable.
+    Tries the canonical name first. If only the ``.migrated`` variant
+    (left behind by the one-shot v1→v2 migration) exists, rename it
+    back to the canonical name so the user edits a file with the
+    expected filename — and so future reads hit the fast path. If a
+    canonical file already exists, ``.migrated`` is left untouched
+    (the canonical one is whatever the user put there). Returns
+    ``(None, None)`` when neither exists or the chosen file is
+    unreadable.
     """
-    candidates = [
-        hass.config.path(filename),
-        hass.config.path(filename + _MIGRATED_SUFFIX),
-    ]
-    for path in candidates:
+    canonical_path = hass.config.path(filename)
+    migrated_path = canonical_path + _MIGRATED_SUFFIX
+
+    canonical_exists = await hass.async_add_executor_job(
+        os.path.isfile, canonical_path
+    )
+
+    if not canonical_exists:
+        migrated_exists = await hass.async_add_executor_job(
+            os.path.isfile, migrated_path
+        )
+        if migrated_exists:
+            try:
+                await hass.async_add_executor_job(
+                    os.rename, migrated_path, canonical_path
+                )
+                _LOGGER.info(
+                    "Manual-config: renamed %s back to %s so the file "
+                    "is editable under its canonical name.",
+                    migrated_path,
+                    canonical_path,
+                )
+                canonical_exists = True
+            except OSError as err:
+                _LOGGER.warning(
+                    "Manual-config: could not rename %s back to %s "
+                    "(%s); reading from .migrated and leaving it in "
+                    "place.",
+                    migrated_path,
+                    canonical_path,
+                    err,
+                )
+
+    for path in (canonical_path, migrated_path):
         if not await hass.async_add_executor_job(os.path.isfile, path):
             continue
         try:

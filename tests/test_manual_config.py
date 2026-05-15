@@ -227,17 +227,22 @@ class TestApplyManualConfig(unittest.TestCase):
         self.assertNotIn("led_on", entry["channels"][0])
 
     # ------------------------------------------------------------------
-    # .migrated fallback for users who already upgraded once.
+    # .migrated rename-back: users who tried v2 once had their files
+    # renamed by the one-shot migration. Flipping manual_config must
+    # restore the canonical name so the file is editable as-is.
     # ------------------------------------------------------------------
 
-    def test_migrated_fallback(self):
-        self._write("nikobus_module_config.json.migrated", {
+    def test_migrated_is_renamed_back_to_canonical(self):
+        migrated_path = self._write("nikobus_module_config.json.migrated", {
             "dimmer_module": [{
                 "description": "Salon dimmer",
                 "address": "0E6C",
                 "channels": [{"description": "Sconces"}],
             }],
         })
+        canonical_path = os.path.join(
+            self.config_dir, "nikobus_module_config.json"
+        )
         store = _InMemoryModuleStore()
         button_data = {"nikobus_button": {}}
 
@@ -247,6 +252,39 @@ class TestApplyManualConfig(unittest.TestCase):
 
         self.assertTrue(changed)
         self.assertIn("0E6C", store.data["nikobus_module"])
+        # Renamed back: canonical now exists, .migrated does not.
+        self.assertTrue(os.path.exists(canonical_path))
+        self.assertFalse(os.path.exists(migrated_path))
+
+    # ------------------------------------------------------------------
+    # If a canonical file already exists, the .migrated variant is
+    # left untouched. Trust whatever the user explicitly placed.
+    # ------------------------------------------------------------------
+
+    def test_both_files_present_canonical_wins_migrated_preserved(self):
+        canonical_path = self._write("nikobus_module_config.json", {
+            "switch_module": [{
+                "description": "User-edited", "address": "AABB",
+                "channels": [{"description": "Live"}],
+            }],
+        })
+        migrated_path = self._write("nikobus_module_config.json.migrated", {
+            "switch_module": [{
+                "description": "Stale", "address": "CCDD",
+                "channels": [{"description": "Old"}],
+            }],
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        modules = store.data["nikobus_module"]
+        self.assertIn("AABB", modules)  # from canonical
+        self.assertNotIn("CCDD", modules)  # .migrated NOT read
+        # Both files still on disk after the run.
+        self.assertTrue(os.path.exists(canonical_path))
+        self.assertTrue(os.path.exists(migrated_path))
 
     # ------------------------------------------------------------------
     # Buttons: a 4-key physical wall button (4 v1 entries) is grouped
