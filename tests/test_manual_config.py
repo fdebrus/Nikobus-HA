@@ -1,0 +1,711 @@
+"""Tests for the manual-configuration loader (``nkbmanual``).
+
+Manual-config mode is opt-in via the config flow's ``manual_config``
+toggle. When enabled, the integration treats the v1 JSON files as the
+declarative source of truth: ``nikobus_module_config.json`` and
+``nikobus_button_config.json`` are re-applied wholesale on every
+reload, so additions, edits, and removals show up after the next
+reload.
+
+These tests pin: full replacement (no merge), the ``.migrated``
+fallback for users who already upgraded once, the single-key
+button-entry shape that makes the v2 router fire HA events on
+presses, and the no-files / unreadable-file paths.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+# Reuse the same conftest hooks the migration tests use.
+ROOT = Path(__file__).parent.parent
+COMP = ROOT / "custom_components" / "nikobus"
+
+
+# Importing test_module_migration first installs the real-file aiofiles
+# stub that nkbmanual / nkbmigration both end up using.
+import tests.test_module_migration as _mig_tests  # noqa: F401,E402
+
+
+def _load(name, path):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = ".".join(name.split(".")[:-1])
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+class _InMemoryModuleStore:
+    def __init__(self, initial=None):
+        self._data = initial if initial is not None else {"nikobus_module": {}}
+        self.save_count = 0
+
+    async def async_load(self):
+        return self._data
+
+    async def async_save(self):
+        self.save_count += 1
+
+    @property
+    def data(self):
+        return self._data
+
+    @property
+    def is_empty(self):
+        return not bool(self._data.get("nikobus_module"))
+
+
+class _FakeConfig:
+    def __init__(self, config_dir: str):
+        self.config_dir = config_dir
+
+    def path(self, filename: str) -> str:
+        return os.path.join(self.config_dir, filename)
+
+
+class _FakeHass:
+    def __init__(self, config_dir: str):
+        self.config = _FakeConfig(config_dir)
+
+    async def async_add_executor_job(self, fn, *args):
+        return fn(*args)
+
+
+# Force a fresh load so the test picks up the latest module source.
+sys.modules.pop("custom_components.nikobus.nkbmanual", None)
+nkbmanual = _load(
+    "custom_components.nikobus.nkbmanual", COMP / "nkbmanual.py"
+)
+
+
+def _run(coro):
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
+class TestApplyManualConfig(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.config_dir = self._tmp.name
+        self.hass = _FakeHass(self.config_dir)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, filename: str, payload):
+        path = os.path.join(self.config_dir, filename)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        return path
+
+    # ------------------------------------------------------------------
+    # Smoke: no files = no-op, store untouched.
+    # ------------------------------------------------------------------
+
+    def test_no_files_returns_false(self):
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        changed = _run(
+            nkbmanual.async_apply_manual_config(self.hass, store, button_data)
+        )
+
+        self.assertFalse(changed)
+        self.assertEqual(store.data, {"nikobus_module": {}})
+        self.assertEqual(button_data, {"nikobus_button": {}})
+
+    # ------------------------------------------------------------------
+    # Modules: applied into an empty store and tagged with source.
+    # ------------------------------------------------------------------
+
+    def test_modules_applied_into_empty_store(self):
+        path = self._write("nikobus_module_config.json", {
+            "switch_module": [{
+                "description": "Living lights",
+                "model": "05-000-02",
+                "address": "C9A5",
+                "channels": [
+                    {"description": "Sofa"},
+                    {"description": "Pendant"},
+                ],
+            }],
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        changed = _run(
+            nkbmanual.async_apply_manual_config(self.hass, store, button_data)
+        )
+
+        self.assertTrue(changed)
+        entry = store.data["nikobus_module"]["C9A5"]
+        self.assertEqual(entry["module_type"], "switch_module")
+        self.assertEqual(entry["description"], "Living lights")
+        self.assertEqual(entry["model"], "05-000-02")
+        self.assertEqual(entry["channels"][0]["description"], "Sofa")
+        self.assertEqual(entry["discovered_info"]["source"], "manual_config")
+        # Source file stays in place — no .migrated rename.
+        self.assertTrue(os.path.exists(path))
+
+    # ------------------------------------------------------------------
+    # Declarative semantics: removals from the file remove from the store.
+    # ------------------------------------------------------------------
+
+    def test_module_removal_propagates_on_reapply(self):
+        # Store starts populated with TWO modules.
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "AABB": {"module_type": "switch_module", "description": "stale",
+                         "channels": []},
+                "CCDD": {"module_type": "dimmer_module", "description": "still here",
+                         "channels": []},
+            }
+        })
+        # File now only declares one of them.
+        self._write("nikobus_module_config.json", {
+            "dimmer_module": [{
+                "description": "still here",
+                "address": "CCDD",
+                "channels": [],
+            }],
+        })
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        modules = store.data["nikobus_module"]
+        self.assertNotIn("AABB", modules)
+        self.assertIn("CCDD", modules)
+
+    # ------------------------------------------------------------------
+    # Declarative semantics: YAML wins, options-flow edits do not survive.
+    # ------------------------------------------------------------------
+
+    def test_file_wins_over_options_flow_state(self):
+        # Pretend the user previously customized channel 1 via the
+        # options flow — in manual mode that state is NOT preserved
+        # across a reload; the file is authoritative.
+        store = _InMemoryModuleStore({
+            "nikobus_module": {
+                "AABB": {
+                    "module_type": "switch_module",
+                    "description": "stale name",
+                    "model": "05-000-02",
+                    "channels": [
+                        {"description": "Counter",
+                         "entity_type": "light",
+                         "led_on": "1A2B3C"},
+                    ],
+                }
+            }
+        })
+        self._write("nikobus_module_config.json", {
+            "switch_module": [{
+                "description": "Kitchen",
+                "address": "AABB",
+                "channels": [
+                    {"description": "Counter"},  # no entity_type / led_on
+                ],
+            }],
+        })
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        entry = store.data["nikobus_module"]["AABB"]
+        self.assertEqual(entry["description"], "Kitchen")
+        # Options-flow-only fields are wiped — file is the truth.
+        self.assertNotIn("entity_type", entry["channels"][0])
+        self.assertNotIn("led_on", entry["channels"][0])
+
+    # ------------------------------------------------------------------
+    # .migrated fallback for users who already upgraded once.
+    # ------------------------------------------------------------------
+
+    def test_migrated_fallback(self):
+        self._write("nikobus_module_config.json.migrated", {
+            "dimmer_module": [{
+                "description": "Salon dimmer",
+                "address": "0E6C",
+                "channels": [{"description": "Sconces"}],
+            }],
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        changed = _run(
+            nkbmanual.async_apply_manual_config(self.hass, store, button_data)
+        )
+
+        self.assertTrue(changed)
+        self.assertIn("0E6C", store.data["nikobus_module"])
+
+    # ------------------------------------------------------------------
+    # Buttons: a 4-key physical wall button (4 v1 entries) is grouped
+    # into ONE v2 record with four operation_points — preserves the
+    # device-registry "one device per physical button" UX.
+    # ------------------------------------------------------------------
+
+    def test_button_entries_group_by_physical_address(self):
+        # Four v1 entries with the same linked_button.address — one
+        # physical 4-key keypad, four bus addresses.
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "004E2C",
+                    "description": "Sofa wall light up",
+                    "linked_button": [{
+                        "type": "IR Button with 4 Operation Points",
+                        "model": "05-348",
+                        "address": "0D1C80",
+                        "channels": 4,
+                        "key": "1C",
+                    }],
+                },
+                {
+                    "address": "404E2C",
+                    "description": "Sofa wall light down",
+                    "linked_button": [{
+                        "type": "IR Button with 4 Operation Points",
+                        "model": "05-348",
+                        "address": "0D1C80",
+                        "channels": 4,
+                        "key": "1D",
+                    }],
+                },
+                {
+                    "address": "804E2C",
+                    "description": "Sofa shutter open",
+                    "linked_button": [{
+                        "type": "IR Button with 4 Operation Points",
+                        "model": "05-348",
+                        "address": "0D1C80",
+                        "channels": 4,
+                        "key": "1A",
+                    }],
+                },
+                {
+                    "address": "C04E2C",
+                    "description": "Sofa shutter close",
+                    "linked_button": [{
+                        "type": "IR Button with 4 Operation Points",
+                        "model": "05-348",
+                        "address": "0D1C80",
+                        "channels": 4,
+                        "key": "1B",
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        buttons = button_data["nikobus_button"]
+        # One physical record, NOT four.
+        self.assertEqual(list(buttons.keys()), ["0D1C80"])
+        phys = buttons["0D1C80"]
+        self.assertEqual(phys["channels"], 4)
+        self.assertEqual(phys["model"], "05-348")
+        self.assertEqual(phys["type"], "IR Button with 4 Operation Points")
+        # All four keys present, each with its own bus_address +
+        # description from the v1 entry it came from.
+        op_points = phys["operation_points"]
+        self.assertEqual(set(op_points.keys()), {"1A", "1B", "1C", "1D"})
+        self.assertEqual(op_points["1C"]["bus_address"], "004E2C")
+        self.assertEqual(op_points["1C"]["description"], "Sofa wall light up")
+        self.assertEqual(op_points["1A"]["bus_address"], "804E2C")
+
+    # ------------------------------------------------------------------
+    # Buttons: 8-channel keypads carry keys "2A" through "2D" alongside
+    # the "1A"-"1D" set; the loader doesn't constrain key labels.
+    # ------------------------------------------------------------------
+
+    def test_eight_channel_keypad(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "01E3EE",
+                    "description": "Bedroom Right Light On",
+                    "linked_button": [{
+                        "type": "Button with 8 Operation Points",
+                        "model": "05-349",
+                        "address": "1DF1E0",
+                        "channels": 8,
+                        "key": "2C",
+                    }],
+                },
+                {
+                    "address": "41E3EE",
+                    "description": "Bedroom Right Light Off",
+                    "linked_button": [{
+                        "type": "Button with 8 Operation Points",
+                        "model": "05-349",
+                        "address": "1DF1E0",
+                        "channels": 8,
+                        "key": "2D",
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        phys = button_data["nikobus_button"]["1DF1E0"]
+        self.assertEqual(phys["channels"], 8)
+        self.assertEqual(set(phys["operation_points"].keys()), {"2C", "2D"})
+
+    # ------------------------------------------------------------------
+    # Buttons: entries without a linked_button block (IR/virtual/scene
+    # triggers, auto-generated DISCOVERED placeholders) fall back to a
+    # synthetic single-key record so the bus address still routes.
+    # ------------------------------------------------------------------
+
+    def test_unlinked_entry_falls_back_to_single_key(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                # IR scene trigger — no linked_button at all
+                {"address": "9E4E2C", "description": "Living scene TV lights",
+                 "impacted_module": [{"address": "0E6C", "group": "1"}]},
+                # Auto-generated placeholder — no linked_button
+                {"address": "FFFFFF",
+                 "description": "DISCOVERED - Nikobus Button #NFFFFFF",
+                 "impacted_module": [{"address": "", "group": ""}]},
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        buttons = button_data["nikobus_button"]
+        self.assertIn("9E4E2C", buttons)
+        self.assertIn("FFFFFF", buttons)
+        ir = buttons["9E4E2C"]
+        self.assertEqual(ir["channels"], 1)
+        self.assertEqual(ir["operation_points"]["1A"]["bus_address"], "9E4E2C")
+        self.assertEqual(ir["description"], "Living scene TV lights")
+
+    # ------------------------------------------------------------------
+    # Buttons: dict form (v1-post-transform shape) also accepted.
+    # ------------------------------------------------------------------
+
+    def test_button_dict_form_accepted(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": {
+                "AABBCC": {"description": "Kitchen"},
+            }
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        self.assertIn("AABBCC", button_data["nikobus_button"])
+        self.assertEqual(
+            button_data["nikobus_button"]["AABBCC"]
+            ["operation_points"]["1A"]["bus_address"],
+            "AABBCC",
+        )
+
+    # ------------------------------------------------------------------
+    # Declarative: removing entries from the file removes them on reapply.
+    # ------------------------------------------------------------------
+
+    def test_button_removal_propagates_on_reapply(self):
+        button_data = {"nikobus_button": {
+            "0D1C80": {
+                "description": "Old IR button",
+                "channels": 4,
+                "operation_points": {
+                    "1A": {"bus_address": "804E2C"},
+                    "1B": {"bus_address": "C04E2C"},
+                },
+            },
+            "1DF1E0": {
+                "description": "Bedroom keypad",
+                "channels": 8,
+                "operation_points": {"2C": {"bus_address": "01E3EE"}},
+            },
+        }}
+        # File only declares the bedroom keypad now.
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "01E3EE",
+                    "description": "Bedroom Right Light On",
+                    "linked_button": [{
+                        "type": "Button with 8 Operation Points",
+                        "model": "05-349",
+                        "address": "1DF1E0",
+                        "channels": 8,
+                        "key": "2C",
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        buttons = button_data["nikobus_button"]
+        self.assertNotIn("0D1C80", buttons)
+        self.assertIn("1DF1E0", buttons)
+
+    # ------------------------------------------------------------------
+    # Regression: an op-point whose bus address collides with another
+    # physical's address must not eclipse the proper grouping.
+    # ------------------------------------------------------------------
+
+    def test_unlinked_does_not_overwrite_grouped_physical(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                # Grouped first — physical 0D1C80
+                {
+                    "address": "004E2C",
+                    "description": "Real key",
+                    "linked_button": [{
+                        "type": "IR Button with 4 Operation Points",
+                        "model": "05-348",
+                        "address": "0D1C80",
+                        "channels": 4,
+                        "key": "1C",
+                    }],
+                },
+                # Standalone entry whose bus address happens to equal
+                # the grouped physical's address — must not overwrite.
+                {"address": "0D1C80", "description": "Stray placeholder"},
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        buttons = button_data["nikobus_button"]
+        # The grouped physical record wins; the standalone is dropped.
+        self.assertEqual(buttons["0D1C80"]["channels"], 4)
+        self.assertIn("1C", buttons["0D1C80"]["operation_points"])
+
+    # ------------------------------------------------------------------
+    # Unreadable file is logged + swallowed; the loader still returns.
+    # ------------------------------------------------------------------
+
+    def test_unreadable_file_logged_and_skipped(self):
+        path = os.path.join(self.config_dir, "nikobus_module_config.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("{ this is not JSON")
+        store = _InMemoryModuleStore({"nikobus_module": {
+            "AABB": {"module_type": "switch_module", "channels": []},
+        }})
+        button_data = {"nikobus_button": {}}
+
+        # Must not raise. The unreadable module file should leave the
+        # store intact (better than wiping it on a typo).
+        changed = _run(
+            nkbmanual.async_apply_manual_config(self.hass, store, button_data)
+        )
+        self.assertFalse(changed)
+        self.assertIn("AABB", store.data["nikobus_module"])
+
+
+class TestRealWorldSample(unittest.TestCase):
+    """End-to-end pin against the live install sample (issue ##).
+
+    The sample contains every category that matters: switch / dimmer /
+    roller modules with mixed channel-level options (entity_type,
+    operation_time_up/down), pc_link / pc_logic / feedback_module
+    sentinel sections, an empty other_module list, a 4-key IR keypad
+    (4 entries), an 8-channel keypad (2C/2D entries), virtual IR
+    scene-trigger entries with no linked_button, and DISCOVERED
+    placeholders. If the loader handles this file the user does not
+    need to edit anything.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.config_dir = self._tmp.name
+        self.hass = _FakeHass(self.config_dir)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _write(self, filename: str, payload):
+        path = os.path.join(self.config_dir, filename)
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh)
+        return path
+
+    def test_real_world_modules_sample(self):
+        self._write("nikobus_module_config.json", {
+            "switch_module": [
+                {
+                    "description": "switch_module_s1",
+                    "model": "05-000-02",
+                    "address": "C9A5",
+                    "channels": [
+                        {"description": "Extérieur Porte Entrée",
+                         "entity_type": "light"},
+                        {"description": "Hall RDC Lumière",
+                         "entity_type": "light"},
+                    ],
+                    "discovered_info": {
+                        "name": "Switch Module", "device_type": "01",
+                        "channels_count": 12,
+                    },
+                },
+            ],
+            "roller_module": [{
+                "description": "rollershutter_module_r1",
+                "model": "05-001-02",
+                "address": "9105",
+                "channels": [
+                    {"description": "Salon Volet Sofa",
+                     "operation_time_up": "29",
+                     "operation_time_down": "27"},
+                    {"description": "not_in_use output_1",
+                     "operation_time_up": "30"},
+                ],
+                "discovered_info": {
+                    "name": "Roller Shutter Module", "device_type": "02",
+                    "channels_count": 6,
+                },
+            }],
+            "pc_link": [{
+                "description": "pc_link_pcl1",
+                "model": "05-200",
+                "address": "86F5",
+                "discovered_info": {
+                    "name": "PC Link", "device_type": "0A",
+                },
+            }],
+            "feedback_module": [{
+                "description": "feedback_module_fb1",
+                "model": "05-207",
+                "address": "966C",
+                "discovered_info": {
+                    "name": "Feedback Module", "device_type": "42",
+                },
+            }],
+            "other_module": [],
+        })
+
+        store = _InMemoryModuleStore()
+        _run(nkbmanual.async_apply_manual_config(
+            self.hass, store, {"nikobus_button": {}}))
+
+        modules = store.data["nikobus_module"]
+        self.assertIn("C9A5", modules)
+        self.assertIn("9105", modules)
+        self.assertIn("86F5", modules)
+        self.assertIn("966C", modules)
+
+        # Channel-level options carry through.
+        c9a5_ch0 = modules["C9A5"]["channels"][0]
+        self.assertEqual(c9a5_ch0["description"], "Extérieur Porte Entrée")
+        self.assertEqual(c9a5_ch0["entity_type"], "light")
+
+        roller_ch = modules["9105"]["channels"][0]
+        self.assertEqual(roller_ch["operation_time_up"], "29")
+        self.assertEqual(roller_ch["operation_time_down"], "27")
+
+        # discovered_info from v1 file survives, manual_config source
+        # marker added alongside the existing keys.
+        di = modules["C9A5"]["discovered_info"]
+        self.assertEqual(di["device_type"], "01")
+        self.assertEqual(di["channels_count"], 12)
+        self.assertEqual(di["source"], "manual_config")
+
+        # System modules (pc_link / feedback) keep their module_type
+        # bucket and channels=[] is fine for non-output modules.
+        self.assertEqual(modules["86F5"]["module_type"], "pc_link")
+        self.assertEqual(modules["966C"]["module_type"], "feedback_module")
+
+    def test_real_world_buttons_sample(self):
+        # Two 4-key wall buttons sharing physicals 0D1C80 and 1CA840,
+        # plus an 8-key keypad 1DF1E0 with two of its 2X keys, plus
+        # an IR scene trigger without linked_button, plus a discovered
+        # placeholder.
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                # 0D1C80 — 4 entries
+                {"address": "004E2C", "description": "BT_Sofa_Wall_Up",
+                 "linked_button": [{"type": "IR Button with 4 Operation Points",
+                                    "model": "05-348", "address": "0D1C80",
+                                    "channels": 4, "key": "1C"}]},
+                {"address": "404E2C", "description": "BT_Sofa_Wall_Down",
+                 "linked_button": [{"type": "IR Button with 4 Operation Points",
+                                    "model": "05-348", "address": "0D1C80",
+                                    "channels": 4, "key": "1D"}]},
+                {"address": "804E2C", "description": "BT_Sofa_Shutter_Open",
+                 "linked_button": [{"type": "IR Button with 4 Operation Points",
+                                    "model": "05-348", "address": "0D1C80",
+                                    "channels": 4, "key": "1A"}]},
+                {"address": "C04E2C", "description": "BT_Sofa_Shutter_Close",
+                 "linked_button": [{"type": "IR Button with 4 Operation Points",
+                                    "model": "05-348", "address": "0D1C80",
+                                    "channels": 4, "key": "1B"}]},
+                # 1CA840 — 2 entries (only 1A + 1B used in install)
+                {"address": "00854E", "description": "BT_Parking_On",
+                 "linked_button": [{"type": "Button with 4 Operation Points",
+                                    "model": "05-346", "address": "1CA840",
+                                    "channels": 4, "key": "1C"}]},
+                {"address": "40854E", "description": "BT_Parking_Off",
+                 "linked_button": [{"type": "Button with 4 Operation Points",
+                                    "model": "05-346", "address": "1CA840",
+                                    "channels": 4, "key": "1D"}]},
+                # 1DF1E0 — 8-channel keypad
+                {"address": "01E3EE", "description": "BT_Right_On",
+                 "linked_button": [{"type": "Button with 8 Operation Points",
+                                    "model": "05-349", "address": "1DF1E0",
+                                    "channels": 8, "key": "2C"}]},
+                {"address": "41E3EE", "description": "BT_Right_Off",
+                 "linked_button": [{"type": "Button with 8 Operation Points",
+                                    "model": "05-349", "address": "1DF1E0",
+                                    "channels": 8, "key": "2D"}]},
+                # IR scene trigger — no linked_button
+                {"address": "9E4E2C", "description": "IR_TV_Lights",
+                 "impacted_module": [{"address": "0E6C", "group": "1"}]},
+                # Auto-generated placeholder — no linked_button
+                {"address": "FFFFFF",
+                 "description": "DISCOVERED - Nikobus Button #NFFFFFF",
+                 "impacted_module": [{"address": "", "group": ""}]},
+            ]
+        })
+
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        buttons = button_data["nikobus_button"]
+        # 3 physical buttons + 2 standalone = 5 v2 records out of 10
+        # v1 entries.
+        self.assertEqual(len(buttons), 5)
+        self.assertEqual(buttons["0D1C80"]["channels"], 4)
+        self.assertEqual(set(buttons["0D1C80"]["operation_points"].keys()),
+                         {"1A", "1B", "1C", "1D"})
+        # Bus-address routing for the keys.
+        self.assertEqual(
+            buttons["0D1C80"]["operation_points"]["1C"]["bus_address"], "004E2C")
+        self.assertEqual(buttons["1DF1E0"]["channels"], 8)
+        self.assertEqual(set(buttons["1DF1E0"]["operation_points"].keys()),
+                         {"2C", "2D"})
+        # Standalone fallback.
+        self.assertEqual(buttons["9E4E2C"]["channels"], 1)
+        self.assertEqual(buttons["9E4E2C"]["description"], "IR_TV_Lights")
+        self.assertIn("FFFFFF", buttons)
+
+
+if __name__ == "__main__":
+    unittest.main()

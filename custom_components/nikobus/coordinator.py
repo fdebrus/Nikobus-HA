@@ -27,6 +27,7 @@ from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError,
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_MANUAL_CONFIG,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     DEVICE_ADDRESS_INVENTORY,
@@ -57,6 +58,7 @@ from .const import (
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
+from .nkbmanual import async_apply_manual_config
 from .nkbmigration import async_migrate_legacy_module_config
 from .nkbstorage import NikobusButtonStorage, NikobusModuleStorage
 
@@ -106,6 +108,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
         self._has_feedback_module = _opts.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._prior_gen3 = _opts.get(CONF_PRIOR_GEN3, config_entry.data.get(CONF_PRIOR_GEN3, False))
+        self._manual_config = _opts.get(CONF_MANUAL_CONFIG, config_entry.data.get(CONF_MANUAL_CONFIG, False))
 
         super().__init__(
             hass,
@@ -238,12 +241,32 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         try:
             # Module data now lives in .storage/nikobus.modules. On first
             # startup after upgrading to 0.4.0, migrate any legacy
-            # nikobus_module_config.json into the store, then rename it.
+            # nikobus_module_config.json into the store, then rename it —
+            # unless the user opted into manual-config mode, in which case
+            # the legacy file is the live source of truth and must NOT
+            # be renamed away.
             await self.module_storage.async_load()
-            await async_migrate_legacy_module_config(self.hass, self.module_storage)
+            if not self._manual_config:
+                await async_migrate_legacy_module_config(self.hass, self.module_storage)
             self._rebuild_dict_module_data()
 
             self.dict_button_data = await self.button_storage.async_load()
+
+            # Manual-config: re-apply v1 JSON files into the live stores
+            # on every startup so users on pre-Gen3 / Gen2 hardware (whose
+            # button-link data the Gen3 decoder doesn't parse) can keep
+            # their inventory declarative. See nikobus-connect 0.5.24
+            # CHANGELOG "What this does NOT fix" for context.
+            if self._manual_config:
+                changed = await async_apply_manual_config(
+                    self.hass,
+                    self.module_storage,
+                    self.dict_button_data,
+                )
+                if changed:
+                    await self.module_storage.async_save()
+                    await self.button_storage.async_save()
+                    self._rebuild_dict_module_data()
             self.dict_scene_data = await self.nikobus_config.load_json_data(
                 "nikobus_scene_config.json", "scene"
             )

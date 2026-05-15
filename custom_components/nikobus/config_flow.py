@@ -24,6 +24,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_MANUAL_CONFIG,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     DOMAIN,
@@ -179,6 +180,10 @@ def _hardware_schema(defaults: dict[str, Any]) -> vol.Schema:
         vol.Optional(
             CONF_PRIOR_GEN3,
             default=defaults.get(CONF_PRIOR_GEN3, False),
+        ): bool,
+        vol.Optional(
+            CONF_MANUAL_CONFIG,
+            default=defaults.get(CONF_MANUAL_CONFIG, False),
         ): bool,
     })
 
@@ -348,6 +353,10 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     default=defaults.get(CONF_PRIOR_GEN3, False),
                 ): bool,
                 vol.Optional(
+                    CONF_MANUAL_CONFIG,
+                    default=defaults.get(CONF_MANUAL_CONFIG, False),
+                ): bool,
+                vol.Optional(
                     CONF_REFRESH_INTERVAL,
                     default=defaults.get(CONF_REFRESH_INTERVAL, 120),
                 ): vol.All(cv.positive_int, vol.Range(min=60, max=3600)),
@@ -402,13 +411,18 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         menu. Keeping a single entry point avoids the "two ways to do
         the same thing" UX and the progress-flow flakiness that
         accompanied the options-flow path.
+
+        ``configure_modules`` is hidden in manual-config mode: the v1
+        JSON files are the declarative source of truth there, so any
+        change made through the UI would be wiped on the next reload.
+        Users wanting to customise a channel edit the file directly.
         """
+        menu_options = ["hardware"]
+        if not self._current().get(CONF_MANUAL_CONFIG, False):
+            menu_options.append("configure_modules")
         return self.async_show_menu(
             step_id="init",
-            menu_options=[
-                "hardware",
-                "configure_modules",
-            ],
+            menu_options=menu_options,
         )
 
     # --- Hardware settings (existing flow) ---------------------------------

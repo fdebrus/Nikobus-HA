@@ -114,6 +114,20 @@ CONF_CONNECTION_STRING: Final[str] = "connection_string"
 CONF_REFRESH_INTERVAL: Final[str] = "refresh_interval"
 CONF_HAS_FEEDBACK_MODULE: Final[str] = "has_feedbackmodule"
 CONF_PRIOR_GEN3: Final[str] = "prior_gen3"
+# Manual-config mode: skip the one-shot v1-file rename migrations and
+# re-apply ``nikobus_module_config.json`` / ``nikobus_button_config.json``
+# into the Store on every startup. Intended for users whose hardware
+# (pre-Gen3 / Gen2 PC-Link, see nikobus-connect 0.5.24 CHANGELOG section
+# "What this does NOT fix") cannot be auto-discovered and who relied on
+# v1-style YAML/JSON declarations.
+CONF_MANUAL_CONFIG: Final[str] = "manual_config"
+
+# Filenames used by the manual-config path. Both are read on startup
+# when ``manual_config`` is true; the ``.migrated`` fallback is honoured
+# so users who upgraded to v2 (which renamed these files) can flip the
+# toggle without first un-renaming anything.
+MANUAL_MODULE_CONFIG_FILENAME: Final[str] = "nikobus_module_config.json"
+MANUAL_BUTTON_CONFIG_FILENAME: Final[str] = "nikobus_button_config.json"
 
 # =============================================================================
 # Serial Connection

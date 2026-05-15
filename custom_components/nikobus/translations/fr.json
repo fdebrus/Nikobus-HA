@@ -16,11 +16,13 @@
                 "description": "Indiquez votre matériel Nikobus afin que l'intégration utilise la stratégie de mise à jour optimale.",
                 "data": {
                     "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
-                    "prior_gen3": "PC-Link antérieur à la Gen 3"
+                    "prior_gen3": "PC-Link antérieur à la Gen 3",
+                    "manual_config": "Utiliser la configuration manuelle (ignorer la découverte automatique)"
                 },
                 "data_description": {
                     "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire.",
-                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération."
+                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
+                    "manual_config": "Pour les installations dont le firmware ne peut être lu par la découverte automatique (généralement PC-Link pré-Gen3 / Gen2). Les fichiers nikobus_module_config.json et nikobus_button_config.json dans le répertoire de configuration Home Assistant deviennent la source de vérité déclarative : les modifications, ajouts et suppressions sont reflétés après rechargement de l'intégration. Bascule sur les variantes .migrated si les originaux ont été renommés par une mise à niveau v2 antérieure."
                 }
             },
             "polling": {
@@ -40,6 +42,7 @@
                     "connection_string": "Connexion (port série ou IP:port)",
                     "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
                     "prior_gen3": "PC-Link antérieur à la Gen 3",
+                    "manual_config": "Utiliser la configuration manuelle (ignorer la découverte automatique)",
                     "refresh_interval": "Intervalle de scrutation (secondes)"
                 }
             }
@@ -67,11 +70,13 @@
                 "description": "Mettez à jour les paramètres matériels. L'intégration rechargera automatiquement.",
                 "data": {
                     "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
-                    "prior_gen3": "PC-Link antérieur à la Gen 3"
+                    "prior_gen3": "PC-Link antérieur à la Gen 3",
+                    "manual_config": "Utiliser la configuration manuelle (ignorer la découverte automatique)"
                 },
                 "data_description": {
                     "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état.",
-                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération."
+                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
+                    "manual_config": "Pour les installations qui ne peuvent pas être lues par la découverte automatique (PC-Link pré-Gen3 / Gen2). nikobus_module_config.json et nikobus_button_config.json dans le répertoire de configuration sont la source de vérité déclarative ; les modifications sont appliquées au rechargement de l'intégration."
                 }
             },
             "polling": {
