@@ -612,7 +612,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     raise
                 except Exception as err:
                     failed += 1
-                    _LOGGER.error("Error refreshing %s group %d: %s", normalized, g, err)
+                    # Per-group failures are noise on installs that
+                    # hit periodic bus-silent windows (issue #337) —
+                    # they show up as N separate ERROR entries in
+                    # HA's System Log panel even though the aggregate
+                    # WARNING "Nikobus poll cycle: N/N commands timed
+                    # out — bus silent. Triggering reconnect." in
+                    # ``_async_update_data`` already conveys the
+                    # actionable signal. Keep individual failures at
+                    # DEBUG for log-trace diagnostics; the WARNING +
+                    # the subsequent "scheduling reconnect" line are
+                    # what the user needs to see.
+                    _LOGGER.debug(
+                        "Error refreshing %s group %d: %s", normalized, g, err
+                    )
 
             await self.async_event_handler(
                 "nikobus_refreshed",
