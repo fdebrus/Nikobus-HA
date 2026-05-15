@@ -17,7 +17,7 @@
                 "data_description": {
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
                     "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
-                    "manual_config": "For installs whose firmware auto-discovery cannot read (typically pre-Gen3 / Gen2 PC-Link). The files nikobus_module_config.json and nikobus_button_config.json in the Home Assistant config directory become the declarative source of truth: edits, additions, and removals are reflected after reloading the integration. Falls back to the .migrated variants if the originals were renamed by an earlier v2 upgrade."
+                    "manual_config": "Read modules and buttons from nikobus_module_config.json and nikobus_button_config.json in your Home Assistant config directory. Reload the integration after editing the files. Falls back to .migrated variants if present."
                 },
                 "description": "Tell us about your Nikobus hardware so the integration can use the optimal update strategy.",
                 "title": "Hardware Configuration"
@@ -44,7 +44,7 @@
                     "connection_string": "Serial device path or TCP address of the PC-Link bridge",
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
                     "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
-                    "manual_config": "For installs whose firmware auto-discovery cannot read (typically pre-Gen3 / Gen2 PC-Link). The files nikobus_module_config.json and nikobus_button_config.json in the Home Assistant config directory become the declarative source of truth: edits, additions, and removals are reflected after reloading the integration.",
+                    "manual_config": "Read modules and buttons from nikobus_module_config.json and nikobus_button_config.json in your Home Assistant config directory. Reload the integration after editing the files.",
                     "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
                 },
                 "description": "Update the connection string or hardware settings. The connection will be re-tested.",
@@ -165,7 +165,7 @@
                 "data_description": {
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
                     "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
-                    "manual_config": "For installs whose firmware auto-discovery cannot read (typically pre-Gen3 / Gen2 PC-Link). The files nikobus_module_config.json and nikobus_button_config.json in the Home Assistant config directory become the declarative source of truth: edits, additions, and removals are reflected after reloading the integration. Falls back to the .migrated variants if the originals were renamed by an earlier v2 upgrade."
+                    "manual_config": "Read modules and buttons from nikobus_module_config.json and nikobus_button_config.json in your Home Assistant config directory. Reload the integration after editing the files. Falls back to .migrated variants if present."
                 },
                 "description": "Update your hardware settings. The integration will reload automatically.",
                 "title": "Hardware Configuration"
