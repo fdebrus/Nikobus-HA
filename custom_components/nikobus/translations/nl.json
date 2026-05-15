@@ -22,7 +22,7 @@
                 "data_description": {
                     "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig.",
                     "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
-                    "manual_config": "Lees modules en knoppen uit nikobus_module_config.json en nikobus_button_config.json in uw Home Assistant-configuratiemap. Herlaad de integratie na het bewerken van de bestanden. Valt terug op .migrated-varianten indien aanwezig."
+                    "manual_config": "Lees modules en knoppen uit nikobus_module_config.json en nikobus_button_config.json in uw Home Assistant-configuratiemap."
                 }
             },
             "polling": {
@@ -76,7 +76,7 @@
                 "data_description": {
                     "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen.",
                     "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
-                    "manual_config": "Lees modules en knoppen uit nikobus_module_config.json en nikobus_button_config.json in de configuratiemap. Herlaad de integratie na het bewerken van de bestanden."
+                    "manual_config": "Lees modules en knoppen uit nikobus_module_config.json en nikobus_button_config.json in de configuratiemap."
                 }
             },
             "polling": {

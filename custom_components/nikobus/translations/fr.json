@@ -22,7 +22,7 @@
                 "data_description": {
                     "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire.",
                     "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
-                    "manual_config": "Lit les modules et boutons depuis nikobus_module_config.json et nikobus_button_config.json dans votre répertoire de configuration Home Assistant. Rechargez l'intégration après avoir modifié les fichiers. Bascule sur les variantes .migrated si présentes."
+                    "manual_config": "Lit les modules et boutons depuis nikobus_module_config.json et nikobus_button_config.json dans votre répertoire de configuration Home Assistant."
                 }
             },
             "polling": {
@@ -76,7 +76,7 @@
                 "data_description": {
                     "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état.",
                     "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
-                    "manual_config": "Lit les modules et boutons depuis nikobus_module_config.json et nikobus_button_config.json dans le répertoire de configuration. Rechargez l'intégration après avoir modifié les fichiers."
+                    "manual_config": "Lit les modules et boutons depuis nikobus_module_config.json et nikobus_button_config.json dans le répertoire de configuration."
                 }
             },
             "polling": {
