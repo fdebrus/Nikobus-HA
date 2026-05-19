@@ -1125,7 +1125,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # Input-class modules (PC-Logic, Modular Interface) skip ``build_routing``
         # because they don't drive output relays — emit their input-channel
         # button unique IDs directly so orphan-cleanup doesn't remove them.
+        # PC-Logic is excluded: its logical inputs surface through the
+        # synthesized button-store entries (one ``LM-INPUT N`` device per
+        # input), not per-channel input entities.
         for module_type in INPUT_MODULE_TYPES:
+            if module_type == "pc_logic":
+                continue
             bucket = self.dict_module_data.get(module_type) or {}
             if not isinstance(bucket, dict):
                 continue

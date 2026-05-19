@@ -310,10 +310,19 @@ def register_opaque_module_devices(
 
 
 def _iter_input_module_entities(coordinator: NikobusDataCoordinator):
-    """Yield one NikobusInputEntity per channel of every input-class module."""
+    """Yield one NikobusInputEntity per channel of every input-class module.
+
+    PC-Logic logical inputs are surfaced through synthesized button-store
+    entries (one ``LM-INPUT N`` device per input, parented under the
+    PC-Logic module), so the PC-Logic module itself has no per-channel
+    entities — skip it here. The 05-206 modular interface still uses the
+    channels-driven path.
+    """
     for module_type, address, module_data in _iter_module_records(
         coordinator.dict_module_data, INPUT_MODULE_TYPES
     ):
+        if module_type == "pc_logic":
+            continue
         module_desc = str(
             module_data.get("description") or f"{module_type} ({address})"
         )
