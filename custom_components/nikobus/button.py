@@ -45,7 +45,7 @@ async def async_setup_entry(
     ]
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-    register_wall_button_devices(hass, entry, buttons)
+    register_wall_button_devices(hass, entry, buttons, coordinator.dict_module_data)
     entities.extend(_iter_button_entities(coordinator, buttons))
 
     # Input-class modules (PC-Logic, Modular Interface) — register one
@@ -126,6 +126,7 @@ def register_wall_button_devices(
     hass: HomeAssistant,
     entry: NikobusConfigEntry,
     buttons: dict[str, Any],
+    dict_module_data: dict[str, Any] | None = None,
 ) -> None:
     """Register one device per physical wall button (top-level address).
 
@@ -147,6 +148,7 @@ def register_wall_button_devices(
     follows the Niko ``LM-INPUT N`` convention.
     """
     device_registry = dr.async_get(hass)
+    pc_logic_parents_registered: set[str] = set()
     for physical_addr, phys in buttons.items():
         if not isinstance(phys, dict):
             continue
@@ -154,6 +156,17 @@ def register_wall_button_devices(
         pc_logic_naming = _pc_logic_input_naming(phys)
         if pc_logic_naming is not None:
             name, via_device = pc_logic_naming
+            parent_addr = via_device[1]
+            # HA 2025.12 enforces via_device referencing an existing device.
+            # The PC-Logic module is normally registered by
+            # register_input_module_devices, but that runs from a different
+            # call site (and possibly after this one) — pre-register the
+            # parent here so the child's via_device always resolves.
+            if parent_addr not in pc_logic_parents_registered:
+                _ensure_pc_logic_parent_device(
+                    device_registry, entry, parent_addr, dict_module_data
+                )
+                pc_logic_parents_registered.add(parent_addr)
             device_registry.async_get_or_create(
                 config_entry_id=entry.entry_id,
                 identifiers={(DOMAIN, physical_addr)},
@@ -175,6 +188,45 @@ def register_wall_button_devices(
             model=model,
             via_device=(DOMAIN, category),
         )
+
+
+def _ensure_pc_logic_parent_device(
+    device_registry: dr.DeviceRegistry,
+    entry: NikobusConfigEntry,
+    parent_addr: str,
+    dict_module_data: dict[str, Any] | None,
+) -> None:
+    """Register the PC-Logic module device that a logical-input child points
+    to via ``via_device``.
+
+    Looks the module up in ``dict_module_data`` for accurate name/model.
+    Falls back to a placeholder when module data isn't available — a later
+    call to ``register_input_module_devices`` will update fields on the
+    same identifier.
+    """
+    bucket = (dict_module_data or {}).get("pc_logic") or {}
+    module_data: dict[str, Any] | None = None
+    if isinstance(bucket, dict):
+        for addr, data in bucket.items():
+            if str(addr).upper() == parent_addr and isinstance(data, dict):
+                module_data = data
+                break
+
+    if module_data is not None:
+        name = str(module_data.get("description") or f"PC-Logic ({parent_addr})")
+        model = str(module_data.get("model") or "pc_logic")
+    else:
+        name = f"PC-Logic ({parent_addr})"
+        model = "pc_logic"
+
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, parent_addr)},
+        manufacturer=BRAND,
+        name=name,
+        model=model,
+        via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
+    )
 
 
 def _hub_device_info() -> dr.DeviceInfo:
