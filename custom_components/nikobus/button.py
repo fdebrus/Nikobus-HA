@@ -78,7 +78,9 @@ def _iter_button_entities(
             bus_addr = op_point.get("bus_address")
             if not bus_addr:
                 continue
-            yield NikobusButtonEntity(coordinator, physical_addr, key_label, op_point)
+            yield NikobusButtonEntity(
+                coordinator, physical_addr, key_label, op_point, parent_phys=phys
+            )
 
 
 def _category_for_button_type(type_str: str) -> str:
@@ -99,6 +101,27 @@ def _category_for_button_type(type_str: str) -> str:
     return CATEGORY_WALL_BUTTONS
 
 
+def _pc_logic_input_naming(
+    phys: dict[str, Any],
+) -> tuple[str, tuple[str, str]] | None:
+    """Return ``(device_name, via_device_identifier)`` if ``phys`` is a
+    synthesized PC-Logic logical-input entry; else ``None``.
+
+    The library sets ``pc_logic_parent_address`` (the PC-Logic module
+    address) and ``pc_logic_slot_index`` (1..N) on the button-store
+    entry when it synthesizes virtual buttons for PC-Logic inputs. HA
+    parents the device directly under the PC-Logic module device
+    (instead of the wall-buttons category) and renames it
+    ``LM-INPUT N`` to match Niko's own terminology.
+    """
+
+    parent_addr = phys.get("pc_logic_parent_address")
+    slot = phys.get("pc_logic_slot_index")
+    if not isinstance(parent_addr, str) or not isinstance(slot, int):
+        return None
+    return f"LM-INPUT {slot}", (DOMAIN, parent_addr.upper())
+
+
 def register_wall_button_devices(
     hass: HomeAssistant,
     entry: NikobusConfigEntry,
@@ -116,11 +139,31 @@ def register_wall_button_devices(
     Wall buttons / Remotes / Interfaces — chosen by
     ``_category_for_button_type`` so the integration's device list
     nests by class rather than dumping everything under the bridge.
+
+    Synthesized PC-Logic logical inputs (the library's
+    ``_synthesize_pc_logic_inputs`` adds these with ``pc_logic_*``
+    provenance fields) are routed differently: the device is parented
+    directly under the PC-Logic module that owns it, and the name
+    follows the Niko ``LM-INPUT N`` convention.
     """
     device_registry = dr.async_get(hass)
     for physical_addr, phys in buttons.items():
         if not isinstance(phys, dict):
             continue
+
+        pc_logic_naming = _pc_logic_input_naming(phys)
+        if pc_logic_naming is not None:
+            name, via_device = pc_logic_naming
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, physical_addr)},
+                manufacturer=BRAND,
+                name=name,
+                model=str(phys.get("model") or "PC-Logic Logical Input"),
+                via_device=via_device,
+            )
+            continue
+
         type_str = str(phys.get("type") or phys.get("model") or "Wall Button")
         model = str(phys.get("model") or phys.get("type") or "Wall Button")
         category = _category_for_button_type(type_str)
@@ -248,7 +291,11 @@ def _iter_input_module_entities(coordinator: NikobusDataCoordinator):
 
 
 def op_point_display_name(
-    physical_address: str, key_label: str, op_point: dict[str, Any]
+    physical_address: str,
+    key_label: str,
+    op_point: dict[str, Any],
+    *,
+    parent_phys: dict[str, Any] | None = None,
 ) -> str:
     """Build a UI-visible name for an op-point's device entry.
 
@@ -258,10 +305,19 @@ def op_point_display_name(
     library-generated description ("IR code 30A #I30A") is identical for
     every receiver that learned the same code. Wall keys keep the
     library description verbatim; it already carries the channel label.
+
+    PC-Logic logical-input keys (the parent button carries
+    ``pc_logic_parent_address``) render as the compact ``Key A`` /
+    ``Key B`` form, matching how the parent ``LM-INPUT N`` device is
+    named.
     """
     if key_label.startswith("IR:"):
         ir_code = key_label[len("IR:"):]
         return f"IR {ir_code} on {physical_address}"
+    if isinstance(parent_phys, dict) and parent_phys.get("pc_logic_parent_address"):
+        # ``1A`` → "Key A", ``1B`` → "Key B".
+        if len(key_label) == 2 and key_label[1].isalpha():
+            return f"Key {key_label[1].upper()}"
     return op_point.get("description") or f"Push button {key_label}"
 
 
@@ -339,19 +395,32 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
         physical_address: str,
         key_label: str,
         op_point: dict[str, Any],
+        *,
+        parent_phys: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the button entity."""
         bus_addr = op_point["bus_address"]
         self._physical_address = physical_address
         self._key_label = key_label
 
-        name = op_point_display_name(physical_address, key_label, op_point)
+        name = op_point_display_name(
+            physical_address, key_label, op_point, parent_phys=parent_phys
+        )
+
+        # PC-Logic logical-input keys appear as "PC-Logic Key" model
+        # so the device-info popover distinguishes them from physical
+        # wall-button keys at a glance.
+        is_pc_logic_input = (
+            isinstance(parent_phys, dict)
+            and parent_phys.get("pc_logic_parent_address") is not None
+        )
+        model = "PC-Logic Key" if is_pc_logic_input else "Push Button"
 
         super().__init__(
             coordinator=coordinator,
             address=bus_addr,
             name=name,
-            model="Push Button",
+            model=model,
             via_device=(DOMAIN, physical_address),
         )
 

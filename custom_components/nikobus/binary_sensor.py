@@ -46,7 +46,13 @@ async def async_setup_entry(
             if not bus_addr:
                 continue
             entities.append(
-                NikobusButtonBinarySensor(coordinator, physical_addr, key_label, op_point)
+                NikobusButtonBinarySensor(
+                    coordinator,
+                    physical_addr,
+                    key_label,
+                    op_point,
+                    parent_phys=phys,
+                )
             )
     async_add_entities(entities)
 
@@ -66,17 +72,25 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         physical_address: str,
         key_label: str,
         op_point: dict[str, Any],
+        *,
+        parent_phys: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the button binary sensor."""
         bus_addr = op_point["bus_address"]
         self._physical_address = physical_address
         self._key_label = key_label
-        name = op_point_display_name(physical_address, key_label, op_point)
+        name = op_point_display_name(
+            physical_address, key_label, op_point, parent_phys=parent_phys
+        )
+        is_pc_logic_input = isinstance(parent_phys, dict) and parent_phys.get(
+            "pc_logic_parent_address"
+        )
+        model = "PC-Logic Key" if is_pc_logic_input else "Physical Button"
         super().__init__(
             coordinator=coordinator,
             address=bus_addr,
             name=name,
-            model="Physical Button",
+            model=model,
             via_device=(DOMAIN, physical_address),
         )
         self._address = bus_addr
