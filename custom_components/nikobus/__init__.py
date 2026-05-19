@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Final
+from typing import Any, Final
 
 import voluptuous as vol
 from aiofiles import open as aio_open
@@ -54,7 +54,49 @@ SERVICE_PURGE_STALE_INVENTORY: Final = "purge_stale_inventory"
 DEFAULT_DETECT_OUTER_ATTEMPTS: Final[int] = 1
 DEFAULT_DETECT_OUTER_DELAY: Final[float] = 0.0
 
-SCAN_MODULE_SCHEMA = vol.Schema({vol.Optional("module_address", default=""): cv.string})
+def _parse_register_byte(value: Any) -> int:
+    """Accept an int 0..255 or a hex string (``"FF"``, ``"0xFF"``)."""
+    if isinstance(value, bool):
+        raise vol.Invalid("Register must be an integer or hex string, not a bool")
+    if isinstance(value, int):
+        n = value
+    else:
+        text = str(value).strip()
+        if not text:
+            raise vol.Invalid("Register cannot be empty")
+        if text.lower().startswith("0x"):
+            text = text[2:]
+        try:
+            n = int(text, 16)
+        except ValueError:
+            raise vol.Invalid(f"Cannot parse '{value}' as a hex register byte")
+    if not (0 <= n <= 0xFF):
+        raise vol.Invalid(f"Register {n:#x} out of range 0x00..0xFF")
+    return n
+
+
+def _parse_sub_byte(value: Any) -> str:
+    """Accept a 2-char hex string and return the canonical uppercase form."""
+    text = str(value or "").strip()
+    if text.lower().startswith("0x"):
+        text = text[2:]
+    if len(text) not in (1, 2) or not all(c in "0123456789abcdefABCDEF" for c in text):
+        raise vol.Invalid(f"sub_byte must be a hex byte (e.g. '04'), got: {value!r}")
+    return text.upper().zfill(2)
+
+
+SCAN_MODULE_SCHEMA = vol.Schema({
+    vol.Optional("module_address", default=""): cv.string,
+    # Forensic-mode trio: when register_start AND register_end are both
+    # provided, the scan walks only that range with the given sub_byte
+    # (default "04") and skips the library's extra-pass / non-output-
+    # module guard logic. Used for reverse-engineering storage layouts
+    # of modules the production scan declines or doesn't fully cover.
+    # Requires a specific module_address — not compatible with ALL mode.
+    vol.Optional("register_start"): _parse_register_byte,
+    vol.Optional("register_end"): _parse_register_byte,
+    vol.Optional("sub_byte"): _parse_sub_byte,
+})
 SEND_BUTTON_PRESS_SCHEMA = vol.Schema({
     vol.Required("address"): cv.string,
 })
@@ -85,6 +127,25 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def handle_module_discovery(call: ServiceCall) -> None:
         """Trigger a Nikobus inventory scan via the coordinator's discovery engine."""
         module_address = (call.data.get("module_address", "") or "").strip().upper()
+        register_start = call.data.get("register_start")
+        register_end = call.data.get("register_end")
+        sub_byte = call.data.get("sub_byte")
+
+        # Forensic mode validation surfaces here so the user gets a
+        # ServiceValidationError instead of the library's bare
+        # ValueError, with a more actionable translation message.
+        custom_range = register_start is not None or register_end is not None
+        if custom_range:
+            if not module_address:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="forensic_requires_module_address",
+                )
+            if register_start is None or register_end is None:
+                raise ServiceValidationError(
+                    translation_domain=DOMAIN,
+                    translation_key="forensic_range_incomplete",
+                )
 
         coordinator = _loaded_coordinator(hass)
         if coordinator is None:
@@ -106,6 +167,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         if not module_address:
             _LOGGER.info("Starting manual Nikobus PC-Link inventory discovery")
             await coordinator.nikobus_discovery.start_inventory_discovery()
+        elif custom_range:
+            _LOGGER.info(
+                "Forensic Nikobus scan | module=%s registers=0x%02X..0x%02X sub=%s",
+                module_address,
+                register_start,
+                register_end,
+                sub_byte or "04",
+            )
+            await coordinator.nikobus_discovery.query_module_inventory(
+                module_address,
+                register_start=register_start,
+                register_end=register_end,
+                sub_byte=sub_byte,
+            )
         else:
             _LOGGER.info("Starting manual Nikobus discovery for module: %s", module_address)
             await coordinator.nikobus_discovery.query_module_inventory(module_address)

@@ -5,6 +5,29 @@ query_module_inventory:
       required: false
       selector:
         text:
+    register_start:
+      example: "0x70"
+      required: false
+      selector:
+        text:
+    register_end:
+      example: "0x83"
+      required: false
+      selector:
+        text:
+    sub_byte:
+      example: "04"
+      required: false
+      selector:
+        select:
+          options:
+            - label: "04 — output link table (default)"
+              value: "04"
+            - label: "00 — module header / identity"
+              value: "00"
+            - label: "01 — BP-cell records / vendor map"
+              value: "01"
+          custom_value: true
 
 send_button_press:
   fields:
