@@ -130,6 +130,12 @@
         "communication_error": {
             "message": "Communication with Nikobus failed: {error}"
         },
+        "forensic_requires_module_address": {
+            "message": "Forensic register scan requires a module_address. Specify one (e.g. 940C) — the register range cannot be applied across all modules."
+        },
+        "forensic_range_incomplete": {
+            "message": "Forensic mode requires both register_start and register_end. Provide both or omit both."
+        },
         "discovery_already_running": {
             "message": "A Nikobus discovery is already running."
         },
@@ -220,11 +226,23 @@
     },
     "services": {
         "query_module_inventory": {
-            "description": "Triggers a Nikobus module inventory scan for all modules or a single module.",
+            "description": "Triggers a Nikobus module inventory scan. Without parameters, scans every output module. With a module_address, scans just that module using the per-module-type tuned ranges. With register_start + register_end (and optionally sub_byte), runs a forensic-mode scan of exactly the requested range — useful for reverse-engineering storage layouts on PC-Logic, interface modules, or unfamiliar regions of any module.",
             "fields": {
                 "module_address": {
-                    "description": "Optional Nikobus module address to limit the inventory scan.",
+                    "description": "Optional Nikobus module address (e.g. 940C, F586). Without it, scans every known output module.",
                     "name": "Module address"
+                },
+                "register_start": {
+                    "description": "Forensic mode — lower bound of the register range to scan, as a hex byte (e.g. 0x70 or 70). Requires register_end and a specific module_address. When provided, the scan walks only this range and skips the production extra-pass logic.",
+                    "name": "Register start"
+                },
+                "register_end": {
+                    "description": "Forensic mode — upper bound of the register range to scan, as a hex byte (e.g. 0x83 or 83). Must be ≥ register_start.",
+                    "name": "Register end"
+                },
+                "sub_byte": {
+                    "description": "Memory bank selector for forensic mode (default 04 — output link table). Other observed banks: 00 (module header / identity), 01 (BP-cell records).",
+                    "name": "Sub-byte"
                 }
             },
             "name": "Query module inventory"
