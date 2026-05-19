@@ -33,7 +33,7 @@ async def async_setup_entry(
     coordinator: NikobusDataCoordinator = entry.runtime_data
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-    register_wall_button_devices(hass, entry, buttons)
+    register_wall_button_devices(hass, entry, buttons, coordinator.dict_module_data)
 
     entities: list[NikobusButtonBinarySensor] = []
     for physical_addr, phys in buttons.items():
