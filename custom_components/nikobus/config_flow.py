@@ -116,6 +116,14 @@ _DEFAULT_CHANNELS_BY_TYPE: dict[str, int] = {
 }
 
 
+# Module types whose "channels" are bus-event sources, not output loads —
+# PC-Logic exposes 6 logical inputs, the 05-206 modular interface exposes
+# 6 wired inputs. The placeholder description reads "input_N" instead of
+# the generic "output_N" used for switch / dimmer / roller. Mirrors the
+# library's ``_INPUT_MODULE_TYPES`` in ``fileio.py``.
+_INPUT_MODULE_TYPES: frozenset[str] = frozenset({"pc_logic", "interface_module"})
+
+
 def _make_default_channel(module_type: str, index: int) -> dict[str, Any]:
     """Build a placeholder channel entry for a freshly-padded slot.
 
@@ -123,7 +131,8 @@ def _make_default_channel(module_type: str, index: int) -> dict[str, Any]:
     re-discovery merge doesn't see drift between user-padded entries
     and library-padded ones.
     """
-    channel: dict[str, Any] = {"description": f"not_in_use output_{index}"}
+    label = "input" if module_type in _INPUT_MODULE_TYPES else "output"
+    channel: dict[str, Any] = {"description": f"not_in_use {label}_{index}"}
     if module_type == "roller_module":
         channel["operation_time_up"] = "30"
     return channel
