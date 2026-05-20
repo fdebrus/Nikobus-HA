@@ -310,10 +310,19 @@ def register_opaque_module_devices(
 
 
 def _iter_input_module_entities(coordinator: NikobusDataCoordinator):
-    """Yield one NikobusInputEntity per channel of every input-class module."""
+    """Yield one NikobusInputEntity per channel of every input-class module.
+
+    PC-Logic logical inputs are surfaced through synthesized button-store
+    entries (one ``LM-INPUT N`` device per input, parented under the
+    PC-Logic module), so the PC-Logic module itself has no per-channel
+    entities — skip it here. The 05-206 modular interface still uses the
+    channels-driven path.
+    """
     for module_type, address, module_data in _iter_module_records(
         coordinator.dict_module_data, INPUT_MODULE_TYPES
     ):
+        if module_type == "pc_logic":
+            continue
         module_desc = str(
             module_data.get("description") or f"{module_type} ({address})"
         )
@@ -359,17 +368,22 @@ def op_point_display_name(
     library description verbatim; it already carries the channel label.
 
     PC-Logic logical-input keys (the parent button carries
-    ``pc_logic_parent_address``) render as the compact ``Key A`` /
-    ``Key B`` form, matching how the parent ``LM-INPUT N`` device is
-    named.
+    ``pc_logic_parent_address``) render as ``Key A on LM-INPUT N`` /
+    ``Key B on LM-INPUT N``, mirroring the IR ``<key> on <parent>``
+    pattern so the device list disambiguates each slot's keys.
     """
     if key_label.startswith("IR:"):
         ir_code = key_label[len("IR:"):]
         return f"IR {ir_code} on {physical_address}"
     if isinstance(parent_phys, dict) and parent_phys.get("pc_logic_parent_address"):
-        # ``1A`` → "Key A", ``1B`` → "Key B".
-        if len(key_label) == 2 and key_label[1].isalpha():
-            return f"Key {key_label[1].upper()}"
+        # ``1A`` → "Key A on LM-INPUT N", ``1B`` → "Key B on LM-INPUT N".
+        slot = parent_phys.get("pc_logic_slot_index")
+        if (
+            len(key_label) == 2
+            and key_label[1].isalpha()
+            and isinstance(slot, int)
+        ):
+            return f"Key {key_label[1].upper()} on LM-INPUT {slot}"
     return op_point.get("description") or f"Push button {key_label}"
 
 
