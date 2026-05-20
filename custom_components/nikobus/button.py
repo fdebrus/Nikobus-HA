@@ -122,6 +122,29 @@ def _pc_logic_input_naming(
     return f"LM-INPUT {slot}", (DOMAIN, parent_addr.upper())
 
 
+def _remote_transmitter_naming(
+    phys: dict[str, Any],
+) -> tuple[str, tuple[str, str]] | None:
+    """Return ``(device_name, via_device_identifier)`` if ``phys`` is a
+    synthesised remote-transmitter child entry; else ``None``.
+
+    The library's cluster-detection pass synthesises a virtual
+    transmitter parent for any cluster of 8+ unmatched bus addresses
+    sharing a 4-hex suffix (typical for multi-page Easywave remotes
+    emitting dozens of distinct codes). Each child carries
+    ``remote_transmitter_address`` (the synthetic parent ID, e.g.
+    ``RT-E31C``) and ``remote_transmitter_bus_address`` (the original
+    observed bus event). HA renders each child as a
+    ``Remote <bus>`` device parented under the transmitter.
+    """
+
+    parent_id = phys.get("remote_transmitter_address")
+    bus_addr = phys.get("remote_transmitter_bus_address")
+    if not isinstance(parent_id, str) or not isinstance(bus_addr, str):
+        return None
+    return f"Remote {bus_addr}", (DOMAIN, parent_id)
+
+
 def register_wall_button_devices(
     hass: HomeAssistant,
     entry: NikobusConfigEntry,
@@ -149,6 +172,7 @@ def register_wall_button_devices(
     """
     device_registry = dr.async_get(hass)
     pc_logic_parents_registered: set[str] = set()
+    remote_transmitter_parents_registered: set[str] = set()
     for physical_addr, phys in buttons.items():
         if not isinstance(phys, dict):
             continue
@@ -177,6 +201,25 @@ def register_wall_button_devices(
             )
             continue
 
+        remote_naming = _remote_transmitter_naming(phys)
+        if remote_naming is not None:
+            name, via_device = remote_naming
+            parent_id = via_device[1]
+            if parent_id not in remote_transmitter_parents_registered:
+                _ensure_remote_transmitter_parent_device(
+                    device_registry, entry, parent_id, phys
+                )
+                remote_transmitter_parents_registered.add(parent_id)
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, physical_addr)},
+                manufacturer=BRAND,
+                name=name,
+                model=str(phys.get("model") or "Remote Code"),
+                via_device=via_device,
+            )
+            continue
+
         type_str = str(phys.get("type") or phys.get("model") or "Wall Button")
         model = str(phys.get("model") or phys.get("type") or "Wall Button")
         category = _category_for_button_type(type_str)
@@ -188,6 +231,35 @@ def register_wall_button_devices(
             model=model,
             via_device=(DOMAIN, category),
         )
+
+
+def _ensure_remote_transmitter_parent_device(
+    device_registry: dr.DeviceRegistry,
+    entry: NikobusConfigEntry,
+    transmitter_id: str,
+    sample_child: dict[str, Any],
+) -> None:
+    """Register a synthetic remote-transmitter parent device.
+
+    Unlike PC-Logic / interface_module parents (which are real
+    Nikobus modules with an enrolled bus address and a record in
+    ``dict_module_data``), the transmitter parent is a purely
+    HA-side construct synthesised from a cluster of unmatched bus
+    references. The identifier is ``(DOMAIN, "RT-<suffix>")`` and
+    the device is parented under the Remotes category so it
+    appears grouped with other RF transmitters in the HA device
+    list.
+    """
+
+    suffix = sample_child.get("remote_transmitter_suffix") or transmitter_id
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, transmitter_id)},
+        manufacturer=BRAND,
+        name=f"Remote Transmitter ({suffix})",
+        model="RF Remote (synthesized)",
+        via_device=(DOMAIN, CATEGORY_REMOTES),
+    )
 
 
 def _ensure_pc_logic_parent_device(
