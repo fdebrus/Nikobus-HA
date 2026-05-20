@@ -196,28 +196,41 @@ def _ensure_pc_logic_parent_device(
     parent_addr: str,
     dict_module_data: dict[str, Any] | None,
 ) -> None:
-    """Register the PC-Logic module device that a logical-input child points
-    to via ``via_device``.
+    """Register the input-module device that a synthesised input-child
+    points to via ``via_device``.
 
-    Looks the module up in ``dict_module_data`` for accurate name/model.
-    Falls back to a placeholder when module data isn't available — a later
-    call to ``register_input_module_devices`` will update fields on the
-    same identifier.
+    Looks the parent module up in ``dict_module_data`` under both the
+    ``pc_logic`` and ``interface_module`` buckets — both module types
+    use the same synthesis path and provenance shape, so the parent
+    can live in either bucket. Falls back to a placeholder when module
+    data isn't available — a later call to ``register_input_module_devices``
+    will update fields on the same identifier.
     """
-    bucket = (dict_module_data or {}).get("pc_logic") or {}
     module_data: dict[str, Any] | None = None
-    if isinstance(bucket, dict):
+    found_module_type: str | None = None
+    for module_type in ("pc_logic", "interface_module"):
+        bucket = (dict_module_data or {}).get(module_type) or {}
+        if not isinstance(bucket, dict):
+            continue
         for addr, data in bucket.items():
             if str(addr).upper() == parent_addr and isinstance(data, dict):
                 module_data = data
+                found_module_type = module_type
                 break
+        if module_data is not None:
+            break
 
     if module_data is not None:
-        name = str(module_data.get("description") or f"PC-Logic ({parent_addr})")
-        model = str(module_data.get("model") or "pc_logic")
+        default_name = (
+            f"PC-Logic ({parent_addr})"
+            if found_module_type == "pc_logic"
+            else f"Modular Interface ({parent_addr})"
+        )
+        name = str(module_data.get("description") or default_name)
+        model = str(module_data.get("model") or found_module_type)
     else:
-        name = f"PC-Logic ({parent_addr})"
-        model = "pc_logic"
+        name = f"Input Module ({parent_addr})"
+        model = "input_module"
 
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
@@ -312,16 +325,16 @@ def register_opaque_module_devices(
 def _iter_input_module_entities(coordinator: NikobusDataCoordinator):
     """Yield one NikobusInputEntity per channel of every input-class module.
 
-    PC-Logic logical inputs are surfaced through synthesized button-store
-    entries (one ``LM-INPUT N`` device per input, parented under the
-    PC-Logic module), so the PC-Logic module itself has no per-channel
-    entities — skip it here. The 05-206 modular interface still uses the
-    channels-driven path.
+    Both PC-Logic (05-201) and Modular Interface (05-206) inputs are
+    surfaced through synthesized button-store entries (one ``LM-INPUT N``
+    device per input, parented under the owning module). Their per-channel
+    placeholder entities are redundant — skip the module-attached
+    ``NikobusInputEntity`` creation for both.
     """
     for module_type, address, module_data in _iter_module_records(
         coordinator.dict_module_data, INPUT_MODULE_TYPES
     ):
-        if module_type == "pc_logic":
+        if module_type in ("pc_logic", "interface_module"):
             continue
         module_desc = str(
             module_data.get("description") or f"{module_type} ({address})"
