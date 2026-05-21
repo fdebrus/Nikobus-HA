@@ -153,6 +153,39 @@ DIMMER_DELAY: Final[int] = 1  # Delay before retrieving dimmer status
 SHORT_PRESS: Final[float] = 1.0  # Short press duration in seconds
 BUTTON_TIMER_THRESHOLDS: Final[tuple[int, int, int]] = (1, 2, 3)
 
+# Wire cadence of the Nikobus "button held" signal. The bus emits one
+# press frame every ~40 ms while a button is held. We use this as the
+# physical invariant for duration measurement: frame_count * cadence
+# tells us how long the wire was carrying the held signal, regardless
+# of when the bytes actually reached our process. See nkbactuator.py.
+FRAME_CADENCE_S: Final[float] = 0.040
+
+# How long (in ms) of inter-frame silence before we consider a button
+# released. Bumped from the historical 150 ms to absorb typical
+# bridge hiccups under 300 ms. Bursts can adaptively extend this
+# further (see BURST_* constants below).
+RELEASE_THRESHOLD_MS: Final[int] = 300
+
+# Burst-flush detection. When the transport (TCP-to-serial bridge,
+# OS scheduler, asyncio loop) stalls, frames pile up upstream and
+# drain in microsecond-spaced bursts that are physically impossible
+# on a 40 ms-cadence wire. We treat any gap below this as a marker
+# that the current frame came from a buffer, not the wire.
+BURST_GAP_THRESHOLD_S: Final[float] = 0.005
+
+# Sliding window of inter-frame gaps used to decide whether we're
+# currently inside a burst-flush. If ``BURST_DETECT_GAP_COUNT`` of
+# the last ``BURST_RECENT_GAPS_WINDOW`` gaps were burst-shaped, we
+# extend the release threshold to absorb the implied bridge stall.
+BURST_RECENT_GAPS_WINDOW: Final[int] = 4
+BURST_DETECT_GAP_COUNT: Final[int] = 3
+
+# Maximum value the release threshold can grow to under burst-mode
+# extension. Bigger = more correct on multi-burst stalls but slower
+# release detection on a real release while in burst mode. Cap
+# keeps worst-case latency bounded.
+MAX_EXTENDED_RELEASE_MS: Final[int] = 5000
+
 # =============================================================================
 # Covers
 # =============================================================================
