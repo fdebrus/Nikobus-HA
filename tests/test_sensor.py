@@ -1,12 +1,21 @@
 """Tests for the Nikobus connection status sensor."""
 
 import asyncio
+import json
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
 
 from custom_components.nikobus.sensor import NikobusConnectionSensor
 from custom_components.nikobus.const import DOMAIN, HUB_IDENTIFIER
+
+_ICONS_JSON = (
+    Path(__file__).parent.parent
+    / "custom_components"
+    / "nikobus"
+    / "icons.json"
+)
 
 
 def _make_coordinator(is_connected=True, reconnect_task=None, reconnect_attempts=0, last_connected=None):
@@ -83,24 +92,32 @@ class TestSensorNativeValue(unittest.TestCase):
 
 
 class TestSensorIcon(unittest.TestCase):
-    def _sensor_with_status(self, status):
-        coord = MagicMock()
-        coord.connection_status = status
-        sensor = NikobusConnectionSensor.__new__(NikobusConnectionSensor)
-        sensor.coordinator = coord
-        return sensor
+    """The connection sensor's icon used to live as a Python property.
+    It was moved into HA's declarative ``icons.json`` mechanism — the
+    frontend picks the icon from ``state`` and the entity exposes
+    only ``native_value``. These tests verify the mapping at its new
+    home: read ``icons.json`` and confirm the state→icon contract.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        with _ICONS_JSON.open(encoding="utf-8") as fh:
+            cls.mapping = json.load(fh)["entity"]["sensor"]["connection"]
 
     def test_connected_icon(self):
-        self.assertEqual(self._sensor_with_status("connected").icon, "mdi:lan-connect")
+        self.assertEqual(self.mapping["state"]["connected"], "mdi:lan-connect")
 
     def test_reconnecting_icon(self):
-        self.assertEqual(self._sensor_with_status("reconnecting").icon, "mdi:lan-pending")
+        self.assertEqual(self.mapping["state"]["reconnecting"], "mdi:lan-pending")
 
     def test_disconnected_icon(self):
-        self.assertEqual(self._sensor_with_status("disconnected").icon, "mdi:lan-disconnect")
+        self.assertEqual(self.mapping["state"]["disconnected"], "mdi:lan-disconnect")
 
     def test_unknown_status_defaults_to_disconnect_icon(self):
-        self.assertEqual(self._sensor_with_status("unknown").icon, "mdi:lan-disconnect")
+        # Any state not in the ``state`` map falls through to ``default``.
+        unknown_status = "totally-not-a-real-state"
+        self.assertNotIn(unknown_status, self.mapping["state"])
+        self.assertEqual(self.mapping["default"], "mdi:lan-disconnect")
 
 
 class TestSensorAttributes(unittest.TestCase):

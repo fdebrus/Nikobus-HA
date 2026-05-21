@@ -6,6 +6,7 @@ import asyncio
 import logging
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import timezone as _tz
 from datetime import datetime
@@ -15,11 +16,17 @@ from homeassistant.core import HomeAssistant
 from nikobus_connect.discovery import find_module, find_operation_point
 
 from .const import (
+    BURST_DETECT_GAP_COUNT,
+    BURST_GAP_THRESHOLD_S,
+    BURST_RECENT_GAPS_WINDOW,
     BUTTON_TIMER_THRESHOLDS,
     DIMMER_DELAY,
     EVENT_BUTTON_OPERATION,
     EVENT_BUTTON_PRESSED,
+    FRAME_CADENCE_S,
+    MAX_EXTENDED_RELEASE_MS,
     REFRESH_DELAY,
+    RELEASE_THRESHOLD_MS,
     SHORT_PRESS,
 )
 
@@ -31,7 +38,17 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class PressState:
-    """Track the state of an in-flight button press."""
+    """Track the state of an in-flight button press.
+
+    Duration is anchored to ``frame_count`` (each received frame
+    represents ``FRAME_CADENCE_S`` of held time on the wire), not
+    wall-clock — that's the only invariant that survives upstream
+    buffering. ``recent_gaps`` and ``current_release_threshold_ms``
+    drive burst-aware release patience: when frames arrive faster
+    than the wire could deliver them (gap < ``BURST_GAP_THRESHOLD_S``),
+    we know a bridge stall just drained into us and extend the
+    release threshold to absorb the next likely stall.
+    """
     address: str
     press_start: float
     last_press_time: float
@@ -39,8 +56,12 @@ class PressState:
     module_address: str | None
     channel: int | None
     release_task: asyncio.Task[None] | None = None
-    timer_tasks: dict[int, asyncio.Task[None]] = field(default_factory=dict)
     last_timer_threshold: int = 0
+    frame_count: int = 1
+    recent_gaps: deque[float] = field(
+        default_factory=lambda: deque(maxlen=BURST_RECENT_GAPS_WINDOW)
+    )
+    current_release_threshold_ms: float = float(RELEASE_THRESHOLD_MS)
 
 
 class NikobusActuator:
@@ -63,23 +84,33 @@ class NikobusActuator:
         self._coordinator = coordinator
         self._dict_button_data = dict_button_data
         self._module_data = module_data
-        self._debounce_time_ms = 150
         self._press_states: dict[str, PressState] = {}
         self._module_refresh_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def handle_button_press(self, address: str) -> None:
-        """Handle incoming button frames with debounce and duration tracking."""
+        """Handle incoming button frames with frame-count duration tracking.
+
+        Each frame is treated as ``FRAME_CADENCE_S`` (40 ms) of held
+        time on the wire — the only quantity that survives upstream
+        buffering correctly. Burst-flushed frames update the burst
+        window so the release detector can extend its patience.
+        """
         normalized_address = address.upper()
         current_time = time.monotonic()
 
         if normalized_address in self._press_states:
             state = self._press_states[normalized_address]
+            gap = current_time - state.last_press_time
             state.last_press_time = current_time
+            state.frame_count += 1
+            state.recent_gaps.append(gap)
+            self._update_release_threshold(state)
+            self._maybe_fire_frame_count_timers(state)
             return
 
         module_address, channel = self._derive_button_context(normalized_address)
         press_id = f"{normalized_address}-{current_time:.3f}-{uuid.uuid4().hex[:8]}"
-        
+
         state = PressState(
             address=normalized_address,
             press_start=current_time,
@@ -90,9 +121,11 @@ class NikobusActuator:
         )
         self._press_states[normalized_address] = state
 
-        # Start background tasks for release detection and duration timers
+        # Start background task for release detection. Timer events
+        # are now fired synchronously inside handle_button_press as
+        # frame_count crosses each threshold (see
+        # _maybe_fire_frame_count_timers) — no async sleeps needed.
         state.release_task = self._hass.async_create_task(self._wait_for_release(state))
-        self._start_timer_tasks(state)
 
         # Fire immediate press event for Binary Sensors
         self._fire_event(EVENT_BUTTON_PRESSED, state, state_value="pressed", duration=None)
@@ -107,39 +140,68 @@ class NikobusActuator:
         }
         self._hass.async_create_task(self.button_discovery(state.address, press_context=press_context))
 
-    def _start_timer_tasks(self, state: PressState) -> None:
-        """Initialize tasks for long-press duration thresholds."""
-        for duration in BUTTON_TIMER_THRESHOLDS:
-            task = self._hass.async_create_task(
-                self._fire_timer_event(state.address, state.press_id, duration)
-            )
-            state.timer_tasks[duration] = task
+    def _maybe_fire_frame_count_timers(self, state: PressState) -> None:
+        """Fire ``nikobus_button_timer_N`` events when frame_count
+        crosses each long-press threshold.
 
-    async def _fire_timer_event(self, address: str, press_id: str, duration: int) -> None:
-        """Fire events when a press crosses a specific time threshold."""
-        try:
-            state = self._press_states.get(address)
-            if state and state.press_id == press_id:
-                elapsed = time.monotonic() - state.press_start
-                await asyncio.sleep(max(duration - elapsed, 0))
-
-            state = self._press_states.get(address)
-            if not state or state.press_id != press_id or state.last_timer_threshold >= duration:
-                return
-
-            state.last_timer_threshold = duration
+        Anchored to ``frame_count * FRAME_CADENCE_S`` so timers fire
+        correctly even when frames arrive in a buffered burst (where
+        wall-clock would never reach the threshold within the press
+        window). Idempotent via ``last_timer_threshold``.
+        """
+        elapsed_s = state.frame_count * FRAME_CADENCE_S
+        for threshold in BUTTON_TIMER_THRESHOLDS:
+            if state.last_timer_threshold >= threshold:
+                continue
+            if elapsed_s < threshold:
+                continue
+            state.last_timer_threshold = threshold
             self._fire_event(
-                f"nikobus_button_timer_{duration}",
+                f"nikobus_button_timer_{threshold}",
                 state,
                 state_value="timer",
-                duration=time.monotonic() - state.press_start,
-                threshold=duration,
+                duration=elapsed_s,
+                threshold=threshold,
             )
-        except asyncio.CancelledError:
-            pass
+
+    def _update_release_threshold(self, state: PressState) -> None:
+        """Adjust the per-press release threshold based on burst signal.
+
+        When several recent inter-frame gaps are below
+        ``BURST_GAP_THRESHOLD_S``, frames are arriving faster than the
+        wire can deliver them — a bridge stall has just drained into
+        us. Extend the release threshold to absorb the likely next
+        stall, scaled to the implied bridge buffer (frame_count *
+        cadence ≈ ms of wire time the bridge withheld). Cap at
+        ``MAX_EXTENDED_RELEASE_MS`` to keep release latency bounded.
+
+        When recent gaps look normal again (no burst markers in the
+        window), the threshold relaxes back to ``RELEASE_THRESHOLD_MS``
+        so a real release on a healthy bridge is detected promptly.
+        """
+        burst_gap_count = sum(
+            1 for g in state.recent_gaps if g < BURST_GAP_THRESHOLD_S
+        )
+        if burst_gap_count >= BURST_DETECT_GAP_COUNT:
+            implied_stall_ms = state.frame_count * FRAME_CADENCE_S * 1000.0
+            state.current_release_threshold_ms = min(
+                float(MAX_EXTENDED_RELEASE_MS),
+                max(state.current_release_threshold_ms, implied_stall_ms),
+            )
+        elif burst_gap_count == 0 and len(state.recent_gaps) >= BURST_RECENT_GAPS_WINDOW:
+            # The full recent-gap window is clean — bridge is back to
+            # normal cadence. Relax patience back to baseline so a
+            # real release isn't held up by stale burst state.
+            state.current_release_threshold_ms = float(RELEASE_THRESHOLD_MS)
 
     async def _wait_for_release(self, state: PressState) -> None:
-        """Monitor for the absence of button frames to detect a release."""
+        """Monitor for the absence of button frames to detect a release.
+
+        Uses the per-press adaptive release threshold so a burst-flush
+        followed by silence isn't misclassified as a release. Press
+        duration is computed from frame_count (wire-time anchor)
+        rather than wall-clock — see ``PressState`` docstring.
+        """
         try:
             while True:
                 await asyncio.sleep(0.05)
@@ -147,18 +209,16 @@ class NikobusActuator:
                 if not active_state or active_state.press_id != state.press_id:
                     return
 
-                if (time.monotonic() - active_state.last_press_time) * 1000 >= self._debounce_time_ms:
-                    duration = time.monotonic() - active_state.press_start
+                silence_ms = (time.monotonic() - active_state.last_press_time) * 1000
+                if silence_ms >= active_state.current_release_threshold_ms:
+                    duration = active_state.frame_count * FRAME_CADENCE_S
                     await self._handle_release(active_state, duration)
                     return
         except asyncio.CancelledError:
             pass
 
     async def _handle_release(self, state: PressState, press_duration: float) -> None:
-        """Cleanup timers and process module updates upon button release."""
-        for task in state.timer_tasks.values():
-            task.cancel()
-        
+        """Cleanup and process module updates upon button release."""
         bucket = self._get_bucket(press_duration)
         
         # 1. Base Release Event

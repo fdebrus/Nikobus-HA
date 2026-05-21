@@ -42,7 +42,10 @@ def _make_coordinator():
     coord._reconnect_attempts = 0
     coord.discovery_running = False
     coord.dict_module_data = {}
-    coord.nikobus_module_states = {}
+    # ``nikobus_module_states`` is a read-only property on the real class
+    # (returns ``self._module_states``). Bypass __init__, so set the
+    # underlying attribute directly.
+    coord._module_states = {}
 
     # Mock subsystems
     coord.nikobus_connection = MagicMock()
