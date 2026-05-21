@@ -4,6 +4,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from nikobus_connect.command import NikobusCommandHandler
 from nikobus_connect.discovery import InventoryQueryType
 
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
@@ -24,7 +25,14 @@ class _FakeCoord:
     """Duck-type a NikobusDataCoordinator with only the state buffer attributes."""
 
     def __init__(self, states: dict | None = None, module_data: dict | None = None):
-        self.nikobus_module_states: dict = states or {}
+        # The real coordinator stores the state buffer in ``_module_states``
+        # and exposes it through the ``nikobus_module_states`` read-only
+        # property. The borrowed methods reach for ``self._module_states``
+        # directly, so we set that as the source of truth here and alias
+        # ``nikobus_module_states`` to the same dict so assertions reading
+        # either name see the same data.
+        self._module_states: dict = states or {}
+        self.nikobus_module_states = self._module_states
         self.dict_module_data: dict = module_data or {}
         # ``module_storage.data`` is the 0.4.0 flat store. Build it from the
         # legacy nested ``module_data`` when the caller provides one, so
@@ -38,7 +46,17 @@ class _FakeCoord:
                     continue
                 flat[str(addr).upper()] = {**entry, "module_type": module_type}
         self.module_storage = _FakeModuleStorage({"nikobus_module": flat})
-        self.nikobus_command = None
+        # ``set_bytearray_state`` and ``get_bytearray_group_state`` on
+        # the real coordinator delegate to ``self.nikobus_command``
+        # (the library's command handler), which holds the canonical
+        # state buffer. Wire a real handler here, backed by the same
+        # ``_module_states`` dict, so the delegated path works in
+        # tests without needing a connection or listener.
+        self.nikobus_command = NikobusCommandHandler(
+            connection=MagicMock(),
+            listener=MagicMock(),
+            module_states=self._module_states,
+        )
 
     async def async_event_handler(self, event: str, data: dict) -> None:
         pass  # no-op for unit tests

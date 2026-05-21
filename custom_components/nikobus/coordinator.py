@@ -373,8 +373,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     # Auto-allocate if module wasn't pre-registered
                     buf = bytearray(12)
                     self._module_states[address] = buf
-                state_bytes = bytes.fromhex(state_hex)
-                buf[start : start + 6] = state_bytes
+                if start + 6 > len(buf):
+                    # Out-of-range group for this module's buffer
+                    # (e.g. group 2 on a 6-output module). Drop the
+                    # write rather than silently extend the buffer
+                    # and promote the module to a larger size.
+                    pass
+                else:
+                    state_bytes = bytes.fromhex(state_hex)
+                    buf[start : start + 6] = state_bytes
 
                 # Resolve any pending get_output_state future immediately
                 if self.nikobus_command:
@@ -670,9 +677,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     @callback
     def get_bytearray_group_state(self, address: str, group: int) -> bytearray:
-        """Return 6-byte group state."""
+        """Return 6-byte group state.
+
+        Callers expect a fixed-length 6-byte response. The library's
+        ``get_bytearray_group_state`` returns the raw slice, which
+        comes back empty for a group whose end position exceeds the
+        module's buffer length (e.g. group 2 on a 6-output module).
+        Pad to six zero bytes in that case so the caller always sees
+        the same shape regardless of module size.
+        """
         if self.nikobus_command:
-            return self.nikobus_command.get_bytearray_group_state(address, int(group))
+            result = self.nikobus_command.get_bytearray_group_state(
+                address, int(group)
+            )
+            if len(result) < 6:
+                return bytearray(6)
+            return result
         return bytearray(6)
 
     @callback
@@ -682,12 +702,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.nikobus_command.set_bytearray_state(address, channel, value)
 
     def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
-        """Update a group in the state buffer from a hex string."""
+        """Update a group in the state buffer from a hex string.
+
+        Out-of-range group writes are silently ignored. Without this
+        guard, a slice assignment like ``buf[6:12] = ...`` against a
+        6-byte buffer would extend it to 12 bytes — silently
+        promoting a 6-output module to 12 outputs in the state
+        store, which downstream consumers (channel iteration,
+        diagnostics) interpret as real channels.
+        """
         addr_upper = address.upper()
         buf = self._module_states.get(addr_upper)
         if buf is None:
             return
         start = 0 if int(group) == 1 else 6
+        if start + 6 > len(buf):
+            return
         try:
             state_bytes = bytes.fromhex(value[:12].ljust(12, "0"))
             buf[start : start + 6] = state_bytes[:6]
