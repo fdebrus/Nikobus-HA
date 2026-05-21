@@ -25,23 +25,43 @@ Before installing:
 
 - **Switch Module** `05-000-02`, **Compact Switch Module** `05-002-02`
   - On/off switching.
-- **Dimmer Module** `05-007-02`
+- **Dimmer Module** `05-007-02`, **Compact Dim Controller** `05-008-02`
   - On/off and brightness setting.
 - **Shutter Module** `05-001-02`
   - Open/close and position (simulated using operation time).
-- **Modules with Digital Interfaces** (PC-Logic `05-201`, Audio Distribution `05-205`, Digital Interface `05-206`)
-  - Each digital entry is discovered as a button; HA entities are created after restart.
+- **Input-class modules** (PC-Logic `05-201`, Modular Interface `05-206`)
+  - The module's 6 logical inputs each surface as their own `LM-INPUT N` child device under the parent module — same shape as a wall button (button + idle/pressed binary-sensor per key). See [PC-Logic and Modular Interface inputs](#pc-logic-and-modular-interface-inputs) below.
+- **Audio Distribution Module** `05-205`
+  - Discovered and registered as a device for visibility; input/output mapping is not yet decoded.
 - **PC-Link Module** `05-200`
   - The bus interface Home Assistant connects to (serial or via a TCP bridge). Required — all communication goes through the PC-Link.
 - **Feedback Module** `05-207`
   - Optional companion to the PC-Link. When present and wired to the PC-Link, it pushes module state changes to Home Assistant in real time, so no polling is needed. Without one, HA polls the bus on a configurable interval (60–3600 s).
-- **Nikobus Buttons** (physical switches, IR, Feedback, Remote)
+- **Nikobus Buttons** (physical switches, IR receivers, motion detectors, RF transmitters)
   - Populated automatically via the **Discover modules & buttons** and **Scan all module links** buttons on the Nikobus Bridge device.
+  - Standard wall buttons, IR receivers, motion detectors (`05-7X5`), and small RF transmitters (`05-311`, `05-312` 4-channel, `05-314`, `05-345`) all materialise as one device per physical button, with one button-entity + binary-sensor pair per key.
+  - The **Niko 05-312 Easywave 52-key hand-held** (the multi-page scene remote) is also supported — it materialises as one device with all 52 sub-codes as op-points, named per the Niko convention (`1A`/`1B`/`1C` for base, `1.1A`..`1.5B` for scenes, similarly for Ch2/3/4).
+  - Multi-page RF transmitters that emit dozens of distinct bus codes from one physical handheld but aren't enrolled in PC-Link inventory get clustered automatically: any group of 8+ unmatched bus codes sharing the same 4-hex suffix becomes a single virtual `Remote Transmitter (<suffix>)` device with the codes as child entities. Triggered at the end of a **Scan all module links** run.
   - Button press events can be used as triggers in Home Assistant automations.
   - Buttons with LEDs require LED on/off addresses in each module output configuration.
   - Virtual / IR-scene button addresses that aren't on the bus can be fired from scripts via the `nikobus.send_button_press` service.
 - **Home Assistant Scenes**
   - Trigger multiple module/channel updates from one command.
+
+## PC-Logic and Modular Interface inputs
+
+The 05-201 (PC-Logic) and 05-206 (Modular Interface) each expose six inputs that emit bus events when triggered — PC-Logic via its programmable logic engine, the Modular Interface via wired dry contacts. The integration renders each input as a separate child device named `LM-INPUT 1` through `LM-INPUT 6`, parented under the owning module so they group naturally in the device list.
+
+Each input has two op-point keys (`Key A` and `Key B`) — the firmware emits one or the other depending on which logical state the input transitioned to. Each key has the standard button-entity + idle/pressed binary-sensor pair, so automations can react to either or both:
+
+```yaml
+trigger:
+  - platform: state
+    entity_id: binary_sensor.lm_input_1_key_a
+    to: "pressed"
+```
+
+The input addresses are computed by firmware from the module's own bus address (not stored in PC-Link inventory), and synthesised by the library at discovery time. No user configuration is required — they appear after **Discover modules & buttons** completes.
 
 ## Events Fired by the Integration
 
@@ -50,7 +70,7 @@ The integration emits structured Home Assistant bus events for every button pres
 - Base events: `nikobus_button_pressed` and `nikobus_button_released`.
 - Classification: `nikobus_short_button_pressed` (press duration < 1s) and `nikobus_long_button_pressed` (press duration ≥ 1s). The 1-second threshold is defined as `SHORT_PRESS` in `custom_components/nikobus/const.py`.
 - Release-duration buckets (rounded down): `nikobus_button_pressed_0` (< 1s), `nikobus_button_pressed_1` (1–<2s), `nikobus_button_pressed_2` (2–<3s), and `nikobus_button_pressed_3` (≥ 3s).
-- Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively.
+- Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively. Anchored to the wire's 40 ms-cadence frame count rather than wall-clock, so a TCP-to-serial bridge that buffers frames during a brief stall and flushes them in a burst still classifies the press correctly — the timer and bucket events fire based on how many frames actually arrived for this press, not when they happened to reach our process.
 - Post-refresh notification: `nikobus_button_operation` when the integration refreshes impacted modules after the press, including metadata such as the impacted module address/group and configured operation time.
 
 All events share the same payload keys so automations can rely on a consistent schema:
