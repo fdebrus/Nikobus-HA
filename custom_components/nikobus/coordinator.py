@@ -1459,7 +1459,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         # --- Button bucketing ----------------------------------------
         remaining = {str(a).upper() for a in modules.keys()}
-        bucket_counts = {"active": 0, "legacy_orphan": 0, "legacy_undecoded": 0}
+        bucket_counts = {
+            "active": 0,
+            "legacy_orphan": 0,
+            "legacy_undecoded": 0,
+            "synthesized_input": 0,
+        }
         buttons = self.dict_button_data.setdefault("nikobus_button", {})
         # Topology gate for the registry-only residue check. With no
         # PC-Logic in the install, a button whose every output record
@@ -1470,6 +1475,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         has_pc_logic = self._has_pc_logic_module()
         for phys in buttons.values():
             if not isinstance(phys, dict):
+                continue
+            # Library-synthesized PC-Logic (05-201) and Modular Interface
+            # (05-206) input children carry ``pc_logic_parent_address``
+            # set by the synthesizer in nikobus-connect
+            # ``_synthesize_pc_logic_inputs``. They model bus-event
+            # sources that the parent module listens to internally, not
+            # buttons that drive output modules — empty ``linked_modules``
+            # is the steady state, not a residue signal. Bucket them on
+            # their own status so the legacy-undecoded Repairs flow
+            # leaves them alone.
+            if phys.get("pc_logic_parent_address"):
+                phys["status"] = "synthesized_input"
+                bucket_counts["synthesized_input"] += 1
                 continue
             linked = self._collect_button_linked_modules(phys)
             outputs = self._collect_button_outputs(phys)
@@ -1520,7 +1538,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         _LOGGER.info(
             "Post-discovery reconciliation: probed=%d present=%d absent=%d "
             "swept=%d evicted=%d | buttons active=%d legacy_orphan=%d "
-            "legacy_undecoded=%d",
+            "legacy_undecoded=%d synthesized_input=%d",
             len(checked),
             len(present),
             len(absent),
@@ -1529,6 +1547,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             bucket_counts["active"],
             bucket_counts["legacy_orphan"],
             bucket_counts["legacy_undecoded"],
+            bucket_counts["synthesized_input"],
         )
         if evicted:
             _LOGGER.info(
