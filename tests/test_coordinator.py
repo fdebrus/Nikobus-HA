@@ -732,6 +732,62 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
             "legacy_undecoded",
         )
 
+    async def test_synthesized_pc_logic_input_is_not_flagged_as_legacy(self):
+        """PC-Logic (05-201) and Modular Interface (05-206) synthesized
+        inputs carry ``pc_logic_parent_address`` set by the library's
+        ``_synthesize_pc_logic_inputs``. They model bus-event sources
+        the parent module listens to internally, not buttons that drive
+        output modules — empty ``linked_modules`` is their steady state.
+
+        Pre-fix the classifier flagged all six as ``legacy_undecoded``
+        and the Repairs flow asked the user to purge them (gist
+        reproducer at install with parent 8DC8 + synthesised children
+        64A061..64A066). The fix routes them to ``synthesized_input``
+        so the legacy-undecoded Repairs issue ignores them.
+        """
+        synthesized = {
+            "1A": {"bus_address": "21814B", "linked_modules": []},
+            "1B": {"bus_address": "61814B", "linked_modules": []},
+        }
+        synthesized_input = {
+            "type": "PC-Logic Logical Input",
+            "model": "05-201",
+            "operation_points": synthesized,
+            "pc_logic_parent_address": "940C",
+            "pc_logic_parent_type": "pc_logic",
+        }
+        modular_input = {
+            "type": "Modular Interface Input",
+            "model": "05-206",
+            "operation_points": synthesized,
+            "pc_logic_parent_address": "1234",
+            "pc_logic_parent_type": "interface_module",
+        }
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"}},
+            buttons={
+                "64A061": synthesized_input,
+                "0E1234": modular_input,
+                # A wall button with no links — must still be flagged.
+                "112233": self._button(),
+            },
+            manifest={
+                "checked": ["AABB"],
+                "present_modules": ["AABB"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        buttons = coord.dict_button_data["nikobus_button"]
+        self.assertEqual(buttons["64A061"]["status"], "synthesized_input")
+        self.assertEqual(buttons["0E1234"]["status"], "synthesized_input")
+        # Real wall button still flagged — the synthesized bypass must
+        # be scoped to pc_logic_parent-bearing entries only.
+        self.assertEqual(buttons["112233"]["status"], "legacy_undecoded")
+
     async def test_button_with_at_least_one_present_link_is_active(self):
         # Button linked to AABB (in sweep, kept) + CCDD (absent in both,
         # evicted). At least one link survives → active.
@@ -1413,6 +1469,31 @@ class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
         delete_args = mock_delete.call_args
         self.assertIn("legacy_undecoded_buttons", delete_args.args[2])
         self.assertIn("entry_test", delete_args.args[2])
+
+    @patch("custom_components.nikobus.coordinator.ir.async_create_issue")
+    @patch("custom_components.nikobus.coordinator.ir.async_delete_issue")
+    def test_synthesized_inputs_do_not_surface_repair(
+        self, mock_delete, mock_create
+    ):
+        # Repro for the false-positive on synthesized PC-Logic /
+        # Modular Interface inputs: every 05-201 child carries empty
+        # ``linked_modules`` by design, which pre-fix bucketed as
+        # ``legacy_undecoded`` and walked into this Repairs flow asking
+        # the user to purge their PC-Logic inputs. With the fix in
+        # ``_reconcile_post_discovery``, they land on
+        # ``synthesized_input`` and this surface filters them out.
+        coord = self._coord_stub()
+        buttons = {
+            "64A061": {"status": "synthesized_input"},
+            "64A062": {"status": "synthesized_input"},
+            "1843B4": {"status": "active"},
+        }
+
+        NikobusDataCoordinator._surface_legacy_undecoded_buttons(coord, buttons)
+
+        # No legacy entries at all — no repair issue should be created.
+        mock_create.assert_not_called()
+        mock_delete.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

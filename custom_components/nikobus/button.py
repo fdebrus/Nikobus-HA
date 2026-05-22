@@ -88,16 +88,20 @@ def _category_for_button_type(type_str: str) -> str:
 
     Classification rule based on the discovery-supplied ``type`` field:
 
-      * ``RF`` anywhere → Remotes (RF hand-held / RF wall transmitters)
       * ``Interface`` anywhere → Interfaces (push-button / switch /
         universal input interfaces — non-keypad input sources)
+      * ``RF`` anywhere → Remotes (RF hand-held / RF wall transmitters)
       * everything else → Wall buttons (physical bus push buttons)
+
+    Interface is matched before RF because ``"rf"`` is a substring of
+    ``"interface"`` — checking RF first would route every Universal /
+    Modular / push-button interface into Remotes.
     """
     lowered = type_str.lower()
-    if "rf" in lowered:
-        return CATEGORY_REMOTES
     if "interface" in lowered:
         return CATEGORY_INTERFACES
+    if "rf" in lowered:
+        return CATEGORY_REMOTES
     return CATEGORY_WALL_BUTTONS
 
 
@@ -593,10 +597,12 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             attrs["wall_button_type"] = wall_info.get("type")
             # ``status`` comes from post-discovery reconciliation
             # (coordinator._reconcile_post_discovery): one of "active",
-            # "legacy_orphan", "legacy_undecoded". Surface only the
-            # non-default flags so healthy buttons aren't cluttered.
+            # "legacy_orphan", "legacy_undecoded", "synthesized_input".
+            # Surface only the legacy flags so healthy buttons (active
+            # wall buttons and synthesized PC-Logic / 05-206 inputs)
+            # aren't cluttered.
             status = wall_info.get("status")
-            if status and status != "active":
+            if status in ("legacy_orphan", "legacy_undecoded"):
                 attrs["wall_button_status"] = status
         return attrs
 
