@@ -88,16 +88,20 @@ def _category_for_button_type(type_str: str) -> str:
 
     Classification rule based on the discovery-supplied ``type`` field:
 
-      * ``RF`` anywhere → Remotes (RF hand-held / RF wall transmitters)
       * ``Interface`` anywhere → Interfaces (push-button / switch /
         universal input interfaces — non-keypad input sources)
+      * ``RF`` anywhere → Remotes (RF hand-held / RF wall transmitters)
       * everything else → Wall buttons (physical bus push buttons)
+
+    Interface is matched before RF because ``"rf"`` is a substring of
+    ``"interface"`` — checking RF first would route every Universal /
+    Modular / push-button interface into Remotes.
     """
     lowered = type_str.lower()
-    if "rf" in lowered:
-        return CATEGORY_REMOTES
     if "interface" in lowered:
         return CATEGORY_INTERFACES
+    if "rf" in lowered:
+        return CATEGORY_REMOTES
     return CATEGORY_WALL_BUTTONS
 
 
