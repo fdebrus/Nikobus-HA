@@ -457,15 +457,30 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     }
 
     async def _handle_discovery_progress(self, progress: Any) -> None:
-        """Consume a ``DiscoveryProgress`` event emitted by nikobus-connect 0.3.5+.
+        """Consume a ``DiscoveryProgress`` event emitted by nikobus-connect.
 
         ``progress`` is a ``nikobus_connect.discovery.DiscoveryProgress``
-        dataclass with: ``phase``, ``module_address``, ``module_index``,
-        ``module_total``, ``register``, ``register_total``,
-        ``decoded_records``. The library emits one of the four real phases
-        (``inventory`` / ``identity`` / ``register_scan`` / ``finalizing``);
-        idle / finished / error states are handled by the caller's own
-        ``_handle_discovery_finished`` and error-path code.
+        dataclass. Fields used here:
+
+        - ``phase``: one of ``"inventory"``, ``"identity"``,
+          ``"register_scan"``, ``"finalizing"``.
+        - ``module_address`` / ``module_index`` / ``module_total``:
+          current module + queue position.
+        - ``register_total``: cumulative target for the current module
+          across all scan passes (0.16.1+). 48 for the vendor plan
+          on output modules + PC-Logic; 93 for PC-Link.
+        - ``registers_sent``: cumulative count already sent for the
+          current module. The right value for the per-module
+          progress numerator under the vendor scan plan, since the
+          plan reads non-contiguous bytes across multiple passes and
+          ``register`` jumps around (e.g. 0x09 → 0x3E → 0x70).
+        - ``pass_index`` / ``pass_total``: 1-based pass position
+          within the module's plan (e.g. 2/3 for the vendor plan
+          link-table pass). 0 outside scans.
+        - ``sub_byte``: wire sub-byte of the current pass.
+        - ``register``: current byte being read; surfaced for
+          diagnostic display but NOT used as the progress numerator.
+        - ``decoded_records``: running cumulative across the run.
 
         Exceptions raised here are swallowed — the library treats this
         callback as fire-and-forget and must not be stalled by UI plumbing.
@@ -481,16 +496,28 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             module_total = int(getattr(progress, "module_total", 0) or 0)
             register = getattr(progress, "register", None)
             register_total = int(getattr(progress, "register_total", 0) or 0)
+            # New 0.16.1 fields — fall back to the legacy (register -
+            # 0x10 + 1) calculation when the library doesn't supply
+            # them (older lib versions, forensic-mode scans).
+            registers_sent = int(getattr(progress, "registers_sent", 0) or 0)
+            pass_index = int(getattr(progress, "pass_index", 0) or 0)
+            pass_total = int(getattr(progress, "pass_total", 0) or 0)
+            sub_byte = getattr(progress, "sub_byte", None)
             decoded_records = int(getattr(progress, "decoded_records", 0) or 0)
 
-            registers_done = 0
-            if register is not None and register_total:
-                # Registers start at 0x10, so done-count is (current - 0x10 + 1).
+            if registers_sent:
+                registers_done = registers_sent
+            elif register is not None and register_total:
+                # Pre-0.16.1 fallback: assume contiguous registers
+                # from 0x10. Wrong under the vendor plan but harmless
+                # for legacy callers that bypass the plan.
                 try:
                     cur = int(register)
                     registers_done = max(0, cur - 0x10 + 1)
                 except (TypeError, ValueError):
                     registers_done = 0
+            else:
+                registers_done = 0
 
             if sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
                 message = "PC Link inventory: enumerating bus addresses…"
@@ -502,23 +529,25 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 )
             elif sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
                 if module_address:
-                    # Library supplies ``register_total`` (a count starting
-                    # at register 0x10). Show the actual upper bound rather
-                    # than the legacy hard-coded 0xFF — some modules scan
-                    # much narrower ranges, and the early-stop heuristic
-                    # revises ``register_total`` downward once it fires.
-                    # Fall back to 0xFF only when the library did not send
-                    # a register_total (older lib versions / pre-scan tick).
-                    if register_total:
-                        top_register = 0x10 + register_total - 1
-                    else:
-                        top_register = 0xFF
-                    message = (
+                    base = (
                         f"Scanning module {module_address} "
-                        f"({module_index}/{module_total}) — "
-                        f"register 0x{int(register or 0):02X} of "
-                        f"0x{top_register:02X} ({decoded_records} records)"
+                        f"({module_index}/{module_total})"
                     )
+                    # 0.16.1+ surfaces the vendor scan plan's
+                    # multi-pass structure — include the pass position
+                    # so users see "we're in pass 2/3, not stuck on
+                    # one band" during the ~1 s pause between passes.
+                    if pass_total > 1 and pass_index:
+                        sub_label = f" sub={sub_byte}" if sub_byte else ""
+                        base += f" — pass {pass_index}/{pass_total}{sub_label}"
+                    if register_total:
+                        base += (
+                            f" — {registers_done}/{register_total} regs "
+                            f"({decoded_records} records)"
+                        )
+                    else:
+                        base += f" ({decoded_records} records)"
+                    message = base
                 else:
                     message = f"Scanning modules ({module_index}/{module_total})"
             elif sub_phase == DISCOVERY_SUB_PHASE_FINALIZING:
@@ -531,18 +560,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_register_current = (
                 int(register) if register is not None else None
             )
-            # PC-Link inventory walks 0xA4..0xFF = 92 frames (with the
-            # 0.5.13+ all-FF early-stop kicking in well before the end).
-            # The library reports ``register_total`` as the full 0x10..
-            # 0xFF (240) register space, which inflates the bar to ~1/3
-            # of true progress. Cap to 92 for the inventory phase so the
-            # percentage matches what the library actually scans.
-            if sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
-                effective_register_total = 92
-            elif register_total:
-                effective_register_total = register_total
-            else:
-                effective_register_total = 240
+            # The library's ``register_total`` is now the cumulative
+            # per-module target under the vendor plan (48 for output
+            # modules + PC-Logic, 93 for PC-Link, 112 with broad_scan).
+            # No HA-side capping needed — the library reports the
+            # real targets accurately. Keep the 240 fallback for
+            # forensic / legacy paths where register_total is 0.
+            effective_register_total = register_total or 240
             self._update_discovery_state(
                 phase=legacy_phase,
                 message=message,
