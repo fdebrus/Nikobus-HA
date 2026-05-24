@@ -432,15 +432,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_registers_total,
             self.discovery_registers_done + 1,
         )
-        devices_found = len(getattr(self.nikobus_discovery, "discovered_devices", {}) or {})
-        self._update_discovery_state(
-            phase=DISCOVERY_PHASE_PC_LINK,
-            message=(
-                f"PC Link inventory: {self.discovery_registers_done}/"
-                f"{self.discovery_registers_total} registers, "
-                f"{devices_found} device(s) found"
-            ),
-        )
+        # Only own the status message while we're ACTUALLY in the
+        # PC-Link inventory sub-phase. ``parse_inventory_response`` also
+        # receives the per-register ``$2E`` frames during the library's
+        # identity phase (96 reads × N modules), and writing the "PC
+        # Link inventory: X/Y" message here would overwrite the
+        # "Identifying modules (i/N)…" message that
+        # ``_handle_discovery_progress`` just wrote — making the user
+        # think discovery is still in inventory long after it's moved on.
+        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+            devices_found = len(getattr(self.nikobus_discovery, "discovered_devices", {}) or {})
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_PC_LINK,
+                message=(
+                    f"PC Link inventory: {self.discovery_registers_done}/"
+                    f"{self.discovery_registers_total} registers, "
+                    f"{devices_found} device(s) found"
+                ),
+            )
 
     # ------------------------------------------------------------------
     # Phase-aware progress (consumes nikobus-connect 0.3.5+ on_progress)
@@ -1687,13 +1696,34 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
             floor = 0
             phase_weight = DISCOVERY_WEIGHT_INVENTORY
-            phase_frac = 0.5  # can't measure inventory fraction directly
+            # 2.11.2: ``parse_inventory_response`` counts each PC-Link
+            # inventory frame into ``discovery_registers_done``, so the
+            # bar can track real progress rather than parking at the
+            # midpoint of the inventory weight. Fall back to 0.5 only
+            # when the total isn't set yet (transition window).
+            if self.discovery_registers_total:
+                phase_frac = min(
+                    1.0,
+                    self.discovery_registers_done / self.discovery_registers_total,
+                )
+            else:
+                phase_frac = 0.5
         elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
             floor = DISCOVERY_WEIGHT_INVENTORY
             phase_weight = DISCOVERY_WEIGHT_IDENTITY
             total = self.discovery_modules_total or 1
             done = self.discovery_modules_done
-            phase_frac = min(1.0, done / total)
+            # 2.11.2: include per-module register progress so the bar
+            # moves smoothly during the ~30 s the library takes to scan
+            # one module's 96 identity registers, instead of jumping
+            # per-module (~0.4 % per step on a 47-module install).
+            per_module = 0.0
+            if self.discovery_registers_total:
+                per_module = min(
+                    1.0,
+                    self.discovery_registers_done / self.discovery_registers_total,
+                )
+            phase_frac = min(1.0, (done + per_module) / total)
         elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
             floor = DISCOVERY_WEIGHT_INVENTORY + DISCOVERY_WEIGHT_IDENTITY
             phase_weight = DISCOVERY_WEIGHT_REGISTER_SCAN
