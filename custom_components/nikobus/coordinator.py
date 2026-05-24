@@ -1636,6 +1636,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # log — even ``1CEC`` regressed on the retry attempt). We land
         # on FINISHED + clear ``discovery_running`` only after the
         # reconciler returns.
+        #
+        # 2.11.3: bridge the reconciliation gap with FINALIZING so the
+        # progress bar shows real movement (bar jumps to floor of
+        # finalizing = 95%) during the multi-second reconcile/probe/save
+        # window — without this, the bar would freeze at whatever phase
+        # was last live (30% after a PC-Link inventory-only scan that
+        # skips register-scan; 95% after a Scan-All) until the entire
+        # reconciliation completed and we jumped to FINISHED.
+        self.discovery_sub_phase = DISCOVERY_SUB_PHASE_FINALIZING
+        self._update_discovery_state(
+            message=(
+                f"Merging {self.discovery_decoded_records} discovered records…"
+                if self.discovery_decoded_records
+                else "Finalising discovery…"
+            ),
+        )
         await self._reconcile_post_discovery(
             discovered_devices, inventory_query_type
         )

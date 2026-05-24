@@ -1485,6 +1485,62 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(coord_with_pc_logic._has_pc_logic_module())
 
 
+class TestHandleDiscoveryFinishedFinalizing(unittest.IsolatedAsyncioTestCase):
+    """2.11.3: ``_handle_discovery_finished`` must transition the sub-phase
+    to FINALIZING *before* ``_reconcile_post_discovery`` runs, so the
+    progress bar moves to the 95% floor instead of staying frozen at
+    whatever the previous phase showed (30% for PC-Link inventory-only,
+    95% for Scan-All) during the multi-second reconciliation work.
+
+    Before this fix, a PC-Link inventory-only scan looked broken end-to-end:
+    bar would climb to 30% during identity, then sit at 30% for the entire
+    reconcile/probe/save window before jumping straight to 100% at the
+    very end. Now the bar jumps to 95% the moment reconciliation starts,
+    so the user sees clear visual progress.
+    """
+
+    async def test_finalizing_set_before_reconcile_runs(self):
+        from custom_components.nikobus.const import (
+            DISCOVERY_SUB_PHASE_FINALIZING,
+            DISCOVERY_SUB_PHASE_IDENTITY,
+        )
+        from custom_components.nikobus.coordinator import NikobusDataCoordinator
+
+        captured: list[str] = []
+
+        coord = MagicMock()
+        coord.discovery_register_current = None
+        coord.discovery_sub_phase = DISCOVERY_SUB_PHASE_IDENTITY
+        coord.discovery_decoded_records = 0
+        coord.discovery_running = True
+        coord._discovery_finished_event = MagicMock()
+        coord._discovery_finished_event.set = MagicMock()
+        coord._discovery_auto_reload = False
+        coord.async_request_refresh = AsyncMock()
+
+        async def fake_reconcile(*args, **kwargs):
+            # Sample what sub_phase looks like the moment reconcile
+            # starts — must be FINALIZING by this point, not IDENTITY.
+            captured.append(coord.discovery_sub_phase)
+
+        coord._reconcile_post_discovery = fake_reconcile
+
+        # Bind real _handle_discovery_finished to the mock
+        coord._handle_discovery_finished = (
+            lambda *args, self_=coord, **kw:
+            NikobusDataCoordinator._handle_discovery_finished(self_, *args, **kw)
+        )
+
+        await coord._handle_discovery_finished()
+
+        self.assertEqual(
+            captured,
+            [DISCOVERY_SUB_PHASE_FINALIZING],
+            "Sub-phase must be FINALIZING before _reconcile_post_discovery runs "
+            f"so the bar advances to the 95% floor; was {captured!r}",
+        )
+
+
 class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
     """Direct tests for ``_surface_legacy_undecoded_buttons``.
 
