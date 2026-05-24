@@ -597,10 +597,11 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             attrs["wall_button_type"] = wall_info.get("type")
             # ``status`` comes from post-discovery reconciliation
             # (coordinator._reconcile_post_discovery): one of "active",
-            # "legacy_orphan", "legacy_undecoded", "synthesized_input".
-            # Surface only the legacy flags so healthy buttons (active
-            # wall buttons and synthesized PC-Logic / 05-206 inputs)
-            # aren't cluttered.
+            # "legacy_orphan", "legacy_undecoded", "synthesized_input",
+            # "input_only". Surface only the legacy flags so healthy
+            # buttons (active wall buttons, synthesized PC-Logic /
+            # 05-206 inputs, and input-only Universal Interfaces) don't
+            # get cluttered.
             status = wall_info.get("status")
             if status in ("legacy_orphan", "legacy_undecoded"):
                 attrs["wall_button_status"] = status

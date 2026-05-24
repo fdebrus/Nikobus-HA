@@ -788,6 +788,68 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         # be scoped to pc_logic_parent-bearing entries only.
         self.assertEqual(buttons["112233"]["status"], "legacy_undecoded")
 
+    async def test_universal_interface_is_tagged_input_only(self):
+        """Niko 05-058 Universal Interface (both switch and push-button
+        modes) emits bus press telegrams from its 4/8 dry contacts but
+        never writes into output-module link tables — its inputs feed
+        PC-Logic conditions, like the synthesized PC-Logic Logical
+        Inputs already handled above.
+
+        Pre-fix the bucketing tagged it as ``legacy_undecoded`` and the
+        Repairs flow false-positive'd asking the user to purge a
+        perfectly-functional input device (1634DC in the test install,
+        wired to garage-door reed switches). Fix routes input-only
+        types to a dedicated ``input_only`` bucket the Repairs alert
+        ignores.
+        """
+        no_links = {
+            "1A": {"bus_address": "AECB1A"},
+            "1B": {"bus_address": "EECB1A"},
+            "1C": {"bus_address": "2ECB1A"},
+            "1D": {"bus_address": "6ECB1A"},
+            "2A": {"bus_address": "8ECB1A"},
+            "2B": {"bus_address": "CECB1A"},
+            "2C": {"bus_address": "0ECB1A"},
+            "2D": {"bus_address": "4ECB1A"},
+        }
+        switch_mode = {
+            "type": "Universal interface, switch mode",
+            "model": "05-058",
+            "channels": 8,
+            "operation_points": no_links,
+        }
+        push_mode = {
+            "type": "Universal interface, push-button mode",
+            "model": "05-058",
+            "channels": 4,
+            "operation_points": {k: no_links[k] for k in ("1A", "1B", "1C", "1D")},
+        }
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"}},
+            buttons={
+                "1634DC": switch_mode,
+                "0FA001": push_mode,
+                # Control: a regular wall button with no links is still
+                # tagged legacy_undecoded — the input_only exclusion
+                # must be type-scoped, not blanket.
+                "112233": self._button(),
+            },
+            manifest={
+                "checked": ["AABB"],
+                "present_modules": ["AABB"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        buttons = coord.dict_button_data["nikobus_button"]
+        self.assertEqual(buttons["1634DC"]["status"], "input_only")
+        self.assertEqual(buttons["0FA001"]["status"], "input_only")
+        # Real wall button still flagged.
+        self.assertEqual(buttons["112233"]["status"], "legacy_undecoded")
+
     async def test_button_with_at_least_one_present_link_is_active(self):
         # Button linked to AABB (in sweep, kept) + CCDD (absent in both,
         # evicted). At least one link survives → active.
