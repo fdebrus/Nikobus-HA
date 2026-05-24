@@ -7,6 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from nikobus_connect.command import NikobusCommandHandler
 from nikobus_connect.discovery import InventoryQueryType
 
+from custom_components.nikobus.const import (
+    DISCOVERY_SUB_PHASE_IDENTITY,
+    DISCOVERY_SUB_PHASE_INVENTORY,
+)
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
 
@@ -365,6 +369,7 @@ class TestDiscoveryFrameRouting(unittest.IsolatedAsyncioTestCase):
         coord.inventory_query_type = InventoryQueryType.PC_LINK
         coord.discovery_registers_done = 0
         coord.discovery_registers_total = 96
+        coord.discovery_sub_phase = DISCOVERY_SUB_PHASE_INVENTORY
         coord._update_discovery_state = MagicMock()
         coord.nikobus_command = MagicMock()
         coord.nikobus_command._command_queue = asyncio.Queue()
@@ -401,6 +406,33 @@ class TestDiscoveryFrameRouting(unittest.IsolatedAsyncioTestCase):
 
         coord.nikobus_discovery.parse_inventory_response.assert_awaited_once_with(data)
         self.assertEqual(coord.discovery_registers_done, 1)
+
+    async def test_inventory_message_written_only_during_inventory_sub_phase(self):
+        """2.11.2: ``parse_inventory_response`` receives BOTH the PC-Link
+        broadcast frames during inventory AND the per-register ``$2E``
+        responses during the library's identity phase (96 reads × N
+        modules). Writing the "PC Link inventory: X/Y" message
+        unconditionally — as pre-2.11.2 did — overwrites the
+        "Identifying modules…" message ``_handle_discovery_progress``
+        sets when the library transitions to identity, freezing the
+        UI in apparent-inventory state long after discovery has moved on.
+
+        Gate: only write the inventory-style message while
+        ``discovery_sub_phase == DISCOVERY_SUB_PHASE_INVENTORY``.
+        """
+        coord = self._make_coordinator_stub()
+        coord.discovery_sub_phase = DISCOVERY_SUB_PHASE_IDENTITY
+        data = "$2EF58603000000030000006C0E000001000000F938E8"
+
+        await coord._discovery_frame_callback(data)
+
+        # Frame still counted toward the register progress bar
+        # (parse_inventory_response is the per-frame increment hook).
+        coord.nikobus_discovery.parse_inventory_response.assert_awaited_once_with(data)
+        self.assertEqual(coord.discovery_registers_done, 1)
+        # But the status message must NOT be touched — keeps whatever
+        # _handle_discovery_progress wrote for the identity phase.
+        coord._update_discovery_state.assert_not_called()
 
     async def test_frame_dropped_when_discovery_not_running(self):
         coord = self._make_coordinator_stub()
