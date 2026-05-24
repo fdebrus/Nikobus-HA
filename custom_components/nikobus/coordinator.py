@@ -50,6 +50,7 @@ from .const import (
     DISCOVERY_WEIGHT_INVENTORY,
     DISCOVERY_WEIGHT_REGISTER_SCAN,
     DOMAIN,
+    INPUT_ONLY_BUTTON_TYPES,
     ISSUE_LEGACY_UNDECODED_BUTTONS,
     ISSUE_NO_BUTTONS_CONFIGURED,
     RECONNECT_DELAY_INITIAL,
@@ -1499,6 +1500,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             "legacy_orphan": 0,
             "legacy_undecoded": 0,
             "synthesized_input": 0,
+            "input_only": 0,
         }
         buttons = self.dict_button_data.setdefault("nikobus_button", {})
         # Topology gate for the registry-only residue check. With no
@@ -1523,6 +1525,18 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             if phys.get("pc_logic_parent_address"):
                 phys["status"] = "synthesized_input"
                 bucket_counts["synthesized_input"] += 1
+                continue
+            # Universal Interface (Niko 05-058) in either mode is
+            # input-only — its 4/8 contacts emit press telegrams but
+            # don't write into output-module link tables (they're
+            # designed to feed PC-Logic conditions). Same shape as a
+            # synthesized PC-Logic input from the bucket-decision
+            # perspective: empty ``linked_modules`` is the steady state.
+            # Tag separately so the legacy-undecoded Repairs alert
+            # doesn't false-positive on them.
+            if phys.get("type") in INPUT_ONLY_BUTTON_TYPES:
+                phys["status"] = "input_only"
+                bucket_counts["input_only"] += 1
                 continue
             linked = self._collect_button_linked_modules(phys)
             outputs = self._collect_button_outputs(phys)

@@ -161,17 +161,21 @@ def _button_decode_metrics(coordinator) -> dict[str, Any]:
             "op_points_with_links": 0,
             "op_points_without_links": 0,
             "synthesized_input_count": 0,
+            "input_only_count": 0,
         }
 
     op_total = 0
     op_with_links = 0
     op_without_links = 0
     synthesized = 0
+    input_only = 0
     for phys in buttons.values():
         if not isinstance(phys, dict):
             continue
         if phys.get("pc_logic_parent_address"):
             synthesized += 1
+        if phys.get("status") == "input_only":
+            input_only += 1
         op_points = phys.get("operation_points") or {}
         if not isinstance(op_points, dict):
             continue
@@ -189,6 +193,7 @@ def _button_decode_metrics(coordinator) -> dict[str, Any]:
         "op_points_with_links": op_with_links,
         "op_points_without_links": op_without_links,
         "synthesized_input_count": synthesized,
+        "input_only_count": input_only,
     }
 
 

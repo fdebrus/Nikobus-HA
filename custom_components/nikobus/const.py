@@ -107,6 +107,27 @@ ISSUE_STALE_INVENTORY_PRESENT: Final[str] = "stale_inventory_present"
 # decision to the user via a Repairs flow.
 ISSUE_LEGACY_UNDECODED_BUTTONS: Final[str] = "legacy_undecoded_buttons"
 
+# Physical button types that are INPUT-ONLY by design — they generate
+# bus press telegrams when their contacts change state but they don't
+# write into output-module link tables (their inputs feed PC-Logic
+# conditions instead). Discovery's per-module register scan therefore
+# never finds link records pointing back at them, and they'd otherwise
+# be tagged ``legacy_undecoded`` and trigger a false-positive Repairs
+# alert.
+#
+# Tagged ``input_only`` instead so the Repairs flow and per-entity
+# ``wall_button_status`` treat them like ``synthesized_input`` (already
+# an exclusion for the same reason: PC-Logic Logical Inputs also have
+# no link table by design).
+#
+# Match is by the human-readable ``type`` string discovery writes into
+# each button entry, which already reflects device_type 0x43 vs 0x44
+# for the two 05-058 modes.
+INPUT_ONLY_BUTTON_TYPES: Final[frozenset[str]] = frozenset({
+    "Universal interface, switch mode",        # Niko 05-058, dtype 0x44 (8-ch)
+    "Universal interface, push-button mode",   # Niko 05-058, dtype 0x43 (4-ch)
+})
+
 # =============================================================================
 # Configuration Keys
 # =============================================================================

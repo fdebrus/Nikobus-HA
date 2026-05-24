@@ -229,6 +229,7 @@ def test_button_metrics_empty_install() -> None:
         "op_points_with_links": 0,
         "op_points_without_links": 0,
         "synthesized_input_count": 0,
+        "input_only_count": 0,
     }
 
 
