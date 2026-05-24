@@ -491,6 +491,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 sub_phase, self.discovery_phase
             )
 
+            # On sub-phase transition, zero out the register counters
+            # so the FIRST emit of the new phase doesn't display the
+            # previous phase's totals (e.g. identity's 96/96 leaking
+            # into the first register-scan emit). nikobus-connect
+            # 0.19.1 also resets these library-side; this is a
+            # defence-in-depth so older lib versions get the same
+            # behaviour.
+            if sub_phase != self.discovery_sub_phase:
+                self.discovery_registers_done = 0
+                self.discovery_registers_total = 0
+
             module_address = getattr(progress, "module_address", None)
             module_index = int(getattr(progress, "module_index", 0) or 0)
             module_total = int(getattr(progress, "module_total", 0) or 0)

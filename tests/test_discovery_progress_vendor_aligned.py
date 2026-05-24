@@ -162,3 +162,38 @@ def test_handler_no_register_total_uses_240_fallback() -> None:
     asyncio.run(coord._handle_discovery_progress(progress))
     kwargs = update.call_args.kwargs
     assert kwargs["registers_total"] == 240
+
+
+def test_handler_resets_counters_on_sub_phase_transition() -> None:
+    """2.11.0: when the library transitions from identity to register_scan
+    (or any sub-phase change), the HA-side handler must zero out the
+    cached register counters so the first emit of the new phase doesn't
+    display the previous phase's leftover total. Without this, the
+    identity end-state of 96/96 leaks into the first register-scan
+    event of the first module, showing 100%."""
+    coord, update = _make_coordinator()
+    # Simulate identity phase end-state: 96/96 cached.
+    coord.discovery_sub_phase = "identity"
+    coord.discovery_registers_done = 96
+    coord.discovery_registers_total = 96
+
+    # First register-scan emit arrives. nikobus-connect 0.19.1 resets
+    # register_total to 0 at the identity-end, so the emit has 0/0
+    # initially. The HA handler must NOT carry forward the cached 96/96.
+    progress = _FakeProgress(
+        phase="register_scan",
+        module_address="C9A5",
+        module_index=1,
+        module_total=8,
+        register=None,
+        register_total=0,
+        registers_sent=0,
+    )
+    asyncio.run(coord._handle_discovery_progress(progress))
+    kwargs = update.call_args.kwargs
+    # Before this fix, registers_done would have been carried over from
+    # identity (96) — now it's 0.
+    assert kwargs["registers_done"] == 0
+    # Fallback to 240 when register_total=0 (legacy/forensic guard)
+    # is still applied, but the cached identity-phase total is gone.
+    assert kwargs["registers_total"] == 240
