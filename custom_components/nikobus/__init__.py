@@ -24,7 +24,7 @@ from homeassistant.components import (
     sensor,
 )
 
-from .const import CONF_MANUAL_CONFIG, DOMAIN, HUB_IDENTIFIER
+from .const import DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
@@ -359,15 +359,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     # 6. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
-    # 7. One-shot: migrate legacy per-button descriptions to device name_by_user.
-    #    Skipped in manual-config mode: the legacy file is the live source
-    #    of truth there, so the migration's rename-on-success step would
-    #    delete the user's only inventory snapshot.
-    manual_config = entry.options.get(
-        CONF_MANUAL_CONFIG, entry.data.get(CONF_MANUAL_CONFIG, False)
-    )
-    if not manual_config:
-        await _async_migrate_legacy_button_names(hass)
+    # 7. Legacy per-button-description → device.name_by_user migration
+    #    was a one-shot that renamed ``nikobus_button_config.json`` to
+    #    ``.migrated`` after applying. As of 2.11.4 we leave manual
+    #    config files in place under their canonical names (they're
+    #    now the step-1 inventory source for no-PC-Link installs), so
+    #    the rename-on-success behaviour is no longer compatible.
+    #    Users wanting custom device names set them via the HA device
+    #    registry UI directly.
 
     # 8. Surface repair issues for actionable misconfigurations.
     coordinator.refresh_repair_issues()

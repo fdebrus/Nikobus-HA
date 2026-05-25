@@ -227,12 +227,15 @@ class TestApplyManualConfig(unittest.TestCase):
         self.assertNotIn("led_on", entry["channels"][0])
 
     # ------------------------------------------------------------------
-    # .migrated rename-back: users who tried v2 once had their files
-    # renamed by the one-shot migration. Flipping manual_config must
-    # restore the canonical name so the file is editable as-is.
+    # 2.11.4: ``.migrated`` fallback removed. Users with leftover
+    # ``.migrated`` files from earlier versions must rename them back
+    # to the canonical name themselves — the loader only looks at the
+    # canonical filename.
     # ------------------------------------------------------------------
 
-    def test_migrated_is_renamed_back_to_canonical(self):
+    def test_migrated_file_is_not_picked_up(self):
+        # File present only under the ``.migrated`` suffix — loader
+        # must NOT read it (closed path).
         migrated_path = self._write("nikobus_module_config.json.migrated", {
             "dimmer_module": [{
                 "description": "Salon dimmer",
@@ -246,44 +249,14 @@ class TestApplyManualConfig(unittest.TestCase):
         store = _InMemoryModuleStore()
         button_data = {"nikobus_button": {}}
 
-        changed = _run(
+        _run(
             nkbmanual.async_apply_manual_config(self.hass, store, button_data)
         )
 
-        self.assertTrue(changed)
-        self.assertIn("0E6C", store.data["nikobus_module"])
-        # Renamed back: canonical now exists, .migrated does not.
-        self.assertTrue(os.path.exists(canonical_path))
-        self.assertFalse(os.path.exists(migrated_path))
-
-    # ------------------------------------------------------------------
-    # If a canonical file already exists, the .migrated variant is
-    # left untouched. Trust whatever the user explicitly placed.
-    # ------------------------------------------------------------------
-
-    def test_both_files_present_canonical_wins_migrated_preserved(self):
-        canonical_path = self._write("nikobus_module_config.json", {
-            "switch_module": [{
-                "description": "User-edited", "address": "AABB",
-                "channels": [{"description": "Live"}],
-            }],
-        })
-        migrated_path = self._write("nikobus_module_config.json.migrated", {
-            "switch_module": [{
-                "description": "Stale", "address": "CCDD",
-                "channels": [{"description": "Old"}],
-            }],
-        })
-        store = _InMemoryModuleStore()
-        button_data = {"nikobus_button": {}}
-
-        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
-
-        modules = store.data["nikobus_module"]
-        self.assertIn("AABB", modules)  # from canonical
-        self.assertNotIn("CCDD", modules)  # .migrated NOT read
-        # Both files still on disk after the run.
-        self.assertTrue(os.path.exists(canonical_path))
+        # Module store stays empty — ``.migrated`` not read.
+        self.assertNotIn("0E6C", store.data["nikobus_module"])
+        # No automatic rename either — file stays where the user left it.
+        self.assertFalse(os.path.exists(canonical_path))
         self.assertTrue(os.path.exists(migrated_path))
 
     # ------------------------------------------------------------------
@@ -509,7 +482,13 @@ class TestApplyManualConfig(unittest.TestCase):
     # button control" cross-reference.
     # ------------------------------------------------------------------
 
-    def test_linked_modules_preserved_on_grouped_op_point(self):
+    def test_linked_modules_NOT_imported_on_grouped_op_point(self):
+        # 2.11.4: ``linked_modules`` lives on the bus side and is
+        # populated by step 2 (per-module register scan), NOT by
+        # the manual import. Even when the file carries link data
+        # (e.g., a snapshot from a previous discovery), the import
+        # must drop it — otherwise step 2's fresh records would
+        # collide with stale file data.
         self._write("nikobus_button_config.json", {
             "nikobus_button": [
                 {
@@ -527,12 +506,8 @@ class TestApplyManualConfig(unittest.TestCase):
                         "outputs": [{
                             "channel": 1,
                             "mode": "M01 (Dim on/off (2 buttons))",
-                            "t1": None,
-                            "t2": None,
                             "payload": "FFB4000000007234",
                             "button_address": "0D1C80",
-                            "ir_button_address": "0D1C82",
-                            "ir_code": "02A",
                         }],
                     }],
                 },
@@ -544,19 +519,15 @@ class TestApplyManualConfig(unittest.TestCase):
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
         op_point = button_data["nikobus_button"]["0D1C80"]["operation_points"]["1C"]
-        self.assertEqual(len(op_point["linked_modules"]), 1)
-        link = op_point["linked_modules"][0]
-        self.assertEqual(link["module_address"], "0E6C")
-        # v1-specific extras pass through unchanged for diagnostics.
-        out = link["outputs"][0]
-        self.assertEqual(out["channel"], 1)
-        self.assertEqual(out["mode"], "M01 (Dim on/off (2 buttons))")
-        self.assertEqual(out["ir_code"], "02A")
+        # Op-point structure is created (step-1 inventory) but
+        # ``linked_modules`` is empty (step-2 territory).
+        self.assertEqual(op_point["bus_address"], "004E2C")
+        self.assertEqual(op_point["linked_modules"], [])
 
-    def test_linked_modules_preserved_on_unlinked_entry(self):
-        # No linked_button, but linked_modules present — preserve on
-        # the synthetic single-key fallback so diagnostics stays
-        # consistent.
+    def test_linked_modules_NOT_imported_on_unlinked_entry(self):
+        # Same rule for the synthetic single-key fallback (IR /
+        # scene / virtual): step 1 establishes the op-point shape,
+        # step 2 populates link records.
         self._write("nikobus_button_config.json", {
             "nikobus_button": [
                 {
@@ -575,7 +546,7 @@ class TestApplyManualConfig(unittest.TestCase):
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
         op_point = button_data["nikobus_button"]["9E4E2C"]["operation_points"]["1A"]
-        self.assertEqual(op_point["linked_modules"][0]["module_address"], "0E6C")
+        self.assertEqual(op_point["linked_modules"], [])
 
     def test_missing_linked_modules_defaults_to_empty(self):
         self._write("nikobus_button_config.json", {
@@ -843,6 +814,62 @@ class TestRealWorldSample(unittest.TestCase):
         self.assertEqual(buttons["9E4E2C"]["channels"], 1)
         self.assertEqual(buttons["9E4E2C"]["description"], "IR_TV_Lights")
         self.assertIn("FFFFFF", buttons)
+
+    # ------------------------------------------------------------------
+    # 2.11.4: explicit pin for the "linked_modules empty on import" rule.
+    # Every op-point produced by the importer must have an empty list,
+    # regardless of whether the file declared link data or not.
+    # ------------------------------------------------------------------
+
+    def test_all_op_points_have_empty_linked_modules_after_import(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "004E2C",
+                    "linked_button": [{
+                        "type": "Bus push button, 4 control buttons",
+                        "model": "05-064", "address": "0D1C80",
+                        "channels": 4, "key": "1C",
+                    }],
+                    # File carries stale step-2 data: must be dropped.
+                    "linked_modules": [{
+                        "module_address": "0E6C",
+                        "outputs": [{"channel": 1, "mode": "M01"}],
+                    }],
+                },
+                {
+                    "address": "404E2C",
+                    "linked_button": [{
+                        "type": "Bus push button, 4 control buttons",
+                        "model": "05-064", "address": "0D1C80",
+                        "channels": 4, "key": "1D",
+                    }],
+                    # No link data in this entry — also empty after import.
+                },
+                {
+                    # Synthetic (no linked_button): single-key fallback.
+                    "address": "9E4E2C",
+                    "description": "IR_TV_Lights",
+                    "linked_modules": [{
+                        "module_address": "0E6C",
+                        "outputs": [{"channel": 2, "mode": "M01"}],
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        # Walk every op-point on every physical and verify empty.
+        for phys_addr, phys in button_data["nikobus_button"].items():
+            for key, op in phys["operation_points"].items():
+                self.assertEqual(
+                    op["linked_modules"], [],
+                    f"{phys_addr}:{key} must have empty linked_modules "
+                    f"after step-1 import; got {op['linked_modules']!r}",
+                )
 
 
 if __name__ == "__main__":

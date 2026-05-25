@@ -60,7 +60,6 @@ from .const import (
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 from .nkbmanual import async_apply_manual_config
-from .nkbmigration import async_migrate_legacy_module_config
 from .nkbstorage import NikobusButtonStorage, NikobusModuleStorage
 
 # Typed config entry alias used across the integration. A plain alias
@@ -109,7 +108,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
         self._has_feedback_module = _opts.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._prior_gen3 = _opts.get(CONF_PRIOR_GEN3, config_entry.data.get(CONF_PRIOR_GEN3, False))
-        self._manual_config = _opts.get(CONF_MANUAL_CONFIG, config_entry.data.get(CONF_MANUAL_CONFIG, False))
+        # 2.11.4: ``CONF_MANUAL_CONFIG`` is deprecated. Manual-config
+        # files are now imported automatically when present; presence
+        # of the files is the signal, not this flag. Read once and
+        # log if still set so users notice the change.
+        if _opts.get(CONF_MANUAL_CONFIG, config_entry.data.get(CONF_MANUAL_CONFIG, False)):
+            _LOGGER.info(
+                "Nikobus: the ``manual_config`` integration option is "
+                "deprecated as of 2.11.4 and ignored. Manual config "
+                "files are imported automatically when present; you "
+                "can remove the option from the integration settings."
+            )
 
         super().__init__(
             hass,
@@ -240,34 +249,37 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             raise
 
         try:
-            # Module data now lives in .storage/nikobus.modules. On first
-            # startup after upgrading to 0.4.0, migrate any legacy
-            # nikobus_module_config.json into the store, then rename it —
-            # unless the user opted into manual-config mode, in which case
-            # the legacy file is the live source of truth and must NOT
-            # be renamed away.
+            # Module data lives in .storage/nikobus.modules. The legacy
+            # one-shot ``nikobus_module_config.json`` migration (which
+            # used to rename the file to ``.migrated``) is no longer
+            # invoked as of 2.11.4 — manual config files are now applied
+            # declaratively on every startup via
+            # ``async_apply_manual_config`` (below), and the file is
+            # left in place under its canonical name.
             await self.module_storage.async_load()
-            if not self._manual_config:
-                await async_migrate_legacy_module_config(self.hass, self.module_storage)
             self._rebuild_dict_module_data()
 
             self.dict_button_data = await self.button_storage.async_load()
 
-            # Manual-config: re-apply v1 JSON files into the live stores
-            # on every startup so users on pre-Gen3 / Gen2 hardware (whose
-            # button-link data the Gen3 decoder doesn't parse) can keep
-            # their inventory declarative. See nikobus-connect 0.5.24
-            # CHANGELOG "What this does NOT fix" for context.
-            if self._manual_config:
-                changed = await async_apply_manual_config(
-                    self.hass,
-                    self.module_storage,
-                    self.dict_button_data,
-                )
-                if changed:
-                    await self.module_storage.async_save()
-                    await self.button_storage.async_save()
-                    self._rebuild_dict_module_data()
+            # 2.11.4: manual config files are the step-1 inventory source
+            # for installs without a PC-Link (the Feedback-module-only
+            # users). The files are fully declarative — what's in them
+            # gets written to the live stores on every coordinator
+            # setup. ``linked_modules`` is NOT imported from the button
+            # file; step 2 (per-module register scan) populates that.
+            #
+            # Applied unconditionally if the files exist. The legacy
+            # ``CONF_MANUAL_CONFIG`` flag is deprecated and ignored;
+            # presence of the files is the signal.
+            changed = await async_apply_manual_config(
+                self.hass,
+                self.module_storage,
+                self.dict_button_data,
+            )
+            if changed:
+                await self.module_storage.async_save()
+                await self.button_storage.async_save()
+                self._rebuild_dict_module_data()
             self.dict_scene_data = await self.nikobus_config.load_json_data(
                 "nikobus_scene_config.json", "scene"
             )

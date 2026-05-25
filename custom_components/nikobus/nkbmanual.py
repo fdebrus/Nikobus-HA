@@ -1,35 +1,26 @@
-"""Manual-configuration loader for installs auto-discovery cannot crack.
+"""Step-1 inventory loader for installs without a PC-Link module.
 
-Some PC-Link generations (pre-Gen3 / Gen2) store button-link data in a
-format the Gen3-calibrated decoder in ``nikobus-connect`` does not
-parse — see the 0.5.24 CHANGELOG section "What this does NOT fix".
-For those installs the user enables ``manual_config`` in the config
-flow; the integration then treats the legacy v1 files
-(``nikobus_module_config.json`` / ``nikobus_button_config.json``) as
-the **source of truth** and re-applies them into the v2 stores on
-every startup.
+Some users connect to the Nikobus over a Feedback module instead of a
+PC-Link. There's no `#A` broadcast partner on the bus, so the normal
+discovery's step 1 (PC-Link inventory) has no source. Instead, the
+integration imports the user-authored ``nikobus_module_config.json``
+and ``nikobus_button_config.json`` as the step-1 inventory.
 
-Pre-v2 semantics: the files are fully declarative. Whatever lives in
-them is what HA exposes after the next reload — additions, edits,
-renames, removals. There is no merge with options-flow state; users
-who want to customise a channel's entity type, LED triggers, travel
-times, or description do so by editing the file. The options-flow
-"Customise a module" path is hidden in manual mode so it does not
-present a UI whose changes get wiped on the next reload.
+After import, **step 2** (the per-module register scan) populates the
+link-records (``linked_modules`` / ``outputs[]``) just as it does after
+a PC-Link inventory. The import deliberately does **not** carry over
+the ``linked_modules`` block from the file — that's step-2 territory
+and would conflict with a fresh scan.
 
-Two practical notes:
+Lifecycle:
 
-  * No rename. The source files stay put across reloads.
-  * The button file is consumed for routing data, not just for
-    user-facing names. Each v1 entry becomes a single-key physical
-    button whose ``operation_points["1A"]`` carries the v1 bus
-    address — the v2 router matches bus addresses, so single-key
-    shape is enough to route presses to HA entities.
-
-If the user already upgraded to v2 once before flipping the toggle,
-the v1 file will have been renamed to ``<name>.migrated`` by the
-one-shot migration. This loader falls back to the ``.migrated``
-suffix so the toggle works without manual file renaming.
+  * Files stay in place under their canonical names. No rename, no
+    "consumed" marker. Re-import is implicit on every coordinator
+    setup — the files ARE the inventory source.
+  * Files are fully declarative: anything not in the file is removed
+    from the corresponding store. Users edit the file when they
+    install / remove / rename a module or button.
+  * After import, run "Scan all modules" to populate link records.
 """
 
 from __future__ import annotations
@@ -52,69 +43,29 @@ from .nkbstorage import NikobusModuleStorage
 
 _LOGGER = logging.getLogger(__name__)
 
-_MIGRATED_SUFFIX = ".migrated"
 
-
-async def _read_json_with_fallback(
+async def _read_json(
     hass: HomeAssistant, filename: str
 ) -> tuple[str | None, dict[str, Any] | None]:
-    """Return ``(path, payload)`` for the first existing variant of ``filename``.
+    """Return ``(path, payload)`` if ``filename`` exists and is parseable.
 
-    Tries the canonical name first. If only the ``.migrated`` variant
-    (left behind by the one-shot v1→v2 migration) exists, rename it
-    back to the canonical name so the user edits a file with the
-    expected filename — and so future reads hit the fast path. If a
-    canonical file already exists, ``.migrated`` is left untouched
-    (the canonical one is whatever the user put there). Returns
-    ``(None, None)`` when neither exists or the chosen file is
-    unreadable.
+    Returns ``(None, None)`` when the file doesn't exist or can't be
+    read. Only the canonical filename is checked — pre-2.11.4 ``.migrated``
+    fallback was removed; users with leftover ``.migrated`` files from
+    earlier versions should rename them back to the canonical name.
     """
-    canonical_path = hass.config.path(filename)
-    migrated_path = canonical_path + _MIGRATED_SUFFIX
-
-    canonical_exists = await hass.async_add_executor_job(
-        os.path.isfile, canonical_path
-    )
-
-    if not canonical_exists:
-        migrated_exists = await hass.async_add_executor_job(
-            os.path.isfile, migrated_path
+    path = hass.config.path(filename)
+    if not await hass.async_add_executor_job(os.path.isfile, path):
+        return None, None
+    try:
+        async with aio_open(path, mode="r") as fh:
+            raw = await fh.read()
+        return path, json.loads(raw)
+    except (OSError, json.JSONDecodeError) as err:
+        _LOGGER.warning(
+            "Manual-config: %s is unreadable (%s); skipping.", path, err
         )
-        if migrated_exists:
-            try:
-                await hass.async_add_executor_job(
-                    os.rename, migrated_path, canonical_path
-                )
-                _LOGGER.info(
-                    "Manual-config: renamed %s back to %s so the file "
-                    "is editable under its canonical name.",
-                    migrated_path,
-                    canonical_path,
-                )
-                canonical_exists = True
-            except OSError as err:
-                _LOGGER.warning(
-                    "Manual-config: could not rename %s back to %s "
-                    "(%s); reading from .migrated and leaving it in "
-                    "place.",
-                    migrated_path,
-                    canonical_path,
-                    err,
-                )
-
-    for path in (canonical_path, migrated_path):
-        if not await hass.async_add_executor_job(os.path.isfile, path):
-            continue
-        try:
-            async with aio_open(path, mode="r") as fh:
-                raw = await fh.read()
-            return path, json.loads(raw)
-        except (OSError, json.JSONDecodeError) as err:
-            _LOGGER.warning(
-                "Manual-config: %s is unreadable (%s); skipping.", path, err
-            )
-            return None, None
-    return None, None
+        return None, None
 
 
 def _tag_manual_source(entry: dict[str, Any]) -> None:
@@ -137,9 +88,7 @@ async def _apply_module_config(
     contained no convertible entries (in which case the caller should
     decide whether to wipe the store anyway).
     """
-    path, payload = await _read_json_with_fallback(
-        hass, MANUAL_MODULE_CONFIG_FILENAME
-    )
+    path, payload = await _read_json(hass, MANUAL_MODULE_CONFIG_FILENAME)
     if path is None or not isinstance(payload, dict):
         return 0, None
 
@@ -196,35 +145,19 @@ def _new_physical_record(
     }
 
 
-def _extract_linked_modules(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """Pull ``linked_modules`` off a v1 entry, dropping non-dict items.
-
-    The v2 schema attaches ``linked_modules`` per operation-point and
-    consumes only ``module_address`` and ``outputs[].channel`` from
-    each item — extra v1 fields (``mode``, ``t1``, ``t2``,
-    ``payload``, ``button_address``, ``ir_button_address``,
-    ``ir_code``) pass through harmlessly and surface in the
-    diagnostics export, so a manual-mode user's snapshot matches an
-    auto-discovered install.
-    """
-    raw = entry.get("linked_modules")
-    if not isinstance(raw, list):
-        return []
-    return [item for item in raw if isinstance(item, dict)]
-
-
 def _single_key_fallback(
     bus_address: str,
     description: str,
-    linked_modules: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build a 1-channel synthetic record for an unlinked v1 entry.
+    """Build a 1-channel synthetic record for an entry without a
+    ``linked_button`` block (IR-only / virtual / scene placeholder).
 
-    Used for IR/virtual/scene entries that have no ``linked_button``
-    block. The v2 router routes by ``operation_points[*].bus_address``,
-    so a single op-point on a synthetic physical record (keyed by the
-    bus address itself) is enough to make those entries fire HA
-    events the way they did in v1.
+    The router matches by ``operation_points[*].bus_address``, so a
+    single op-point on a synthetic physical record (keyed by the bus
+    address itself) is enough to make these entries fire HA events.
+    ``linked_modules`` is left empty — step 2 (per-module register
+    scan) populates real link records when the underlying button has
+    any.
     """
     label = description or f"#N{bus_address}"
     return {
@@ -236,7 +169,7 @@ def _single_key_fallback(
             "1A": {
                 "bus_address": bus_address,
                 "description": label,
-                "linked_modules": linked_modules,
+                "linked_modules": [],
             }
         },
     }
@@ -254,9 +187,7 @@ async def _apply_button_config(
 
     Returns ``(physical_buttons, total_op_points, source_path)``.
     """
-    path, payload = await _read_json_with_fallback(
-        hass, MANUAL_BUTTON_CONFIG_FILENAME
-    )
+    path, payload = await _read_json(hass, MANUAL_BUTTON_CONFIG_FILENAME)
     if path is None or not isinstance(payload, dict):
         return 0, 0, None
 
@@ -283,7 +214,15 @@ async def _apply_button_config(
         if not bus_address:
             continue
         description = str(entry.get("description") or "").strip()
-        linked_modules = _extract_linked_modules(entry)
+        # ``linked_modules`` is NOT imported from the manual file
+        # (2.11.4+). The file is a step-1 inventory source — it tells
+        # us which physical buttons exist and which keys they have.
+        # The link records (``linked_modules[].outputs[]``) are
+        # step-2 territory; "Scan all modules" populates them from
+        # the per-module register tables on the bus. Importing them
+        # from the file would create stale duplicates that step 2
+        # would have to dedup. Cleaner to start from empty and let
+        # step 2 fill it.
 
         physical = _extract_physical_info(entry)
         if physical is not None:
@@ -300,7 +239,7 @@ async def _apply_button_config(
                 "bus_address": bus_address,
                 "description": description
                 or f"Push button {key_label} #N{bus_address}",
-                "linked_modules": linked_modules,
+                "linked_modules": [],
             }
             op_points_total += 1
         else:
@@ -310,7 +249,7 @@ async def _apply_button_config(
             if bus_address in new_buttons:
                 continue
             new_buttons[bus_address] = _single_key_fallback(
-                bus_address, description, linked_modules
+                bus_address, description
             )
             op_points_total += 1
 
