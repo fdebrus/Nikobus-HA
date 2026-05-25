@@ -1,35 +1,26 @@
-"""Manual-configuration loader for installs auto-discovery cannot crack.
+"""Step-1 inventory loader for installs without a PC-Link module.
 
-Some PC-Link generations (pre-Gen3 / Gen2) store button-link data in a
-format the Gen3-calibrated decoder in ``nikobus-connect`` does not
-parse — see the 0.5.24 CHANGELOG section "What this does NOT fix".
-For those installs the user enables ``manual_config`` in the config
-flow; the integration then treats the legacy v1 files
-(``nikobus_module_config.json`` / ``nikobus_button_config.json``) as
-the **source of truth** and re-applies them into the v2 stores on
-every startup.
+Some users connect to the Nikobus over a Feedback module instead of a
+PC-Link. There's no `#A` broadcast partner on the bus, so the normal
+discovery's step 1 (PC-Link inventory) has no source. Instead, the
+integration imports the user-authored ``nikobus_module_config.json``
+and ``nikobus_button_config.json`` as the step-1 inventory.
 
-Pre-v2 semantics: the files are fully declarative. Whatever lives in
-them is what HA exposes after the next reload — additions, edits,
-renames, removals. There is no merge with options-flow state; users
-who want to customise a channel's entity type, LED triggers, travel
-times, or description do so by editing the file. The options-flow
-"Customise a module" path is hidden in manual mode so it does not
-present a UI whose changes get wiped on the next reload.
+After import, **step 2** (the per-module register scan) populates the
+link-records (``linked_modules`` / ``outputs[]``) just as it does after
+a PC-Link inventory. The import deliberately does **not** carry over
+the ``linked_modules`` block from the file — that's step-2 territory
+and would conflict with a fresh scan.
 
-Two practical notes:
+Lifecycle:
 
-  * No rename. The source files stay put across reloads.
-  * The button file is consumed for routing data, not just for
-    user-facing names. Each v1 entry becomes a single-key physical
-    button whose ``operation_points["1A"]`` carries the v1 bus
-    address — the v2 router matches bus addresses, so single-key
-    shape is enough to route presses to HA entities.
-
-If the user already upgraded to v2 once before flipping the toggle,
-the v1 file will have been renamed to ``<name>.migrated`` by the
-one-shot migration. This loader falls back to the ``.migrated``
-suffix so the toggle works without manual file renaming.
+  * Files stay in place under their canonical names. No rename, no
+    "consumed" marker. Re-import is implicit on every coordinator
+    setup — the files ARE the inventory source.
+  * Files are fully declarative: anything not in the file is removed
+    from the corresponding store. Users edit the file when they
+    install / remove / rename a module or button.
+  * After import, run "Scan all modules" to populate link records.
 """
 
 from __future__ import annotations
@@ -47,74 +38,33 @@ from .const import (
     MANUAL_BUTTON_CONFIG_FILENAME,
     MANUAL_MODULE_CONFIG_FILENAME,
 )
-from .nkbmigration import convert_legacy_to_flat
 from .nkbstorage import NikobusModuleStorage
 
 _LOGGER = logging.getLogger(__name__)
 
-_MIGRATED_SUFFIX = ".migrated"
 
-
-async def _read_json_with_fallback(
+async def _read_json(
     hass: HomeAssistant, filename: str
 ) -> tuple[str | None, dict[str, Any] | None]:
-    """Return ``(path, payload)`` for the first existing variant of ``filename``.
+    """Return ``(path, payload)`` if ``filename`` exists and is parseable.
 
-    Tries the canonical name first. If only the ``.migrated`` variant
-    (left behind by the one-shot v1→v2 migration) exists, rename it
-    back to the canonical name so the user edits a file with the
-    expected filename — and so future reads hit the fast path. If a
-    canonical file already exists, ``.migrated`` is left untouched
-    (the canonical one is whatever the user put there). Returns
-    ``(None, None)`` when neither exists or the chosen file is
-    unreadable.
+    Returns ``(None, None)`` when the file doesn't exist or can't be
+    read. Only the canonical filename is checked — pre-2.11.4 ``.migrated``
+    fallback was removed; users with leftover ``.migrated`` files from
+    earlier versions should rename them back to the canonical name.
     """
-    canonical_path = hass.config.path(filename)
-    migrated_path = canonical_path + _MIGRATED_SUFFIX
-
-    canonical_exists = await hass.async_add_executor_job(
-        os.path.isfile, canonical_path
-    )
-
-    if not canonical_exists:
-        migrated_exists = await hass.async_add_executor_job(
-            os.path.isfile, migrated_path
+    path = hass.config.path(filename)
+    if not await hass.async_add_executor_job(os.path.isfile, path):
+        return None, None
+    try:
+        async with aio_open(path, mode="r") as fh:
+            raw = await fh.read()
+        return path, json.loads(raw)
+    except (OSError, json.JSONDecodeError) as err:
+        _LOGGER.warning(
+            "Manual-config: %s is unreadable (%s); skipping.", path, err
         )
-        if migrated_exists:
-            try:
-                await hass.async_add_executor_job(
-                    os.rename, migrated_path, canonical_path
-                )
-                _LOGGER.info(
-                    "Manual-config: renamed %s back to %s so the file "
-                    "is editable under its canonical name.",
-                    migrated_path,
-                    canonical_path,
-                )
-                canonical_exists = True
-            except OSError as err:
-                _LOGGER.warning(
-                    "Manual-config: could not rename %s back to %s "
-                    "(%s); reading from .migrated and leaving it in "
-                    "place.",
-                    migrated_path,
-                    canonical_path,
-                    err,
-                )
-
-    for path in (canonical_path, migrated_path):
-        if not await hass.async_add_executor_job(os.path.isfile, path):
-            continue
-        try:
-            async with aio_open(path, mode="r") as fh:
-                raw = await fh.read()
-            return path, json.loads(raw)
-        except (OSError, json.JSONDecodeError) as err:
-            _LOGGER.warning(
-                "Manual-config: %s is unreadable (%s); skipping.", path, err
-            )
-            return None, None
-    return None, None
+        return None, None
 
 
 def _tag_manual_source(entry: dict[str, Any]) -> None:
@@ -124,6 +74,116 @@ def _tag_manual_source(entry: dict[str, Any]) -> None:
         discovered_info = {}
     discovered_info["source"] = "manual_config"
     entry["discovered_info"] = discovered_info
+
+
+# ---------------------------------------------------------------------------
+# v1 (legacy nested) → flat-by-address conversion
+# ---------------------------------------------------------------------------
+#
+# The v1 file shape is ``{module_type: [entries | {addr: entry}]}``. The
+# 0.4.0 module store keeps a single dict keyed by address, with
+# ``module_type`` carried on each entry. These helpers translate the v1
+# shape into the flat shape — the only consumer is ``_apply_module_config``
+# below.
+
+
+def convert_legacy_to_flat(legacy: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Convert ``{module_type: [entries | {addr: entry}]}`` to ``{addr: entry}``.
+
+    User fields on each channel are preserved verbatim. Roller channels
+    that used the legacy single ``operation_time`` key are split into
+    ``operation_time_up`` / ``operation_time_down``. Every entry is
+    tagged with its ``module_type`` so downstream code can still group
+    by hardware class without keeping a parallel nested dict.
+    """
+    flat: dict[str, dict[str, Any]] = {}
+    if not isinstance(legacy, dict):
+        return flat
+
+    for module_type, modules in legacy.items():
+        if not isinstance(module_type, str):
+            continue
+
+        iter_entries: list[tuple[str | None, dict[str, Any]]] = []
+        if isinstance(modules, list):
+            for entry in modules:
+                if isinstance(entry, dict):
+                    iter_entries.append((entry.get("address"), entry))
+        elif isinstance(modules, dict):
+            for addr, entry in modules.items():
+                if isinstance(entry, dict):
+                    iter_entries.append((entry.get("address") or addr, entry))
+        else:
+            _LOGGER.warning(
+                "Skipping module group %s with unsupported type %s",
+                module_type,
+                type(modules).__name__,
+            )
+            continue
+
+        for address, entry in iter_entries:
+            if not isinstance(address, str) or not address:
+                continue
+            key = address.upper()
+            flat[key] = _convert_entry(key, module_type, entry)
+
+    return flat
+
+
+def _convert_entry(
+    address: str, module_type: str, entry: dict[str, Any]
+) -> dict[str, Any]:
+    """Convert a single legacy module entry to the flat shape."""
+    channels_in = entry.get("channels", [])
+    channels_out: list[dict[str, Any]] = []
+    if isinstance(channels_in, list):
+        for ch in channels_in:
+            if isinstance(ch, dict):
+                channels_out.append(_convert_channel(module_type, ch))
+            elif isinstance(ch, str):
+                # Very old shapes stored channel descriptions as bare strings.
+                channels_out.append({"description": ch})
+
+    out: dict[str, Any] = {
+        "module_type": module_type,
+        "description": entry.get("description") or f"Module {address}",
+        "model": entry.get("model") or "",
+        "channels": channels_out,
+    }
+
+    # Carry discovered_info through verbatim when it already exists.
+    if isinstance(entry.get("discovered_info"), dict):
+        out["discovered_info"] = dict(entry["discovered_info"])
+
+    return out
+
+
+def _convert_channel(
+    module_type: str, channel: dict[str, Any]
+) -> dict[str, Any]:
+    """Convert a single legacy channel, splitting ``operation_time`` for rollers."""
+    out: dict[str, Any] = {
+        "description": channel.get("description", ""),
+    }
+
+    # Optional fields — only emitted when set in the source, so we don't
+    # invent defaults that the options flow would treat as user edits.
+    for key in ("entity_type", "led_on", "led_off"):
+        if key in channel and channel[key] not in ("", None):
+            out[key] = channel[key]
+
+    if module_type == "roller_module":
+        if "operation_time_up" in channel:
+            out["operation_time_up"] = channel["operation_time_up"]
+        if "operation_time_down" in channel:
+            out["operation_time_down"] = channel["operation_time_down"]
+        # Legacy single ``operation_time`` → split into both directions.
+        if "operation_time" in channel and "operation_time_up" not in out:
+            legacy_time = channel["operation_time"]
+            out["operation_time_up"] = legacy_time
+            out.setdefault("operation_time_down", legacy_time)
+
+    return out
 
 
 async def _apply_module_config(
@@ -137,9 +197,7 @@ async def _apply_module_config(
     contained no convertible entries (in which case the caller should
     decide whether to wipe the store anyway).
     """
-    path, payload = await _read_json_with_fallback(
-        hass, MANUAL_MODULE_CONFIG_FILENAME
-    )
+    path, payload = await _read_json(hass, MANUAL_MODULE_CONFIG_FILENAME)
     if path is None or not isinstance(payload, dict):
         return 0, None
 
@@ -153,6 +211,163 @@ async def _apply_module_config(
     # truth).
     store.data["nikobus_module"] = flat
     return len(flat), path
+
+
+# ---------------------------------------------------------------------------
+# Friendly-name overlay (2.11.5+)
+# ---------------------------------------------------------------------------
+#
+# Distinct from ``_apply_module_config`` / ``_apply_button_config`` above,
+# which fully REPLACE the stores from the manual files (used when there's
+# no PC-Link to provide inventory). The overlay enriches existing entries
+# in-place: same address present in both the live store AND the file →
+# copy user-editable fields (descriptions, entity_type, roller times,
+# LED triggers) from file onto the store entry. Modules in the file that
+# aren't in the store are silently ignored — PC-Link's inventory is the
+# authority for what exists.
+#
+# Use case: PC-Link installs whose users want their custom labels (from
+# an old YAML/JSON setup or from a sibling install) to survive the bus
+# discovery's generic "Switch Module" / "Output 1" defaults.
+
+_MODULE_OVERLAY_FIELDS = ("description",)
+_CHANNEL_OVERLAY_FIELDS = (
+    "description",
+    "entity_type",
+    "operation_time_up",
+    "operation_time_down",
+    "led_on",
+    "led_off",
+)
+
+
+def _overlay_module(store_entry: dict[str, Any], file_entry: dict[str, Any]) -> bool:
+    """Apply user-editable fields from ``file_entry`` onto ``store_entry``.
+
+    Module-level fields (currently just ``description``) and the
+    per-channel fields listed in ``_CHANNEL_OVERLAY_FIELDS``. Matches
+    channels by INDEX (file's channel 0 → store's channel 0). Returns
+    True if any field was overwritten.
+    """
+    changed = False
+
+    for field in _MODULE_OVERLAY_FIELDS:
+        if field in file_entry and file_entry[field] not in ("", None):
+            if store_entry.get(field) != file_entry[field]:
+                store_entry[field] = file_entry[field]
+                changed = True
+
+    file_channels = file_entry.get("channels") or []
+    store_channels = store_entry.setdefault("channels", [])
+    for idx, file_ch in enumerate(file_channels):
+        if not isinstance(file_ch, dict):
+            continue
+        # Extend store channel list if file declares more than discovery
+        # found — won't happen for real installs but keeps the overlay
+        # robust against partial-discovery edge cases.
+        while idx >= len(store_channels):
+            store_channels.append({})
+        store_ch = store_channels[idx]
+        for field in _CHANNEL_OVERLAY_FIELDS:
+            if field in file_ch and file_ch[field] not in ("", None):
+                if store_ch.get(field) != file_ch[field]:
+                    store_ch[field] = file_ch[field]
+                    changed = True
+
+    return changed
+
+
+async def async_apply_friendly_name_overlay(
+    hass: HomeAssistant,
+    module_store: NikobusModuleStorage,
+    button_data: dict[str, Any],
+) -> bool:
+    """Overlay user-editable fields from the manual config files onto the
+    existing live stores. Does NOT add or remove modules/buttons — only
+    enriches entries that already exist (typically populated by PC-Link
+    inventory).
+
+    Returns True if any field was changed in either store (signal to
+    the caller to persist).
+    """
+    changed_any = False
+
+    # Module overlay
+    path, payload = await _read_json(hass, MANUAL_MODULE_CONFIG_FILENAME)
+    if path is not None and isinstance(payload, dict):
+        flat = convert_legacy_to_flat(payload)
+        store_modules = module_store.data.setdefault("nikobus_module", {})
+        applied = skipped = 0
+        for addr, file_entry in flat.items():
+            store_entry = store_modules.get(addr)
+            if store_entry is None:
+                skipped += 1
+                continue
+            if _overlay_module(store_entry, file_entry):
+                applied += 1
+                changed_any = True
+        _LOGGER.info(
+            "Friendly-name overlay: %d module(s) updated from %s "
+            "(%d file entries had no matching live module — ignored).",
+            applied, path, skipped,
+        )
+
+    # Button overlay — match by physical button address + op-point key.
+    path, payload = await _read_json(hass, MANUAL_BUTTON_CONFIG_FILENAME)
+    if path is not None and isinstance(payload, dict):
+        raw = payload.get("nikobus_button")
+        legacy_iter: list[dict[str, Any]] = []
+        if isinstance(raw, list):
+            legacy_iter = [e for e in raw if isinstance(e, dict)]
+        elif isinstance(raw, dict):
+            for addr, entry in raw.items():
+                if isinstance(entry, dict):
+                    merged = dict(entry)
+                    merged.setdefault("address", addr)
+                    legacy_iter.append(merged)
+
+        store_buttons = button_data.setdefault("nikobus_button", {})
+        applied = skipped = 0
+        for entry in legacy_iter:
+            description = str(entry.get("description") or "").strip()
+            physical = _extract_physical_info(entry)
+            if physical is None:
+                # Synthetic / IR / scene entry — match its standalone
+                # single-key store entry by bus_address.
+                bus_addr = str(entry.get("address") or "").strip().upper()
+                store_btn = store_buttons.get(bus_addr)
+                if store_btn is None or not description:
+                    skipped += 1
+                    continue
+                op = store_btn.get("operation_points", {}).get("1A")
+                if op is not None and op.get("description") != description:
+                    op["description"] = description
+                    store_btn["description"] = description
+                    applied += 1
+                    changed_any = True
+                continue
+
+            phys_addr, key_label, _channels, _type, _model = physical
+            store_btn = store_buttons.get(phys_addr)
+            if store_btn is None:
+                skipped += 1
+                continue
+            op = store_btn.get("operation_points", {}).get(key_label)
+            if op is None:
+                skipped += 1
+                continue
+            if description and op.get("description") != description:
+                op["description"] = description
+                applied += 1
+                changed_any = True
+
+        _LOGGER.info(
+            "Friendly-name overlay: %d op-point(s) updated from %s "
+            "(%d file entries had no matching live op-point — ignored).",
+            applied, path, skipped,
+        )
+
+    return changed_any
 
 
 def _extract_physical_info(
@@ -196,35 +411,19 @@ def _new_physical_record(
     }
 
 
-def _extract_linked_modules(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """Pull ``linked_modules`` off a v1 entry, dropping non-dict items.
-
-    The v2 schema attaches ``linked_modules`` per operation-point and
-    consumes only ``module_address`` and ``outputs[].channel`` from
-    each item — extra v1 fields (``mode``, ``t1``, ``t2``,
-    ``payload``, ``button_address``, ``ir_button_address``,
-    ``ir_code``) pass through harmlessly and surface in the
-    diagnostics export, so a manual-mode user's snapshot matches an
-    auto-discovered install.
-    """
-    raw = entry.get("linked_modules")
-    if not isinstance(raw, list):
-        return []
-    return [item for item in raw if isinstance(item, dict)]
-
-
 def _single_key_fallback(
     bus_address: str,
     description: str,
-    linked_modules: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build a 1-channel synthetic record for an unlinked v1 entry.
+    """Build a 1-channel synthetic record for an entry without a
+    ``linked_button`` block (IR-only / virtual / scene placeholder).
 
-    Used for IR/virtual/scene entries that have no ``linked_button``
-    block. The v2 router routes by ``operation_points[*].bus_address``,
-    so a single op-point on a synthetic physical record (keyed by the
-    bus address itself) is enough to make those entries fire HA
-    events the way they did in v1.
+    The router matches by ``operation_points[*].bus_address``, so a
+    single op-point on a synthetic physical record (keyed by the bus
+    address itself) is enough to make these entries fire HA events.
+    ``linked_modules`` is left empty — step 2 (per-module register
+    scan) populates real link records when the underlying button has
+    any.
     """
     label = description or f"#N{bus_address}"
     return {
@@ -236,7 +435,7 @@ def _single_key_fallback(
             "1A": {
                 "bus_address": bus_address,
                 "description": label,
-                "linked_modules": linked_modules,
+                "linked_modules": [],
             }
         },
     }
@@ -254,9 +453,7 @@ async def _apply_button_config(
 
     Returns ``(physical_buttons, total_op_points, source_path)``.
     """
-    path, payload = await _read_json_with_fallback(
-        hass, MANUAL_BUTTON_CONFIG_FILENAME
-    )
+    path, payload = await _read_json(hass, MANUAL_BUTTON_CONFIG_FILENAME)
     if path is None or not isinstance(payload, dict):
         return 0, 0, None
 
@@ -283,7 +480,15 @@ async def _apply_button_config(
         if not bus_address:
             continue
         description = str(entry.get("description") or "").strip()
-        linked_modules = _extract_linked_modules(entry)
+        # ``linked_modules`` is NOT imported from the manual file
+        # (2.11.4+). The file is a step-1 inventory source — it tells
+        # us which physical buttons exist and which keys they have.
+        # The link records (``linked_modules[].outputs[]``) are
+        # step-2 territory; "Scan all modules" populates them from
+        # the per-module register tables on the bus. Importing them
+        # from the file would create stale duplicates that step 2
+        # would have to dedup. Cleaner to start from empty and let
+        # step 2 fill it.
 
         physical = _extract_physical_info(entry)
         if physical is not None:
@@ -300,7 +505,7 @@ async def _apply_button_config(
                 "bus_address": bus_address,
                 "description": description
                 or f"Push button {key_label} #N{bus_address}",
-                "linked_modules": linked_modules,
+                "linked_modules": [],
             }
             op_points_total += 1
         else:
@@ -310,7 +515,7 @@ async def _apply_button_config(
             if bus_address in new_buttons:
                 continue
             new_buttons[bus_address] = _single_key_fallback(
-                bus_address, description, linked_modules
+                bus_address, description
             )
             op_points_total += 1
 

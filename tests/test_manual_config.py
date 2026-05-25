@@ -23,14 +23,49 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Reuse the same conftest hooks the migration tests use.
 ROOT = Path(__file__).parent.parent
 COMP = ROOT / "custom_components" / "nikobus"
 
 
-# Importing test_module_migration first installs the real-file aiofiles
-# stub that nkbmanual / nkbmigration both end up using.
-import tests.test_module_migration as _mig_tests  # noqa: F401,E402
+# Replace the conftest aiofiles stub (an AsyncMock that doesn't read
+# real files) with a real-file implementation that uses run-in-executor
+# wrappers. Needed because nkbmanual reads JSON files via aiofiles.
+
+
+class _AsyncFileContext:
+    def __init__(self, path: str, mode: str):
+        self._path = path
+        self._mode = mode
+        self._fh = None
+
+    async def __aenter__(self):
+        self._fh = open(self._path, self._mode)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if self._fh is not None:
+            self._fh.close()
+
+    async def read(self) -> str:
+        import asyncio
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._fh.read
+        )
+
+    async def write(self, data: str) -> int:
+        import asyncio
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._fh.write, data
+        )
+
+
+def _real_aiofiles_open(path: str, mode: str = "r"):
+    return _AsyncFileContext(path, mode)
+
+
+_aiofiles_stub = sys.modules.get("aiofiles")
+if _aiofiles_stub is not None:
+    _aiofiles_stub.open = _real_aiofiles_open  # type: ignore[attr-defined]
 
 
 def _load(name, path):
@@ -227,12 +262,15 @@ class TestApplyManualConfig(unittest.TestCase):
         self.assertNotIn("led_on", entry["channels"][0])
 
     # ------------------------------------------------------------------
-    # .migrated rename-back: users who tried v2 once had their files
-    # renamed by the one-shot migration. Flipping manual_config must
-    # restore the canonical name so the file is editable as-is.
+    # 2.11.4: ``.migrated`` fallback removed. Users with leftover
+    # ``.migrated`` files from earlier versions must rename them back
+    # to the canonical name themselves — the loader only looks at the
+    # canonical filename.
     # ------------------------------------------------------------------
 
-    def test_migrated_is_renamed_back_to_canonical(self):
+    def test_migrated_file_is_not_picked_up(self):
+        # File present only under the ``.migrated`` suffix — loader
+        # must NOT read it (closed path).
         migrated_path = self._write("nikobus_module_config.json.migrated", {
             "dimmer_module": [{
                 "description": "Salon dimmer",
@@ -246,44 +284,14 @@ class TestApplyManualConfig(unittest.TestCase):
         store = _InMemoryModuleStore()
         button_data = {"nikobus_button": {}}
 
-        changed = _run(
+        _run(
             nkbmanual.async_apply_manual_config(self.hass, store, button_data)
         )
 
-        self.assertTrue(changed)
-        self.assertIn("0E6C", store.data["nikobus_module"])
-        # Renamed back: canonical now exists, .migrated does not.
-        self.assertTrue(os.path.exists(canonical_path))
-        self.assertFalse(os.path.exists(migrated_path))
-
-    # ------------------------------------------------------------------
-    # If a canonical file already exists, the .migrated variant is
-    # left untouched. Trust whatever the user explicitly placed.
-    # ------------------------------------------------------------------
-
-    def test_both_files_present_canonical_wins_migrated_preserved(self):
-        canonical_path = self._write("nikobus_module_config.json", {
-            "switch_module": [{
-                "description": "User-edited", "address": "AABB",
-                "channels": [{"description": "Live"}],
-            }],
-        })
-        migrated_path = self._write("nikobus_module_config.json.migrated", {
-            "switch_module": [{
-                "description": "Stale", "address": "CCDD",
-                "channels": [{"description": "Old"}],
-            }],
-        })
-        store = _InMemoryModuleStore()
-        button_data = {"nikobus_button": {}}
-
-        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
-
-        modules = store.data["nikobus_module"]
-        self.assertIn("AABB", modules)  # from canonical
-        self.assertNotIn("CCDD", modules)  # .migrated NOT read
-        # Both files still on disk after the run.
-        self.assertTrue(os.path.exists(canonical_path))
+        # Module store stays empty — ``.migrated`` not read.
+        self.assertNotIn("0E6C", store.data["nikobus_module"])
+        # No automatic rename either — file stays where the user left it.
+        self.assertFalse(os.path.exists(canonical_path))
         self.assertTrue(os.path.exists(migrated_path))
 
     # ------------------------------------------------------------------
@@ -509,7 +517,13 @@ class TestApplyManualConfig(unittest.TestCase):
     # button control" cross-reference.
     # ------------------------------------------------------------------
 
-    def test_linked_modules_preserved_on_grouped_op_point(self):
+    def test_linked_modules_NOT_imported_on_grouped_op_point(self):
+        # 2.11.4: ``linked_modules`` lives on the bus side and is
+        # populated by step 2 (per-module register scan), NOT by
+        # the manual import. Even when the file carries link data
+        # (e.g., a snapshot from a previous discovery), the import
+        # must drop it — otherwise step 2's fresh records would
+        # collide with stale file data.
         self._write("nikobus_button_config.json", {
             "nikobus_button": [
                 {
@@ -527,12 +541,8 @@ class TestApplyManualConfig(unittest.TestCase):
                         "outputs": [{
                             "channel": 1,
                             "mode": "M01 (Dim on/off (2 buttons))",
-                            "t1": None,
-                            "t2": None,
                             "payload": "FFB4000000007234",
                             "button_address": "0D1C80",
-                            "ir_button_address": "0D1C82",
-                            "ir_code": "02A",
                         }],
                     }],
                 },
@@ -544,19 +554,15 @@ class TestApplyManualConfig(unittest.TestCase):
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
         op_point = button_data["nikobus_button"]["0D1C80"]["operation_points"]["1C"]
-        self.assertEqual(len(op_point["linked_modules"]), 1)
-        link = op_point["linked_modules"][0]
-        self.assertEqual(link["module_address"], "0E6C")
-        # v1-specific extras pass through unchanged for diagnostics.
-        out = link["outputs"][0]
-        self.assertEqual(out["channel"], 1)
-        self.assertEqual(out["mode"], "M01 (Dim on/off (2 buttons))")
-        self.assertEqual(out["ir_code"], "02A")
+        # Op-point structure is created (step-1 inventory) but
+        # ``linked_modules`` is empty (step-2 territory).
+        self.assertEqual(op_point["bus_address"], "004E2C")
+        self.assertEqual(op_point["linked_modules"], [])
 
-    def test_linked_modules_preserved_on_unlinked_entry(self):
-        # No linked_button, but linked_modules present — preserve on
-        # the synthetic single-key fallback so diagnostics stays
-        # consistent.
+    def test_linked_modules_NOT_imported_on_unlinked_entry(self):
+        # Same rule for the synthetic single-key fallback (IR /
+        # scene / virtual): step 1 establishes the op-point shape,
+        # step 2 populates link records.
         self._write("nikobus_button_config.json", {
             "nikobus_button": [
                 {
@@ -575,7 +581,7 @@ class TestApplyManualConfig(unittest.TestCase):
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
         op_point = button_data["nikobus_button"]["9E4E2C"]["operation_points"]["1A"]
-        self.assertEqual(op_point["linked_modules"][0]["module_address"], "0E6C")
+        self.assertEqual(op_point["linked_modules"], [])
 
     def test_missing_linked_modules_defaults_to_empty(self):
         self._write("nikobus_button_config.json", {
@@ -843,6 +849,257 @@ class TestRealWorldSample(unittest.TestCase):
         self.assertEqual(buttons["9E4E2C"]["channels"], 1)
         self.assertEqual(buttons["9E4E2C"]["description"], "IR_TV_Lights")
         self.assertIn("FFFFFF", buttons)
+
+    # ------------------------------------------------------------------
+    # 2.11.4: explicit pin for the "linked_modules empty on import" rule.
+    # Every op-point produced by the importer must have an empty list,
+    # regardless of whether the file declared link data or not.
+    # ------------------------------------------------------------------
+
+    def test_all_op_points_have_empty_linked_modules_after_import(self):
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                {
+                    "address": "004E2C",
+                    "linked_button": [{
+                        "type": "Bus push button, 4 control buttons",
+                        "model": "05-064", "address": "0D1C80",
+                        "channels": 4, "key": "1C",
+                    }],
+                    # File carries stale step-2 data: must be dropped.
+                    "linked_modules": [{
+                        "module_address": "0E6C",
+                        "outputs": [{"channel": 1, "mode": "M01"}],
+                    }],
+                },
+                {
+                    "address": "404E2C",
+                    "linked_button": [{
+                        "type": "Bus push button, 4 control buttons",
+                        "model": "05-064", "address": "0D1C80",
+                        "channels": 4, "key": "1D",
+                    }],
+                    # No link data in this entry — also empty after import.
+                },
+                {
+                    # Synthetic (no linked_button): single-key fallback.
+                    "address": "9E4E2C",
+                    "description": "IR_TV_Lights",
+                    "linked_modules": [{
+                        "module_address": "0E6C",
+                        "outputs": [{"channel": 2, "mode": "M01"}],
+                    }],
+                },
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        # Walk every op-point on every physical and verify empty.
+        for phys_addr, phys in button_data["nikobus_button"].items():
+            for key, op in phys["operation_points"].items():
+                self.assertEqual(
+                    op["linked_modules"], [],
+                    f"{phys_addr}:{key} must have empty linked_modules "
+                    f"after step-1 import; got {op['linked_modules']!r}",
+                )
+
+
+class TestApplyFriendlyNameOverlay(unittest.TestCase):
+    """2.11.5: the overlay function enriches existing store entries
+    with user-editable fields from the manual files, without adding
+    or removing entries. Used by the unified step-1 discovery whether
+    the inventory source was PC-Link or the file itself."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config_dir = self.tmp.name
+        self.hass = _FakeHass(self.config_dir)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write(self, filename: str, data: dict) -> str:
+        path = os.path.join(self.config_dir, filename)
+        with open(path, "w") as fh:
+            json.dump(data, fh)
+        return path
+
+    def test_overlay_copies_module_and_channel_descriptions(self):
+        # Simulate PC-Link inventory result: address known, generic name.
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "C9A5": {
+                "module_type": "switch_module",
+                "description": "Switch Module",  # PC-Link's default
+                "model": "05-000-02",
+                "channels": [
+                    {"description": ""},  # Generic
+                    {"description": ""},
+                ],
+            }
+        }
+        button_data = {"nikobus_button": {}}
+
+        # Manual file with user-edited descriptions.
+        self._write("nikobus_module_config.json", {
+            "switch_module": [{
+                "description": "switch_module_s1",
+                "address": "C9A5",
+                "model": "05-000-02",
+                "channels": [
+                    {"description": "Extérieur Porte Entrée", "entity_type": "light"},
+                    {"description": "Hall 1er Étage", "entity_type": "light"},
+                ],
+            }]
+        })
+
+        changed = _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        self.assertTrue(changed)
+        c9a5 = store.data["nikobus_module"]["C9A5"]
+        self.assertEqual(c9a5["description"], "switch_module_s1")
+        self.assertEqual(c9a5["channels"][0]["description"], "Extérieur Porte Entrée")
+        self.assertEqual(c9a5["channels"][0]["entity_type"], "light")
+        self.assertEqual(c9a5["channels"][1]["description"], "Hall 1er Étage")
+
+    def test_overlay_does_not_add_modules_not_in_store(self):
+        # PC-Link discovered C9A5; manual file declares EXTRA module BEEF.
+        # Overlay must ignore BEEF — PC-Link is the inventory authority.
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "C9A5": {
+                "module_type": "switch_module",
+                "description": "Switch Module",
+                "channels": [],
+            }
+        }
+        button_data = {"nikobus_button": {}}
+
+        self._write("nikobus_module_config.json", {
+            "switch_module": [
+                {"description": "s1", "address": "C9A5", "channels": []},
+                {"description": "Phantom", "address": "BEEF", "channels": []},
+            ]
+        })
+
+        _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        modules = store.data["nikobus_module"]
+        self.assertIn("C9A5", modules)
+        self.assertNotIn("BEEF", modules)
+        self.assertEqual(modules["C9A5"]["description"], "s1")
+
+    def test_overlay_preserves_user_fields_for_rollers(self):
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "9105": {
+                "module_type": "roller_module",
+                "description": "Roller Shutter Module",
+                "channels": [
+                    {"description": ""},
+                    {"description": ""},
+                ],
+            }
+        }
+        button_data = {"nikobus_button": {}}
+
+        self._write("nikobus_module_config.json", {
+            "roller_module": [{
+                "description": "rollershutter_module_r1",
+                "address": "9105",
+                "channels": [
+                    {"description": "Salon Volet Terrasse", "operation_time_up": "45"},
+                    {"description": "Salon Volet Jardin", "operation_time_up": "51"},
+                ],
+            }]
+        })
+
+        _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        chans = store.data["nikobus_module"]["9105"]["channels"]
+        self.assertEqual(chans[0]["description"], "Salon Volet Terrasse")
+        self.assertEqual(chans[0]["operation_time_up"], "45")
+        self.assertEqual(chans[1]["operation_time_up"], "51")
+
+    def test_overlay_updates_button_op_point_descriptions(self):
+        # Existing physical button in store (from PC-Link discovery).
+        store = _InMemoryModuleStore()
+        button_data = {
+            "nikobus_button": {
+                "0D1C80": {
+                    "type": "IR Button with 4 Operation Points",
+                    "model": "05-348",
+                    "channels": 4,
+                    "description": "IR Button",
+                    "operation_points": {
+                        "1C": {
+                            "bus_address": "004E2C",
+                            "description": "Push button 1C #N004E2C",
+                            "linked_modules": [],
+                        }
+                    },
+                }
+            }
+        }
+
+        # File supplies a friendlier name for OP 1C.
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [{
+                "address": "004E2C",
+                "description": "BT_GF_Living_Sofa_Wall_Light_Up",
+                "linked_button": [{
+                    "type": "IR Button with 4 Operation Points",
+                    "model": "05-348",
+                    "address": "0D1C80",
+                    "channels": 4,
+                    "key": "1C",
+                }],
+            }]
+        })
+
+        changed = _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        self.assertTrue(changed)
+        op = button_data["nikobus_button"]["0D1C80"]["operation_points"]["1C"]
+        self.assertEqual(op["description"], "BT_GF_Living_Sofa_Wall_Light_Up")
+
+    def test_overlay_noop_when_no_files(self):
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "C9A5": {"module_type": "switch_module", "description": "untouched"}
+        }
+        button_data = {"nikobus_button": {}}
+
+        changed = _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        self.assertFalse(changed)
+        # Store unchanged.
+        self.assertEqual(
+            store.data["nikobus_module"]["C9A5"]["description"], "untouched"
+        )
 
 
 if __name__ == "__main__":

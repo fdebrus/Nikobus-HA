@@ -11,13 +11,11 @@
             "hardware": {
                 "data": {
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
-                    "prior_gen3": "PC-Link is older than Gen 3",
-                    "manual_config": "Use manual configuration (skip auto-discovery)"
+                    "prior_gen3": "PC-Link is older than Gen 3"
                 },
                 "data_description": {
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
-                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
-                    "manual_config": "Read modules and buttons from nikobus_module_config.json and nikobus_button_config.json in your Home Assistant config directory."
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
                 },
                 "description": "Tell us about your Nikobus hardware so the integration can use the optimal update strategy.",
                 "title": "Hardware Configuration"
@@ -37,14 +35,12 @@
                     "connection_string": "Connection (serial port or IP:port)",
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
                     "prior_gen3": "PC-Link is older than Gen 3",
-                    "manual_config": "Use manual configuration (skip auto-discovery)",
                     "refresh_interval": "Polling interval (seconds)"
                 },
                 "data_description": {
                     "connection_string": "Serial device path or TCP address of the PC-Link bridge",
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
                     "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
-                    "manual_config": "Read modules and buttons from nikobus_module_config.json and nikobus_button_config.json in your Home Assistant config directory.",
                     "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
                 },
                 "description": "Update the connection string or hardware settings. The connection will be re-tested.",
@@ -150,6 +146,9 @@
         },
         "no_modules_known": {
             "message": "No Nikobus modules are configured yet. Run a PC-Link inventory discovery first, then retry the module scan."
+        },
+        "no_inventory_source": {
+            "message": "No PC-Link detected on the bus and no manual config files found. Either install a PC-Link or create nikobus_module_config.json (and optionally nikobus_button_config.json) in your Home Assistant config directory, then retry."
         }
     },
     "options": {
@@ -165,13 +164,11 @@
             "hardware": {
                 "data": {
                     "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
-                    "prior_gen3": "PC-Link is older than Gen 3",
-                    "manual_config": "Use manual configuration (skip auto-discovery)"
+                    "prior_gen3": "PC-Link is older than Gen 3"
                 },
                 "data_description": {
                     "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
-                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
-                    "manual_config": "Read modules and buttons from nikobus_module_config.json and nikobus_button_config.json in your Home Assistant config directory."
+                    "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware."
                 },
                 "description": "Update your hardware settings. The integration will reload automatically.",
                 "title": "Hardware Configuration"

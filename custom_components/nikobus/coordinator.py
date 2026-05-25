@@ -27,7 +27,6 @@ from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError,
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
-    CONF_MANUAL_CONFIG,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     DEVICE_ADDRESS_INVENTORY,
@@ -60,7 +59,6 @@ from .const import (
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 from .nkbmanual import async_apply_manual_config
-from .nkbmigration import async_migrate_legacy_module_config
 from .nkbstorage import NikobusButtonStorage, NikobusModuleStorage
 
 # Typed config entry alias used across the integration. A plain alias
@@ -109,7 +107,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
         self._has_feedback_module = _opts.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._prior_gen3 = _opts.get(CONF_PRIOR_GEN3, config_entry.data.get(CONF_PRIOR_GEN3, False))
-        self._manual_config = _opts.get(CONF_MANUAL_CONFIG, config_entry.data.get(CONF_MANUAL_CONFIG, False))
 
         super().__init__(
             hass,
@@ -240,34 +237,35 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             raise
 
         try:
-            # Module data now lives in .storage/nikobus.modules. On first
-            # startup after upgrading to 0.4.0, migrate any legacy
-            # nikobus_module_config.json into the store, then rename it —
-            # unless the user opted into manual-config mode, in which case
-            # the legacy file is the live source of truth and must NOT
-            # be renamed away.
+            # Module data lives in .storage/nikobus.modules. The legacy
+            # one-shot ``nikobus_module_config.json`` migration (which
+            # used to rename the file to ``.migrated``) is no longer
+            # invoked as of 2.11.4 — manual config files are now applied
+            # declaratively on every startup via
+            # ``async_apply_manual_config`` (below), and the file is
+            # left in place under its canonical name.
             await self.module_storage.async_load()
-            if not self._manual_config:
-                await async_migrate_legacy_module_config(self.hass, self.module_storage)
             self._rebuild_dict_module_data()
 
             self.dict_button_data = await self.button_storage.async_load()
 
-            # Manual-config: re-apply v1 JSON files into the live stores
-            # on every startup so users on pre-Gen3 / Gen2 hardware (whose
-            # button-link data the Gen3 decoder doesn't parse) can keep
-            # their inventory declarative. See nikobus-connect 0.5.24
-            # CHANGELOG "What this does NOT fix" for context.
-            if self._manual_config:
-                changed = await async_apply_manual_config(
-                    self.hass,
-                    self.module_storage,
-                    self.dict_button_data,
-                )
-                if changed:
-                    await self.module_storage.async_save()
-                    await self.button_storage.async_save()
-                    self._rebuild_dict_module_data()
+            # 2.11.4: manual config files are the step-1 inventory source
+            # for installs without a PC-Link (Feedback-module-only users).
+            # The files are fully declarative — what's in them gets
+            # written to the live stores on every coordinator setup.
+            # ``linked_modules`` is NOT imported from the button file;
+            # step 2 (per-module register scan) populates that. Applied
+            # unconditionally if the files exist — presence of the
+            # files is the signal.
+            changed = await async_apply_manual_config(
+                self.hass,
+                self.module_storage,
+                self.dict_button_data,
+            )
+            if changed:
+                await self.module_storage.async_save()
+                await self.button_storage.async_save()
+                self._rebuild_dict_module_data()
             self.dict_scene_data = await self.nikobus_config.load_json_data(
                 "nikobus_scene_config.json", "scene"
             )
@@ -1801,8 +1799,37 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_last_error = error
         async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
 
+    # Timeout for the PC-Link ``#A`` probe. PC-Link normally responds in
+    # well under 1 s; allowing 10 s leaves headroom for slow buses while
+    # keeping the no-PC-Link fallback responsive.
+    _PCLINK_PROBE_TIMEOUT = 10.0
+
     async def start_pc_link_inventory(self, *, auto_reload: bool = True) -> None:
-        """Run a PC Link inventory discovery and wait until it completes."""
+        """Step 1 of discovery — unified inventory source + friendly-name overlay.
+
+        Logic, in order:
+
+        1. **Probe PC-Link** with the ``#A`` broadcast (timeout
+           ``_PCLINK_PROBE_TIMEOUT``). If PC-Link responds, its result
+           populates ``dict_module_data`` (and the button registry from
+           per-address identity reads). Existing behaviour.
+
+        2. **Fall back to manual files** when the probe times out — no
+           PC-Link on the bus. The manual config files
+           (``nikobus_module_config.json`` / ``nikobus_button_config.json``)
+           become the inventory source. If neither file exists, raise
+           ``no_inventory_source`` — we can't proceed.
+
+        3. **Overlay friendly names** from the manual files onto the
+           live stores REGARDLESS of which source step 1 used. PC-Link
+           installs benefit too: PC-Link gives addresses and channel
+           counts but generic names; the file's descriptions /
+           ``entity_type`` / roller times override those.
+
+        Step 2 (per-module register scan for link records) is a
+        separate user action — ``start_module_scan``. It picks up
+        whatever ``dict_module_data`` step 1 left in place.
+        """
         if not self.nikobus_discovery:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
@@ -1815,16 +1842,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
-        # PC-Link inventory is not a register scan — reset the flag so
-        # a stale ``True`` from a prior scan-all doesn't fire the
-        # legacy-buttons Repairs issue with Stage-1-only data.
         self._last_module_scan_was_full = False
-        # PC Link inventory scans register range 0xA4-0xFF = 92 frames.
-        # The library aborts the sweep at the first all-FF response
-        # (nikobus-connect 0.5.13+), so this is a soft upper bound.
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_PC_LINK,
-            message="Scanning PC Link registry for modules and buttons…",
+            message="Probing for PC-Link…",
             current_module=None,
             modules_done=0,
             modules_total=0,
@@ -1832,24 +1853,98 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             registers_total=92,
             error=None,
         )
+
+        # 1. PC-Link probe with timeout.
+        used_pclink = await self._try_pclink_inventory()
+
+        # 2. Fall back to manual files if probe timed out / failed.
+        if not used_pclink:
+            applied = await self._apply_manual_inventory_as_fallback()
+            if not applied:
+                self._update_discovery_state(
+                    phase=DISCOVERY_PHASE_ERROR,
+                    message=(
+                        "No PC-Link detected and no manual config files "
+                        "found. Install a PC-Link or create "
+                        "nikobus_module_config.json in your config dir."
+                    ),
+                    error="no_inventory_source",
+                )
+                self.discovery_running = False
+                self._discovery_finished_event.set()
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="no_inventory_source",
+                )
+
+        # 3. Overlay friendly names from manual files (whether or not
+        #    we used them as inventory source). No-op if files absent.
+        try:
+            from .nkbmanual import async_apply_friendly_name_overlay
+            overlaid = await async_apply_friendly_name_overlay(
+                self.hass, self.module_storage, self.dict_button_data
+            )
+            if overlaid:
+                await self.module_storage.async_save()
+                await self.button_storage.async_save()
+                self._rebuild_dict_module_data()
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Friendly-name overlay failed; continuing")
+
+    async def _try_pclink_inventory(self) -> bool:
+        """Send the ``#A`` broadcast and wait up to
+        ``_PCLINK_PROBE_TIMEOUT`` for the library's discovery-finished
+        callback to fire. Returns True if PC-Link responded, False on
+        timeout. Caller decides what to do with the False case.
+        """
         try:
             await self.nikobus_discovery.start_inventory_discovery()
-            # The library returns after queueing commands; wait for the
-            # on_discovery_finished callback to actually fire.
-            await self._discovery_finished_event.wait()
+            await asyncio.wait_for(
+                self._discovery_finished_event.wait(),
+                timeout=self._PCLINK_PROBE_TIMEOUT,
+            )
+            # If the library populated pc_link in the module store,
+            # PC-Link is present. If it populated nothing or only
+            # output modules, treat as success regardless — the
+            # discovery completed cleanly.
+            return True
+        except asyncio.TimeoutError:
+            _LOGGER.info(
+                "Step 1: no PC-Link response within %.1fs — falling back "
+                "to manual config files.",
+                self._PCLINK_PROBE_TIMEOUT,
+            )
+            return False
         except asyncio.CancelledError:
             self.discovery_running = False
             self._discovery_finished_event.set()
             raise
-        except Exception as err:
-            self._update_discovery_state(
-                phase=DISCOVERY_PHASE_ERROR,
-                message=f"PC Link inventory failed: {err}",
-                error=str(err),
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning(
+                "Step 1: PC-Link probe failed (%s) — falling back to "
+                "manual config files.",
+                err,
             )
-            self.discovery_running = False
-            self._discovery_finished_event.set()
-            raise
+            return False
+
+    async def _apply_manual_inventory_as_fallback(self) -> bool:
+        """Import ``nikobus_module_config.json`` + ``nikobus_button_config.json``
+        as the inventory source. Returns True if at least one file was
+        loaded; the caller fails the discovery if both are absent.
+        """
+        from .nkbmanual import async_apply_manual_config
+        try:
+            changed = await async_apply_manual_config(
+                self.hass, self.module_storage, self.dict_button_data
+            )
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Manual inventory import failed")
+            return False
+        if changed:
+            await self.module_storage.async_save()
+            await self.button_storage.async_save()
+            self._rebuild_dict_module_data()
+        return changed
 
     async def start_module_scan(
         self,
