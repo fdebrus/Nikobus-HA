@@ -23,14 +23,49 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Reuse the same conftest hooks the migration tests use.
 ROOT = Path(__file__).parent.parent
 COMP = ROOT / "custom_components" / "nikobus"
 
 
-# Importing test_module_migration first installs the real-file aiofiles
-# stub that nkbmanual / nkbmigration both end up using.
-import tests.test_module_migration as _mig_tests  # noqa: F401,E402
+# Replace the conftest aiofiles stub (an AsyncMock that doesn't read
+# real files) with a real-file implementation that uses run-in-executor
+# wrappers. Needed because nkbmanual reads JSON files via aiofiles.
+
+
+class _AsyncFileContext:
+    def __init__(self, path: str, mode: str):
+        self._path = path
+        self._mode = mode
+        self._fh = None
+
+    async def __aenter__(self):
+        self._fh = open(self._path, self._mode)
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        if self._fh is not None:
+            self._fh.close()
+
+    async def read(self) -> str:
+        import asyncio
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._fh.read
+        )
+
+    async def write(self, data: str) -> int:
+        import asyncio
+        return await asyncio.get_running_loop().run_in_executor(
+            None, self._fh.write, data
+        )
+
+
+def _real_aiofiles_open(path: str, mode: str = "r"):
+    return _AsyncFileContext(path, mode)
+
+
+_aiofiles_stub = sys.modules.get("aiofiles")
+if _aiofiles_stub is not None:
+    _aiofiles_stub.open = _real_aiofiles_open  # type: ignore[attr-defined]
 
 
 def _load(name, path):

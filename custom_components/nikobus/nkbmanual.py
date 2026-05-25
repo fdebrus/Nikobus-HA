@@ -38,7 +38,6 @@ from .const import (
     MANUAL_BUTTON_CONFIG_FILENAME,
     MANUAL_MODULE_CONFIG_FILENAME,
 )
-from .nkbmigration import convert_legacy_to_flat
 from .nkbstorage import NikobusModuleStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,6 +74,116 @@ def _tag_manual_source(entry: dict[str, Any]) -> None:
         discovered_info = {}
     discovered_info["source"] = "manual_config"
     entry["discovered_info"] = discovered_info
+
+
+# ---------------------------------------------------------------------------
+# v1 (legacy nested) → flat-by-address conversion
+# ---------------------------------------------------------------------------
+#
+# The v1 file shape is ``{module_type: [entries | {addr: entry}]}``. The
+# 0.4.0 module store keeps a single dict keyed by address, with
+# ``module_type`` carried on each entry. These helpers translate the v1
+# shape into the flat shape — the only consumer is ``_apply_module_config``
+# below.
+
+
+def convert_legacy_to_flat(legacy: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Convert ``{module_type: [entries | {addr: entry}]}`` to ``{addr: entry}``.
+
+    User fields on each channel are preserved verbatim. Roller channels
+    that used the legacy single ``operation_time`` key are split into
+    ``operation_time_up`` / ``operation_time_down``. Every entry is
+    tagged with its ``module_type`` so downstream code can still group
+    by hardware class without keeping a parallel nested dict.
+    """
+    flat: dict[str, dict[str, Any]] = {}
+    if not isinstance(legacy, dict):
+        return flat
+
+    for module_type, modules in legacy.items():
+        if not isinstance(module_type, str):
+            continue
+
+        iter_entries: list[tuple[str | None, dict[str, Any]]] = []
+        if isinstance(modules, list):
+            for entry in modules:
+                if isinstance(entry, dict):
+                    iter_entries.append((entry.get("address"), entry))
+        elif isinstance(modules, dict):
+            for addr, entry in modules.items():
+                if isinstance(entry, dict):
+                    iter_entries.append((entry.get("address") or addr, entry))
+        else:
+            _LOGGER.warning(
+                "Skipping module group %s with unsupported type %s",
+                module_type,
+                type(modules).__name__,
+            )
+            continue
+
+        for address, entry in iter_entries:
+            if not isinstance(address, str) or not address:
+                continue
+            key = address.upper()
+            flat[key] = _convert_entry(key, module_type, entry)
+
+    return flat
+
+
+def _convert_entry(
+    address: str, module_type: str, entry: dict[str, Any]
+) -> dict[str, Any]:
+    """Convert a single legacy module entry to the flat shape."""
+    channels_in = entry.get("channels", [])
+    channels_out: list[dict[str, Any]] = []
+    if isinstance(channels_in, list):
+        for ch in channels_in:
+            if isinstance(ch, dict):
+                channels_out.append(_convert_channel(module_type, ch))
+            elif isinstance(ch, str):
+                # Very old shapes stored channel descriptions as bare strings.
+                channels_out.append({"description": ch})
+
+    out: dict[str, Any] = {
+        "module_type": module_type,
+        "description": entry.get("description") or f"Module {address}",
+        "model": entry.get("model") or "",
+        "channels": channels_out,
+    }
+
+    # Carry discovered_info through verbatim when it already exists.
+    if isinstance(entry.get("discovered_info"), dict):
+        out["discovered_info"] = dict(entry["discovered_info"])
+
+    return out
+
+
+def _convert_channel(
+    module_type: str, channel: dict[str, Any]
+) -> dict[str, Any]:
+    """Convert a single legacy channel, splitting ``operation_time`` for rollers."""
+    out: dict[str, Any] = {
+        "description": channel.get("description", ""),
+    }
+
+    # Optional fields — only emitted when set in the source, so we don't
+    # invent defaults that the options flow would treat as user edits.
+    for key in ("entity_type", "led_on", "led_off"):
+        if key in channel and channel[key] not in ("", None):
+            out[key] = channel[key]
+
+    if module_type == "roller_module":
+        if "operation_time_up" in channel:
+            out["operation_time_up"] = channel["operation_time_up"]
+        if "operation_time_down" in channel:
+            out["operation_time_down"] = channel["operation_time_down"]
+        # Legacy single ``operation_time`` → split into both directions.
+        if "operation_time" in channel and "operation_time_up" not in out:
+            legacy_time = channel["operation_time"]
+            out["operation_time_up"] = legacy_time
+            out.setdefault("operation_time_down", legacy_time)
+
+    return out
 
 
 async def _apply_module_config(

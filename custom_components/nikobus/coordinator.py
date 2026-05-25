@@ -27,7 +27,6 @@ from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError,
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
-    CONF_MANUAL_CONFIG,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     DEVICE_ADDRESS_INVENTORY,
@@ -108,17 +107,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
         self._has_feedback_module = _opts.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._prior_gen3 = _opts.get(CONF_PRIOR_GEN3, config_entry.data.get(CONF_PRIOR_GEN3, False))
-        # 2.11.4: ``CONF_MANUAL_CONFIG`` is deprecated. Manual-config
-        # files are now imported automatically when present; presence
-        # of the files is the signal, not this flag. Read once and
-        # log if still set so users notice the change.
-        if _opts.get(CONF_MANUAL_CONFIG, config_entry.data.get(CONF_MANUAL_CONFIG, False)):
-            _LOGGER.info(
-                "Nikobus: the ``manual_config`` integration option is "
-                "deprecated as of 2.11.4 and ignored. Manual config "
-                "files are imported automatically when present; you "
-                "can remove the option from the integration settings."
-            )
 
         super().__init__(
             hass,
@@ -262,15 +250,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.dict_button_data = await self.button_storage.async_load()
 
             # 2.11.4: manual config files are the step-1 inventory source
-            # for installs without a PC-Link (the Feedback-module-only
-            # users). The files are fully declarative — what's in them
-            # gets written to the live stores on every coordinator
-            # setup. ``linked_modules`` is NOT imported from the button
-            # file; step 2 (per-module register scan) populates that.
-            #
-            # Applied unconditionally if the files exist. The legacy
-            # ``CONF_MANUAL_CONFIG`` flag is deprecated and ignored;
-            # presence of the files is the signal.
+            # for installs without a PC-Link (Feedback-module-only users).
+            # The files are fully declarative — what's in them gets
+            # written to the live stores on every coordinator setup.
+            # ``linked_modules`` is NOT imported from the button file;
+            # step 2 (per-module register scan) populates that. Applied
+            # unconditionally if the files exist — presence of the
+            # files is the signal.
             changed = await async_apply_manual_config(
                 self.hass,
                 self.module_storage,
