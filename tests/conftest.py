@@ -66,9 +66,23 @@ class _ConfigEntry:
 
 
 _mod("homeassistant.config_entries", ConfigEntry=_ConfigEntry)
+class _HomeAssistantError(Exception):
+    """Test stub that accepts the same kwargs as the real
+    HomeAssistantError (``translation_domain``, ``translation_key``,
+    ``translation_placeholders``) so coordinator code raising it can
+    be exercised in tests."""
+
+    def __init__(self, *args, translation_domain=None, translation_key=None,
+                 translation_placeholders=None, **kwargs):
+        super().__init__(*args)
+        self.translation_domain = translation_domain
+        self.translation_key = translation_key
+        self.translation_placeholders = translation_placeholders
+
+
 _mod(
     "homeassistant.exceptions",
-    HomeAssistantError=type("HomeAssistantError", (Exception,), {}),
+    HomeAssistantError=_HomeAssistantError,
 )
 
 # homeassistant.helpers.dispatcher

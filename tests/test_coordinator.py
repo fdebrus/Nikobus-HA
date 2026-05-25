@@ -1541,6 +1541,114 @@ class TestHandleDiscoveryFinishedFinalizing(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
+    """2.11.5: ``start_pc_link_inventory`` is the unified step-1 entry
+    point. It probes PC-Link first; on timeout it falls back to the
+    manual config files; regardless of source, it overlays friendly
+    names from the files onto the live stores afterwards.
+
+    These tests pin the three branches:
+
+      * PC-Link present → uses PC-Link inventory, overlay runs
+      * PC-Link absent + files present → uses files as inventory
+      * PC-Link absent + no files → raises ``no_inventory_source``
+    """
+
+    def _make_coord(self):
+        from custom_components.nikobus.coordinator import NikobusDataCoordinator
+
+        coord = MagicMock(spec=NikobusDataCoordinator)
+        coord.discovery_running = False
+        coord.nikobus_discovery = MagicMock()
+        coord.nikobus_discovery.start_inventory_discovery = AsyncMock()
+        coord.module_storage = MagicMock()
+        coord.module_storage.async_save = AsyncMock()
+        coord.button_storage = MagicMock()
+        coord.button_storage.async_save = AsyncMock()
+        coord.dict_button_data = {"nikobus_button": {}}
+        coord.hass = MagicMock()
+        coord._discovery_finished_event = asyncio.Event()
+        coord._discovery_auto_reload = False
+        coord._last_module_scan_was_full = False
+        coord._update_discovery_state = MagicMock()
+        coord._rebuild_dict_module_data = MagicMock()
+        coord._PCLINK_PROBE_TIMEOUT = 0.05  # speed up timeout in tests
+        coord._try_pclink_inventory = (
+            lambda self_=coord:
+            NikobusDataCoordinator._try_pclink_inventory(self_)
+        )
+        coord._apply_manual_inventory_as_fallback = (
+            lambda self_=coord:
+            NikobusDataCoordinator._apply_manual_inventory_as_fallback(self_)
+        )
+        coord.start_pc_link_inventory = (
+            lambda self_=coord, **kw:
+            NikobusDataCoordinator.start_pc_link_inventory(self_, **kw)
+        )
+        return coord
+
+    async def test_pclink_present_completes_without_fallback(self):
+        coord = self._make_coord()
+
+        async def fake_start():
+            # Library "succeeds" — signal completion immediately.
+            coord._discovery_finished_event.set()
+
+        coord.nikobus_discovery.start_inventory_discovery.side_effect = (
+            fake_start
+        )
+
+        # Patch overlay so we can verify it's called.
+        with patch(
+            "custom_components.nikobus.nkbmanual.async_apply_friendly_name_overlay",
+            new_callable=AsyncMock, return_value=False,
+        ) as overlay_mock:
+            await coord.start_pc_link_inventory(auto_reload=False)
+
+        coord.nikobus_discovery.start_inventory_discovery.assert_awaited_once()
+        overlay_mock.assert_awaited()
+
+    async def test_pclink_timeout_falls_back_to_manual_files(self):
+        coord = self._make_coord()
+
+        async def hang():
+            # Library never signals completion — _discovery_finished_event
+            # never fires → wait_for() raises TimeoutError.
+            await asyncio.sleep(10)
+
+        coord.nikobus_discovery.start_inventory_discovery.side_effect = hang
+
+        with patch(
+            "custom_components.nikobus.nkbmanual.async_apply_manual_config",
+            new_callable=AsyncMock, return_value=True,
+        ) as apply_mock, patch(
+            "custom_components.nikobus.nkbmanual.async_apply_friendly_name_overlay",
+            new_callable=AsyncMock, return_value=False,
+        ) as overlay_mock:
+            await coord.start_pc_link_inventory(auto_reload=False)
+
+        # Fallback fired (manual import called); overlay ran afterwards.
+        apply_mock.assert_awaited_once()
+        overlay_mock.assert_awaited()
+
+    async def test_pclink_timeout_and_no_files_raises(self):
+        from homeassistant.exceptions import HomeAssistantError
+
+        coord = self._make_coord()
+
+        async def hang():
+            await asyncio.sleep(10)
+
+        coord.nikobus_discovery.start_inventory_discovery.side_effect = hang
+
+        with patch(
+            "custom_components.nikobus.nkbmanual.async_apply_manual_config",
+            new_callable=AsyncMock, return_value=False,
+        ):
+            with self.assertRaises(HomeAssistantError):
+                await coord.start_pc_link_inventory(auto_reload=False)
+
+
 class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
     """Direct tests for ``_surface_legacy_undecoded_buttons``.
 

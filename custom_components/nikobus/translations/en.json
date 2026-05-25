@@ -146,6 +146,9 @@
         },
         "no_modules_known": {
             "message": "No Nikobus modules are configured yet. Run a PC-Link inventory discovery first, then retry the module scan."
+        },
+        "no_inventory_source": {
+            "message": "No PC-Link detected on the bus and no manual config files found. Either install a PC-Link or create nikobus_module_config.json (and optionally nikobus_button_config.json) in your Home Assistant config directory, then retry."
         }
     },
     "options": {

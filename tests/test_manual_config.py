@@ -907,5 +907,200 @@ class TestRealWorldSample(unittest.TestCase):
                 )
 
 
+class TestApplyFriendlyNameOverlay(unittest.TestCase):
+    """2.11.5: the overlay function enriches existing store entries
+    with user-editable fields from the manual files, without adding
+    or removing entries. Used by the unified step-1 discovery whether
+    the inventory source was PC-Link or the file itself."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config_dir = self.tmp.name
+        self.hass = _FakeHass(self.config_dir)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write(self, filename: str, data: dict) -> str:
+        path = os.path.join(self.config_dir, filename)
+        with open(path, "w") as fh:
+            json.dump(data, fh)
+        return path
+
+    def test_overlay_copies_module_and_channel_descriptions(self):
+        # Simulate PC-Link inventory result: address known, generic name.
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "C9A5": {
+                "module_type": "switch_module",
+                "description": "Switch Module",  # PC-Link's default
+                "model": "05-000-02",
+                "channels": [
+                    {"description": ""},  # Generic
+                    {"description": ""},
+                ],
+            }
+        }
+        button_data = {"nikobus_button": {}}
+
+        # Manual file with user-edited descriptions.
+        self._write("nikobus_module_config.json", {
+            "switch_module": [{
+                "description": "switch_module_s1",
+                "address": "C9A5",
+                "model": "05-000-02",
+                "channels": [
+                    {"description": "Extérieur Porte Entrée", "entity_type": "light"},
+                    {"description": "Hall 1er Étage", "entity_type": "light"},
+                ],
+            }]
+        })
+
+        changed = _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        self.assertTrue(changed)
+        c9a5 = store.data["nikobus_module"]["C9A5"]
+        self.assertEqual(c9a5["description"], "switch_module_s1")
+        self.assertEqual(c9a5["channels"][0]["description"], "Extérieur Porte Entrée")
+        self.assertEqual(c9a5["channels"][0]["entity_type"], "light")
+        self.assertEqual(c9a5["channels"][1]["description"], "Hall 1er Étage")
+
+    def test_overlay_does_not_add_modules_not_in_store(self):
+        # PC-Link discovered C9A5; manual file declares EXTRA module BEEF.
+        # Overlay must ignore BEEF — PC-Link is the inventory authority.
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "C9A5": {
+                "module_type": "switch_module",
+                "description": "Switch Module",
+                "channels": [],
+            }
+        }
+        button_data = {"nikobus_button": {}}
+
+        self._write("nikobus_module_config.json", {
+            "switch_module": [
+                {"description": "s1", "address": "C9A5", "channels": []},
+                {"description": "Phantom", "address": "BEEF", "channels": []},
+            ]
+        })
+
+        _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        modules = store.data["nikobus_module"]
+        self.assertIn("C9A5", modules)
+        self.assertNotIn("BEEF", modules)
+        self.assertEqual(modules["C9A5"]["description"], "s1")
+
+    def test_overlay_preserves_user_fields_for_rollers(self):
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "9105": {
+                "module_type": "roller_module",
+                "description": "Roller Shutter Module",
+                "channels": [
+                    {"description": ""},
+                    {"description": ""},
+                ],
+            }
+        }
+        button_data = {"nikobus_button": {}}
+
+        self._write("nikobus_module_config.json", {
+            "roller_module": [{
+                "description": "rollershutter_module_r1",
+                "address": "9105",
+                "channels": [
+                    {"description": "Salon Volet Terrasse", "operation_time_up": "45"},
+                    {"description": "Salon Volet Jardin", "operation_time_up": "51"},
+                ],
+            }]
+        })
+
+        _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        chans = store.data["nikobus_module"]["9105"]["channels"]
+        self.assertEqual(chans[0]["description"], "Salon Volet Terrasse")
+        self.assertEqual(chans[0]["operation_time_up"], "45")
+        self.assertEqual(chans[1]["operation_time_up"], "51")
+
+    def test_overlay_updates_button_op_point_descriptions(self):
+        # Existing physical button in store (from PC-Link discovery).
+        store = _InMemoryModuleStore()
+        button_data = {
+            "nikobus_button": {
+                "0D1C80": {
+                    "type": "IR Button with 4 Operation Points",
+                    "model": "05-348",
+                    "channels": 4,
+                    "description": "IR Button",
+                    "operation_points": {
+                        "1C": {
+                            "bus_address": "004E2C",
+                            "description": "Push button 1C #N004E2C",
+                            "linked_modules": [],
+                        }
+                    },
+                }
+            }
+        }
+
+        # File supplies a friendlier name for OP 1C.
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [{
+                "address": "004E2C",
+                "description": "BT_GF_Living_Sofa_Wall_Light_Up",
+                "linked_button": [{
+                    "type": "IR Button with 4 Operation Points",
+                    "model": "05-348",
+                    "address": "0D1C80",
+                    "channels": 4,
+                    "key": "1C",
+                }],
+            }]
+        })
+
+        changed = _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        self.assertTrue(changed)
+        op = button_data["nikobus_button"]["0D1C80"]["operation_points"]["1C"]
+        self.assertEqual(op["description"], "BT_GF_Living_Sofa_Wall_Light_Up")
+
+    def test_overlay_noop_when_no_files(self):
+        store = _InMemoryModuleStore()
+        store.data["nikobus_module"] = {
+            "C9A5": {"module_type": "switch_module", "description": "untouched"}
+        }
+        button_data = {"nikobus_button": {}}
+
+        changed = _run(
+            nkbmanual.async_apply_friendly_name_overlay(
+                self.hass, store, button_data
+            )
+        )
+
+        self.assertFalse(changed)
+        # Store unchanged.
+        self.assertEqual(
+            store.data["nikobus_module"]["C9A5"]["description"], "untouched"
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
