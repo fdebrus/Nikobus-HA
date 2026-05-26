@@ -1568,11 +1568,13 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
         coord.dict_button_data = {"nikobus_button": {}}
         coord.hass = MagicMock()
         coord._discovery_finished_event = asyncio.Event()
+        coord._pclink_first_response_event = asyncio.Event()
         coord._discovery_auto_reload = False
         coord._last_module_scan_was_full = False
         coord._update_discovery_state = MagicMock()
         coord._rebuild_dict_module_data = MagicMock()
-        coord._PCLINK_PROBE_TIMEOUT = 0.05  # speed up timeout in tests
+        coord._PCLINK_PROBE_TIMEOUT = 0.05  # speed up first-response wait
+        coord._PCLINK_FINALIZE_WAIT_AFTER_TIMEOUT = 0.05  # and finalize wait
         coord._try_pclink_inventory = (
             lambda self_=coord:
             NikobusDataCoordinator._try_pclink_inventory(self_)
@@ -1591,7 +1593,9 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
         coord = self._make_coord()
 
         async def fake_start():
-            # Library "succeeds" — signal completion immediately.
+            # Library "succeeds" — simulate first PC-Link response then
+            # full-completion event (mirrors the real callback sequence).
+            coord._pclink_first_response_event.set()
             coord._discovery_finished_event.set()
 
         coord.nikobus_discovery.start_inventory_discovery.side_effect = (
