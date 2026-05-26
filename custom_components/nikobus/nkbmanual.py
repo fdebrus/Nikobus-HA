@@ -829,9 +829,13 @@ async def async_apply_manual_config(
         button_path = None
 
     if module_path is None and button_path is None:
-        _LOGGER.warning(
-            "Manual-config enabled but neither %s nor %s was found in %s. "
-            "Place at least one file there and reload the integration.",
+        # No manual files present — normal state for PC-Link users.
+        # The no-PC-Link fallback path raises ``no_inventory_source``
+        # via the discovery flow if the user actually needs files;
+        # silently no-op here so PC-Link installs don't log noise on
+        # every startup.
+        _LOGGER.debug(
+            "Manual-config: neither %s nor %s present in %s; skipping import.",
             MANUAL_MODULE_CONFIG_FILENAME,
             MANUAL_BUTTON_CONFIG_FILENAME,
             hass.config.path(""),
