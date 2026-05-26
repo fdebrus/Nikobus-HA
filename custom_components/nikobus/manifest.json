@@ -1,7 +1,7 @@
 {
   "domain": "nikobus",
   "name": "Nikobus",
-  "version": "2.11.5",
+  "version": "2.11.7",
   "documentation": "https://github.com/fdebrus/nikobus-ha",
   "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
   "codeowners": ["@fdebrus"],
@@ -12,7 +12,7 @@
   "requirements": [
     "aiofiles>=25.1.0",
     "pyserial-asyncio-fast>=0.16",
-    "nikobus-connect>=0.19.1"
+    "nikobus-connect>=0.19.2"
   ],
   "loggers": ["nikobus", "nikobus_connect"]
 }
