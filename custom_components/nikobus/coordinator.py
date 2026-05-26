@@ -174,6 +174,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.discovery_last_error: str | None = None
         self._discovery_finished_event: asyncio.Event = asyncio.Event()
         self._discovery_finished_event.set()  # idle = already set
+        self._pclink_first_response_event: asyncio.Event = asyncio.Event()
         self._discovery_auto_reload: bool = True
         self._discovery_module_order: list[str] = []
         self._stopping: bool = False
@@ -423,6 +424,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # "3-consecutive-empty-blocks" early-stop is redundant and was
         # removed. The per-module Stage-2 register scan has its own
         # consecutive-give-up logic in the library and is unrelated.
+        # Any PC-Link response proves PC-Link is alive — flag for the
+        # step-1 probe so it can stop waiting and commit to the PC-Link
+        # path instead of timing out and falling back to manual files.
+        self._pclink_first_response_event.set()
         await self.nikobus_discovery.parse_inventory_response(message)
 
         # Count this frame toward the PC Link progress bar.
@@ -1799,10 +1804,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_last_error = error
         async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
 
-    # Timeout for the PC-Link ``#A`` probe. PC-Link normally responds in
-    # well under 1 s; allowing 10 s leaves headroom for slow buses while
-    # keeping the no-PC-Link fallback responsive.
-    _PCLINK_PROBE_TIMEOUT = 10.0
+    # Timeout for the PC-Link ``#A`` *first-response* probe. PC-Link
+    # normally answers in well under 1 s; 8 s leaves headroom for slow
+    # buses. This is NOT the inventory-completion timeout — the library
+    # owns that (its own 10 s inactivity timer fires
+    # ``on_discovery_finished``). Once we see any PC-Link response we
+    # commit to PC-Link and wait for the full inventory without a
+    # coordinator-side timeout.
+    _PCLINK_PROBE_TIMEOUT = 8.0
+    # After a first-response probe times out we still wait briefly for
+    # the library's inactivity timer (default 10 s) to fire
+    # ``on_discovery_finished`` so state resets cleanly before the
+    # manual-files fallback. Tests override this to keep run-time short.
+    _PCLINK_FINALIZE_WAIT_AFTER_TIMEOUT = 15.0
 
     async def start_pc_link_inventory(self, *, auto_reload: bool = True) -> None:
         """Step 1 of discovery — unified inventory source + friendly-name overlay.
@@ -1892,29 +1906,57 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             _LOGGER.exception("Friendly-name overlay failed; continuing")
 
     async def _try_pclink_inventory(self) -> bool:
-        """Send the ``#A`` broadcast and wait up to
-        ``_PCLINK_PROBE_TIMEOUT`` for the library's discovery-finished
-        callback to fire. Returns True if PC-Link responded, False on
-        timeout. Caller decides what to do with the False case.
+        """Kick off the ``#A`` broadcast and decide if PC-Link is present.
+
+        Two-phase wait:
+
+        1. **First-response probe** — wait up to
+           ``_PCLINK_PROBE_TIMEOUT`` for the *first* inventory frame
+           (``_pclink_first_response_event``, set in
+           ``_discovery_frame_callback``). Any response proves PC-Link is
+           alive on the bus.
+        2. **Full completion** — once PC-Link is confirmed, wait
+           ``_discovery_finished_event`` with NO coordinator timeout
+           (real inventories on big installs take 30–60 s; the library
+           owns inventory-completion timing via its own 10 s inactivity
+           timer).
+
+        Returns True if PC-Link responded, False if the first-response
+        probe times out (caller falls back to manual files). On False
+        we also wait briefly for the library's own ``on_discovery_finished``
+        so the discovery state machine resets cleanly before fallback.
         """
+        self._pclink_first_response_event.clear()
         try:
             await self.nikobus_discovery.start_inventory_discovery()
-            await asyncio.wait_for(
-                self._discovery_finished_event.wait(),
-                timeout=self._PCLINK_PROBE_TIMEOUT,
-            )
-            # If the library populated pc_link in the module store,
-            # PC-Link is present. If it populated nothing or only
-            # output modules, treat as success regardless — the
-            # discovery completed cleanly.
+            try:
+                await asyncio.wait_for(
+                    self._pclink_first_response_event.wait(),
+                    timeout=self._PCLINK_PROBE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                _LOGGER.info(
+                    "Step 1: no PC-Link response within %.1fs — falling "
+                    "back to manual config files.",
+                    self._PCLINK_PROBE_TIMEOUT,
+                )
+                # Library's inactivity timer will fire on_discovery_finished
+                # shortly; wait for it so state resets before fallback.
+                try:
+                    await asyncio.wait_for(
+                        self._discovery_finished_event.wait(),
+                        timeout=self._PCLINK_FINALIZE_WAIT_AFTER_TIMEOUT,
+                    )
+                except asyncio.TimeoutError:
+                    _LOGGER.warning(
+                        "Step 1: library did not finalise inventory after "
+                        "probe timeout; proceeding with fallback anyway."
+                    )
+                return False
+
+            # PC-Link answered — let the full inventory complete.
+            await self._discovery_finished_event.wait()
             return True
-        except asyncio.TimeoutError:
-            _LOGGER.info(
-                "Step 1: no PC-Link response within %.1fs — falling back "
-                "to manual config files.",
-                self._PCLINK_PROBE_TIMEOUT,
-            )
-            return False
         except asyncio.CancelledError:
             self.discovery_running = False
             self._discovery_finished_event.set()
