@@ -1102,5 +1102,308 @@ class TestApplyFriendlyNameOverlay(unittest.TestCase):
         )
 
 
+class TestConsolidateLegacy1AOnlyButtons(unittest.TestCase):
+    """2.11.8: no-PC-Link installs whose manual button-config lists each
+    wall-button key face as a separate ``channels=1`` / 1A-only entry
+    get those siblings consolidated into the canonical multi-key form
+    that PC-Link inventory would have produced.
+
+    Math under test (mirror of nikobus_connect KEY_MAPPING):
+
+      4-key wall button: first nibble's top 2 bits encode the key face
+        0x8 → 1A,  0xC → 1B,  0x0 → 1C,  0x4 → 1D
+      8-key: top 3 bits encode the face
+        0xA → 1A, 0xE → 1B, 0x2 → 1C, 0x6 → 1D,
+        0x8 → 2A, 0xC → 2B, 0x0 → 2C, 0x4 → 2D
+    """
+
+    def _candidate(self, bus_addr: str, description: str) -> dict:
+        return {
+            "type": "Manual button",
+            "model": "",
+            "channels": 1,
+            "description": description,
+            "operation_points": {
+                "1A": {
+                    "bus_address": bus_addr,
+                    "description": description,
+                    "linked_modules": [],
+                }
+            },
+        }
+
+    def test_buro_deur_real_user_data_consolidates_to_one_4key_button(self):
+        """The user's actual Buro_deur wall plate: 4 siblings sharing
+        physical_id 11C5CE, top 2 bits 10/11/00/01 → 1A/1B/1C/1D."""
+        raw = {
+            "91C5CE": self._candidate("91C5CE", "Buro_deur_B1"),
+            "D1C5CE": self._candidate("D1C5CE", "Buro_deur_O1"),
+            "11C5CE": self._candidate("11C5CE", "Buro_deur_B2"),
+            "51C5CE": self._candidate("51C5CE", "Buro_deur_O2"),
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        # All 4 face entries replaced by one canonical entry at physical_id.
+        self.assertEqual(list(result.keys()), ["11C5CE"])
+        entry = result["11C5CE"]
+        self.assertEqual(entry["channels"], 4)
+        self.assertEqual(entry["description"], "Buro_deur")  # common prefix
+        self.assertEqual(
+            set(entry["operation_points"].keys()), {"1A", "1B", "1C", "1D"}
+        )
+        # Bus addresses preserved under correct labels.
+        self.assertEqual(entry["operation_points"]["1A"]["bus_address"], "91C5CE")
+        self.assertEqual(entry["operation_points"]["1B"]["bus_address"], "D1C5CE")
+        self.assertEqual(entry["operation_points"]["1C"]["bus_address"], "11C5CE")
+        self.assertEqual(entry["operation_points"]["1D"]["bus_address"], "51C5CE")
+        # Descriptions preserved per face.
+        self.assertEqual(
+            entry["operation_points"]["1A"]["description"], "Buro_deur_B1"
+        )
+        # linked_modules always empty after step 1.
+        self.assertEqual(entry["operation_points"]["1A"]["linked_modules"], [])
+        # Provenance tag distinguishes from manual_config (un-consolidated).
+        self.assertEqual(
+            entry["discovered_info"]["source"], "manual_config_consolidated"
+        )
+
+    def test_living_buro_8_addresses_split_into_two_4key_buttons(self):
+        """Living_buro has 8 buttons that share trailing hex 9E0CE but
+        differ in the bottom 2 bits of the first nibble — that's TWO
+        physical 4-key buttons, not one 8-key. Bottom bits 01 → 19E0CE,
+        bottom bits 11 → 39E0CE."""
+        raw = {
+            # Group 1: physical_id 19E0CE (first-nibble bottom bits = 01)
+            "99E0CE": self._candidate("99E0CE", "Living_buro_B3"),
+            "D9E0CE": self._candidate("D9E0CE", "Living_buro_O3"),
+            "19E0CE": self._candidate("19E0CE", "Living_buro_B4"),
+            "59E0CE": self._candidate("59E0CE", "Living_buro_O4"),
+            # Group 2: physical_id 39E0CE (first-nibble bottom bits = 11)
+            "B9E0CE": self._candidate("B9E0CE", "Living_buro_B1"),
+            "F9E0CE": self._candidate("F9E0CE", "Living_buro_O1"),
+            "39E0CE": self._candidate("39E0CE", "Living_buro_B2"),
+            "79E0CE": self._candidate("79E0CE", "Living_buro_O2"),
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        self.assertEqual(set(result.keys()), {"19E0CE", "39E0CE"})
+        for pid in ("19E0CE", "39E0CE"):
+            self.assertEqual(result[pid]["channels"], 4)
+            self.assertEqual(
+                set(result[pid]["operation_points"].keys()),
+                {"1A", "1B", "1C", "1D"},
+            )
+
+    def test_partial_3_of_4_group_is_NOT_consolidated(self):
+        """Best-effort: if the user only listed 3 of 4 faces, leave
+        them as singletons rather than mis-grouping as 2-key + orphan."""
+        raw = {
+            "91C5CE": self._candidate("91C5CE", "Half_B1"),
+            "D1C5CE": self._candidate("D1C5CE", "Half_O1"),
+            "11C5CE": self._candidate("11C5CE", "Half_B2"),
+            # 51C5CE (1D) intentionally absent
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        # Nothing matched a clean 1/2/4/8-key group → all kept singleton.
+        self.assertEqual(set(result.keys()), {"91C5CE", "D1C5CE", "11C5CE"})
+        for entry in result.values():
+            self.assertEqual(entry["channels"], 1)
+
+    def test_two_key_button_consolidates(self):
+        """2-key wall button: two siblings with top 2 bits 10 and 11."""
+        raw = {
+            "8A5500": self._candidate("8A5500", "Toggle_on"),
+            "CA5500": self._candidate("CA5500", "Toggle_off"),
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        self.assertEqual(list(result.keys()), ["0A5500"])
+        entry = result["0A5500"]
+        self.assertEqual(entry["channels"], 2)
+        self.assertEqual(set(entry["operation_points"].keys()), {"1A", "1B"})
+        self.assertEqual(entry["operation_points"]["1A"]["bus_address"], "8A5500")
+        self.assertEqual(entry["operation_points"]["1B"]["bus_address"], "CA5500")
+
+    def test_eight_key_button_consolidates(self):
+        """8-key wall button: 8 siblings with all even high nibbles
+        sharing the same lower 21 bits."""
+        # physical_id = 0x000123 (21 bits). All members have bit 0 of
+        # first nibble = 0, and first nibble's top 3 bits cover all 8
+        # values from KEY_MAPPING[8].
+        raw = {
+            "A00123": self._candidate("A00123", "Kitchen_1A"),
+            "E00123": self._candidate("E00123", "Kitchen_1B"),
+            "200123": self._candidate("200123", "Kitchen_1C"),
+            "600123": self._candidate("600123", "Kitchen_1D"),
+            "800123": self._candidate("800123", "Kitchen_2A"),
+            "C00123": self._candidate("C00123", "Kitchen_2B"),
+            "000123": self._candidate("000123", "Kitchen_2C"),
+            "400123": self._candidate("400123", "Kitchen_2D"),
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        # Single consolidated entry at the 21-bit physical_id.
+        self.assertEqual(list(result.keys()), ["000123"])
+        entry = result["000123"]
+        self.assertEqual(entry["channels"], 8)
+        self.assertEqual(
+            set(entry["operation_points"].keys()),
+            {"1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"},
+        )
+
+    def test_singleton_orphan_passes_through(self):
+        """A lone 1A-only entry with no siblings stays as it is —
+        consolidating a 1-key would change nothing meaningful and would
+        mask runtime-auto-add provenance."""
+        raw = {"E39EF7": self._candidate("E39EF7", "Lone runtime button")}
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        self.assertEqual(result, raw)
+
+    def test_already_multi_key_entry_is_untouched(self):
+        """An entry authored in canonical form (channels>1) is left
+        completely alone — explicit grouping wins over inference."""
+        raw = {
+            "11C5CE": {
+                "type": "Push button",
+                "model": "05-064",
+                "channels": 4,
+                "description": "Already grouped",
+                "operation_points": {
+                    "1A": {"bus_address": "91C5CE", "description": "A",
+                           "linked_modules": []},
+                    "1B": {"bus_address": "D1C5CE", "description": "B",
+                           "linked_modules": []},
+                    "1C": {"bus_address": "11C5CE", "description": "C",
+                           "linked_modules": []},
+                    "1D": {"bus_address": "51C5CE", "description": "D",
+                           "linked_modules": []},
+                },
+            },
+            # A stray 1A-only sibling that would *naïvely* group at
+            # 11C5CE — must NOT clobber the authored entry above.
+            "BEEF00": self._candidate("BEEF00", "Unrelated stray"),
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        self.assertEqual(result["11C5CE"]["description"], "Already grouped")
+        self.assertEqual(result["11C5CE"]["channels"], 4)
+        # Stray stays singleton.
+        self.assertEqual(result["BEEF00"]["channels"], 1)
+
+    def test_collision_with_existing_authored_entry_skips_consolidation(self):
+        """If 4 candidate siblings would consolidate to a physical_id
+        that ALREADY has a non-candidate entry, leave the candidates
+        alone rather than overwrite authored data."""
+        raw = {
+            "11C5CE": {
+                "type": "Authored",
+                "model": "",
+                "channels": 1,
+                "description": "Not a candidate (extra field)",
+                "operation_points": {
+                    "1A": {"bus_address": "11C5CE", "description": "A",
+                           "linked_modules": []},
+                    "scene_1": {"bus_address": "11C5CE", "description": "scene",
+                                "linked_modules": []},
+                },
+            },
+            "91C5CE": self._candidate("91C5CE", "would_be_1A"),
+            "D1C5CE": self._candidate("D1C5CE", "would_be_1B"),
+            "51C5CE": self._candidate("51C5CE", "would_be_1D"),
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        # 11C5CE stays as authored (multi op-point on a 1-channel entry).
+        self.assertIs(result["11C5CE"], raw["11C5CE"])
+        # The 3 candidate siblings can't form a clean 4-key group (only
+        # 3 of 4 offsets present) so they stay singleton anyway.
+        for addr in ("91C5CE", "D1C5CE", "51C5CE"):
+            self.assertEqual(result[addr]["channels"], 1)
+
+    def test_runtime_discovered_singletons_are_kept_untouched(self):
+        """The `DISCOVERED -` runtime-auto-add entries with no siblings
+        in the manual file (e.g. bus-noise FF-prefix addresses) stay as
+        singletons — we don't have enough info to safely group them."""
+        raw = {
+            "FFFB82": self._candidate(
+                "FFFB82", "DISCOVERED - Nikobus Button #NFFFB82"
+            ),
+            "050000": self._candidate(
+                "050000", "DISCOVERED - Nikobus Button #N050000"
+            ),
+        }
+
+        result = nkbmanual._consolidate_legacy_1a_only_buttons(raw)
+
+        self.assertEqual(set(result.keys()), {"FFFB82", "050000"})
+        for entry in result.values():
+            self.assertEqual(entry["channels"], 1)
+
+    def test_empty_input_returns_empty(self):
+        self.assertEqual(nkbmanual._consolidate_legacy_1a_only_buttons({}), {})
+
+
+class TestConsolidationEndToEnd(unittest.TestCase):
+    """End-to-end: apply_manual_config with the user's actual file shape
+    consolidates 1A-only entries into multi-key buttons."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.config_dir = self.tmp.name
+        self.hass = _FakeHass(self.config_dir)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _write(self, filename: str, data: dict) -> str:
+        path = os.path.join(self.config_dir, filename)
+        with open(path, "w") as fh:
+            json.dump(data, fh)
+        return path
+
+    def test_user_reported_file_shape_consolidates(self):
+        """Replays the user's manual button file shape end-to-end through
+        async_apply_manual_config. The v1 input format is a list of
+        ``{address, description}`` entries with no ``linked_button``
+        block — every entry takes the ``_single_key_fallback`` branch,
+        producing 1A-only fallback entries that consolidation merges."""
+        self._write(
+            "nikobus_button_config.json",
+            {
+                "nikobus_button": [
+                    {"address": "91C5CE", "description": "Buro_deur_B1"},
+                    {"address": "D1C5CE", "description": "Buro_deur_O1"},
+                    {"address": "11C5CE", "description": "Buro_deur_B2"},
+                    {"address": "51C5CE", "description": "Buro_deur_O2"},
+                ]
+            }
+        )
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        changed = _run(
+            nkbmanual.async_apply_manual_config(self.hass, store, button_data)
+        )
+
+        self.assertTrue(changed)
+        # 4 face entries collapsed to one canonical multi-key entry.
+        self.assertEqual(list(button_data["nikobus_button"].keys()), ["11C5CE"])
+        entry = button_data["nikobus_button"]["11C5CE"]
+        self.assertEqual(entry["channels"], 4)
+        self.assertEqual(
+            set(entry["operation_points"].keys()), {"1A", "1B", "1C", "1D"}
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

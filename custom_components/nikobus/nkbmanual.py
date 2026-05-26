@@ -519,8 +519,269 @@ async def _apply_button_config(
             )
             op_points_total += 1
 
-    button_data["nikobus_button"] = new_buttons
+    button_data["nikobus_button"] = _consolidate_legacy_1a_only_buttons(new_buttons)
     return len(new_buttons), op_points_total, path
+
+
+# ---------------------------------------------------------------------------
+# Legacy 1A-only → canonical multi-key consolidation (2.11.8+)
+# ---------------------------------------------------------------------------
+#
+# Manual button-config files authored before the multi-key format list each
+# physical wall-button key face as a SEPARATE ``channels=1`` entry with a
+# single ``1A`` operation point — e.g. a 4-key wall plate becomes 4
+# unrelated 1-channel entries. A PC-Link inventory would produce ONE
+# ``channels=4`` entry with ``1A``/``1B``/``1C``/``1D`` op-points instead.
+#
+# The wall-button bus-address encoding is fully reversible: for a 4-key
+# button the top 2 bits of the first hex nibble encode the key face (per
+# ``nikobus_connect.discovery.mapping.KEY_MAPPING``), and the remaining
+# 22 bits identify the physical button. For 8-key buttons the top 3 bits
+# carry the key, leaving 21 bits of identity. We use that to find sibling
+# 1A-only entries and merge them into the canonical multi-key form.
+#
+# Scope: this runs ONLY from the no-PC-Link manual-import path
+# (``_apply_button_config`` → ``async_apply_manual_config`` →
+# coordinator's ``_apply_manual_inventory_as_fallback``). PC-Link installs
+# never hit it; their inventory arrives in canonical form from the library.
+
+# Key-face offset → label, indexed by channel count. Mirror of the
+# library's KEY_MAPPING with the offset as the key for fast lookup.
+_KEY_OFFSET_TO_LABEL: dict[int, dict[int, str]] = {
+    1: {0x8: "1A"},
+    2: {0x8: "1A", 0xC: "1B"},
+    4: {0x8: "1A", 0xC: "1B", 0x0: "1C", 0x4: "1D"},
+    8: {
+        0xA: "1A", 0xE: "1B", 0x2: "1C", 0x6: "1D",
+        0x8: "2A", 0xC: "2B", 0x0: "2C", 0x4: "2D",
+    },
+}
+
+# Physical-id mask per channel count. The bits NOT in the mask encode
+# the key face: 4-key uses top 2 bits of first nibble (mask 0x3FFFFF =
+# 22-bit identity), 8-key uses top 3 bits (mask 0x1FFFFF = 21-bit
+# identity). 1- and 2-key share the 22-bit mask since their offsets
+# all live in the top-2-bits-of-first-nibble space.
+_PHYSICAL_ID_MASK: dict[int, int] = {1: 0x3FFFFF, 2: 0x3FFFFF, 4: 0x3FFFFF, 8: 0x1FFFFF}
+
+
+def _addr_int(addr: str) -> int | None:
+    try:
+        return int(addr, 16)
+    except ValueError:
+        return None
+
+
+def _physical_id_for(addr: str, channels: int) -> str | None:
+    val = _addr_int(addr)
+    mask = _PHYSICAL_ID_MASK.get(channels)
+    if val is None or mask is None:
+        return None
+    return f"{val & mask:06X}"
+
+
+def _key_offset_for(addr: str, channels: int) -> int | None:
+    """Extract the key-face offset value from the first nibble.
+
+    4-key: top 2 bits → offset ∈ {0x0, 0x4, 0x8, 0xC}.
+    8-key: top 3 bits → offset ∈ {0x0, 0x2, 0x4, 0x6, 0x8, 0xA, 0xC, 0xE}.
+    """
+    if not addr:
+        return None
+    try:
+        nib = int(addr[0], 16)
+    except ValueError:
+        return None
+    if channels == 8:
+        return nib & 0xE
+    return nib & 0xC
+
+
+def _try_group(addresses: list[str], channels: int) -> dict[str, str] | None:
+    """Return ``{address: key_label}`` if ``addresses`` form a clean
+    group for the given channel count. ``None`` on any mismatch — the
+    caller falls back to leaving the entries singleton.
+
+    8-key extra check: KEY_MAPPING[8]'s offsets all have bit 0 = 0
+    (values 0,2,4,6,8,A,C,E are all even). A real 8-key button's
+    addresses therefore all have first-nibble bit 0 = 0. Without this
+    guard, two 4-key wall buttons sharing the same lower 21 bits but
+    differing in first-nibble bit 0 would falsely look like one 8-key
+    button — that's exactly the Living_buro case in the user's data.
+    """
+    labels = _KEY_OFFSET_TO_LABEL.get(channels)
+    if labels is None or len(addresses) != channels:
+        return None
+    expected = set(labels.keys())
+    actual: dict[str, int] = {}
+    for a in addresses:
+        try:
+            first_nibble = int(a[0], 16)
+        except (ValueError, IndexError):
+            return None
+        if channels == 8 and (first_nibble & 0x1) != 0:
+            return None
+        offset = _key_offset_for(a, channels)
+        if offset is None or offset not in expected:
+            return None
+        actual[a] = offset
+    if set(actual.values()) != expected:
+        return None
+    return {a: labels[off] for a, off in actual.items()}
+
+
+def _is_consolidation_candidate(entry: dict[str, Any]) -> bool:
+    """True iff ``entry`` is a 1A-only single-face fallback that could
+    be merged into a larger multi-key group."""
+    if entry.get("channels") != 1:
+        return False
+    ops = entry.get("operation_points")
+    if not isinstance(ops, dict) or list(ops.keys()) != ["1A"]:
+        return False
+    return True
+
+
+def _common_description_prefix(descriptions: list[str]) -> str:
+    """Longest shared starting substring, trimmed of trailing separators."""
+    cleaned = [d for d in descriptions if d]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    common = cleaned[0]
+    for s in cleaned[1:]:
+        while common and not s.startswith(common):
+            common = common[:-1]
+        if not common:
+            return ""
+    return common.rstrip("_- .")
+
+
+def _build_consolidated_entry(
+    source_buttons: dict[str, dict[str, Any]],
+    label_map: dict[str, str],
+    channels: int,
+) -> dict[str, Any]:
+    """Build a canonical multi-key button entry from N 1A-only siblings.
+
+    Each sibling's ``description`` and ``bus_address`` move into the
+    matching op-point. ``linked_modules`` is left empty — step 2 will
+    populate links from the bus. Carries the first sibling's
+    ``type`` / ``model`` if set; uses a common description prefix
+    when one exists, else the first sibling's description.
+    """
+    op_points: dict[str, Any] = {}
+    descriptions: list[str] = []
+    type_str = ""
+    model = ""
+    for addr, label in label_map.items():
+        src = source_buttons[addr]
+        op = src.get("operation_points", {}).get("1A", {})
+        desc = str(src.get("description") or op.get("description") or "").strip()
+        descriptions.append(desc)
+        op_points[label] = {
+            "bus_address": addr,
+            "description": desc or f"#N{addr}",
+            "linked_modules": [],
+        }
+        type_str = type_str or str(src.get("type") or "").strip()
+        model = model or str(src.get("model") or "").strip()
+
+    parent_desc = _common_description_prefix(descriptions) or (descriptions[0] if descriptions else "")
+    return {
+        "type": type_str or "Push button",
+        "model": model,
+        "channels": channels,
+        "description": parent_desc,
+        "operation_points": op_points,
+        "discovered_info": {"source": "manual_config_consolidated"},
+    }
+
+
+def _consolidate_legacy_1a_only_buttons(
+    buttons: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Group legacy 1A-only per-face entries into canonical multi-key
+    buttons by reversing the address-bit encoding.
+
+    Best-effort: candidates that don't form a clean 1/2/4/8-key group
+    stay as singletons. Already-multi-key entries (``channels > 1``)
+    are untouched — the existing grouping wins. Entries whose inferred
+    ``physical_id`` collides with an existing non-candidate entry are
+    also left alone to avoid clobbering authored data.
+
+    Only invoked from the no-PC-Link manual-import path.
+    """
+    # Index candidates by 21-bit physical_id (for 8-key matching) and
+    # by 22-bit physical_id (for 1/2/4-key). A given address goes into
+    # both indexes; the 8-key pass below claims first when applicable.
+    by_21: dict[str, list[str]] = {}
+    by_22: dict[str, list[str]] = {}
+    for addr, entry in buttons.items():
+        if not _is_consolidation_candidate(entry):
+            continue
+        pid_22 = _physical_id_for(addr, 4)
+        if pid_22 is not None:
+            by_22.setdefault(pid_22, []).append(addr)
+        pid_21 = _physical_id_for(addr, 8)
+        if pid_21 is not None:
+            by_21.setdefault(pid_21, []).append(addr)
+
+    consumed: set[str] = set()
+    new_entries: dict[str, dict[str, Any]] = {}
+
+    # Pass 1 — 8-key groups (most constrained; claim these first so
+    # they don't get mis-claimed as a 4-key + half-group of strays).
+    for pid, members in by_21.items():
+        if len(members) != 8:
+            continue
+        if pid in buttons and not _is_consolidation_candidate(buttons[pid]):
+            continue
+        label_map = _try_group(members, 8)
+        if label_map is None:
+            continue
+        new_entries[pid] = _build_consolidated_entry(buttons, label_map, 8)
+        consumed.update(members)
+
+    # Pass 2 — 4/2-key groups from the 22-bit index, skipping anything
+    # already consumed by the 8-key pass. Singletons (would-be 1-key
+    # groups) stay as-is; consolidating them changes nothing and would
+    # mask runtime-auto-add provenance.
+    for pid, members in by_22.items():
+        rem = [a for a in members if a not in consumed]
+        if not rem:
+            continue
+        if pid in buttons and not _is_consolidation_candidate(buttons[pid]):
+            continue
+        for n in (4, 2):
+            if len(rem) != n:
+                continue
+            label_map = _try_group(rem, n)
+            if label_map is None:
+                continue
+            new_entries[pid] = _build_consolidated_entry(buttons, label_map, n)
+            consumed.update(rem)
+            break
+
+    if not consumed:
+        return buttons
+
+    out: dict[str, dict[str, Any]] = {}
+    for addr, entry in buttons.items():
+        if addr in consumed:
+            continue
+        if addr in new_entries:
+            # Singleton at the physical_id itself — defensive; the
+            # consolidated form is the canonical one to keep.
+            continue
+        out[addr] = entry
+    out.update(new_entries)
+    _LOGGER.info(
+        "Manual-config: consolidated %d 1A-only button faces into "
+        "%d canonical multi-key button(s).",
+        len(consumed), len(new_entries),
+    )
+    return out
 
 
 async def async_apply_manual_config(
