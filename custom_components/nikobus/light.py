@@ -161,15 +161,36 @@ class NikobusDimmerEntity(NikobusBaseLight):
             self._optimistic_brightness = None
         super()._handle_nikobus_event(event)
 
+    def _previous_brightness(self) -> int:
+        """Best estimate of the wall LED's current "we last broadcast" state.
+
+        ``led_on`` / ``led_off`` are toggle-on-press button simulations,
+        so the library gates them on a real off ↔ on transition. The
+        gate needs the brightness AS THE LED LAST SAW IT, which is:
+        optimistic (= what we most recently sent, not yet bus-confirmed)
+        if set, otherwise the last bus-confirmed value. Mirrors the
+        composition in ``brightness`` but is read synchronously before
+        we mutate ``_optimistic_brightness`` for the new command.
+        """
+        if self._optimistic_brightness is not None:
+            return self._optimistic_brightness
+        return self.coordinator.get_light_brightness(self._address, self._channel)
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on the dimmer with optimistic UI update and error fallback."""
-        self._is_on = True
         target_brightness = kwargs.get(ATTR_BRIGHTNESS, 255)
+        prev_brightness = self._previous_brightness()
+        self._is_on = True
         self._optimistic_brightness = target_brightness
-        self.async_write_ha_state() 
-        
+        self.async_write_ha_state()
+
         try:
-            await self.coordinator.api.turn_on_light(self._address, self._channel, target_brightness)
+            await self.coordinator.api.turn_on_light(
+                self._address,
+                self._channel,
+                target_brightness,
+                current_brightness=prev_brightness,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -180,12 +201,17 @@ class NikobusDimmerEntity(NikobusBaseLight):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the dimmer with optimistic UI update and error fallback."""
+        prev_brightness = self._previous_brightness()
         self._is_on = False
         self._optimistic_brightness = None
-        self.async_write_ha_state() 
-        
+        self.async_write_ha_state()
+
         try:
-            await self.coordinator.api.turn_off_light(self._address, self._channel)
+            await self.coordinator.api.turn_off_light(
+                self._address,
+                self._channel,
+                current_brightness=prev_brightness,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
