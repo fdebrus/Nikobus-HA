@@ -8,6 +8,7 @@ from typing import Any
 from homeassistant.components.button import ButtonEntity
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -490,9 +491,26 @@ class NikobusPcLinkInventoryButton(ButtonEntity):
         self._attr_device_info = _hub_device_info()
 
     async def async_press(self) -> None:
-        """Start PC Link inventory discovery."""
+        """Start PC Link inventory discovery.
+
+        Scheduled as a background task — the inventory probe + register
+        scan can take 30-60 s, which is too long to hold a UI button
+        handler open. If the press happens during HA startup, blocking
+        here also stalls bootstrap stage 2 (see GH discussion in 2.12).
+        Progress is surfaced via ``SIGNAL_DISCOVERY_STATE``; failures
+        flow through the same channel as the discovery state's error
+        field, plus the integration log.
+        """
         _LOGGER.info("PC Link inventory discovery triggered via UI button")
-        await self._coordinator.start_pc_link_inventory()
+        if self._coordinator.discovery_running:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
+        self.hass.async_create_background_task(
+            self._coordinator.start_pc_link_inventory(),
+            name="nikobus_pc_link_inventory_discovery",
+        )
 
 
 class NikobusModuleScanButton(ButtonEntity):
@@ -532,9 +550,23 @@ class NikobusModuleScanButton(ButtonEntity):
         self.async_write_ha_state()
 
     async def async_press(self) -> None:
-        """Scan all output modules for button links."""
+        """Scan all output modules for button links.
+
+        Backgrounded for the same reason as the PC-Link inventory
+        button — a full register scan can take 2+ minutes on big
+        installs, and awaiting it here would block the button handler
+        (and HA bootstrap stage 2 if pressed during startup).
+        """
         _LOGGER.info("Module scan discovery triggered via UI button")
-        await self._coordinator.start_module_scan()
+        if self._coordinator.discovery_running:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="discovery_already_running",
+            )
+        self.hass.async_create_background_task(
+            self._coordinator.start_module_scan(),
+            name="nikobus_module_scan_discovery",
+        )
 
 
 class NikobusButtonEntity(NikobusEntity, ButtonEntity):
