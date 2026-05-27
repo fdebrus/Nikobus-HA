@@ -149,6 +149,12 @@
         },
         "no_inventory_source": {
             "message": "No PC-Link detected on the bus and no manual config files found. Either install a PC-Link or create nikobus_module_config.json (and optionally nikobus_button_config.json) in your Home Assistant config directory, then retry."
+        },
+        "cf_no_address": {
+            "message": "Cannot activate a Nikobus CF without a bus address."
+        },
+        "not_connected": {
+            "message": "Nikobus bus is not connected — cannot send a command. Check the connection and retry."
         }
     },
     "options": {

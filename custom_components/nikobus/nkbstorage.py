@@ -42,6 +42,9 @@ BUTTON_STORAGE_VERSION = 1
 MODULE_STORAGE_KEY = "nikobus.modules"
 MODULE_STORAGE_VERSION = 1
 
+CF_STORAGE_KEY = "nikobus.cfs"
+CF_STORAGE_VERSION = 1
+
 
 class NikobusButtonStorage:
     """Wrap a HA ``Store`` for button discovery data."""
@@ -107,3 +110,42 @@ class NikobusModuleStorage:
     def is_empty(self) -> bool:
         """Return True when no modules are registered yet."""
         return not bool(self._data.get("nikobus_module"))
+
+
+class NikobusCFStorage:
+    """Wrap a HA ``Store`` for classified CF (Central Function) broadcasts.
+
+    Persists the dict the library populates on ``NikobusDiscovery.
+    discovered_cf_broadcasts`` after each discovery completes — each
+    entry is a ``{bus_address, pattern, outputs}`` record describing a
+    CF activation broadcast and its target output channels. Survives
+    across HA restarts so scene entities don't disappear when discovery
+    isn't re-run.
+
+    Storage shape: ``{"nikobus_cf": {bus_address: {...}}}``.
+    """
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._store: Store[dict[str, Any]] = Store(
+            hass, CF_STORAGE_VERSION, CF_STORAGE_KEY
+        )
+        self._data: dict[str, Any] = {"nikobus_cf": {}}
+
+    async def async_load(self) -> dict[str, Any]:
+        loaded = await self._store.async_load()
+        if isinstance(loaded, dict) and isinstance(loaded.get("nikobus_cf"), dict):
+            self._data = loaded
+        else:
+            self._data = {"nikobus_cf": {}}
+        return self._data
+
+    async def async_save(self) -> None:
+        await self._store.async_save(self._data)
+
+    @property
+    def data(self) -> dict[str, Any]:
+        return self._data
+
+    @property
+    def is_empty(self) -> bool:
+        return not bool(self._data.get("nikobus_cf"))

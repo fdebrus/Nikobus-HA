@@ -629,6 +629,15 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         # Repairs issue. Default False — the issue only surfaces when
         # the caller explicitly opts in via ``last_module_scan_was_full``.
         coord._last_module_scan_was_full = last_module_scan_was_full
+        # 2.12.0: ``_reconcile_post_discovery`` awaits
+        # ``_ingest_cf_broadcasts`` to mirror the library's classified
+        # CF activation broadcasts into ``cf_storage``. Stub here so
+        # the existing reconcile tests keep covering their original
+        # surface without needing to know about CFs.
+        coord._ingest_cf_broadcasts = AsyncMock()
+        coord.cf_storage = MagicMock()
+        coord.cf_storage.data = {"nikobus_cf": {}}
+        coord.cf_storage.async_save = AsyncMock()
         if has_method:
             coord.nikobus_discovery = MagicMock()
             default_manifest = manifest or {
