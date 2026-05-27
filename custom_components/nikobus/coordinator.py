@@ -59,7 +59,11 @@ from .const import (
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 from .nkbmanual import async_apply_manual_config
-from .nkbstorage import NikobusButtonStorage, NikobusModuleStorage
+from .nkbstorage import (
+    NikobusButtonStorage,
+    NikobusCFStorage,
+    NikobusModuleStorage,
+)
 
 # Typed config entry alias used across the integration. A plain alias
 # (instead of PEP 695 `type X = ...`) keeps compatibility with older
@@ -121,6 +125,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.nikobus_config = NikobusConfig(hass)
         self.button_storage = NikobusButtonStorage(hass)
         self.module_storage = NikobusModuleStorage(hass)
+        # CF broadcasts persisted across HA restarts. Populated by
+        # ``_ingest_cf_broadcasts`` after each discovery completes from
+        # the library's ``NikobusDiscovery.discovered_cf_broadcasts``.
+        self.cf_storage = NikobusCFStorage(hass)
         self.api: NikobusAPI | None = None
 
         # ``dict_module_data`` is a derived view of ``module_storage.data``,
@@ -249,6 +257,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self._rebuild_dict_module_data()
 
             self.dict_button_data = await self.button_storage.async_load()
+            await self.cf_storage.async_load()
 
             # 2.11.4: manual config files are the step-1 inventory source
             # for installs without a PC-Link (Feedback-module-only users).
@@ -1406,6 +1415,85 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             },
         )
 
+    async def _ingest_cf_broadcasts(self) -> None:
+        """Persist the library's classified CF broadcasts into our store.
+
+        Library-side (nikobus-connect 0.20.0+):
+        ``NikobusDiscovery._classify_cf_broadcasts_from_unmatched`` runs
+        at end-of-scan, pulls the ``38 41 XX`` (switch-pair) and
+        ``38 80 XX`` (roller-pair) addresses out of the unmatched
+        accumulator, attaches their (module, channel, mode) members
+        from the command mapping, and exposes a ``CFBroadcast`` dict
+        on ``discovered_cf_broadcasts``.
+
+        We mirror that dict into ``cf_storage`` as a plain JSON-safe
+        shape: ``{"nikobus_cf": {bus_address: {pattern, outputs}}}``.
+        Persisting means scene entities survive across HA restarts;
+        the next discovery refreshes the data idempotently.
+        """
+        if self.nikobus_discovery is None:
+            return
+        broadcasts = getattr(
+            self.nikobus_discovery, "discovered_cf_broadcasts", None
+        )
+        if not broadcasts:
+            # Library didn't classify anything this scan — preserve
+            # whatever was persisted last time. (Don't wipe; a re-scan
+            # that hits an empty bus shouldn't lose the user's scenes.)
+            return
+
+        flat: dict[str, dict[str, Any]] = {}
+        for addr, cf in broadcasts.items():
+            outputs = [
+                {
+                    "module_address": str(m.module_address).upper(),
+                    "channel": int(m.channel),
+                    "mode": str(m.mode),
+                    "t1": getattr(m, "t1", None),
+                    "t2": getattr(m, "t2", None),
+                }
+                for m in getattr(cf, "outputs", [])
+            ]
+            flat[str(addr).upper()] = {
+                "bus_address": str(getattr(cf, "bus_address", addr)).upper(),
+                "pattern": str(getattr(cf, "pattern", "unknown")),
+                "outputs": outputs,
+            }
+
+        self.cf_storage.data["nikobus_cf"] = flat
+        await self.cf_storage.async_save()
+        _LOGGER.info(
+            "CF broadcasts persisted: %d entries (%s)",
+            len(flat),
+            sorted(flat.keys()),
+        )
+
+    async def async_activate_cf_broadcast(self, bus_address: str) -> None:
+        """Send the bus frame that activates a classified CF.
+
+        Each CF broadcast address (``38 41 XX`` or ``38 80 XX``) is
+        what PC-Logic emits when the CF is activated by a wall button
+        or remote. Output modules participating in the CF carry the
+        link records that trigger their channels on this address. From
+        HA we send the same frame format used for wall-button
+        simulations: ``#N{addr}\\r#E1``. The output modules then fire
+        in unison — single-frame atomic activation, no per-channel
+        round-trip.
+        """
+        if not bus_address:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="cf_no_address",
+            )
+        if not self.nikobus_command:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="not_connected",
+            )
+        addr = bus_address.upper()
+        _LOGGER.info("Activating Nikobus CF broadcast: %s", addr)
+        await self.nikobus_command.queue_command(f"#N{addr}\r#E1")
+
     async def _reconcile_post_discovery(
         self,
         discovered_devices: dict | None = None,
@@ -1585,6 +1673,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             and self._last_module_scan_was_full
         ):
             self._surface_legacy_undecoded_buttons(buttons)
+
+        # Ingest the library's classified CF activation broadcasts (the
+        # ``38 41 XX`` / ``38 80 XX`` addresses surfaced by
+        # ``_classify_cf_broadcasts_from_unmatched``). Persists into the
+        # CF store so scene entities survive HA restarts even when the
+        # next discovery hasn't run yet.
+        await self._ingest_cf_broadcasts()
 
         # Persist. Both stores save unconditionally so the ``status``
         # field on buttons + the eviction on modules land on disk.

@@ -36,29 +36,114 @@ async def async_setup_entry(
     entry: NikobusConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up Nikobus scenes from a config entry."""
+    """Set up Nikobus scenes from a config entry.
+
+    Two sources contribute scene entities:
+
+    1. **User-authored scenes** from ``nikobus_scene_config.json``
+       (legacy software-scene path: HA-side fan-out over individual
+       module channels). One :class:`NikobusSceneEntity` per entry.
+    2. **CF activation broadcasts** classified by the library during
+       discovery (``38 41 XX`` / ``38 80 XX`` addresses). One
+       :class:`NikobusCFSceneEntity` per entry — activation = single
+       bus-frame broadcast, output modules fire atomically via their
+       existing link records.
+    """
     coordinator: NikobusDataCoordinator = entry.runtime_data
-    entities: list[NikobusSceneEntity] = []
+    entities: list[Scene] = []
 
-    if not coordinator.dict_scene_data:
-        return
+    if coordinator.dict_scene_data:
+        scenes = coordinator.dict_scene_data.get("scene", [])
 
-    scenes = coordinator.dict_scene_data.get("scene", [])
+        for scene in scenes:
+            scene_id = scene.get("id")
+            if not scene_id:
+                _LOGGER.warning("Skipping Nikobus scene with missing ID")
+                continue
 
-    for scene in scenes:
-        scene_id = scene.get("id")
-        if not scene_id:
-            _LOGGER.warning("Skipping Nikobus scene with missing ID")
+            entities.append(
+                NikobusSceneEntity(
+                    coordinator=coordinator,
+                    scene_config=scene,
+                )
+            )
+
+    cf_data = coordinator.cf_storage.data.get("nikobus_cf", {}) if coordinator.cf_storage else {}
+    for bus_address, cf in cf_data.items():
+        if not isinstance(cf, dict):
             continue
-
         entities.append(
-            NikobusSceneEntity(
+            NikobusCFSceneEntity(
                 coordinator=coordinator,
-                scene_config=scene,
+                bus_address=bus_address,
+                cf_config=cf,
             )
         )
 
     async_add_entities(entities)
+
+
+class NikobusCFSceneEntity(NikobusEntity, Scene):
+    """A Central Function activation broadcast surfaced as an HA scene.
+
+    Activation sends a single bus frame (``#N<bus_address>\\r#E1``) —
+    the same shape a wall button or remote produces. Output modules
+    with link records pointing to ``bus_address`` fire their linked
+    actions in unison; no HA-side per-channel fan-out needed.
+
+    Pattern + member list are surfaced as entity attributes so a user
+    (or a future typed-mapping pass) can identify roller-pair vs
+    switch-pair CFs without reaching into storage.
+    """
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        bus_address: str,
+        cf_config: dict[str, Any],
+    ) -> None:
+        addr = str(bus_address).upper()
+        pattern = str(cf_config.get("pattern") or "unknown")
+        outputs = cf_config.get("outputs") or []
+        member_count = len(outputs) if isinstance(outputs, list) else 0
+
+        # Build a default friendly name from what we know on the bus.
+        # The .nkb-derived user name (if/when the integration ingests
+        # the file) will replace this via the standard HA rename flow.
+        if pattern == "switch_pair":
+            name = f"Nikobus switch CF {addr} ({member_count} ch)"
+        elif pattern == "roller_pair":
+            name = f"Nikobus roller CF {addr} ({member_count} ch)"
+        else:
+            name = f"Nikobus CF {addr} ({member_count} ch)"
+
+        super().__init__(
+            coordinator=coordinator,
+            address=addr,
+            name=name,
+            model=f"CF Broadcast ({pattern})",
+            via_device=(DOMAIN, CATEGORY_SCENES),
+        )
+        self._bus_address = addr
+        self._pattern = pattern
+        self._outputs = outputs if isinstance(outputs, list) else []
+        self._attr_name = name
+        self._attr_unique_id = f"nikobus_cf_{addr.lower()}"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        parent = super().extra_state_attributes or {}
+        return {
+            **parent,
+            "bus_address": self._bus_address,
+            "pattern": self._pattern,
+            "member_count": len(self._outputs),
+            "outputs": self._outputs,
+        }
+
+    async def async_activate(self, **kwargs: Any) -> None:
+        """Send the CF activation broadcast on the bus."""
+        await self.coordinator.async_activate_cf_broadcast(self._bus_address)
 
 
 class NikobusSceneEntity(NikobusEntity, Scene):
