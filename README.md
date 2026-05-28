@@ -46,7 +46,7 @@ Before installing:
   - Buttons with LEDs require LED on/off addresses in each module output configuration.
   - Virtual / IR-scene button addresses that aren't on the bus can be fired from scripts via the `nikobus.send_button_press` service.
 - **Home Assistant Scenes**
-  - Trigger multiple module/channel updates from one command.
+  - Two sources contribute scene entities — **CF broadcasts** auto-extracted from the bus during discovery, plus an optional **user-authored** `nikobus_scene_config.json` for HA-side per-channel fan-out. See the [Scenes](#scenes) section.
 
 ## PC-Logic and Modular Interface inputs
 
@@ -171,6 +171,38 @@ Place any of these YAML blocks in a Home Assistant automation (UI or YAML) as yo
 
 ## Scenes
 
+The integration surfaces two distinct kinds of scenes. Most installs only need to know about the first one.
+
+### CF broadcasts (auto-extracted from the bus)
+
+A Nikobus *Central Function* (CF) is a multi-output activation that already exists on the bus. Every "scene" key on a wall keypad, every scene memory programmed in the Nikobus software, is implemented as a CF: each one has a unique broadcast address, pressing the scene key puts a single bus frame on the wire, and every output module linked to that address fires its assigned action simultaneously.
+
+**Scan all module links** (see [Discovery & Configuration](#discovery--configuration)) reads each output module's link table, identifies the CF references, classifies them by pattern (`switch_pair` / `roller_pair`), and persists them to `.storage/nikobus.cfs`. They surface as HA scene entities automatically. Typical names look like:
+
+- `Nikobus switch CF 384102 (22 ch)` — 22 switch channels triggered by this CF.
+- `Nikobus roller CF 3880CB (6 ch)` — 6 roller channels grouped as an open / close pair.
+
+The CF metadata is exposed as scene attributes so you can identify what each one controls without reaching into storage:
+
+```yaml
+bus_address: "3880CB"
+pattern: "roller_pair"
+member_count: 6
+outputs:
+  - module_address: "8B9C"
+    channel: 5
+    mode: "M02 (Open)"
+  # ...
+```
+
+**Triggering an extracted CF scene from HA is indistinguishable from triggering it physically.** The integration emits the same bus frame format (`#N<address>\r#E1`) that PC-Logic emits when a wall scene key is pressed. Output modules can't tell the difference and fire atomically on the bus — no per-channel round-trip from HA, no risk of a partial activation if HA's connection blips. State updates flow back through the normal feedback path. Roller travel times follow each module's stored Nikobus configuration (the M01 / M02 / M03 timings) rather than HA's per-cover `operation_time_*`, because the modules handle run-to-completion internally.
+
+No user configuration is required. CF scenes are extracted on every **Scan all module links** run and re-classified each time, so adding or removing a CF on the Nikobus side propagates to HA after the next scan.
+
+### User-authored scenes (`nikobus_scene_config.json`)
+
+A legacy path for HA-side per-channel fan-out — useful when you want a "scene" that doesn't correspond to a real CF on the bus, e.g. a custom grouping that crosses module boundaries in a way Nikobus itself doesn't know about. The integration loads this file from `/config` on startup; a missing or empty file is fine and simply produces zero scene entities.
+
 States for dimmers and shutters use 0–255; switches accept `"on"` or `"off"`; shutters accept `"open"` or `"close"`. Channels belong to group 1 (1–6) or group 2 (7–12); the integration updates the relevant group automatically.
 
 ```json
@@ -219,7 +251,12 @@ States for dimmers and shutters use 0–255; switches accept `"on"` or `"off"`; 
 }
 ```
 
-Scene activation only changes the channels you define; other channels remain untouched. Scenes can be triggered directly in Home Assistant, through automations, or linked to Nikobus buttons.
+Activation iterates the entries and sends individual commands per channel — HA-driven fan-out, not an atomic bus frame. Scene activation only changes the channels you define; other channels remain untouched. Scenes can be triggered directly in Home Assistant, through automations, or linked to Nikobus buttons.
+
+### Which one should I use?
+
+- A scene that already exists in your Nikobus software (a "scene" key on a wall keypad or RF remote) → **already extracted as a CF**, no config needed. Look for the `scene.nikobus_*_cf_*` entities after running **Scan all module links**.
+- A new grouping that doesn't exist on the bus → write it in `nikobus_scene_config.json`. Activation will be HA-driven and per-channel.
 
 ## Staying in Sync with Nikobus
 
@@ -297,7 +334,7 @@ Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 
 ### 3. Scan module links
 
-Press **Scan all module links** on the Bridge device. This walks every output module and records which button addresses drive which channels, populating the `linked_modules` metadata on each button entity.
+Press **Scan all module links** on the Bridge device. This walks every output module and records which button addresses drive which channels, populating the `linked_modules` metadata on each button entity. Central Function (CF) broadcast addresses found in the same link tables are classified by pattern and persisted as HA scene entities at the same time — see the [Scenes](#scenes) section.
 
 The button is greyed out until a PC Link inventory has run — scanning links against zero known modules does nothing.
 
@@ -385,11 +422,11 @@ The code is split into two packages:
   - `NikobusEventListener` — parses CR-terminated ASCII frames, dispatches button presses and feedback updates.
   - `NikobusCommandHandler` — queued, retrying command processor that throttles bursts (e.g. "close all shutters").
   - `NikobusAPI` — high-level operations (read/set output state, cover start/stop).
-  - `NikobusDiscovery` — PC Link inventory + module register scan, reverse-engineers button-to-output mappings and populates the operation-point / `linked_modules` metadata.
+  - `NikobusDiscovery` — PC Link inventory + module register scan, reverse-engineers button-to-output mappings and populates the operation-point / `linked_modules` metadata. Also classifies Central Function (CF) broadcast addresses found in the link tables (`switch_pair` / `roller_pair`) and surfaces them via `discovered_cf_broadcasts` for the integration to persist as scene entities.
 
 - **This integration (`custom_components/nikobus/`)** — the Home Assistant glue:
   - `coordinator.py` — wires the library together, owns polling + discovery lifecycle, dispatches state signals.
-  - `nkbstorage.py` — the two HA Stores (`.storage/nikobus.modules` and `.storage/nikobus.buttons`) with their load/save adapters.
+  - `nkbstorage.py` — the three HA Stores (`.storage/nikobus.modules`, `.storage/nikobus.buttons`, and `.storage/nikobus.cfs` for classified CF broadcasts) with their load/save adapters.
   - `nkbmigration.py` — one-shot import of legacy `nikobus_module_config.json` into the Module Store.
   - `nkbactuator.py` — routes incoming button frames into HA bus events (`nikobus_button_pressed` etc.) with debounce and duration tracking.
   - `nkbconfig.py` — scene-file loader/writer (scenes still live in JSON).
