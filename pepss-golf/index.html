@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PEPSS Golf — Inscriptions des matchs</title>
+<style>
+  :root{
+    --green:#1b5e20;
+    --green-light:#2e7d32;
+    --green-pale:#e8f5e9;
+    --fairway:#4caf50;
+    --sand:#f4e7c3;
+    --ink:#1c2417;
+    --muted:#6b7561;
+    --line:#d9e2d2;
+    --single:#1565c0;
+    --double:#6a1b9a;
+    --reserve:#ef6c00;
+    --radius:14px;
+    --shadow:0 6px 24px rgba(0,0,0,.10);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 500px at 80% -10%, #c8e6c9 0%, transparent 60%),
+      linear-gradient(180deg,#f6faf4 0%, #eef5ea 100%);
+    min-height:100vh;
+  }
+  header{
+    background:linear-gradient(135deg,var(--green) 0%, var(--green-light) 100%);
+    color:#fff;
+    padding:28px 20px 22px;
+    box-shadow:var(--shadow);
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:0 16px}
+  header .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .logo{
+    width:52px;height:52px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #fff 0 30%, #e0e0e0 32% 100%);
+    box-shadow:inset 0 0 0 3px rgba(255,255,255,.5), var(--shadow);
+    position:relative;flex:0 0 auto;
+  }
+  .logo::after{
+    content:"";position:absolute;inset:0;border-radius:50%;
+    background:
+      radial-gradient(2px 2px at 30% 35%, #c9c9c9 50%, transparent 51%),
+      radial-gradient(2px 2px at 55% 30%, #c9c9c9 50%, transparent 51%),
+      radial-gradient(2px 2px at 45% 55%, #c9c9c9 50%, transparent 51%),
+      radial-gradient(2px 2px at 65% 60%, #c9c9c9 50%, transparent 51%);
+  }
+  header h1{margin:0;font-size:1.6rem;letter-spacing:.3px}
+  header p{margin:2px 0 0;opacity:.9;font-size:.95rem}
+  main{padding:24px 0 60px}
+  .card{
+    background:#fff;border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:18px;margin-bottom:22px;
+  }
+  .card h2{margin:0 0 4px;font-size:1.15rem;color:var(--green)}
+  .card .sub{color:var(--muted);font-size:.88rem;margin:0 0 14px}
+
+  /* Toolbar */
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input[type=text],input[type=date]{
+    padding:9px 11px;border:1px solid var(--line);border-radius:10px;font-size:.95rem;
+    background:#fbfdfa;
+  }
+  input:focus{outline:2px solid var(--fairway);border-color:transparent}
+  button{
+    cursor:pointer;border:0;border-radius:10px;padding:9px 14px;font-size:.92rem;
+    font-weight:600;background:var(--green-light);color:#fff;transition:filter .15s;
+  }
+  button:hover{filter:brightness(1.08)}
+  button.ghost{background:#eef3ea;color:var(--green)}
+  button.danger{background:#fbe9e7;color:#c62828}
+  button.tiny{padding:5px 9px;font-size:.8rem}
+
+  /* Players */
+  .players{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{
+    display:inline-flex;align-items:center;gap:8px;background:var(--green-pale);
+    border:1px solid var(--line);border-radius:999px;padding:6px 6px 6px 12px;font-size:.9rem;
+  }
+  .chip input{border:0;background:transparent;width:120px;font-size:.9rem}
+  .chip button{background:transparent;color:#c62828;padding:2px 6px;font-weight:700}
+
+  /* Match */
+  .match{border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px;overflow:hidden}
+  .match-head{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    background:linear-gradient(90deg,var(--green-pale),#fff);
+    padding:12px 16px;border-bottom:1px solid var(--line);
+  }
+  .match-date{font-weight:700;color:var(--green);font-size:1.05rem}
+  .match-meta{color:var(--muted);font-size:.85rem}
+  .match-head .spacer{flex:1}
+  .counts{display:flex;gap:8px;flex-wrap:wrap}
+  .badge{font-size:.78rem;padding:3px 9px;border-radius:999px;font-weight:700;color:#fff}
+  .b-single{background:var(--single)}
+  .b-double{background:var(--double)}
+  .b-reserve{background:var(--reserve)}
+  .b-none{background:#9e9e9e}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px 14px;text-align:left;font-size:.92rem;border-bottom:1px solid #eef2ec}
+  th{font-size:.78rem;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);background:#fafdf8}
+  td.player{font-weight:600}
+  .opts{display:flex;gap:6px;flex-wrap:wrap}
+  .opt{
+    border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;
+    font-size:.85rem;font-weight:600;color:var(--muted);cursor:pointer;user-select:none;
+  }
+  .opt:hover{border-color:var(--fairway)}
+  .opt.sel-single{background:var(--single);border-color:var(--single);color:#fff}
+  .opt.sel-double{background:var(--double);border-color:var(--double);color:#fff}
+  .opt.sel-reserve{background:var(--reserve);border-color:var(--reserve);color:#fff}
+
+  .empty{color:var(--muted);font-style:italic;padding:8px 2px}
+  footer{ text-align:center;color:var(--muted);font-size:.82rem;padding:10px 0 40px}
+  .row-actions{display:flex;justify-content:flex-end;padding:10px 16px;background:#fafdf8}
+  details summary{cursor:pointer;font-weight:600;color:var(--green)}
+  @media (max-width:560px){
+    .opts{flex-direction:row}
+    th:nth-child(3),td:nth-child(3){display:none}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="logo" aria-hidden="true"></div>
+    <div>
+      <h1>PEPSS Golf — Inscriptions</h1>
+      <p>Équipe de 8 joueurs · inscrivez-vous par date en simple, double ou réserve</p>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- Joueurs -->
+  <section class="card">
+    <h2>👥 Les joueurs de l'équipe</h2>
+    <p class="sub">Modifiez les noms en cliquant dessus. L'équipe compte idéalement 8 joueurs.</p>
+    <div id="players" class="players"></div>
+    <div style="margin-top:12px">
+      <button id="addPlayer" class="ghost">+ Ajouter un joueur</button>
+    </div>
+  </section>
+
+  <!-- Matchs -->
+  <section class="card">
+    <h2>📅 Dates des matchs</h2>
+    <p class="sub">Ajoutez une date puis laissez chaque joueur choisir sa participation.</p>
+    <div class="toolbar">
+      <input type="date" id="newDate">
+      <input type="text" id="newLabel" placeholder="Adversaire / lieu (optionnel)">
+      <button id="addMatch">+ Ajouter le match</button>
+    </div>
+  </section>
+
+  <div id="matches"></div>
+
+  <!-- Outils -->
+  <section class="card">
+    <details>
+      <summary>⚙️ Données &amp; partage</summary>
+      <p class="sub" style="margin-top:10px">
+        Les inscriptions sont enregistrées dans ce navigateur (localStorage).
+        Exportez le fichier pour le partager ou le sauvegarder.
+      </p>
+      <div class="toolbar">
+        <button class="ghost" id="exportBtn">⬇️ Exporter (JSON)</button>
+        <button class="ghost" id="importBtn">⬆️ Importer (JSON)</button>
+        <input type="file" id="importFile" accept="application/json" hidden>
+        <button class="danger" id="resetBtn">🗑️ Tout réinitialiser</button>
+      </div>
+    </details>
+  </section>
+
+</main>
+
+<footer>PEPSS Golf · page d'inscription · vos données restent sur votre appareil</footer>
+
+<script>
+(function(){
+  "use strict";
+  const KEY = "pepss-golf-v1";
+  const STATUSES = ["single","double","reserve"];
+  const LABELS = {single:"Simple", double:"Double", reserve:"Réserve", none:"—"};
+
+  const defaultState = () => ({
+    players: ["Joueur 1","Joueur 2","Joueur 3","Joueur 4","Joueur 5","Joueur 6","Joueur 7","Joueur 8"]
+      .map((n,i)=>({id:"p"+(i+1)+"-"+Date.now()+i, name:n})),
+    matches: [] // {id, date, label, signups:{playerId:status}}
+  });
+
+  let state = load();
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(raw) return JSON.parse(raw);
+    }catch(e){}
+    return defaultState();
+  }
+  function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+
+  function uid(prefix){ return prefix + Math.random().toString(36).slice(2,9); }
+
+  function fmtDate(iso){
+    if(!iso) return "Date à définir";
+    const d = new Date(iso+"T00:00:00");
+    return d.toLocaleDateString("fr-FR",{weekday:"long", day:"numeric", month:"long", year:"numeric"});
+  }
+
+  /* ---------- Render players ---------- */
+  function renderPlayers(){
+    const box = document.getElementById("players");
+    box.innerHTML = "";
+    state.players.forEach(p=>{
+      const chip = document.createElement("div");
+      chip.className = "chip";
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.value = p.name;
+      inp.addEventListener("change", ()=>{ p.name = inp.value.trim()||p.name; save(); renderMatches(); });
+      const del = document.createElement("button");
+      del.textContent = "✕"; del.title = "Retirer ce joueur";
+      del.addEventListener("click", ()=>{
+        if(!confirm("Retirer "+p.name+" ? Ses inscriptions seront supprimées.")) return;
+        state.players = state.players.filter(x=>x.id!==p.id);
+        state.matches.forEach(m=>{ delete m.signups[p.id]; });
+        save(); renderPlayers(); renderMatches();
+      });
+      chip.appendChild(inp); chip.appendChild(del);
+      box.appendChild(chip);
+    });
+  }
+
+  /* ---------- Render matches ---------- */
+  function renderMatches(){
+    const box = document.getElementById("matches");
+    box.innerHTML = "";
+    if(state.matches.length===0){
+      const c = document.createElement("div");
+      c.className = "card empty";
+      c.textContent = "Aucun match pour l'instant. Ajoutez une date ci-dessus.";
+      box.appendChild(c);
+      return;
+    }
+    // sort by date (undefined dates last)
+    const sorted = [...state.matches].sort((a,b)=>(a.date||"9999").localeCompare(b.date||"9999"));
+    sorted.forEach(m=>box.appendChild(matchCard(m)));
+  }
+
+  function counts(m){
+    const c = {single:0,double:0,reserve:0,none:0};
+    state.players.forEach(p=>{
+      const s = m.signups[p.id] || "none";
+      c[s] = (c[s]||0)+1;
+    });
+    return c;
+  }
+
+  function matchCard(m){
+    const card = document.createElement("div");
+    card.className = "match";
+
+    const head = document.createElement("div");
+    head.className = "match-head";
+    head.innerHTML =
+      '<div><div class="match-date">'+fmtDate(m.date)+'</div>'+
+      (m.label?'<div class="match-meta">'+escapeHtml(m.label)+'</div>':'')+'</div>'+
+      '<div class="spacer"></div>';
+    const c = counts(m);
+    const badges = document.createElement("div");
+    badges.className = "counts";
+    badges.innerHTML =
+      '<span class="badge b-single">Simple '+c.single+'</span>'+
+      '<span class="badge b-double">Double '+c.double+'</span>'+
+      '<span class="badge b-reserve">Réserve '+c.reserve+'</span>'+
+      '<span class="badge b-none">Sans réponse '+c.none+'</span>';
+    head.appendChild(badges);
+    card.appendChild(head);
+
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>Joueur</th><th>Participation</th><th>Statut</th></tr></thead>";
+    const tb = document.createElement("tbody");
+
+    if(state.players.length===0){
+      const tr = document.createElement("tr");
+      tr.innerHTML = '<td colspan="3" class="empty">Ajoutez d\'abord des joueurs.</td>';
+      tb.appendChild(tr);
+    }
+
+    state.players.forEach(p=>{
+      const cur = m.signups[p.id] || "none";
+      const tr = document.createElement("tr");
+
+      const tdName = document.createElement("td");
+      tdName.className = "player"; tdName.textContent = p.name;
+
+      const tdOpts = document.createElement("td");
+      const opts = document.createElement("div");
+      opts.className = "opts";
+      STATUSES.forEach(s=>{
+        const b = document.createElement("button");
+        b.type="button";
+        b.className = "opt" + (cur===s ? " sel-"+s : "");
+        b.textContent = LABELS[s];
+        b.addEventListener("click", ()=>{
+          m.signups[p.id] = (m.signups[p.id]===s) ? undefined : s;
+          if(!m.signups[p.id]) delete m.signups[p.id];
+          save(); renderMatches();
+        });
+        opts.appendChild(b);
+      });
+      tdOpts.appendChild(opts);
+
+      const tdStat = document.createElement("td");
+      tdStat.innerHTML = '<span class="badge b-'+(cur==="none"?"none":cur)+'">'+LABELS[cur]+'</span>';
+
+      tr.appendChild(tdName); tr.appendChild(tdOpts); tr.appendChild(tdStat);
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    card.appendChild(table);
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const del = document.createElement("button");
+    del.className = "danger tiny";
+    del.textContent = "Supprimer ce match";
+    del.addEventListener("click", ()=>{
+      if(!confirm("Supprimer le match du "+fmtDate(m.date)+" ?")) return;
+      state.matches = state.matches.filter(x=>x.id!==m.id);
+      save(); renderMatches();
+    });
+    actions.appendChild(del);
+    card.appendChild(actions);
+
+    return card;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  }
+
+  /* ---------- Events ---------- */
+  document.getElementById("addPlayer").addEventListener("click", ()=>{
+    state.players.push({id:uid("p"), name:"Nouveau joueur"});
+    save(); renderPlayers(); renderMatches();
+  });
+
+  document.getElementById("addMatch").addEventListener("click", ()=>{
+    const date = document.getElementById("newDate").value;
+    const label = document.getElementById("newLabel").value.trim();
+    if(!date){ alert("Choisissez une date pour le match."); return; }
+    state.matches.push({id:uid("m"), date, label, signups:{}});
+    save();
+    document.getElementById("newDate").value="";
+    document.getElementById("newLabel").value="";
+    renderMatches();
+  });
+
+  document.getElementById("exportBtn").addEventListener("click", ()=>{
+    const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "pepss-golf-inscriptions.json";
+    a.click();
+  });
+  document.getElementById("importBtn").addEventListener("click", ()=> document.getElementById("importFile").click());
+  document.getElementById("importFile").addEventListener("change", (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      try{
+        const data = JSON.parse(r.result);
+        if(!data.players || !data.matches) throw new Error("format");
+        state = data; save(); renderPlayers(); renderMatches();
+        alert("Inscriptions importées.");
+      }catch(err){ alert("Fichier invalide."); }
+    };
+    r.readAsText(file);
+  });
+  document.getElementById("resetBtn").addEventListener("click", ()=>{
+    if(!confirm("Tout réinitialiser (joueurs + matchs) ?")) return;
+    state = defaultState(); save(); renderPlayers(); renderMatches();
+  });
+
+  /* ---------- Init ---------- */
+  renderPlayers();
+  renderMatches();
+})();
+</script>
+</body>
+</html>
