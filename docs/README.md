@@ -10,7 +10,15 @@ aux différents matchs. Pour chaque date, un joueur peut s'inscrire en :
 ## Utilisation
 
 Ouvrez simplement `index.html` dans un navigateur (double-clic), ou publiez-le
-en ligne (GitHub Pages, hébergement statique, etc.).
+en ligne via GitHub Pages.
+
+### Publication via GitHub Pages
+
+Ce dossier `docs/` est prévu pour être servi par GitHub Pages :
+**Settings → Pages → Build and deployment → Source : « Deploy from a branch »**,
+puis choisir la branche voulue et le dossier **`/docs`**.
+
+L'URL publique sera alors : `https://<utilisateur>.github.io/Nikobus-HA/`
 
 ### Fonctions
 
