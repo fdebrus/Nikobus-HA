@@ -58,7 +58,11 @@ from .const import (
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
-from .nkbmanual import async_apply_manual_config
+from .nkbmanual import (
+    async_apply_friendly_name_overlay,
+    async_apply_manual_config,
+    module_store_has_pclink_inventory,
+)
 from .nkbstorage import (
     NikobusButtonStorage,
     NikobusCFStorage,
@@ -264,14 +268,36 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             # The files are fully declarative — what's in them gets
             # written to the live stores on every coordinator setup.
             # ``linked_modules`` is NOT imported from the button file;
-            # step 2 (per-module register scan) populates that. Applied
-            # unconditionally if the files exist — presence of the
-            # files is the signal.
-            changed = await async_apply_manual_config(
-                self.hass,
-                self.module_storage,
-                self.dict_button_data,
-            )
+            # step 2 (per-module register scan) populates that.
+            #
+            # 2.12.2: gate on provenance so a PC-Link install with
+            # leftover legacy config files on disk does NOT get its
+            # bus-discovered inventory wiped and rebuilt from those stale
+            # files on every restart. The wholesale declarative
+            # replacement is reserved for installs that have never
+            # completed a PC-Link inventory; PC-Link installs take the
+            # non-destructive friendly-name overlay instead (same as the
+            # discovery flow's step 3). See ``start_pc_link_inventory``.
+            if module_store_has_pclink_inventory(self.module_storage):
+                _LOGGER.debug(
+                    "Boot: PC-Link inventory present in module store; "
+                    "applying manual files as friendly-name overlay only "
+                    "(no wholesale replacement)."
+                )
+                changed = await async_apply_friendly_name_overlay(
+                    self.hass,
+                    self.module_storage,
+                    self.dict_button_data,
+                )
+            else:
+                # No-PC-Link install (or first boot): the files ARE the
+                # inventory source. Applied if they exist — presence of
+                # the files is the signal.
+                changed = await async_apply_manual_config(
+                    self.hass,
+                    self.module_storage,
+                    self.dict_button_data,
+                )
             if changed:
                 await self.module_storage.async_save()
                 await self.button_storage.async_save()
