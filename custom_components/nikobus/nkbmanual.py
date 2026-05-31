@@ -76,43 +76,6 @@ def _tag_manual_source(entry: dict[str, Any]) -> None:
     entry["discovered_info"] = discovered_info
 
 
-def module_store_has_pclink_inventory(
-    module_store: NikobusModuleStorage,
-) -> bool:
-    """True if the live module store holds PC-Link-discovered inventory.
-
-    A PC-Link inventory writes ``discovered_info`` carrying bus-sourced
-    fields (``device_type`` / ``channels_count``) and crucially does NOT
-    tag entries with ``source == "manual_config"`` (that tag is only
-    applied by ``_apply_module_config`` on this manual-import path).
-
-    We use this to keep the boot-time manual import from clobbering a
-    real PC-Link inventory: an install that has ever completed a PC-Link
-    discovery has at least one module whose ``discovered_info.source`` is
-    something other than ``"manual_config"``. Such installs must take the
-    non-destructive friendly-name overlay path instead of the wholesale
-    declarative replacement, which is reserved for no-PC-Link installs.
-
-    Returns ``False`` for an empty store (nothing discovered yet) and for
-    a store whose every entry is manual-config-sourced.
-    """
-    modules = module_store.data.get("nikobus_module")
-    if not isinstance(modules, dict) or not modules:
-        return False
-    for entry in modules.values():
-        if not isinstance(entry, dict):
-            continue
-        discovered_info = entry.get("discovered_info")
-        source = (
-            discovered_info.get("source")
-            if isinstance(discovered_info, dict)
-            else None
-        )
-        if source != "manual_config":
-            return True
-    return False
-
-
 # ---------------------------------------------------------------------------
 # v1 (legacy nested) → flat-by-address conversion
 # ---------------------------------------------------------------------------
@@ -517,6 +480,19 @@ async def _apply_button_config(
         if not bus_address:
             continue
         description = str(entry.get("description") or "").strip()
+        # Drop auto-generated ``DISCOVERED -`` placeholder stubs that
+        # carry no ``linked_button`` block. These are runtime-auto-added
+        # noise (e.g. ``#NFFFFFF`` / ``#N000000`` / a stray bus address)
+        # with no physical-button identity; importing them as single-key
+        # fallback buttons just clutters the store. A ``DISCOVERED -``
+        # entry that DOES carry a ``linked_button`` is a real face (the
+        # prefix is only an auto-description) and is kept — dropping it
+        # would lose a key of a real button.
+        if (
+            description.upper().startswith("DISCOVERED")
+            and not entry.get("linked_button")
+        ):
+            continue
         # ``linked_modules`` is NOT imported from the manual file
         # (2.11.4+). The file is a step-1 inventory source — it tells
         # us which physical buttons exist and which keys they have.

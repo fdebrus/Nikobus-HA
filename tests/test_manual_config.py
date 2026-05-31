@@ -436,12 +436,57 @@ class TestApplyManualConfig(unittest.TestCase):
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
         buttons = button_data["nikobus_button"]
+        # A genuine unlinked entry (IR scene, real description) still
+        # falls back to a single-key button.
         self.assertIn("9E4E2C", buttons)
-        self.assertIn("FFFFFF", buttons)
         ir = buttons["9E4E2C"]
         self.assertEqual(ir["channels"], 1)
         self.assertEqual(ir["operation_points"]["1A"]["bus_address"], "9E4E2C")
         self.assertEqual(ir["description"], "Living scene TV lights")
+        # The DISCOVERED-described placeholder with no linked_button is
+        # dropped, not materialized as a single-key button.
+        self.assertNotIn("FFFFFF", buttons)
+
+    def test_discovered_placeholder_dropped_but_linked_face_kept(self):
+        """``DISCOVERED -`` is only an auto-description, not a junk
+        marker. Drop such entries when they have NO linked_button (true
+        placeholders / noise), but KEEP them when they carry a
+        linked_button — those are real button faces whose description
+        merely happens to be auto-generated. Mirrors the user's real
+        file where DISCOVERED faces 2C/2D belong to 8-key 1DF256."""
+        self._write("nikobus_button_config.json", {
+            "nikobus_button": [
+                # Junk placeholders — dropped.
+                {"address": "FFFFFF",
+                 "description": "DISCOVERED - Nikobus Button #NFFFFFF"},
+                {"address": "000000",
+                 "description": "DISCOVERED - Nikobus Button #N000000"},
+                # Real 8-key faces with an auto DISCOVERED description — kept.
+                {"address": "1A93EE",
+                 "description": "DISCOVERED - Nikobus Button #N1A93EE",
+                 "linked_button": [{"type": "Button with 8 Operation Points",
+                                    "model": "05-349", "address": "1DF256",
+                                    "channels": 8, "key": "2C"}]},
+                {"address": "5A93EE",
+                 "description": "DISCOVERED - Nikobus Button #N5A93EE",
+                 "linked_button": [{"type": "Button with 8 Operation Points",
+                                    "model": "05-349", "address": "1DF256",
+                                    "channels": 8, "key": "2D"}]},
+            ]
+        })
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
+
+        buttons = button_data["nikobus_button"]
+        # Only the real 8-key button survives; both placeholders dropped.
+        self.assertEqual(list(buttons.keys()), ["1DF256"])
+        self.assertNotIn("FFFFFF", buttons)
+        self.assertNotIn("000000", buttons)
+        self.assertEqual(buttons["1DF256"]["channels"], 8)
+        self.assertEqual(
+            set(buttons["1DF256"]["operation_points"].keys()), {"2C", "2D"})
 
     # ------------------------------------------------------------------
     # Buttons: dict form (v1-post-transform shape) also accepted.
@@ -833,9 +878,9 @@ class TestRealWorldSample(unittest.TestCase):
         _run(nkbmanual.async_apply_manual_config(self.hass, store, button_data))
 
         buttons = button_data["nikobus_button"]
-        # 3 physical buttons + 2 standalone = 5 v2 records out of 10
-        # v1 entries.
-        self.assertEqual(len(buttons), 5)
+        # 3 physical buttons + 1 standalone IR scene = 4 v2 records.
+        # The DISCOVERED placeholder (no linked_button) is dropped.
+        self.assertEqual(len(buttons), 4)
         self.assertEqual(buttons["0D1C80"]["channels"], 4)
         self.assertEqual(set(buttons["0D1C80"]["operation_points"].keys()),
                          {"1A", "1B", "1C", "1D"})
@@ -848,7 +893,8 @@ class TestRealWorldSample(unittest.TestCase):
         # Standalone fallback.
         self.assertEqual(buttons["9E4E2C"]["channels"], 1)
         self.assertEqual(buttons["9E4E2C"]["description"], "IR_TV_Lights")
-        self.assertIn("FFFFFF", buttons)
+        # DISCOVERED-described placeholder without linked_button is dropped.
+        self.assertNotIn("FFFFFF", buttons)
 
     # ------------------------------------------------------------------
     # 2.11.4: explicit pin for the "linked_modules empty on import" rule.
@@ -1403,84 +1449,6 @@ class TestConsolidationEndToEnd(unittest.TestCase):
         self.assertEqual(
             set(entry["operation_points"].keys()), {"1A", "1B", "1C", "1D"}
         )
-
-
-class TestModuleStoreHasPclinkInventory(unittest.TestCase):
-    """Guard signal that keeps the boot-time manual import from clobbering
-    a real PC-Link inventory (the ``…53252`` 8-key-button regression).
-
-    A PC-Link install with leftover legacy config files used to have its
-    bus-discovered store wiped and rebuilt from those stale files on every
-    restart — re-tagging everything ``manual_config`` / ``Manual button``
-    and mis-splitting odd-base-nibble 8-key buttons into two 4-key ones.
-    The boot path now overlays names instead of replacing when this
-    returns True.
-    """
-
-    def test_empty_store_is_not_pclink(self):
-        store = _InMemoryModuleStore({"nikobus_module": {}})
-        self.assertFalse(nkbmanual.module_store_has_pclink_inventory(store))
-
-    def test_missing_key_is_not_pclink(self):
-        store = _InMemoryModuleStore({})
-        self.assertFalse(nkbmanual.module_store_has_pclink_inventory(store))
-
-    def test_all_manual_config_is_not_pclink(self):
-        # Mirrors the user's nikobus.modules file: every entry tagged
-        # source=manual_config. Must NOT look like a PC-Link install,
-        # else a genuine no-PC-Link user would never get their files
-        # applied.
-        store = _InMemoryModuleStore({
-            "nikobus_module": {
-                "3851": {
-                    "module_type": "switch_module",
-                    "model": "05-000-02",
-                    "discovered_info": {"source": "manual_config"},
-                },
-                "5372": {
-                    "module_type": "roller_module",
-                    "model": "05-001-02",
-                    "discovered_info": {"source": "manual_config"},
-                },
-            }
-        })
-        self.assertFalse(nkbmanual.module_store_has_pclink_inventory(store))
-
-    def test_pclink_discovered_entry_is_pclink(self):
-        # PC-Link inventory writes discovered_info with bus-sourced
-        # fields and NO manual_config source tag.
-        store = _InMemoryModuleStore({
-            "nikobus_module": {
-                "3851": {
-                    "module_type": "switch_module",
-                    "model": "05-000-02",
-                    "discovered_info": {
-                        "device_type": "01",
-                        "channels_count": 12,
-                    },
-                },
-            }
-        })
-        self.assertTrue(nkbmanual.module_store_has_pclink_inventory(store))
-
-    def test_mixed_store_with_one_discovered_is_pclink(self):
-        # If even one entry is bus-discovered, protect the store.
-        store = _InMemoryModuleStore({
-            "nikobus_module": {
-                "3851": {"discovered_info": {"source": "manual_config"}},
-                "3861": {"discovered_info": {"device_type": "01"}},
-            }
-        })
-        self.assertTrue(nkbmanual.module_store_has_pclink_inventory(store))
-
-    def test_entry_without_discovered_info_is_pclink(self):
-        # An entry that carries no provenance at all is not a
-        # manual_config entry, so it counts as pre-existing discovered
-        # inventory worth protecting.
-        store = _InMemoryModuleStore({
-            "nikobus_module": {"3851": {"module_type": "switch_module"}}
-        })
-        self.assertTrue(nkbmanual.module_store_has_pclink_inventory(store))
 
 
 if __name__ == "__main__":
