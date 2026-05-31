@@ -480,6 +480,19 @@ async def _apply_button_config(
         if not bus_address:
             continue
         description = str(entry.get("description") or "").strip()
+        # Drop auto-generated ``DISCOVERED -`` placeholder stubs that
+        # carry no ``linked_button`` block. These are runtime-auto-added
+        # noise (e.g. ``#NFFFFFF`` / ``#N000000`` / a stray bus address)
+        # with no physical-button identity; importing them as single-key
+        # fallback buttons just clutters the store. A ``DISCOVERED -``
+        # entry that DOES carry a ``linked_button`` is a real face (the
+        # prefix is only an auto-description) and is kept — dropping it
+        # would lose a key of a real button.
+        if (
+            description.upper().startswith("DISCOVERED")
+            and not entry.get("linked_button")
+        ):
+            continue
         # ``linked_modules`` is NOT imported from the manual file
         # (2.11.4+). The file is a step-1 inventory source — it tells
         # us which physical buttons exist and which keys they have.
