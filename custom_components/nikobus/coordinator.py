@@ -58,11 +58,7 @@ from .const import (
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
-from .nkbmanual import (
-    async_apply_friendly_name_overlay,
-    async_apply_manual_config,
-    module_store_has_pclink_inventory,
-)
+from .nkbmanual import async_apply_friendly_name_overlay
 from .nkbstorage import (
     NikobusButtonStorage,
     NikobusCFStorage,
@@ -250,54 +246,42 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             raise
 
         try:
-            # Module data lives in .storage/nikobus.modules. The legacy
-            # one-shot ``nikobus_module_config.json`` migration (which
-            # used to rename the file to ``.migrated``) is no longer
-            # invoked as of 2.11.4 — manual config files are now applied
-            # declaratively on every startup via
-            # ``async_apply_manual_config`` (below), and the file is
-            # left in place under its canonical name.
+            # Module data lives in .storage/nikobus.modules. Boot loads
+            # the persisted store as-is; it does not import inventory
+            # from the legacy ``nikobus_module_config.json`` /
+            # ``nikobus_button_config.json`` files. Those are consulted
+            # only by the explicit "Discover modules" action as the
+            # PC-Link fallback (see ``start_pc_link_inventory``).
             await self.module_storage.async_load()
             self._rebuild_dict_module_data()
 
             self.dict_button_data = await self.button_storage.async_load()
             await self.cf_storage.async_load()
 
-            # 2.11.4: manual config files are the step-1 inventory source
-            # for installs without a PC-Link (Feedback-module-only users).
-            # The files are fully declarative — what's in them gets
-            # written to the live stores on every coordinator setup.
-            # ``linked_modules`` is NOT imported from the button file;
-            # step 2 (per-module register scan) populates that.
+            # Boot NEVER imports inventory from the legacy manual-config
+            # files. Building inventory from files is reserved for the
+            # explicit "Discover modules" action, which tries PC-Link
+            # first and only falls back to the files on probe failure
+            # (see ``start_pc_link_inventory`` →
+            # ``_apply_manual_inventory_as_fallback``).
             #
-            # 2.12.2: gate on provenance so a PC-Link install with
-            # leftover legacy config files on disk does NOT get its
-            # bus-discovered inventory wiped and rebuilt from those stale
-            # files on every restart. The wholesale declarative
-            # replacement is reserved for installs that have never
-            # completed a PC-Link inventory; PC-Link installs take the
-            # non-destructive friendly-name overlay instead (same as the
-            # discovery flow's step 3). See ``start_pc_link_inventory``.
-            if module_store_has_pclink_inventory(self.module_storage):
-                _LOGGER.debug(
-                    "Boot: PC-Link inventory present in module store; "
-                    "applying manual files as friendly-name overlay only "
-                    "(no wholesale replacement)."
-                )
-                changed = await async_apply_friendly_name_overlay(
-                    self.hass,
-                    self.module_storage,
-                    self.dict_button_data,
-                )
-            else:
-                # No-PC-Link install (or first boot): the files ARE the
-                # inventory source. Applied if they exist — presence of
-                # the files is the signal.
-                changed = await async_apply_manual_config(
-                    self.hass,
-                    self.module_storage,
-                    self.dict_button_data,
-                )
+            # Importing at boot was wrong on two counts: it silently
+            # clobbered a PC-Link install's bus-discovered inventory from
+            # stale leftover files (2.12.2 guarded that), and — worse —
+            # it seeded a *fresh* PC-Link install from files before the
+            # user ever ran discovery (the provenance guard couldn't tell
+            # "fresh PC-Link install" from "no-PC-Link install"). The
+            # fix is to not import at boot at all.
+            #
+            # The names-only friendly-name overlay still runs: it never
+            # adds or removes modules/buttons, it only enriches entries
+            # that already exist in the stores, so file-authored names
+            # stay in sync each boot without re-running discovery.
+            changed = await async_apply_friendly_name_overlay(
+                self.hass,
+                self.module_storage,
+                self.dict_button_data,
+            )
             if changed:
                 await self.module_storage.async_save()
                 await self.button_storage.async_save()
