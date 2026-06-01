@@ -10,111 +10,252 @@
   <a href="https://github.com/fdebrus/Nikobus-HA/stargazers"><img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat&label=Stars" alt="GitHub stars"></a>
 </p>
 
-This custom integration connects Home Assistant to your Nikobus installation so you can control switches, dimmers, shutters, and respond to button presses directly from Home Assistant.
+Control your **Nikobus** installation from Home Assistant — switches, dimmers, and shutters as native entities, plus button presses as automation triggers. Modules and buttons are discovered automatically from the bus; there are no address lists to maintain by hand.
+
+---
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Prerequisites](#prerequisites)
+- [Supported hardware](#supported-hardware)
+- [Installation & setup](#installation--setup)
+- [Discovery workflow](#discovery-workflow)
+- [Buttons, inputs & the entity model](#buttons-inputs--the-entity-model)
+- [Events & automations](#events--automations)
+- [Scenes](#scenes)
+- [Connectivity](#connectivity)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
+- [How the integration works](#how-the-integration-works)
+- [Issues, license & trademark](#issues-discussion--legal)
+
+---
+
+## Quick start
+
+1. **Install** via HACS (custom repository) and restart Home Assistant.
+2. **Add the integration**: *Settings → Devices & Services → Add Integration → Nikobus*. Enter your PC-Link connection — a serial path (`/dev/ttyUSB0`) or TCP bridge (`192.168.2.50:9999`).
+3. Open the **Nikobus Bridge** device and press **Discover modules & buttons** — this enumerates the bus via the PC-Link.
+4. Press **Scan all module links** — this maps which button drives which output, and extracts scenes.
+5. Done. Your modules appear as lights / switches / covers; buttons appear as devices you can trigger automations from.
+
+> A large install takes a few minutes to scan. Progress is shown on the Bridge device's **Discovery status** / **Discovery progress** sensors.
+
+---
 
 ## Prerequisites
 
-Before installing:
+- **A PC-Link (05-200) on the bus.** Home Assistant connects *through* the PC-Link — it is the required interface and the source of the device inventory. (See [Troubleshooting](#troubleshooting) if your install also has a PC-Logic.)
+- **One client at a time.** Only one program may talk to the bus. Stop the Nikobus PC software (and any other bridge) before starting Home Assistant.
+- **A connection path**: a USB/serial adapter (`/dev/ttyUSB0`) or a TCP-to-serial bridge (`host:port`).
+- **(Optional) a Feedback Module (05-207)** wired to the PC-Link. If present, enable the toggle during setup and module states are pushed in real time; without one, HA polls on a configurable interval.
 
-- Home Assistant connects to a **PC-Link (05-200)** — that's the required bus interface. Module addresses are discovered automatically once the integration is connected, so there's no need to collect them up front.
-- Ensure only **one** client is connected to the Nikobus bus at any time (do not run the Nikobus PC software in parallel).
-- Decide how HA will reach the PC-Link: directly over a USB/serial adapter (e.g. `/dev/ttyUSB0`) or via a TCP bridge (e.g. `192.168.2.50:9999`).
-- If you have a **Feedback Module (05-207)** wired to the PC-Link, note it: you'll enable a toggle during setup so state changes are pushed in real time instead of polled. Without one, HA polls the bus on a configurable interval.
+---
 
-## Supported Modules and Features
+## Supported hardware
 
-- **Switch Module** `05-000-02`, **Compact Switch Module** `05-002-02`
-  - On/off switching.
-- **Dimmer Module** `05-007-02`, **Compact Dim Controller** `05-008-02`
-  - On/off and brightness setting.
-- **Shutter Module** `05-001-02`
-  - Open/close and position (simulated using operation time).
-- **Input-class modules** (PC-Logic `05-201`, Modular Interface `05-206`)
-  - The module's 6 logical inputs each surface as their own `LM-INPUT N` child device under the parent module — same shape as a wall button (button + idle/pressed binary-sensor per key). See [PC-Logic and Modular Interface inputs](#pc-logic-and-modular-interface-inputs) below.
-- **Audio Distribution Module** `05-205`
-  - Discovered and registered as a device for visibility; input/output mapping is not yet decoded.
-- **PC-Link Module** `05-200`
-  - The bus interface Home Assistant connects to (serial or via a TCP bridge). Required — all communication goes through the PC-Link.
-- **Feedback Module** `05-207`
-  - Optional companion to the PC-Link. When present and wired to the PC-Link, it pushes module state changes to Home Assistant in real time, so no polling is needed. Without one, HA polls the bus on a configurable interval (60–3600 s).
-- **Nikobus Buttons** (physical switches, IR receivers, motion detectors, RF transmitters)
-  - Populated automatically via the **Discover modules & buttons** and **Scan all module links** buttons on the Nikobus Bridge device.
-  - Standard wall buttons, IR receivers, motion detectors (`05-7X5`), and small RF transmitters (`05-311`, `05-312` 4-channel, `05-314`, `05-345`) all materialise as one device per physical button, with one button-entity + binary-sensor pair per key.
-  - The **Niko 05-312 Easywave 52-key hand-held** (the multi-page scene remote) is also supported — it materialises as one device with all 52 sub-codes as op-points, named per the Niko convention (`1A`/`1B`/`1C` for base, `1.1A`..`1.5B` for scenes, similarly for Ch2/3/4).
-  - Multi-page RF transmitters that emit dozens of distinct bus codes from one physical handheld but aren't enrolled in PC-Link inventory get clustered automatically: any group of 8+ unmatched bus codes sharing the same 4-hex suffix becomes a single virtual `Remote Transmitter (<suffix>)` device with the codes as child entities. Triggered at the end of a **Scan all module links** run.
-  - Button press events can be used as triggers in Home Assistant automations.
-  - Buttons with LEDs require LED on/off addresses in each module output configuration.
-  - Virtual / IR-scene button addresses that aren't on the bus can be fired from scripts via the `nikobus.send_button_press` service.
-- **Home Assistant Scenes**
-  - Two sources contribute scene entities — **CF broadcasts** auto-extracted from the bus during discovery, plus an optional **user-authored** `nikobus_scene_config.json` for HA-side per-channel fan-out. See the [Scenes](#scenes) section.
+### Output modules
 
-## PC-Logic and Modular Interface inputs
+| Module | Ref | In Home Assistant |
+|---|---|---|
+| Switch Module | `05-000-02` | `switch` (or `light`) per channel |
+| Compact Switch Module | `05-002-02` | `switch` / `light` |
+| Dimmer Module | `05-007-02` | `light` with brightness |
+| Compact Dim Controller | `05-008-02` | `light` |
+| Roller Shutter Module | `05-001-02` | `cover` with simulated position |
 
-The 05-201 (PC-Logic) and 05-206 (Modular Interface) each expose six inputs that emit bus events when triggered — PC-Logic via its programmable logic engine, the Modular Interface via wired dry contacts. The integration renders each input as a separate child device named `LM-INPUT 1` through `LM-INPUT 6`, parented under the owning module so they group naturally in the device list.
+### Interface / system modules
 
-Each input has two op-point keys (`Key A` and `Key B`) — the firmware emits one or the other depending on which logical state the input transitioned to. Each key has the standard button-entity + idle/pressed binary-sensor pair, so automations can react to either or both:
+| Module | Ref | Notes |
+|---|---|---|
+| PC-Link | `05-200` | Required bus interface; all traffic goes through it |
+| PC-Logic | `05-201` | Logic controller; its 6 inputs surface as `LM-INPUT 1–6` |
+| Modular Interface, 6 inputs | `05-206` | Its 6 inputs surface as `MI-INPUT 1–6` |
+| Feedback Module | `05-207` | Optional; pushes real-time state when wired to the PC-Link |
+| Audio Distribution Module | `05-205` | Registered for visibility; I/O mapping not yet decoded |
+
+### Buttons & transmitters
+
+One HA **device** is created per physical button, with one button-entity + binary-sensor per key (see [the entity model](#buttons-inputs--the-entity-model)).
+
+- **Bus push buttons** — 2-, 4-, and 8-control-point variants across the supported series (`4*-072` / `4*-074` / `4*-078`, the `05-06x` graphite/feedback-LED variants, and the `4*-082` / `4*-084` / `4*-088` series).
+- **Push-button & switch interfaces** (`05-056`, `05-057`, `05-058`).
+- **IR receivers** — each learned IR code becomes its own op-point.
+- **Motion detectors** with Nikobus interface (`05-7*5`).
+- **RF transmitters** — `05-302` / `05-304` / `05-311` / `05-314`, and the **05-312 Easywave 52-key** hand-held (all 52 sub-codes as op-points).
+- **Virtual / clustered remotes** — multi-page handhelds that emit many bus codes but aren't in PC-Link inventory are clustered into a single `Remote Transmitter (<suffix>)` device at the end of a link scan.
+
+---
+
+## Installation & setup
+
+1. Install through HACS using the button below (or clone into `config/custom_components/nikobus`):
+
+   [![Add to HACS](https://img.shields.io/badge/HACS-Add%20Custom%20Repository-blue.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fdebrus&repository=Nikobus-HA&category=integration)
+
+2. Restart Home Assistant.
+3. *Settings → Devices & Services → Add Integration → Nikobus*.
+4. Enter the serial path or `IP:port`. The connection is tested immediately.
+5. On **Hardware Configuration**, enable a toggle if it applies:
+   - **Feedback Module (05-207) installed** — real-time pushed state, no polling.
+   - **PC-Link older than Gen 3** — compatibility tweaks for 1st/2nd-gen PC-Link hardware.
+6. If neither toggle is set, choose a **polling interval** (60–3600 s, default 120).
+7. Finish, then run [discovery](#discovery-workflow).
+
+Module and button data live in Home Assistant's own storage (`.storage/nikobus.modules`, `.storage/nikobus.buttons`, `.storage/nikobus.cfs`). You don't hand-edit these — they're populated by discovery. (Scenes are the one optional JSON file; see [Scenes](#scenes).)
+
+---
+
+## Discovery workflow
+
+Everything is driven from the **Nikobus Bridge** device page.
+
+### 1. Discover modules & buttons
+
+Press **Discover modules & buttons**. The integration probes the PC-Link, walks its inventory, and creates a device for every module and every physical button on the bus.
+
+Two diagnostic sensors track progress:
+- **Discovery status** — live per-register message (with a coarse `phase` attribute for automations).
+- **Discovery progress** — 0–100 %.
+
+### 2. Scan all module links
+
+Press **Scan all module links**. This reads each output module's link table and records which button drives which channel (the `linked_modules` metadata). It also extracts **Central Function (CF)** scenes found in those tables. The button is disabled until an inventory has run.
+
+### 3. Customize a module *(optional)*
+
+*Configure → Customize a module* lets you, per channel:
+- **Description** → the entity name.
+- **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`none`; rollers: `cover`/`switch`/`light`/`none`).
+- **LED on / off addresses** → feedback-LED bus addresses (blank if unused).
+- **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator.
+
+Changes persist in `.storage/nikobus.modules` and survive re-discovery.
+
+### Installs without a PC-Link
+
+If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Discover modules* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory. If you keep them, their descriptions are also overlaid onto discovered devices as friendly names.
+
+---
+
+## Buttons, inputs & the entity model
+
+### The model: device → op-points → (button + sensor)
+
+Every physical button is one **device**. Each *operation point* on it — a key on a keypad, an IR code on a receiver, an A/B state on an input — gets **two entities**:
+
+| Entity | Direction | Use |
+|---|---|---|
+| **Button** | HA → bus | Press it to emit the same bus frame a physical press would (simulate the press). |
+| **Binary sensor** *(disabled by default)* | bus → HA | Turns `on` briefly when the real button is pressed; use it in state-based automations. |
+
+> Binary sensors are **disabled by default** — enable them on the device page if you want to monitor presses.
+
+### PC-Logic & Modular Interface inputs
+
+The PC-Logic (`05-201`) and Modular Interface (`05-206`) each expose **6 inputs**. Each input is rendered as its own child device under the owning module:
+
+- PC-Logic inputs → **`LM-INPUT 1`…`LM-INPUT 6`** (LM = Logic Module).
+- Modular Interface inputs → **`MI-INPUT 1`…`MI-INPUT 6`** (MI = Modular Interface).
+
+Each input has two keys — **A** and **B** — because the firmware emits one telegram when the contact closes (A) and another when it releases (B). Each key has the usual button + binary-sensor pair:
+
+- Use the **A / B buttons** to simulate the input going on/off *from* HA.
+- Use the **A / B sensors** to monitor the input's real state on the bus.
+
+Input addresses are computed by firmware from the module's own address (not stored in inventory) and synthesised automatically — no configuration needed.
 
 ```yaml
 trigger:
   - platform: state
     entity_id: binary_sensor.lm_input_1_key_a
-    to: "pressed"
+    to: "on"
 ```
 
-The input addresses are computed by firmware from the module's own bus address (not stored in PC-Link inventory), and synthesised by the library at discovery time. No user configuration is required — they appear after **Discover modules & buttons** completes.
+### What each button exposes
 
-## Events Fired by the Integration
-
-The integration emits structured Home Assistant bus events for every button press lifecycle:
-
-- Base events: `nikobus_button_pressed` and `nikobus_button_released`.
-- Classification: `nikobus_short_button_pressed` (press duration < 1s) and `nikobus_long_button_pressed` (press duration ≥ 1s). The 1-second threshold is defined as `SHORT_PRESS` in `custom_components/nikobus/const.py`.
-- Release-duration buckets (rounded down): `nikobus_button_pressed_0` (< 1s), `nikobus_button_pressed_1` (1–<2s), `nikobus_button_pressed_2` (2–<3s), and `nikobus_button_pressed_3` (≥ 3s).
-- Hold milestones (emitted while still pressed): `nikobus_button_timer_1`, `_2`, and `_3` at 1s, 2s, and 3s respectively. Anchored to the wire's 40 ms-cadence frame count rather than wall-clock, so a TCP-to-serial bridge that buffers frames during a brief stall and flushes them in a burst still classifies the press correctly — the timer and bucket events fire based on how many frames actually arrived for this press, not when they happened to reach our process.
-- Post-refresh notification: `nikobus_button_operation` when the integration refreshes impacted modules after the press, including metadata such as the impacted module address/group and configured operation time.
-
-All events share the same payload keys so automations can rely on a consistent schema:
+After a link scan, button entities carry their wiring as attributes:
 
 ```yaml
-address: "004E2C"        # Button address (uppercase hex without 0x)
-module_address: "9105"   # Module address if available, otherwise null
-channel: 1                # Channel number if known
-ts: "2024-05-01T12:00:00Z"  # UTC timestamp at emission time
-press_id: "004E2C-..."    # Unique identifier for this press cycle
-state: "pressed"|"released"|"timer"
-duration_s: 1.2           # Seconds between press and release (null for initial press)
-bucket: 1                 # 0/1/2/3 matching duration buckets, otherwise null
-threshold_s: 2            # Timer milestone that fired (1/2/3), otherwise null
+linked_outputs:
+  - module_address: "0E6C"
+    channel: 1
+    mode: "M01 (Dim on/off (2 buttons))"
+wall_button_address: "0D1C80"
+wall_button_model: "05-348"
+wall_button_type: "IR Button with 4 Operation Points"
+wall_button_key: "1C"
+```
+
+Conversely, every light / switch / cover exposes a **`controlled_by`** attribute listing the buttons that drive it — so you can answer "which wall button turns on this light?" from the entity page.
+
+### Renaming
+
+Discovered devices get generic names like `Bus push button, 4 control buttons (1843B4)`. Rename them in the HA UI (*device → ⋮ → Rename*); HA stores this as `name_by_user` and **preserves it across reloads, restarts, and re-discovery** (names are keyed by the entity's stable `unique_id`).
+
+### IR codes across multiple receivers
+
+When the same IR code is learned by several receivers, each gets its own op-point with a distinct bus address, and the name is qualified with the receiver (`IR 30A on 0D1C80`) so duplicates stay distinguishable.
+
+### Virtual / off-bus buttons
+
+Addresses not present on the physical bus (IR scene triggers, hand-added codes) aren't created as entities. Fire them from scripts:
+
+```yaml
+service: nikobus.send_button_press
+data:
+  address: "84DFFC"
+```
+
+---
+
+## Events & automations
+
+The integration fires structured HA bus events for the full press lifecycle:
+
+- **Base**: `nikobus_button_pressed`, `nikobus_button_released`.
+- **Classified**: `nikobus_short_button_pressed` (< 1 s), `nikobus_long_button_pressed` (≥ 1 s). The threshold is `SHORT_PRESS` in `const.py`.
+- **Release buckets**: `nikobus_button_pressed_0` (< 1 s) … `_3` (≥ 3 s).
+- **Hold milestones** (while still held): `nikobus_button_timer_1` / `_2` / `_3` at 1/2/3 s. These count wire frames (40 ms cadence), not wall-clock, so a bridge that buffers and bursts frames still classifies correctly.
+- **Post-refresh**: `nikobus_button_operation` after impacted modules are refreshed.
+
+All events share one payload schema:
+
+```yaml
+address: "004E2C"        # button address (uppercase hex, no 0x)
+module_address: "9105"   # impacted module, or null
+channel: 1
+ts: "2024-05-01T12:00:00Z"
+press_id: "004E2C-..."
+state: "pressed" | "released" | "timer"
+duration_s: 1.2          # null on initial press
+bucket: 1                # 0/1/2/3, else null
+threshold_s: 2           # timer milestone, else null
 source: "nikobus"
 ```
 
-You can trigger automations with or without specifying the button address. If you include the address, the automation reacts only to that button (addresses come from the button discovery run).
+> **Always quote button addresses in YAML.** A value like `25E952` parses as scientific notation and becomes `null`. Use a leading space inside the quotes (`address: " 25E952"`). Addresses with any letter other than `E` are unaffected.
 
-### Example Automations
+### Examples
 
-#### Short press: toggle a light
+**Toggle a light on a press**
 
 ```yaml
-alias: "React to Nikobus Button Push"
-description: "Toggle a light when a specific Nikobus button is pressed."
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
     event_data:
-      address: "004E2C"  # Address taken from the button entity attributes after discovery
+      address: "004E2C"
 action:
   - service: homeassistant.toggle
     target:
       entity_id: light.example_light
 ```
 
-#### Long press: dim a light progressively
-
-`nikobus_button_timer_2` fires once the button has been held for ≥ 2 s, allowing you to differentiate a sustained press from a tap. Combine it with `nikobus_button_pressed_3` (released after ≥ 3 s) to build a hold-to-dim behaviour.
+**Hold-to-dim (fires after 2 s held)**
 
 ```yaml
-alias: "Hold Nikobus button to dim"
-description: "While the button is held past 2 s, dim the target light to 30 %."
 trigger:
   - platform: event
     event_type: nikobus_button_timer_2
@@ -129,16 +270,14 @@ action:
       transition: 1
 ```
 
-#### Drive a scene from a physical Nikobus button
+**Drive a scene from a physical button (after sunset)**
 
 ```yaml
-alias: "All shutters down at sunset"
-description: "Close every roller via a Nikobus scene whenever button 25E952 is pressed after dusk."
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
     event_data:
-      address: " 25E952"   # leading space prevents YAML scientific-notation parsing
+      address: " 25E952"   # leading space avoids YAML scientific-notation
 condition:
   - condition: sun
     after: sunset
@@ -148,12 +287,9 @@ action:
       entity_id: scene.scene_close_all_shutters
 ```
 
-#### Move a cover to an exact position
-
-`set_cover_position` works against the integration's virtual travel calculator, so the cover stops automatically when the requested position is reached.
+**Move a cover to an exact position** (the virtual travel calculator stops it at the target):
 
 ```yaml
-alias: "Living room cover at 60 % when 'TV' button pressed"
 trigger:
   - platform: event
     event_type: nikobus_button_pressed
@@ -167,58 +303,36 @@ action:
       position: 60
 ```
 
-Place any of these YAML blocks in a Home Assistant automation (UI or YAML) as you would for any other event trigger.
+---
 
 ## Scenes
 
-The integration surfaces two distinct kinds of scenes. Most installs only need to know about the first one.
+Two independent sources produce scene entities. Most installs only need the first.
 
-### CF broadcasts (auto-extracted from the bus)
+### CF broadcasts (auto-extracted)
 
-A Nikobus *Central Function* (CF) is a multi-output activation that already exists on the bus. Every "scene" key on a wall keypad, every scene memory programmed in the Nikobus software, is implemented as a CF: each one has a unique broadcast address, pressing the scene key puts a single bus frame on the wire, and every output module linked to that address fires its assigned action simultaneously.
+A Nikobus **Central Function (CF)** is a multi-output activation that already lives on the bus — every "scene" key on a keypad is a CF. **Scan all module links** reads them from the module link tables, classifies them (`switch_pair` / `roller_pair`), and persists them to `.storage/nikobus.cfs`. They appear as scene entities automatically, e.g.:
 
-**Scan all module links** (see [Discovery & Configuration](#discovery--configuration)) reads each output module's link table, identifies the CF references, classifies them by pattern (`switch_pair` / `roller_pair`), and persists them to `.storage/nikobus.cfs`. They surface as HA scene entities automatically. Typical names look like:
+- `Nikobus switch CF 384102 (22 ch)`
+- `Nikobus roller CF 3880CB (6 ch)`
 
-- `Nikobus switch CF 384102 (22 ch)` — 22 switch channels triggered by this CF.
-- `Nikobus roller CF 3880CB (6 ch)` — 6 roller channels grouped as an open / close pair.
-
-The CF metadata is exposed as scene attributes so you can identify what each one controls without reaching into storage:
+Metadata is exposed as attributes:
 
 ```yaml
 bus_address: "3880CB"
 pattern: "roller_pair"
 member_count: 6
 outputs:
-  - module_address: "8B9C"
-    channel: 5
-    mode: "M02 (Open)"
-  # ...
+  - { module_address: "8B9C", channel: 5, mode: "M02 (Open)" }
 ```
 
-**Triggering an extracted CF scene from HA is indistinguishable from triggering it physically.** The integration emits the same bus frame format (`#N<address>\r#E1`) that PC-Logic emits when a wall scene key is pressed. Output modules can't tell the difference and fire atomically on the bus — no per-channel round-trip from HA, no risk of a partial activation if HA's connection blips. State updates flow back through the normal feedback path. Roller travel times follow each module's stored Nikobus configuration (the M01 / M02 / M03 timings) rather than HA's per-cover `operation_time_*`, because the modules handle run-to-completion internally.
+**Activating a CF from HA is indistinguishable from a physical press** — the integration emits the same `#N<address>\r#E1` frame, so modules fire atomically on the bus (no per-channel fan-out, no partial-activation risk). Roller travel uses each module's stored M01/M02/M03 timings. No configuration needed; CFs are re-extracted on every scan.
 
-No user configuration is required. CF scenes are extracted on every **Scan all module links** run and re-classified each time, so adding or removing a CF on the Nikobus side propagates to HA after the next scan.
+> CF scenes get generic names (`Nikobus switch CF …`). The friendly names from your Nikobus "Groups" are not imported — rename the scene entities in HA if you want.
 
 ### User-authored scenes (`nikobus_scene_config.json`)
 
-A legacy path for HA-side per-channel fan-out — useful when you want a "scene" that doesn't correspond to a real CF on the bus, e.g. a custom grouping that crosses module boundaries in a way Nikobus itself doesn't know about. The integration loads this file from `/config` on startup; a missing or empty file is fine and simply produces zero scene entities.
-
-States for dimmers and shutters use 0–255; switches accept `"on"` or `"off"`; shutters accept `"open"` or `"close"`. Channels belong to group 1 (1–6) or group 2 (7–12); the integration updates the relevant group automatically.
-
-```json
-{
-  "scene": [
-    {
-      "id": "scene_turn_on_living_dimmer_lights",
-      "description": "Turn on living dimmer lights",
-      "channels": [
-        {"module_id": "0E6C", "channel": "1", "state": "150"},
-        {"module_id": "0E6C", "channel": "2", "state": "200"}
-      ]
-    }
-  ]
-}
-```
+For HA-side per-channel groupings that **don't** exist as a CF on the bus. Loaded from `/config` at startup; a missing/empty file is fine. Dimmers/shutters use 0–255, switches `"on"`/`"off"`, shutters `"open"`/`"close"`.
 
 ```json
 {
@@ -228,227 +342,125 @@ States for dimmers and shutters use 0–255; switches accept `"on"` or `"off"`; 
       "description": "Close all shutters",
       "channels": [
         {"module_id": "9105", "channel": "1", "state": "close"},
-        {"module_id": "9105", "channel": "2", "state": "close"},
-        {"module_id": "9105", "channel": "3", "state": "close"},
-        {"module_id": "9105", "channel": "4", "state": "close"},
-        {"module_id": "9105", "channel": "5", "state": "close"},
-        {"module_id": "9105", "channel": "6", "state": "close"}
-      ]
-    },
-    {
-      "id": "scene_open_all_shutters",
-      "description": "Open all shutters",
-      "channels": [
-        {"module_id": "9105", "channel": "1", "state": "open"},
-        {"module_id": "9105", "channel": "2", "state": "open"},
-        {"module_id": "9105", "channel": "3", "state": "open"},
-        {"module_id": "9105", "channel": "4", "state": "open"},
-        {"module_id": "9105", "channel": "5", "state": "open"},
-        {"module_id": "9105", "channel": "6", "state": "open"}
+        {"module_id": "9105", "channel": "2", "state": "close"}
       ]
     }
   ]
 }
 ```
 
-Activation iterates the entries and sends individual commands per channel — HA-driven fan-out, not an atomic bus frame. Scene activation only changes the channels you define; other channels remain untouched. Scenes can be triggered directly in Home Assistant, through automations, or linked to Nikobus buttons.
+Activation sends one command per channel (HA-driven fan-out), touching only the channels you list.
 
-### Which one should I use?
+**Which one?** A scene that already exists in Nikobus → it's a CF, no config. A new cross-module grouping → write it in the JSON file.
 
-- A scene that already exists in your Nikobus software (a "scene" key on a wall keypad or RF remote) → **already extracted as a CF**, no config needed. Look for the `scene.nikobus_*_cf_*` entities after running **Scan all module links**.
-- A new grouping that doesn't exist on the bus → write it in `nikobus_scene_config.json`. Activation will be HA-driven and per-channel.
+---
 
-## Staying in Sync with Nikobus
+## Connectivity
 
-The integration keeps Home Assistant synchronized with Nikobus using two complementary methods:
+**Only one client may connect to the bus at a time.**
 
-1. **Button-driven refresh**: Every discovered button carries its `linked_modules` mapping. When the button fires on the bus, the integration refreshes the impacted module group(s) immediately.
-2. **Periodic refresh**: Choose either the integration's custom refresh interval or the Feedback Module's internal refresh (when connected via PC-Link).
+- Direct serial/USB: `/dev/ttyUSB0`
+- Network bridge: `192.168.2.50:9999`
 
-If you rely solely on periodic refresh, Home Assistant may briefly be out of sync between refresh cycles. Running discovery after adding new hardware keeps button-driven refreshes complete for the most accurate, immediate state updates.
-
-## Connectivity Options
-
-**Only one client should connect to Nikobus at a time.**
-
-- Direct serial/USB connection, e.g., `/dev/ttyUSB0`.
-- Network bridge, e.g., `192.168.2.50:9999`, if the Nikobus installation is remote from the HA host.
-
-If the connection drops for any reason, the integration will automatically attempt to reconnect using exponential back-off (retrying after 5 s, 10 s, 20 s, up to a maximum of 60 s between attempts). Entities will appear unavailable until the connection is restored, then return to their current state without requiring an HA restart.
+On a dropped connection the integration reconnects with exponential back-off (5 s → 10 s → 20 s → … capped at 60 s). Entities go unavailable until the link is restored, then resume without an HA restart.
 
 ![TCP bridge example 1](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
 ![TCP bridge example 2](https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8)
-![TCP bridge example 3](https://github.com/fdebrus/Nikobus-HA/assets/33791533/498e5a0f-ab75-4d29-9988-884015fbf05a)
 
-## Known Limitations
+---
 
-- **Always quote button addresses in YAML.** A Nikobus button address is a six-character hex string (e.g. `25E952`). Addresses that contain only digits and the letter `E` happen to look like scientific notation to YAML 1.1 parsers — `25E952` is read as `25 × 10⁹⁵²`, overflows, and Home Assistant persists the value back as `null`. Home Assistant's automation editor may even strip your quotes on save. Workarounds: prefix the address with a leading space inside the quotes (`address: " 25E952"`), or use the integration's `button_id`-style identifiers in your trigger conditions when matching is critical. Addresses containing any letter `A`–`F` other than `E` (e.g. `9A93EE`) are unaffected.
-- **No bus-level discovery.** The PC-Link bridge does not advertise itself over mDNS, SSDP, or USB vendor-specific descriptors. The serial device path or TCP `host:port` must be entered manually.
-- **One client per bus.** Only one client may talk to the PC-Link at a time. Stop any other Nikobus software (the official PC tool, ioBroker, OpenHAB, etc.) before starting Home Assistant.
-- **Polling latency without a Feedback Module.** When no 05-207 Feedback Module is present, module states are read on the configured polling interval (60–3600 s, default 120 s). Physical button presses still trigger immediate targeted refreshes for the impacted modules, so day-to-day responsiveness is unaffected — but external changes (manual relay actuation, scenes triggered by another client) are only picked up on the next poll cycle.
-- **Single config entry per HA instance.** Two physically separate Nikobus installations cannot be paired with the same Home Assistant; the integration is designed for one bus per HA host.
+## Troubleshooting
 
-## Setup
+### Discovery says "No PC-Link" although I have one (PC-Logic installs)
 
-1. Install the custom integration using HACS. Use the custom link below, or clone the repository into `config/custom_components/nikobus` on your Home Assistant host.
+If your install has a **PC-Logic (05-201) configured as master**, the PC-Logic answers the bus address-inquiry, not the PC-Link. The integration (like Niko's own software) reads the device inventory **only from a PC-Link**. Make sure Home Assistant's connection terminates at the **PC-Link**, then re-run discovery. A PC-Logic that answers instead is reported as "connect to a PC-Link module" — the same message the Nikobus PC software shows.
 
-[![Add to HACS](https://img.shields.io/badge/HACS-Add%20Custom%20Repository-blue.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fdebrus&repository=Nikobus-HA&category=integration)
+### Buttons missing, or a button shows the wrong number of control points
 
-2. Restart Home Assistant so the integration is picked up.
-3. Go to **Settings → Devices & Services → Add Integration → Nikobus**.
-4. Enter your serial port path or `IP:port` (e.g. `/dev/ttyUSB0` or `192.168.2.50:9999`). The connection is tested immediately.
-5. On the **Hardware Configuration** step, enable either toggle if it applies:
-   - **Feedback Module (05-207) installed and connected via PC-Link** — state changes are pushed by the Feedback Module, no polling needed.
-   - **PC-Link is older than Gen 3** — enables compatibility tweaks for first- and second-generation PC-Link hardware.
-6. If neither toggle is enabled you'll be asked for a **Polling interval** (60–3600 s, default 120). Lower values mean faster updates, more bus traffic.
-7. The integration starts up. Module and button data are populated from the UI — see **Discovery & Configuration** below. There are no hand-edited JSON files; if you're upgrading from a pre-2.0 release with `nikobus_module_config.json`, it is auto-migrated (see [Upgrading](#upgrading-from-pre-20-releases)).
+Run **Discover modules & buttons** followed by **Scan all module links** while connected to the PC-Link. If a specific physical button type isn't recognised at all, its device-type byte may be uncatalogued — open an issue with the diagnostics download and the model number printed on the button.
 
-## Discovery & Configuration
+### Entities show as `Manual button`, or some entities are missing after an upgrade
 
-All module and button data lives in Home Assistant's own storage (`.storage/nikobus.modules` and `.storage/nikobus.buttons`). There are no hand-edited JSON files for modules or buttons — everything is populated from the UI. (Scenes are the one exception — see the [Scenes](#scenes) section.)
+This is **stale data** left in storage from an older release (e.g. an install that previously fell back to manual config). Symptoms: entries typed `Manual button`, and HA logging *"Platform nikobus does not generate unique IDs … already exists"* (duplicate addresses cause real entities to be dropped).
 
-### 1. Discover modules and buttons
+To clear it:
 
-Open the **Nikobus Bridge** device page and press **Discover modules & buttons**. This walks the PC Link registry, identifies every module (switch / dimmer / shutter / feedback / PC-logic), and creates every physical wall button found on the bus as its own HA device.
+1. **Stop Home Assistant completely** (not just reload — `.storage` is rewritten on shutdown, so deleting while running won't stick).
+2. Delete `.storage/nikobus.buttons` and `.storage/nikobus.modules`.
+   *(Keep any `nikobus_*_config.json` files if you rely on them for descriptions.)*
+3. Start HA, then run **Discover modules & buttons** → **Scan all module links**.
 
-A large install takes several minutes end-to-end — the per-register ACK timeout in the library is 1.5 s, so slow modules stretch the scan. Two diagnostic sensors on the Bridge device track progress:
+The store rebuilds cleanly with proper device types and no duplicates. Names you set in the HA UI are keyed by `unique_id` and reattach automatically.
 
-- **Discovery status** — the live per-register message, updating every ~0.5 s (e.g. `Scanning module 0E6C (2/10) — register 0x87 of 0xFF (145 records)`). The former coarse enum (`idle` / `pc_link` / `module_scan` / `finished` / `error`) is exposed as the `phase` attribute for automations that grouped on it.
-- **Discovery progress** — 0–100 % with 0.1 precision so sub-percent updates are visible.
+### Custom channel/button names didn't carry over
 
-### 2. Customize a module (optional)
+Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`), not in the integration's store — so a clean re-discovery preserves them as long as the bus addresses are unchanged. Descriptions authored only in a legacy `nikobus_button_config.json` are overlaid where the discovered op-point addresses match.
 
-Most users skip this step. But if you want to rename a channel, change what HA exposes it as, configure feedback LEDs, or set a roller's travel times, go to **Configure → Customize a module (description, entity type, LED triggers, travel time)**:
+### State is slow to update
 
-- Pick a module — you'll see its description plus a list of channels.
-- Pick a channel — you can edit:
-  - **Description** — becomes the entity name.
-  - **Entity type** — how HA exposes the channel:
-    - Switch modules: `switch` (default), `light`, or `none` to disable.
-    - Dimmer modules: `light` (default) or `none`.
-    - Roller modules: `cover` (default), `switch`, `light`, or `none`.
-  - **LED on / LED off addresses** — six-hex bus addresses driving a feedback LED on the wall button. Leave blank if unused.
-  - **Travel time up / down** (roller modules only) — seconds to fully open/close. Used by the virtual position calculator so `cover.set_cover_position` can aim for an exact value. If only `up` is set, it is reused for `down` with reduced accuracy.
+Without a Feedback Module, external changes (manual relay actuation, another client) are only seen on the next poll. Physical button presses still trigger immediate targeted refreshes. Add a 05-207 Feedback Module for real-time updates, or lower the polling interval.
 
-Changes persist in `.storage/nikobus.modules` and survive re-discovery.
+### Services for advanced cleanup
 
-### 3. Scan module links
+- `nikobus.detect_stale_inventory` — probes modules for bus presence and returns which are absent.
+- `nikobus.purge_stale_inventory` — removes the given module addresses from storage.
+- `nikobus.query_module_inventory` — low-level register read (diagnostics).
+- `nikobus.send_button_press` — emit a button frame for an off-bus / virtual address.
 
-Press **Scan all module links** on the Bridge device. This walks every output module and records which button addresses drive which channels, populating the `linked_modules` metadata on each button entity. Central Function (CF) broadcast addresses found in the same link tables are classified by pattern and persisted as HA scene entities at the same time — see the [Scenes](#scenes) section.
+---
 
-The button is greyed out until a PC Link inventory has run — scanning links against zero known modules does nothing.
+## Known limitations
 
-### Repair issues
+- **Quote button addresses in YAML** (scientific-notation trap — see [Events](#events--automations)).
+- **No bus-level auto-discovery.** The serial path / `host:port` is entered manually; the PC-Link doesn't advertise over mDNS/SSDP/USB.
+- **One client per bus.** Stop any other Nikobus software before starting HA.
+- **Polling latency without a Feedback Module** (60–3600 s; presses still refresh immediately).
+- **One config entry per HA instance.** Two separate Nikobus buses can't share one Home Assistant.
+- **Inventory comes from the PC-Link.** A PC-Logic cannot serve the device inventory (see [Troubleshooting](#troubleshooting)).
 
-If the integration loads with no buttons configured yet, it surfaces a **No Nikobus buttons configured** notice in **Settings → Repairs** that links straight to a PC Link inventory run. The notice clears automatically once any button lands in storage.
+---
 
-## Buttons
+## How the integration works
 
-Every physical Nikobus button found during a PC Link inventory becomes a **device** in HA, parented to the Nikobus Bridge. Within each device, every *operation point* (each key on a keypad, each IR code on an IR receiver, …) gets:
+The code is split into two packages.
 
-- A **button** entity — pressable from the UI; fires the same bus frame a physical press would.
-- A **binary sensor** entity (disabled by default) — turns `on` briefly when the physical button is pressed, resetting to `idle` after 1 s. Useful for state-based automations.
+**[nikobus-connect](https://github.com/fdebrus/nikobus-connect)** — pip-installed, pinned in `manifest.json`. The low-level layer:
 
-Button data lives in `.storage/nikobus.buttons`; there is no user-editable JSON. See [Discovery & Configuration](#discovery--configuration) for the discovery workflow, and [Upgrading](#upgrading-from-pre-20-releases) if migrating from `nikobus_button_config.json`.
+- `NikobusConnect` — serial/TCP transport + PC-Link handshake.
+- `NikobusEventListener` — parses CR-terminated ASCII frames; dispatches presses and feedback.
+- `NikobusCommandHandler` — queued, retrying command processor that throttles bursts.
+- `NikobusAPI` — high-level operations (read/set output state, cover start/stop).
+- `NikobusDiscovery` — PC-Link inventory + module register scan; reverse-engineers button→output mappings and classifies CF broadcasts.
 
-After discovery, each button entity exposes its linkage as attributes:
+**This integration (`custom_components/nikobus/`)** — the Home Assistant glue:
 
-```yaml
-linked_outputs:
-  - module_address: "0E6C"
-    channel: 1
-    mode: "M01 (Dim on/off (2 buttons))"
-    t1: null
-    t2: null
-wall_button_address: "0D1C80"
-wall_button_model: "05-348"
-wall_button_type: "IR Button with 4 Operation Points"
-wall_button_key: "1C"
-```
+- `coordinator.py` — wires the library together; owns polling, discovery lifecycle, and state signals.
+- `nkbstorage.py` — the three HA Stores (`nikobus.modules`, `nikobus.buttons`, `nikobus.cfs`).
+- `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs, plus the friendly-name overlay.
+- `nkbactuator.py` — turns incoming button frames into HA events with debounce + duration tracking.
+- `nkbconfig.py` — scene-file loader/writer.
+- `nkbtravelcalculator.py` — virtual cover-position tracking.
+- `router.py` — maps module channels to HA entity types; builds the `controlled_by` reverse index.
+- `config_flow.py` — config flow (connection → hardware → polling) and the Configure options menu.
+- `repairs.py` — the "No Nikobus buttons configured" repair flow.
+- `diagnostics.py` — the diagnostics download for bug reports.
+- `entity.py` + the platforms (`light` / `switch` / `cover` / `button` / `binary_sensor` / `sensor` / `scene`).
 
-Every light, cover, and switch entity mirrors this with a `controlled_by` attribute that lists the buttons triggering it — so you can answer "which wall button turns on this light?" from the entity page without parsing config.
+### Staying in sync
 
-Impacted module groups are derived automatically from `linked_modules` (channels 1–6 → group 1, 7–12 → group 2), so state refreshes after a press work out of the box.
+1. **Button-driven refresh** — each button carries its `linked_modules`; a press immediately refreshes the impacted module group(s).
+2. **Periodic refresh** — the polling interval, or the Feedback Module's push when present.
 
-### Renaming buttons
+### Interoperability
 
-Discovered devices get names like `Button with 2 Operation Points (1E584C)`. To give them a friendlier name, rename the device in the HA UI (**Settings → Devices & Services → Nikobus → ⋮ → Rename**). HA stores that as `name_by_user` and preserves it across reloads, restarts, and re-runs of discovery.
+The integration talks to Nikobus hardware over its serial bus. It was developed independently, solely for interoperability between Home Assistant and Nikobus hardware the user already owns, in line with Article 6 of Directive 2009/24/EC.
 
-### IR op-points across multiple receivers
+---
 
-When the same IR code is learned by several receivers (common with scene remotes mapped onto multiple rooms), each receiver gets its own op-point entity with a distinct bus address. The visible device name is qualified with the receiver address — e.g. `IR 30A on 0D1C80` — so duplicates remain distinguishable at a glance.
+## Issues, discussion & legal
 
-### Virtual / IR-scene buttons
+**Questions / support:** the [Home Assistant community thread](https://community.home-assistant.io/t/custom-component-nikobus/732832).
 
-Button addresses that are not present on the physical bus (IR scene triggers, Harmony plug codes, hand-added entries from older releases) are no longer exposed as entities. Fire them from scripts or automations instead:
+**Trademark:** Nikobus is a trademark of Niko NV. This project is an independent community effort, not affiliated with, endorsed by, or sponsored by Niko NV.
 
-```yaml
-service: nikobus.send_button_press
-data:
-  address: "84DFFC"
-```
-
-This emits a `#N<address>` frame on the bus just as a physical press would, and every automation listening on the corresponding `nikobus_button_pressed` event fires normally.
-
-### Upgrading from pre-2.0 releases
-
-Older versions of the integration persisted module and button data in two files under `/config`:
-
-- `nikobus_module_config.json` — modules and channels.
-- `nikobus_button_config.json` — buttons and their `impacted_module` entries.
-
-As of 2.0 both files are **auto-migrated** into HA's own storage on first load:
-
-- `nikobus_module_config.json` → `.storage/nikobus.modules`; the source file is renamed to `<name>.migrated` (never deleted) as an escape hatch. Channel-level fields — `description`, `entity_type`, `led_on` / `led_off`, and roller `operation_time_up` / `_down` — are preserved verbatim. A legacy single `operation_time` is split into both directions.
-- `nikobus_button_config.json` → per-button descriptions are lifted into each device's `name_by_user` in the HA device registry; the rest is ignored. After discovery populates the new Store, the source file is no longer read.
-
-After the migration runs:
-
-1. Full HA restart after upgrading the integration and the pinned `nikobus-connect` library.
-2. (Optional) Run **Discover modules & buttons** again to refresh any hardware that's been added or replaced since the last export.
-3. Rebuild any virtual / scene buttons as scripts calling `nikobus.send_button_press`.
-4. The renamed `.migrated` sidecar files are safe to leave on disk or delete. The migrations are gated on the Store being empty and won't re-run.
-
-## Protocol
-
-The integration communicates with Nikobus hardware over its serial bus (directly via USB/serial or through a TCP bridge). The implementation details are contained within the source code of this repository. This work was developed independently for the sole purpose of interoperability between Home Assistant and Nikobus hardware that the user already owns, in line with Article 6 of Directive 2009/24/EC.
-
-## How the Integration Works
-
-The code is split into two packages:
-
-- **[nikobus-connect](https://github.com/fdebrus/nikobus-connect)** — pip-installed, pinned via `manifest.json`. Owns the low-level work:
-  - `NikobusConnect` — serial/TCP transport + PC-Link handshake.
-  - `NikobusEventListener` — parses CR-terminated ASCII frames, dispatches button presses and feedback updates.
-  - `NikobusCommandHandler` — queued, retrying command processor that throttles bursts (e.g. "close all shutters").
-  - `NikobusAPI` — high-level operations (read/set output state, cover start/stop).
-  - `NikobusDiscovery` — PC Link inventory + module register scan, reverse-engineers button-to-output mappings and populates the operation-point / `linked_modules` metadata. Also classifies Central Function (CF) broadcast addresses found in the link tables (`switch_pair` / `roller_pair`) and surfaces them via `discovered_cf_broadcasts` for the integration to persist as scene entities.
-
-- **This integration (`custom_components/nikobus/`)** — the Home Assistant glue:
-  - `coordinator.py` — wires the library together, owns polling + discovery lifecycle, dispatches state signals.
-  - `nkbstorage.py` — the three HA Stores (`.storage/nikobus.modules`, `.storage/nikobus.buttons`, and `.storage/nikobus.cfs` for classified CF broadcasts) with their load/save adapters.
-  - `nkbmigration.py` — one-shot import of legacy `nikobus_module_config.json` into the Module Store.
-  - `nkbactuator.py` — routes incoming button frames into HA bus events (`nikobus_button_pressed` etc.) with debounce and duration tracking.
-  - `nkbconfig.py` — scene-file loader/writer (scenes still live in JSON).
-  - `nkbtravelcalculator.py` — virtual cover-position tracking from `operation_time_up` / `_down`.
-  - `router.py` — translates module channels into HA entity types and builds the `controlled_by` reverse index exposed on light / switch / cover entities.
-  - `entity.py` and the entity platforms (`{light,switch,cover,button,binary_sensor,sensor,scene}.py`).
-  - `config_flow.py` — initial config flow (connection → hardware → polling) and the four-item Configure options menu.
-  - `repairs.py` — the "No Nikobus buttons configured" repair flow.
-  - `diagnostics.py` — the "Download diagnostics" payload for bug reports.
-
-## Issues and Discussion
-
-For questions or general requests, please visit the [Home Assistant community thread](https://community.home-assistant.io/t/custom-component-nikobus/732832).
-
-## Trademark Notice
-
-Nikobus is a trademark of Niko NV. This project is an independent community effort and is not affiliated with, endorsed by, or sponsored by Niko NV.
-
-## License
-
-This project is provided for personal and other non-commercial use only. You may
-view, copy, modify, and share the code and documentation for non-commercial
-purposes. Commercial use of this software is not permitted without prior written
-permission from the maintainers. The software is provided "as is" without
-warranties of any kind.
+**License:** provided for personal and non-commercial use. You may view, copy, modify, and share the code and documentation for non-commercial purposes. Commercial use requires prior written permission from the maintainers. Provided "as is" without warranties of any kind.
