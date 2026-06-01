@@ -106,25 +106,41 @@ def _category_for_button_type(type_str: str) -> str:
     return CATEGORY_WALL_BUTTONS
 
 
+def _input_label_prefix(phys: dict[str, Any]) -> str:
+    """Return the input-naming prefix for a synthesized input child.
+
+    PC-Logic (05-201) inputs use ``LM`` (Logic Module — matches Niko's
+    own terminology); Modular Interface (05-206) inputs use ``MI``
+    (Modular Interface). Both share the ``pc_logic_parent_*`` provenance
+    fields, so ``pc_logic_parent_type`` is the discriminator. Anything
+    that isn't explicitly the Modular Interface stays ``LM`` (covers the
+    PC-Logic value and missing/legacy entries — back-compat).
+    """
+    return "MI" if phys.get("pc_logic_parent_type") == "interface_module" else "LM"
+
+
 def _pc_logic_input_naming(
     phys: dict[str, Any],
 ) -> tuple[str, tuple[str, str]] | None:
     """Return ``(device_name, via_device_identifier)`` if ``phys`` is a
-    synthesized PC-Logic logical-input entry; else ``None``.
+    synthesized input-module child (PC-Logic or Modular Interface);
+    else ``None``.
 
-    The library sets ``pc_logic_parent_address`` (the PC-Logic module
-    address) and ``pc_logic_slot_index`` (1..N) on the button-store
-    entry when it synthesizes virtual buttons for PC-Logic inputs. HA
-    parents the device directly under the PC-Logic module device
-    (instead of the wall-buttons category) and renames it
-    ``LM-INPUT N`` to match Niko's own terminology.
+    The library sets ``pc_logic_parent_address`` (the owning module
+    address), ``pc_logic_parent_type`` (``pc_logic`` /
+    ``interface_module``) and ``pc_logic_slot_index`` (1..N) on the
+    button-store entry when it synthesizes virtual buttons for module
+    inputs. HA parents the device directly under the owning module
+    device (instead of the wall-buttons category) and names it
+    ``LM-INPUT N`` for PC-Logic or ``MI-INPUT N`` for the Modular
+    Interface, matching each product's terminology.
     """
 
     parent_addr = phys.get("pc_logic_parent_address")
     slot = phys.get("pc_logic_slot_index")
     if not isinstance(parent_addr, str) or not isinstance(slot, int):
         return None
-    return f"LM-INPUT {slot}", (DOMAIN, parent_addr.upper())
+    return f"{_input_label_prefix(phys)}-INPUT {slot}", (DOMAIN, parent_addr.upper())
 
 
 def _remote_transmitter_naming(
@@ -169,11 +185,12 @@ def register_wall_button_devices(
     ``_category_for_button_type`` so the integration's device list
     nests by class rather than dumping everything under the bridge.
 
-    Synthesized PC-Logic logical inputs (the library's
+    Synthesized input-module children (the library's
     ``_synthesize_pc_logic_inputs`` adds these with ``pc_logic_*``
     provenance fields) are routed differently: the device is parented
-    directly under the PC-Logic module that owns it, and the name
-    follows the Niko ``LM-INPUT N`` convention.
+    directly under the owning module, and the name follows the Niko
+    ``LM-INPUT N`` (PC-Logic) / ``MI-INPUT N`` (Modular Interface)
+    convention.
     """
     device_registry = dr.async_get(hass)
     pc_logic_parents_registered: set[str] = set()
@@ -404,7 +421,8 @@ def _iter_input_module_entities(coordinator: NikobusDataCoordinator):
 
     Both PC-Logic (05-201) and Modular Interface (05-206) inputs are
     surfaced through synthesized button-store entries (one ``LM-INPUT N``
-    device per input, parented under the owning module). Their per-channel
+    / ``MI-INPUT N`` device per input, parented under the owning module).
+    Their per-channel
     placeholder entities are redundant — skip the module-attached
     ``NikobusInputEntity`` creation for both.
     """
@@ -457,23 +475,25 @@ def op_point_display_name(
     every receiver that learned the same code. Wall keys keep the
     library description verbatim; it already carries the channel label.
 
-    PC-Logic logical-input keys (the parent button carries
+    Input-module keys (the parent button carries
     ``pc_logic_parent_address``) render as ``Key A on LM-INPUT N`` /
-    ``Key B on LM-INPUT N``, mirroring the IR ``<key> on <parent>``
+    ``Key B on LM-INPUT N`` for PC-Logic, or ``... on MI-INPUT N`` for
+    the Modular Interface, mirroring the IR ``<key> on <parent>``
     pattern so the device list disambiguates each slot's keys.
     """
     if key_label.startswith("IR:"):
         ir_code = key_label[len("IR:"):]
         return f"IR {ir_code} on {physical_address}"
     if isinstance(parent_phys, dict) and parent_phys.get("pc_logic_parent_address"):
-        # ``1A`` → "Key A on LM-INPUT N", ``1B`` → "Key B on LM-INPUT N".
+        # ``1A`` → "Key A on {LM,MI}-INPUT N", ``1B`` → "Key B on …".
         slot = parent_phys.get("pc_logic_slot_index")
         if (
             len(key_label) == 2
             and key_label[1].isalpha()
             and isinstance(slot, int)
         ):
-            return f"Key {key_label[1].upper()} on LM-INPUT {slot}"
+            prefix = _input_label_prefix(parent_phys)
+            return f"Key {key_label[1].upper()} on {prefix}-INPUT {slot}"
     return op_point.get("description") or f"Push button {key_label}"
 
 
