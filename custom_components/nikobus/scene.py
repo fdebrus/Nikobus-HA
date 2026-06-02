@@ -114,6 +114,11 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             name = f"Nikobus switch CF {addr} ({member_count} ch)"
         elif pattern == "roller_pair":
             name = f"Nikobus roller CF {addr} ({member_count} ch)"
+        elif pattern == "light_scene":
+            # CF triggered by a real wall button / IR input, detected
+            # from a light-scene/preset member mode (the "MCF" link
+            # fingerprint). ``addr`` is the trigger's bus address.
+            name = f"Nikobus light scene {addr} ({member_count} ch)"
         else:
             name = f"Nikobus CF {addr} ({member_count} ch)"
 

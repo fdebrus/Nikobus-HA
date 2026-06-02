@@ -1481,14 +1481,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def async_activate_cf_broadcast(self, bus_address: str) -> None:
         """Send the bus frame that activates a classified CF.
 
-        Each CF broadcast address (``38 41 XX`` or ``38 80 XX``) is
-        what PC-Logic emits when the CF is activated by a wall button
-        or remote. Output modules participating in the CF carry the
-        link records that trigger their channels on this address. From
-        HA we send the same frame format used for wall-button
-        simulations: ``#N{addr}\\r#E1``. The output modules then fire
-        in unison — single-frame atomic activation, no per-channel
-        round-trip.
+        Two CF flavours share this path, both keyed on the bus address
+        that triggers the member outputs:
+
+        * PC-Logic broadcast CFs (``38 41 XX`` / ``38 80 XX``) — what
+          PC-Logic emits when the CF fires.
+        * Light-scene CFs (``pattern == "light_scene"``) — the address
+          is the real wall-button / IR trigger the members link to
+          (e.g. an IR channel like ``0D1C9E``).
+
+        In both cases the output modules carry link records pointing to
+        this address, so we send the same wall-button-simulation frame
+        ``#N{addr}\\r#E1``. The modules fire in unison — single-frame
+        atomic activation, no per-channel round-trip.
         """
         if not bus_address:
             raise HomeAssistantError(
