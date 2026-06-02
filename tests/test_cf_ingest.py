@@ -83,6 +83,33 @@ class TestIngestCFBroadcasts(unittest.TestCase):
         # Save was actually issued.
         coord.cf_storage.async_save.assert_awaited_once()
 
+    def test_light_scene_cf_lands_in_storage(self):
+        """Light-scene CFs (button/IR-sourced, detected from a
+        light-scene/preset member mode by nikobus-connect 0.21.0)
+        persist through the same path, pattern preserved, with their
+        mixed-mode members (dimmer preset + switch/shutter plain)."""
+        coord = _make_coord_with_cf_storage(
+            {
+                "0D1C9E": _stub_cf_broadcast(
+                    "0D1C9E",
+                    "light_scene",
+                    [
+                        _stub_cf_member("0E6C", 1, "M04 (Light scene on)"),
+                        _stub_cf_member("4707", 12, "M02 (On + Operating time)"),
+                        _stub_cf_member("8394", 1, "M02 (Open)"),
+                    ],
+                )
+            }
+        )
+
+        _run(coord._ingest_cf_broadcasts())
+
+        stored = coord.cf_storage.data["nikobus_cf"]["0D1C9E"]
+        self.assertEqual(stored["pattern"], "light_scene")
+        self.assertEqual(len(stored["outputs"]), 3)
+        members = {(o["module_address"], o["channel"]) for o in stored["outputs"]}
+        self.assertEqual(members, {("0E6C", 1), ("4707", 12), ("8394", 1)})
+
     def test_switch_pair_alles_uit_spray_lands_full(self):
         coord = _make_coord_with_cf_storage(
             {
