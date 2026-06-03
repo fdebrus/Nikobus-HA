@@ -1253,6 +1253,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")
+        # CF / light-scene entities classified by the library during
+        # discovery and surfaced by the scene platform as
+        # ``NikobusCFSceneEntity`` (unique_id ``nikobus_cf_<addr>``).
+        # Without these, ``_async_cleanup_orphan_entities`` evicts them
+        # immediately after the scene platform creates them.
+        if self.cf_storage is not None:
+            for cf_addr in self.cf_storage.data.get("nikobus_cf", {}):
+                known.add(f"nikobus_cf_{str(cf_addr).lower()}")
         known.add(f"{DOMAIN}_connection_status")
         known.add(f"{DOMAIN}_discovery_status")
         known.add(f"{DOMAIN}_discovery_progress")
