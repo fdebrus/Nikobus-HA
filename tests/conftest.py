@@ -58,6 +58,7 @@ _mod("homeassistant")
 _mod(
     "homeassistant.core",
     HomeAssistant=type("HomeAssistant", (), {}),
+    Event=type("Event", (), {}),
     callback=_ha_callback,
 )
 class _ConfigEntry:
@@ -211,12 +212,12 @@ _mod(
 )
 _mod(
     "homeassistant.helpers.entity",
-    EntityCategory=type("EntityCategory", (), {"DIAGNOSTIC": "diagnostic"}),
+    EntityCategory=type("EntityCategory", (), {"DIAGNOSTIC": "diagnostic", "CONFIG": "config"}),
 )
 _mod(
     "homeassistant.const",
     PERCENTAGE="%",
-    EntityCategory=type("EntityCategory", (), {"DIAGNOSTIC": "diagnostic"}),
+    EntityCategory=type("EntityCategory", (), {"DIAGNOSTIC": "diagnostic", "CONFIG": "config"}),
 )
 _mod(
     "homeassistant.helpers.entity_platform",
@@ -224,6 +225,21 @@ _mod(
     AddConfigEntryEntitiesCallback=type("AddConfigEntryEntitiesCallback", (), {}),
 )
 _mod("homeassistant.components.binary_sensor", BinarySensorEntity=type("BinarySensorEntity", (), {}), DOMAIN="binary_sensor")
+_mod("homeassistant.components.switch", SwitchEntity=type("SwitchEntity", (), {}), DOMAIN="switch")
+_mod("homeassistant.components.button", ButtonEntity=type("ButtonEntity", (), {}), DOMAIN="button")
+
+
+class _RestoreEntityStub:
+    """Minimal stub for RestoreEntity."""
+
+    async def async_get_last_state(self):  # pragma: no cover - overridden in tests
+        return None
+
+    async def async_added_to_hass(self):  # pragma: no cover
+        return None
+
+
+_mod("homeassistant.helpers.restore_state", RestoreEntity=_RestoreEntityStub)
 
 # ---------------------------------------------------------------------------
 # Third-party stubs

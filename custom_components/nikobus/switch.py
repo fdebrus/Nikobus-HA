@@ -11,14 +11,65 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, EVENT_BUTTON_OPERATION
+from .button import _pc_logic_input_naming
+from .const import DOMAIN, EVENT_BUTTON_OPERATION, EVENT_BUTTON_PRESSED
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
-from .router import build_unique_id, get_routing, register_output_module_devices
+from .router import (
+    INPUT_MODULE_TYPES,
+    build_unique_id,
+    get_routing,
+    register_output_module_devices,
+)
+
+try:  # nikobus-connect provides the input-address math
+    from nikobus_connect.discovery.protocol import (
+        convert_nikobus_address,
+        derive_pc_logic_input_physicals,
+    )
+except Exception:  # pragma: no cover - defensive (older library)
+    convert_nikobus_address = None
+    derive_pc_logic_input_physicals = None
 
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
+
+
+def input_ab_addresses(phys: dict[str, Any]) -> tuple[str, str] | None:
+    """Return ``(addr_1A, addr_1B)`` bus addresses for a synthesized
+    PC-Logic / Modular-Interface input, or ``None``.
+
+    A PC-Logic logical input emits two bus events — its 1A and 1B
+    forms. Validated against two installs (and the library's own
+    derivation note):
+
+      * ``1A = convert_nikobus_address(physical)``
+      * ``1B`` = ``1A`` with the first hex nibble incremented by 4
+
+    The physical address is re-derived from the input's
+    ``pc_logic_parent_address`` + ``pc_logic_slot_index`` provenance so
+    this doesn't depend on the button-store key format.
+    """
+
+    if convert_nikobus_address is None or derive_pc_logic_input_physicals is None:
+        return None
+    parent = phys.get("pc_logic_parent_address")
+    slot = phys.get("pc_logic_slot_index")
+    if not isinstance(parent, str) or not isinstance(slot, int) or slot < 1:
+        return None
+    try:
+        physicals = derive_pc_logic_input_physicals(parent, max(slot, 6))
+    except Exception:  # pragma: no cover - defensive
+        return None
+    if slot > len(physicals):
+        return None
+    addr_1a = convert_nikobus_address(physicals[slot - 1])
+    if not isinstance(addr_1a, str) or len(addr_1a) != 6:
+        return None
+    addr_1a = addr_1a.upper()
+    addr_1b = format((int(addr_1a[0], 16) + 4) % 16, "X") + addr_1a[1:]
+    return addr_1a, addr_1b
 
 
 async def async_setup_entry(
@@ -38,17 +89,46 @@ async def async_setup_entry(
         if spec.kind == "relay_switch":
             entities.append(
                 NikobusRelaySwitchEntity(
-                    coordinator, spec.address, spec.channel, 
+                    coordinator, spec.address, spec.channel,
                     spec.channel_description, spec.module_desc, spec.module_model
                 )
             )
         elif spec.kind == "cover_binary":
             entities.append(
                 NikobusCoverSwitchEntity(
-                    coordinator, spec.address, spec.channel, 
+                    coordinator, spec.address, spec.channel,
                     spec.channel_description, spec.module_desc, spec.module_model
                 )
             )
+
+    # Stateful A/B latch switch per PC-Logic / Modular-Interface input.
+    # The input itself surfaces as a stateless button (button.py); this
+    # adds a persistent on/off mirror: the 1A signal turns it on, 1B
+    # turns it off, and turn_on/off drive the corresponding bus frame.
+    for physical_addr, phys in coordinator.dict_button_data.get(
+        "nikobus_button", {}
+    ).items():
+        if not isinstance(phys, dict):
+            continue
+        if phys.get("pc_logic_parent_type") not in INPUT_MODULE_TYPES:
+            continue
+        naming = _pc_logic_input_naming(phys)
+        ab = input_ab_addresses(phys)
+        if naming is None or ab is None:
+            continue
+        device_name, via_device = naming
+        addr_1a, addr_1b = ab
+        entities.append(
+            NikobusInputLatchSwitch(
+                coordinator,
+                physical_addr=str(physical_addr).upper(),
+                addr_1a=addr_1a,
+                addr_1b=addr_1b,
+                device_name=device_name,
+                via_device=via_device,
+                model=str(phys.get("model") or "Logical Input"),
+            )
+        )
 
     async_add_entities(entities)
 
@@ -203,3 +283,87 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
             self._is_on = None
             self.async_write_ha_state()
             raise err
+
+class NikobusInputLatchSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
+    """Stateful on/off latch for a PC-Logic / Modular-Interface input.
+
+    A PC-Logic logical input is momentary on the bus: it emits a 1A
+    pulse and a 1B pulse rather than holding a level. This entity gives
+    that input a persistent on/off state in HA:
+
+      * the **1A** bus signal latches it **on**, **1B** latches it
+        **off** (observed via the ``nikobus_button_pressed`` event, so
+        physical presses and other controllers are tracked too);
+      * ``turn_on`` / ``turn_off`` drive the corresponding 1A / 1B bus
+        frame (same ``#N<addr>\\r#E1`` path as a wall-button simulation).
+
+    State is restored across restarts. It lives alongside the stateless
+    input button entity, sharing the same input device.
+    """
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        *,
+        physical_addr: str,
+        addr_1a: str,
+        addr_1b: str,
+        device_name: str,
+        via_device: tuple[str, str],
+        model: str,
+    ) -> None:
+        super().__init__(
+            coordinator=coordinator,
+            address=physical_addr,
+            name=device_name,
+            model=model,
+            via_device=via_device,
+        )
+        self._addr_1a = addr_1a
+        self._addr_1b = addr_1b
+        self._attr_name = "A/B state"
+        self._attr_unique_id = f"nikobus_input_switch_{physical_addr.lower()}"
+        self._attr_is_on = False
+
+    @property
+    def is_on(self) -> bool:
+        return self._attr_is_on
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        parent = super().extra_state_attributes or {}
+        return {**parent, "address_1a": self._addr_1a, "address_1b": self._addr_1b}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ("on", "off"):
+            self._attr_is_on = last.state == "on"
+        self.async_on_remove(
+            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_button_event)
+        )
+
+    @callback
+    def _handle_button_event(self, event: Event) -> None:
+        """Latch on the 1A signal, clear on the 1B signal."""
+        addr = str(event.data.get("address") or "").upper()
+        if addr == self._addr_1a:
+            self._attr_is_on = True
+            self.async_write_ha_state()
+        elif addr == self._addr_1b:
+            self._attr_is_on = False
+            self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_event_handler(
+            "ha_button_pressed", {"address": self._addr_1a}
+        )
+        self._attr_is_on = True
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_event_handler(
+            "ha_button_pressed", {"address": self._addr_1b}
+        )
+        self._attr_is_on = False
+        self.async_write_ha_state()
