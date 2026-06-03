@@ -118,7 +118,7 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             # CF triggered by a real wall button / IR input, detected
             # from a light-scene/preset member mode (the "MCF" link
             # fingerprint). ``addr`` is the trigger's bus address.
-            name = f"Nikobus light scene {addr} ({member_count} ch)"
+            name = f"Nikobus scene {addr} ({member_count} ch)"
         else:
             name = f"Nikobus CF {addr} ({member_count} ch)"
 

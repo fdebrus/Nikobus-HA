@@ -1261,6 +1261,11 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if self.cf_storage is not None:
             for cf_addr in self.cf_storage.data.get("nikobus_cf", {}):
                 known.add(f"nikobus_cf_{str(cf_addr).lower()}")
+        # Stateful A/B latch switches for PC-Logic / Modular-Interface
+        # inputs (switch platform, unique_id ``nikobus_input_switch_<addr>``).
+        for in_addr, phys in self.dict_button_data.get("nikobus_button", {}).items():
+            if isinstance(phys, dict) and phys.get("pc_logic_parent_type") in INPUT_MODULE_TYPES:
+                known.add(f"nikobus_input_switch_{str(in_addr).lower()}")
         known.add(f"{DOMAIN}_connection_status")
         known.add(f"{DOMAIN}_discovery_status")
         known.add(f"{DOMAIN}_discovery_progress")
