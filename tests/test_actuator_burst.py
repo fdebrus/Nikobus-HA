@@ -19,13 +19,11 @@ Pins:
 
 from __future__ import annotations
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from custom_components.nikobus.const import (
-    BURST_GAP_THRESHOLD_S,
     BURST_RECENT_GAPS_WINDOW,
     FRAME_CADENCE_S,
     MAX_EXTENDED_RELEASE_MS,

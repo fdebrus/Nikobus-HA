@@ -13,8 +13,6 @@ import asyncio
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-import sys
-from pathlib import Path
 
 # Conftest sets up the coordinator stubs; we just need to import the
 # coordinator module after conftest has run.
