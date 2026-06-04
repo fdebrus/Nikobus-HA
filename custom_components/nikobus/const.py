@@ -135,6 +135,7 @@ CONF_CONNECTION_STRING: Final[str] = "connection_string"
 CONF_REFRESH_INTERVAL: Final[str] = "refresh_interval"
 CONF_HAS_FEEDBACK_MODULE: Final[str] = "has_feedbackmodule"
 CONF_PRIOR_GEN3: Final[str] = "prior_gen3"
+CONF_PRESS_REPEAT: Final[str] = "press_repeat"
 
 # Filenames used by the manual-config import — the step-1 inventory
 # source for installs without a PC-Link. Both are read on every
@@ -164,6 +165,17 @@ HANDSHAKE_TIMEOUT: Final[int] = 60  # Timeout for handshake in seconds
 # =============================================================================
 REFRESH_DELAY: Final[float] = 0.5  # Delay before retrieving status after button press
 DIMMER_DELAY: Final[int] = 1  # Delay before retrieving dimmer status
+
+# Simulated-button-press repetition. A real Nikobus button emits its
+# telegram repeatedly for as long as it's held, and modules only act on
+# a command seen at least twice (the bus protocol's noise/collision
+# guard). A single #N frame is therefore unreliable under bus
+# contention, so HA-originated presses (button, scene, CF, latch switch)
+# are sent as a short, spaced burst. ``DEFAULT_PRESS_REPEAT`` mirrors
+# the reference firmware's "2 to register, 3 to be sure"; the per-repeat
+# gap keeps the burst short enough to read as a tap, not a hold.
+DEFAULT_PRESS_REPEAT: Final[int] = 3
+PRESS_REPEAT_DELAY: Final[float] = 0.05  # seconds between repeated #N frames
 SHORT_PRESS: Final[float] = 1.0  # Short press duration in seconds
 BUTTON_TIMER_THRESHOLDS: Final[tuple[int, int, int]] = (1, 2, 3)
 

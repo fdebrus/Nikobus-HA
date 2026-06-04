@@ -341,9 +341,10 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         """Send feedback LED trigger commands."""
         for addr in self._feedback_leds:
             _LOGGER.debug("Triggering feedback LED/Button: %s", addr)
-            # Standard Nikobus command for button trigger
-            cmd = f"#N{addr}\r#E1"
-            await self.coordinator.nikobus_command.queue_command(cmd)
+            # Standard Nikobus button trigger — sent as a repeated burst
+            # (see coordinator.async_send_button_press) so it isn't
+            # dropped under bus contention.
+            await self.coordinator.async_send_button_press(addr)
 
     @callback
     def _handle_coordinator_update(self) -> None:

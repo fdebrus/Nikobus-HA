@@ -1,238 +1,242 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "Verbinding met Nikobus",
-                "description": "Voer het adres van uw Nikobus PC-Link module in.\n\n- **Seriële poort**: `/dev/ttyUSB0` of `COM3`\n- **Netwerkbrug**: `192.168.1.50:9999`",
-                "data": {
-                    "connection_string": "Verbinding (seriële poort of IP:poort)"
-                },
-                "data_description": {
-                    "connection_string": "Serieel apparaatpad of TCP-adres van de PC-Link brug"
-                }
-            },
-            "hardware": {
-                "title": "Hardwareconfiguratie",
-                "description": "Vertel ons over uw Nikobus-hardware zodat de integratie de optimale updatestrategie kan gebruiken.",
-                "data": {
-                    "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
-                    "prior_gen3": "PC-Link is ouder dan Gen 3"
-                },
-                "data_description": {
-                    "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig.",
-                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware."
-                }
-            },
-            "polling": {
-                "title": "Polling-interval",
-                "description": "Zonder Feedbackmodule peilt Home Assistant periodiek de Nikobus-bus. Kies hoe vaak.",
-                "data": {
-                    "refresh_interval": "Polling-interval (seconden)"
-                },
-                "data_description": {
-                    "refresh_interval": "Hoe vaak modulestatussen van de bus worden gelezen (60–3600 s)."
-                }
-            },
-            "reconfigure": {
-                "title": "Nikobus herconfigureren",
-                "description": "Werk de verbinding of hardware-instellingen bij. De verbinding wordt opnieuw getest.",
-                "data": {
-                    "connection_string": "Verbinding (seriële poort of IP:poort)",
-                    "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
-                    "prior_gen3": "PC-Link is ouder dan Gen 3",
-                    "refresh_interval": "Polling-interval (seconden)"
-                }
-            }
+  "config": {
+    "step": {
+      "user": {
+        "title": "Verbinding met Nikobus",
+        "description": "Voer het adres van uw Nikobus PC-Link module in.\n\n- **Seriële poort**: `/dev/ttyUSB0` of `COM3`\n- **Netwerkbrug**: `192.168.1.50:9999`",
+        "data": {
+          "connection_string": "Verbinding (seriële poort of IP:poort)"
         },
-        "error": {
-            "cannot_connect": "Kan geen verbinding maken met de Nikobus PC-Link — controleer het adres en of geen andere client verbonden is",
-            "unknown": "Onverwachte fout — raadpleeg de Home Assistant-logboeken voor details"
-        },
-        "abort": {
-            "already_configured": "Deze Nikobus-verbinding is al geconfigureerd."
+        "data_description": {
+          "connection_string": "Serieel apparaatpad of TCP-adres van de PC-Link brug"
         }
+      },
+      "hardware": {
+        "title": "Hardwareconfiguratie",
+        "description": "Vertel ons over uw Nikobus-hardware zodat de integratie de optimale updatestrategie kan gebruiken.",
+        "data": {
+          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+          "prior_gen3": "PC-Link is ouder dan Gen 3",
+          "press_repeat": "Herhalingen gesimuleerde druk"
+        },
+        "data_description": {
+          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig.",
+          "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
+          "press_repeat": "Hoe vaak elke door HA geactiveerde druk (knop, sfeer, CF, schakelaar) op de bus wordt verzonden. Een echte knop herhaalt zijn telegram, dus één verzending kan gemist worden bij een drukke bus. Standaard 3."
+        }
+      },
+      "polling": {
+        "title": "Polling-interval",
+        "description": "Zonder Feedbackmodule peilt Home Assistant periodiek de Nikobus-bus. Kies hoe vaak.",
+        "data": {
+          "refresh_interval": "Polling-interval (seconden)"
+        },
+        "data_description": {
+          "refresh_interval": "Hoe vaak modulestatussen van de bus worden gelezen (60–3600 s)."
+        }
+      },
+      "reconfigure": {
+        "title": "Nikobus herconfigureren",
+        "description": "Werk de verbinding of hardware-instellingen bij. De verbinding wordt opnieuw getest.",
+        "data": {
+          "connection_string": "Verbinding (seriële poort of IP:poort)",
+          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+          "prior_gen3": "PC-Link is ouder dan Gen 3",
+          "refresh_interval": "Polling-interval (seconden)"
+        }
+      }
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Nikobus",
-                "description": "Wat wilt u doen?",
-                "menu_options": {
-                    "hardware": "Hardware-instellingen wijzigen",
-                    "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)"
-                }
-            },
-            "hardware": {
-                "title": "Hardwareconfiguratie",
-                "description": "Werk uw hardware-instellingen bij. De integratie herlaadt automatisch.",
-                "data": {
-                    "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
-                    "prior_gen3": "PC-Link is ouder dan Gen 3"
-                },
-                "data_description": {
-                    "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen.",
-                    "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware."
-                }
-            },
-            "polling": {
-                "title": "Polling-interval",
-                "description": "Hoe vaak moet Home Assistant de Nikobus-bus pollen?",
-                "data": {
-                    "refresh_interval": "Polling-interval (seconden)"
-                },
-                "data_description": {
-                    "refresh_interval": "Hoe vaak modulestatussen worden gelezen (60–3600 s)."
-                }
-            },
-            "configure_modules": {
-                "title": "Een Nikobus-module aanpassen",
-                "description": "Kies een module om te bewerken. Velden uit de ontdekking (model, adres, aantal kanalen) blijven alleen-lezen; alleen gebruikersvelden (beschrijvingen, entiteitstypes, LED-triggers, looptijden) kunnen hier worden gewijzigd.",
-                "data": {
-                    "module": "Module"
-                }
-            },
-            "edit_module": {
-                "title": "Module {address} ({module_type})",
-                "description": "Model: {model}. Bewerk de beschrijving, corrigeer het moduletype als de ontdekking het verkeerd heeft geclassificeerd, of kies een kanaal om aan te passen. Let op: opnieuw *Modules en knoppen ontdekken* uitvoeren kan een handmatig overschreven type weer wegschrijven totdat de bibliotheek dit respecteert.",
-                "data": {
-                    "description": "Modulebeschrijving",
-                    "module_type": "Moduletype",
-                    "channel": "Kanaal"
-                }
-            },
-            "edit_channel": {
-                "title": "Module {address} — kanaal {channel}",
-                "description": "Stel in hoe dit kanaal in Home Assistant verschijnt. Kies **Uitgeschakeld (kanaal verbergen)** in de entiteitstype-keuzelijst om geen entiteit voor dit kanaal aan te maken.",
-                "data": {
-                    "entity_type": "Entiteitstype",
-                    "description": "Kanaalbeschrijving",
-                    "led_on": "LED-aan trigger (6-hex busadres, optioneel)",
-                    "led_off": "LED-uit trigger (6-hex busadres, optioneel)",
-                    "operation_time_up": "Looptijd omhoog (seconden)",
-                    "operation_time_down": "Looptijd omlaag (seconden)"
-                }
-            }
-        },
-        "abort": {
-            "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
-        }
+    "error": {
+      "cannot_connect": "Kan geen verbinding maken met de Nikobus PC-Link — controleer het adres en of geen andere client verbonden is",
+      "unknown": "Onverwachte fout — raadpleeg de Home Assistant-logboeken voor details"
     },
-    "entity": {
-        "sensor": {
-            "connection": {
-                "name": "Verbinding",
-                "state": {
-                    "connected": "Verbonden",
-                    "reconnecting": "Opnieuw verbinden",
-                    "disconnected": "Verbinding verbroken"
-                }
-            },
-            "discovery_status": {
-                "name": "Ontdekkingsstatus",
-                "state": {
-                    "idle": "Inactief",
-                    "pc_link": "PC Link-inventaris",
-                    "module_scan": "Modules scannen",
-                    "finished": "Voltooid",
-                    "error": "Fout"
-                }
-            },
-            "discovery_progress": {
-                "name": "Ontdekkingsvoortgang"
-            }
-        },
-        "button": {
-            "discover_modules_buttons": {
-                "name": "Modules en knoppen ontdekken"
-            },
-            "scan_all_module_links": {
-                "name": "Alle modulekoppelingen scannen"
-            }
-        }
-    },
-    "issues": {
-        "no_buttons_configured": {
-            "title": "Geen Nikobus-knoppen geconfigureerd",
-            "fix_flow": {
-                "step": {
-                    "confirm": {
-                        "title": "Nikobus-modules en -knoppen ontdekken",
-                        "description": "Home Assistant heeft geen Nikobus-knoppen gedetecteerd. Voer nu een PC-Link-inventaris uit om de configuratie aan te vullen."
-                    }
-                }
-            }
-        },
-        "legacy_undecoded_buttons": {
-            "title": "{count} Nikobus-knop(pen) gemarkeerd als verouderd",
-            "fix_flow": {
-                "step": {
-                    "init": {
-                        "title": "Verouderde Nikobus-knoppen beoordelen",
-                        "description": "Deze {count} knop(pen) zijn als verouderd gemarkeerd na een volledige fase-2-scan. De kolom Reden legt uit waarom:\n\n  - **no decoded links** — geen output-module verwijst naar deze knop. Ofwel een wandknop die alleen wordt gebruikt voor Home Assistant-automatiseringen (behouden), ofwel resten van een vorige eigenaar (opschonen).\n  - **residue / stale links** — de koppelingen van de knop bestaan alleen in het PC-Link-/PC-Logic-registergeheugen zonder dat een huidige output-module ze opslaat, of elke gekoppelde module is verwijderd. Doorgaans residuele programmering van een vorige eigenaar die door DIN-button-koppeling niet is gewist (opschonen).\n\nOm een gewiste knop te herstellen, voer **Modules en knoppen ontdekken** opnieuw uit en daarna **Modulelinks scannen** — de bibliotheek voegt alles wat nog in het project staat opnieuw toe.\n\n{candidates}\n\nLaat de lijst leeg en bevestig om alles te behouden.",
-                        "data": {
-                            "addresses": "Te verwijderen knoppen"
-                        }
-                    }
-                },
-                "abort": {
-                    "not_loaded": "De Nikobus-integratie is niet geladen; herlaad het item en probeer opnieuw.",
-                    "no_candidates": "Geen verouderde knoppen meer — niets te doen."
-                }
-            }
-        }
-    },
-    "exceptions": {
-        "communication_error": {
-            "message": "Communicatie met Nikobus mislukt: {error}"
-        },
-        "discovery_already_running": {
-            "message": "Er is al een Nikobus-ontdekking bezig."
-        },
-        "discovery_not_initialized": {
-            "message": "Nikobus-ontdekking is niet geïnitialiseerd."
-        },
-        "initialization_error": {
-            "message": "Initialisatie van Nikobus-componenten mislukt: {error}"
-        },
-        "no_loaded_entry": {
-            "message": "Geen geladen Nikobus-integratie gevonden. Stel er één in voordat u deze actie aanroept."
-        },
-        "no_modules_known": {
-            "message": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit en probeer dan opnieuw modules te scannen."
-        },
-        "no_inventory_source": {
-            "message": "Geen PC-Link gedetecteerd op de bus en geen handmatige configuratiebestanden gevonden. Installeer een PC-Link of maak nikobus_module_config.json (en eventueel nikobus_button_config.json) aan in uw Home Assistant-configuratiemap en probeer het opnieuw."
-        }
-    },
-    "selector": {
-        "module_type": {
-            "options": {
-                "switch_module": "Schakelmodule",
-                "dimmer_module": "Dimmermodule",
-                "roller_module": "Rolluik / zonweringsmodule",
-                "other_module": "Overig (PC Logic / Feedback / niet geclassificeerd)"
-            }
-        },
-        "entity_type_switch_module": {
-            "options": {
-                "default": "Standaard (schakelaar)",
-                "light": "Lamp",
-                "disabled": "Uitgeschakeld (kanaal verbergen)"
-            }
-        },
-        "entity_type_dimmer_module": {
-            "options": {
-                "default": "Standaard (lamp)",
-                "disabled": "Uitgeschakeld (kanaal verbergen)"
-            }
-        },
-        "entity_type_roller_module": {
-            "options": {
-                "default": "Standaard (rolluik)",
-                "switch": "Schakelaar",
-                "light": "Lamp",
-                "disabled": "Uitgeschakeld (kanaal verbergen)"
-            }
-        }
+    "abort": {
+      "already_configured": "Deze Nikobus-verbinding is al geconfigureerd."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nikobus",
+        "description": "Wat wilt u doen?",
+        "menu_options": {
+          "hardware": "Hardware-instellingen wijzigen",
+          "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)"
+        }
+      },
+      "hardware": {
+        "title": "Hardwareconfiguratie",
+        "description": "Werk uw hardware-instellingen bij. De integratie herlaadt automatisch.",
+        "data": {
+          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+          "prior_gen3": "PC-Link is ouder dan Gen 3",
+          "press_repeat": "Herhalingen gesimuleerde druk"
+        },
+        "data_description": {
+          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen.",
+          "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
+          "press_repeat": "Hoe vaak elke door HA geactiveerde druk (knop, sfeer, CF, schakelaar) op de bus wordt verzonden. Een echte knop herhaalt zijn telegram, dus één verzending kan gemist worden bij een drukke bus. Standaard 3."
+        }
+      },
+      "polling": {
+        "title": "Polling-interval",
+        "description": "Hoe vaak moet Home Assistant de Nikobus-bus pollen?",
+        "data": {
+          "refresh_interval": "Polling-interval (seconden)"
+        },
+        "data_description": {
+          "refresh_interval": "Hoe vaak modulestatussen worden gelezen (60–3600 s)."
+        }
+      },
+      "configure_modules": {
+        "title": "Een Nikobus-module aanpassen",
+        "description": "Kies een module om te bewerken. Velden uit de ontdekking (model, adres, aantal kanalen) blijven alleen-lezen; alleen gebruikersvelden (beschrijvingen, entiteitstypes, LED-triggers, looptijden) kunnen hier worden gewijzigd.",
+        "data": {
+          "module": "Module"
+        }
+      },
+      "edit_module": {
+        "title": "Module {address} ({module_type})",
+        "description": "Model: {model}. Bewerk de beschrijving, corrigeer het moduletype als de ontdekking het verkeerd heeft geclassificeerd, of kies een kanaal om aan te passen. Let op: opnieuw *Modules en knoppen ontdekken* uitvoeren kan een handmatig overschreven type weer wegschrijven totdat de bibliotheek dit respecteert.",
+        "data": {
+          "description": "Modulebeschrijving",
+          "module_type": "Moduletype",
+          "channel": "Kanaal"
+        }
+      },
+      "edit_channel": {
+        "title": "Module {address} — kanaal {channel}",
+        "description": "Stel in hoe dit kanaal in Home Assistant verschijnt. Kies **Uitgeschakeld (kanaal verbergen)** in de entiteitstype-keuzelijst om geen entiteit voor dit kanaal aan te maken.",
+        "data": {
+          "entity_type": "Entiteitstype",
+          "description": "Kanaalbeschrijving",
+          "led_on": "LED-aan trigger (6-hex busadres, optioneel)",
+          "led_off": "LED-uit trigger (6-hex busadres, optioneel)",
+          "operation_time_up": "Looptijd omhoog (seconden)",
+          "operation_time_down": "Looptijd omlaag (seconden)"
+        }
+      }
+    },
+    "abort": {
+      "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "connection": {
+        "name": "Verbinding",
+        "state": {
+          "connected": "Verbonden",
+          "reconnecting": "Opnieuw verbinden",
+          "disconnected": "Verbinding verbroken"
+        }
+      },
+      "discovery_status": {
+        "name": "Ontdekkingsstatus",
+        "state": {
+          "idle": "Inactief",
+          "pc_link": "PC Link-inventaris",
+          "module_scan": "Modules scannen",
+          "finished": "Voltooid",
+          "error": "Fout"
+        }
+      },
+      "discovery_progress": {
+        "name": "Ontdekkingsvoortgang"
+      }
+    },
+    "button": {
+      "discover_modules_buttons": {
+        "name": "Modules en knoppen ontdekken"
+      },
+      "scan_all_module_links": {
+        "name": "Alle modulekoppelingen scannen"
+      }
+    }
+  },
+  "issues": {
+    "no_buttons_configured": {
+      "title": "Geen Nikobus-knoppen geconfigureerd",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Nikobus-modules en -knoppen ontdekken",
+            "description": "Home Assistant heeft geen Nikobus-knoppen gedetecteerd. Voer nu een PC-Link-inventaris uit om de configuratie aan te vullen."
+          }
+        }
+      }
+    },
+    "legacy_undecoded_buttons": {
+      "title": "{count} Nikobus-knop(pen) gemarkeerd als verouderd",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Verouderde Nikobus-knoppen beoordelen",
+            "description": "Deze {count} knop(pen) zijn als verouderd gemarkeerd na een volledige fase-2-scan. De kolom Reden legt uit waarom:\n\n  - **no decoded links** — geen output-module verwijst naar deze knop. Ofwel een wandknop die alleen wordt gebruikt voor Home Assistant-automatiseringen (behouden), ofwel resten van een vorige eigenaar (opschonen).\n  - **residue / stale links** — de koppelingen van de knop bestaan alleen in het PC-Link-/PC-Logic-registergeheugen zonder dat een huidige output-module ze opslaat, of elke gekoppelde module is verwijderd. Doorgaans residuele programmering van een vorige eigenaar die door DIN-button-koppeling niet is gewist (opschonen).\n\nOm een gewiste knop te herstellen, voer **Modules en knoppen ontdekken** opnieuw uit en daarna **Modulelinks scannen** — de bibliotheek voegt alles wat nog in het project staat opnieuw toe.\n\n{candidates}\n\nLaat de lijst leeg en bevestig om alles te behouden.",
+            "data": {
+              "addresses": "Te verwijderen knoppen"
+            }
+          }
+        },
+        "abort": {
+          "not_loaded": "De Nikobus-integratie is niet geladen; herlaad het item en probeer opnieuw.",
+          "no_candidates": "Geen verouderde knoppen meer — niets te doen."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "communication_error": {
+      "message": "Communicatie met Nikobus mislukt: {error}"
+    },
+    "discovery_already_running": {
+      "message": "Er is al een Nikobus-ontdekking bezig."
+    },
+    "discovery_not_initialized": {
+      "message": "Nikobus-ontdekking is niet geïnitialiseerd."
+    },
+    "initialization_error": {
+      "message": "Initialisatie van Nikobus-componenten mislukt: {error}"
+    },
+    "no_loaded_entry": {
+      "message": "Geen geladen Nikobus-integratie gevonden. Stel er één in voordat u deze actie aanroept."
+    },
+    "no_modules_known": {
+      "message": "Er zijn nog geen Nikobus-modules geconfigureerd. Voer eerst een PC-Link-inventaris uit en probeer dan opnieuw modules te scannen."
+    },
+    "no_inventory_source": {
+      "message": "Geen PC-Link gedetecteerd op de bus en geen handmatige configuratiebestanden gevonden. Installeer een PC-Link of maak nikobus_module_config.json (en eventueel nikobus_button_config.json) aan in uw Home Assistant-configuratiemap en probeer het opnieuw."
+    }
+  },
+  "selector": {
+    "module_type": {
+      "options": {
+        "switch_module": "Schakelmodule",
+        "dimmer_module": "Dimmermodule",
+        "roller_module": "Rolluik / zonweringsmodule",
+        "other_module": "Overig (PC Logic / Feedback / niet geclassificeerd)"
+      }
+    },
+    "entity_type_switch_module": {
+      "options": {
+        "default": "Standaard (schakelaar)",
+        "light": "Lamp",
+        "disabled": "Uitgeschakeld (kanaal verbergen)"
+      }
+    },
+    "entity_type_dimmer_module": {
+      "options": {
+        "default": "Standaard (lamp)",
+        "disabled": "Uitgeschakeld (kanaal verbergen)"
+      }
+    },
+    "entity_type_roller_module": {
+      "options": {
+        "default": "Standaard (rolluik)",
+        "switch": "Schakelaar",
+        "light": "Lamp",
+        "disabled": "Uitgeschakeld (kanaal verbergen)"
+      }
+    }
+  }
 }

@@ -24,8 +24,10 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_PRESS_REPEAT,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
+    DEFAULT_PRESS_REPEAT,
     DOMAIN,
 )
 from .coordinator import NikobusConfigEntry
@@ -189,6 +191,10 @@ def _hardware_schema(defaults: dict[str, Any]) -> vol.Schema:
             CONF_PRIOR_GEN3,
             default=defaults.get(CONF_PRIOR_GEN3, False),
         ): bool,
+        vol.Optional(
+            CONF_PRESS_REPEAT,
+            default=defaults.get(CONF_PRESS_REPEAT, DEFAULT_PRESS_REPEAT),
+        ): vol.All(cv.positive_int, vol.Range(min=1, max=10)),
     })
 
 
