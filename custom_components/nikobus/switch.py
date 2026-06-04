@@ -27,7 +27,7 @@ try:  # nikobus-connect provides the input-address math
         convert_nikobus_address,
         derive_pc_logic_input_physicals,
     )
-except Exception:  # pragma: no cover - defensive (older library)
+except ImportError:  # pragma: no cover - defensive (older library)
     convert_nikobus_address = None
     derive_pc_logic_input_physicals = None
 
@@ -59,13 +59,13 @@ def input_ab_addresses(phys: dict[str, Any]) -> tuple[str, str] | None:
     if not isinstance(parent, str) or not isinstance(slot, int) or slot < 1:
         return None
     try:
-        physicals = derive_pc_logic_input_physicals(parent, max(slot, 6))
-    except Exception:  # pragma: no cover - defensive
+        # Deriving exactly ``slot`` physicals yields the slot we want at
+        # ``[slot - 1]``; the library raises for an out-of-range slot.
+        physical = derive_pc_logic_input_physicals(parent, slot)[slot - 1]
+    except (ValueError, IndexError):  # pragma: no cover - defensive
         return None
-    if slot > len(physicals):
-        return None
-    addr_1a = convert_nikobus_address(physicals[slot - 1])
-    if not isinstance(addr_1a, str) or len(addr_1a) != 6:
+    addr_1a = convert_nikobus_address(physical)
+    if len(addr_1a) != 6:  # convert returns a "[...]" marker when it can't
         return None
     addr_1a = addr_1a.upper()
     addr_1b = format((int(addr_1a[0], 16) + 4) % 16, "X") + addr_1a[1:]
@@ -324,10 +324,6 @@ class NikobusInputLatchSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
         self._attr_name = "A/B state"
         self._attr_unique_id = f"nikobus_input_switch_{physical_addr.lower()}"
         self._attr_is_on = False
-
-    @property
-    def is_on(self) -> bool:
-        return self._attr_is_on
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

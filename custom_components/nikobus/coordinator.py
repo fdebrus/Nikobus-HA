@@ -1242,7 +1242,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         for specs in routing.values():
             for spec in specs:
                 known.add(build_unique_id(spec.domain, spec.kind, spec.address, spec.channel))
-        for phys in self.dict_button_data.get("nikobus_button", {}).values():
+        for in_addr, phys in self.dict_button_data.get("nikobus_button", {}).items():
             if not isinstance(phys, dict):
                 continue
             for op_point in (phys.get("operation_points") or {}).values():
@@ -1251,6 +1251,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 if bus_addr := op_point.get("bus_address"):
                     known.add(f"{DOMAIN}_button_{bus_addr}")
                     known.add(f"{DOMAIN}_push_button_{bus_addr}")
+            # Stateful A/B latch switch for PC-Logic / Modular-Interface
+            # inputs (switch platform, ``nikobus_input_switch_<addr>``).
+            if phys.get("pc_logic_parent_type") in INPUT_MODULE_TYPES:
+                known.add(f"nikobus_input_switch_{str(in_addr).lower()}")
         # Input-class modules (PC-Logic, Modular Interface) skip ``build_routing``
         # because they don't drive output relays — emit their input-channel
         # button unique IDs directly so orphan-cleanup doesn't remove them.
@@ -1293,11 +1297,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if self.cf_storage is not None:
             for cf_addr in self.cf_storage.data.get("nikobus_cf", {}):
                 known.add(f"nikobus_cf_{str(cf_addr).lower()}")
-        # Stateful A/B latch switches for PC-Logic / Modular-Interface
-        # inputs (switch platform, unique_id ``nikobus_input_switch_<addr>``).
-        for in_addr, phys in self.dict_button_data.get("nikobus_button", {}).items():
-            if isinstance(phys, dict) and phys.get("pc_logic_parent_type") in INPUT_MODULE_TYPES:
-                known.add(f"nikobus_input_switch_{str(in_addr).lower()}")
         known.add(f"{DOMAIN}_connection_status")
         known.add(f"{DOMAIN}_discovery_status")
         known.add(f"{DOMAIN}_discovery_progress")
