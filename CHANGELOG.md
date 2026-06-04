@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.0.1
+
+Requires **`nikobus-connect >= 0.23.0`**.
+
+- **Light-scene CFs now surface one scene per trigger / IR code**, keyed on
+  the address that actually fires it (e.g. IR `30A` → `9E4E2C`, `30B` →
+  `DE4E2C`). Previously every preset/light-scene IR code on a receiver
+  collapsed into one mega-scene keyed on the receiver base (e.g. `0D1C80`),
+  whose activation frame the bus ignored — so those scenes did nothing from
+  HA. Each scene is now individually activatable via `scene.turn_on`
+  (including scenes with no physical trigger button). 38xx PC-Logic
+  broadcast CFs are unaffected.
+- ⚠️ On the first discovery after upgrade the affected CF scene
+  `unique_id`s change (receiver-base → per-code wire form), so the old
+  merged `scene.nikobus_*` entity is replaced by the per-code ones —
+  re-point any automation/dashboard that referenced it.
+
 ## 3.0.0
 
 Major release — **please read the breaking changes before upgrading.**

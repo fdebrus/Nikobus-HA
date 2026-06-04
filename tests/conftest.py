@@ -3,7 +3,6 @@ Bootstrap sys.modules so all nikobus modules can be imported and tested
 without a full Home Assistant installation.
 """
 
-import asyncio
 import importlib.machinery
 import importlib.util
 import sys
@@ -59,6 +58,7 @@ _mod(
     "homeassistant.core",
     HomeAssistant=type("HomeAssistant", (), {}),
     Event=type("Event", (), {}),
+    CALLBACK_TYPE=object,
     callback=_ha_callback,
 )
 class _ConfigEntry:
@@ -66,7 +66,28 @@ class _ConfigEntry:
         return cls
 
 
-_mod("homeassistant.config_entries", ConfigEntry=_ConfigEntry)
+class _ConfigFlow:
+    # Allow ``class X(ConfigFlow, domain="nikobus")`` subclassing.
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__()
+
+
+class _OptionsFlow:
+    pass
+
+
+class _ConfigEntryState:
+    LOADED = "loaded"
+    NOT_LOADED = "not_loaded"
+
+
+_mod(
+    "homeassistant.config_entries",
+    ConfigEntry=_ConfigEntry,
+    ConfigFlow=_ConfigFlow,
+    OptionsFlow=_OptionsFlow,
+    ConfigEntryState=_ConfigEntryState,
+)
 class _HomeAssistantError(Exception):
     """Test stub that accepts the same kwargs as the real
     HomeAssistantError (``translation_domain``, ``translation_key``,
@@ -181,6 +202,12 @@ class _CoordinatorEntityStub:
     def async_on_remove(self, fn):
         pass
 
+    def async_write_ha_state(self):
+        pass
+
+    def _handle_coordinator_update(self):
+        pass
+
 
 _mod(
     "homeassistant.helpers.update_coordinator",
@@ -227,6 +254,63 @@ _mod(
 _mod("homeassistant.components.binary_sensor", BinarySensorEntity=type("BinarySensorEntity", (), {}), DOMAIN="binary_sensor")
 _mod("homeassistant.components.switch", SwitchEntity=type("SwitchEntity", (), {}), DOMAIN="switch")
 _mod("homeassistant.components.button", ButtonEntity=type("ButtonEntity", (), {}), DOMAIN="button")
+_mod(
+    "homeassistant.components.cover",
+    CoverEntity=type("CoverEntity", (), {}),
+    CoverDeviceClass=type("CoverDeviceClass", (), {"SHUTTER": "shutter"}),
+    CoverEntityFeature=type(
+        "CoverEntityFeature", (), {"OPEN": 1, "CLOSE": 2, "STOP": 4, "SET_POSITION": 8}
+    ),
+    ATTR_CURRENT_POSITION="current_position",
+    ATTR_POSITION="position",
+    DOMAIN="cover",
+)
+_mod(
+    "homeassistant.components.light",
+    LightEntity=type("LightEntity", (), {}),
+    ColorMode=type("ColorMode", (), {"BRIGHTNESS": "brightness", "ONOFF": "onoff"}),
+    ATTR_BRIGHTNESS="brightness",
+    DOMAIN="light",
+)
+_mod("homeassistant.components.scene", Scene=type("Scene", (), {}))
+
+# --- config-flow / repairs import surface -------------------------------
+# voluptuous + the HA flow/selector helpers aren't installed in this env;
+# stub just enough to import config_flow.py / repairs.py and exercise
+# their pure helpers (schema builders themselves are not invoked).
+_mod(
+    "voluptuous",
+    Invalid=type("Invalid", (Exception,), {}),
+    Schema=lambda *a, **k: (a[0] if a else None),
+    Optional=lambda *a, **k: (a[0] if a else None),
+    Required=lambda *a, **k: (a[0] if a else None),
+    All=lambda *a, **k: a,
+    Range=lambda *a, **k: None,
+    Coerce=lambda *a, **k: None,
+    In=lambda *a, **k: None,
+)
+_mod(
+    "homeassistant.helpers.config_validation",
+    positive_int=int,
+    string=str,
+    config_entry_only_config_schema=lambda *a, **k: None,
+)
+_mod(
+    "homeassistant.helpers.selector",
+    SelectSelector=lambda *a, **k: None,
+    SelectSelectorConfig=lambda *a, **k: None,
+    SelectSelectorMode=type(
+        "SelectSelectorMode", (), {"LIST": "list", "DROPDOWN": "dropdown"}
+    ),
+    SelectOptionDict=lambda **k: dict(**k),
+    NumberSelector=lambda *a, **k: None,
+    NumberSelectorConfig=lambda *a, **k: None,
+    NumberSelectorMode=type("NumberSelectorMode", (), {"BOX": "box", "SLIDER": "slider"}),
+    TextSelector=lambda *a, **k: None,
+    TextSelectorConfig=lambda *a, **k: None,
+)
+_mod("homeassistant.data_entry_flow", FlowResult=dict)
+_mod("homeassistant.components.repairs", RepairsFlow=type("RepairsFlow", (), {}))
 
 
 class _RestoreEntityStub:

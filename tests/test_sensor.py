@@ -1,11 +1,10 @@
 """Tests for the Nikobus connection status sensor."""
 
-import asyncio
 import json
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 from custom_components.nikobus.sensor import NikobusConnectionSensor
 from custom_components.nikobus.const import DOMAIN, HUB_IDENTIFIER
