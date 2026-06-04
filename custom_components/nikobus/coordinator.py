@@ -61,7 +61,7 @@ from .const import (
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
-from .nkbmanual import async_apply_friendly_name_overlay
+from .nkbmanual import legacy_config_files_present
 from .nkbstorage import (
     NikobusButtonStorage,
     NikobusCFStorage,
@@ -266,34 +266,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.dict_button_data = await self.button_storage.async_load()
             await self.cf_storage.async_load()
 
-            # Boot NEVER imports inventory from the legacy manual-config
-            # files. Building inventory from files is reserved for the
-            # explicit "Discover modules" action, which tries PC-Link
-            # first and only falls back to the files on probe failure
-            # (see ``start_pc_link_inventory`` →
-            # ``_apply_manual_inventory_as_fallback``).
-            #
-            # Importing at boot was wrong on two counts: it silently
-            # clobbered a PC-Link install's bus-discovered inventory from
-            # stale leftover files (2.12.2 guarded that), and — worse —
-            # it seeded a *fresh* PC-Link install from files before the
-            # user ever ran discovery (the provenance guard couldn't tell
-            # "fresh PC-Link install" from "no-PC-Link install"). The
-            # fix is to not import at boot at all.
-            #
-            # The names-only friendly-name overlay still runs: it never
-            # adds or removes modules/buttons, it only enriches entries
-            # that already exist in the stores, so file-authored names
-            # stay in sync each boot without re-running discovery.
-            changed = await async_apply_friendly_name_overlay(
-                self.hass,
-                self.module_storage,
-                self.dict_button_data,
-            )
-            if changed:
-                await self.module_storage.async_save()
-                await self.button_storage.async_save()
-                self._rebuild_dict_module_data()
+            # 3.0.0: the legacy friendly-name overlay (importing entity
+            # names from nikobus_module_config.json / nikobus_button_config.json
+            # on every boot) has been removed — entity names are managed in
+            # Home Assistant and preserved across reloads. The files are still
+            # consulted only as the inventory fallback for installs without a
+            # PC-Link (start_pc_link_inventory → _apply_manual_inventory_as_fallback).
+            # Warn if they're still present so users know the name-import no
+            # longer happens.
+            await self._warn_if_legacy_config_files_present()
+
             self.dict_scene_data = await self.nikobus_config.load_json_data(
                 "nikobus_scene_config.json", "scene"
             )
@@ -1342,6 +1324,24 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.dict_module_data.clear()
         self.dict_module_data.update(grouped)
 
+    async def _warn_if_legacy_config_files_present(self) -> None:
+        """Warn if the deprecated manual-config files are still on disk.
+
+        As of 3.0.0 these files are no longer imported for entity names;
+        they're only consulted as the no-PC-Link inventory fallback.
+        """
+        present = await legacy_config_files_present(self.hass)
+        if present:
+            _LOGGER.warning(
+                "Legacy Nikobus config file(s) found: %s. As of 3.0.0 these "
+                "are no longer imported for entity names — names are managed "
+                "in Home Assistant and preserved across reloads. They are "
+                "only consulted as the inventory fallback for installs "
+                "without a PC-Link; if you use a PC-Link/bridge you can "
+                "delete them.",
+                ", ".join(present),
+            )
+
     def _invalidate_routing_cache(self) -> None:
         """Drop the cached router spec so the next access rebuilds it
         (e.g. after modules are discovered, purged, or edited)."""
@@ -2056,19 +2056,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     translation_domain=DOMAIN,
                     translation_key="no_inventory_source",
                 )
-
-        # 3. Overlay friendly names from manual files (whether or not
-        #    we used them as inventory source). No-op if files absent.
-        try:
-            overlaid = await async_apply_friendly_name_overlay(
-                self.hass, self.module_storage, self.dict_button_data
-            )
-            if overlaid:
-                await self.module_storage.async_save()
-                await self.button_storage.async_save()
-                self._rebuild_dict_module_data()
-        except Exception:  # noqa: BLE001
-            _LOGGER.exception("Friendly-name overlay failed; continuing")
 
     async def _try_pclink_inventory(self) -> bool:
         """Kick off the ``#A`` broadcast and decide if PC-Link is present.
