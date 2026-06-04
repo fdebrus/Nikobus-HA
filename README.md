@@ -135,7 +135,9 @@ Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 
 ### Installs without a PC-Link
 
-If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Discover modules* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory. If you keep them, their descriptions are also overlaid onto discovered devices as friendly names.
+If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Discover modules* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory.
+
+> **3.0.0:** these files are now an **inventory source only**. The previous behaviour that imported their descriptions as friendly names on every startup has been removed — entity names live in Home Assistant (see [Renaming](#renaming)). If you only kept the files for their names and you have a PC-Link, you can delete them; the integration logs a warning when it finds them.
 
 ---
 
@@ -163,6 +165,9 @@ Each input has two keys — **A** and **B** — because the firmware emits one t
 
 - Use the **A / B buttons** to simulate the input going on/off *from* HA.
 - Use the **A / B sensors** to monitor the input's real state on the bus.
+- Use the **A/B latch switch** (added in 3.0.0) for a persistent on/off mirror: the **A** signal latches it on, **B** latches it off, and `turn_on` / `turn_off` drive the matching bus frame. It tracks physical presses and other controllers, and survives restarts.
+
+> The latch switch assumes the input emits **both** its A and B telegrams (one per direction) — the normal case. An input wired to emit only one of the two can be turned on/off from HA but its mirrored state won't follow physical presses in both directions.
 
 Input addresses are computed by firmware from the module's own address (not stored in inventory) and synthesised automatically — no configuration needed.
 
@@ -330,6 +335,8 @@ outputs:
 
 > CF scenes get generic names (`Nikobus switch CF …`). The friendly names from your Nikobus "Groups" are not imported — rename the scene entities in HA if you want.
 
+> **Upgrading to 3.0.0:** light-scene CFs are now keyed on the address the bus actually emits (the wire form), which both fixes activation and splits a multi-key trigger into one scene per key. As a result a light-scene's `unique_id` (and entity id) **changes on the first discovery after upgrade** — the old `scene.nikobus_cf_…` entity is replaced by one or more new ones. Re-point any automation or dashboard that referenced the old entity. CF *switch/roller* scenes are unaffected.
+
 ### User-authored scenes (`nikobus_scene_config.json`)
 
 For HA-side per-channel groupings that **don't** exist as a CF on the bus. Loaded from `/config` at startup; a missing/empty file is fine. Dimmers/shutters use 0–255, switches `"on"`/`"off"`, shutters `"open"`/`"close"`.
@@ -394,7 +401,7 @@ The store rebuilds cleanly with proper device types and no duplicates. Names you
 
 ### Custom channel/button names didn't carry over
 
-Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`), not in the integration's store — so a clean re-discovery preserves them as long as the bus addresses are unchanged. Descriptions authored only in a legacy `nikobus_button_config.json` are overlaid where the discovered op-point addresses match.
+Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`), not in the integration's store — so a clean re-discovery preserves them as long as the bus addresses are unchanged. (Removed in **3.0.0**: names are no longer imported from a legacy `nikobus_button_config.json`; set them in HA and they persist.)
 
 ### State is slow to update
 
@@ -436,7 +443,7 @@ The code is split into two packages.
 
 - `coordinator.py` — wires the library together; owns polling, discovery lifecycle, and state signals.
 - `nkbstorage.py` — the three HA Stores (`nikobus.modules`, `nikobus.buttons`, `nikobus.cfs`).
-- `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs, plus the friendly-name overlay.
+- `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs (inventory source only).
 - `nkbactuator.py` — turns incoming button frames into HA events with debounce + duration tracking.
 - `nkbconfig.py` — scene-file loader/writer.
 - `nkbtravelcalculator.py` — virtual cover-position tracking.
