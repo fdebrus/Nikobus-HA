@@ -28,6 +28,7 @@ from .router import (
     INPUT_MODULE_TYPES,
     OPAQUE_MODULE_TYPES,
     input_label_prefix,
+    iter_operation_points,
     pc_logic_input_naming,
 )
 
@@ -71,21 +72,10 @@ def _iter_button_entities(
     buttons: dict[str, Any],
 ):
     """Yield one NikobusButtonEntity per discovered operation point."""
-    for physical_addr, phys in buttons.items():
-        if not isinstance(phys, dict):
-            continue
-        op_points = phys.get("operation_points") or {}
-        if not isinstance(op_points, dict):
-            continue
-        for key_label, op_point in op_points.items():
-            if not isinstance(op_point, dict):
-                continue
-            bus_addr = op_point.get("bus_address")
-            if not bus_addr:
-                continue
-            yield NikobusButtonEntity(
-                coordinator, physical_addr, key_label, op_point, parent_phys=phys
-            )
+    for physical_addr, key_label, op_point, phys in iter_operation_points(buttons):
+        yield NikobusButtonEntity(
+            coordinator, physical_addr, key_label, op_point, parent_phys=phys
+        )
 
 
 def _category_for_button_type(type_str: str) -> str:

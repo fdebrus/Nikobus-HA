@@ -1236,7 +1236,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             build_routing,
             build_unique_id,
             input_latch_switch_unique_id,
-            is_input_module_child,
+            iter_input_module_children,
+            iter_operation_points,
             INPUT_MODULE_TYPES,
         )
         known: set[str] = set()
@@ -1244,20 +1245,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         for specs in routing.values():
             for spec in specs:
                 known.add(build_unique_id(spec.domain, spec.kind, spec.address, spec.channel))
-        for in_addr, phys in self.dict_button_data.get("nikobus_button", {}).items():
-            if not isinstance(phys, dict):
-                continue
-            for op_point in (phys.get("operation_points") or {}).values():
-                if not isinstance(op_point, dict):
-                    continue
-                if bus_addr := op_point.get("bus_address"):
-                    known.add(f"{DOMAIN}_button_{bus_addr}")
-                    known.add(f"{DOMAIN}_push_button_{bus_addr}")
-            # Stateful A/B latch switch for PC-Logic / Modular-Interface
-            # inputs (switch platform). Shared helpers keep this in lock
-            # step with the switch platform's own id/predicate.
-            if is_input_module_child(phys):
-                known.add(input_latch_switch_unique_id(in_addr))
+        buttons = self.dict_button_data.get("nikobus_button", {})
+        # Button + push-button ids, via the shared op-point enumerator
+        # (same guard ladder the button/binary-sensor platforms use).
+        for _addr, _key, op_point, _phys in iter_operation_points(buttons):
+            bus_addr = op_point["bus_address"]
+            known.add(f"{DOMAIN}_button_{bus_addr}")
+            known.add(f"{DOMAIN}_push_button_{bus_addr}")
+        # Stateful A/B latch switch ids for PC-Logic / Modular-Interface
+        # inputs — same enumerator the switch platform creates from.
+        for in_addr, _phys in iter_input_module_children(buttons):
+            known.add(input_latch_switch_unique_id(in_addr))
         # Input-class modules (PC-Logic, Modular Interface) skip ``build_routing``
         # because they don't drive output relays — emit their input-channel
         # button unique IDs directly so orphan-cleanup doesn't remove them.

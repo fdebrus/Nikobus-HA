@@ -111,5 +111,50 @@ class TestInputChildHelpers(unittest.TestCase):
         self.assertEqual(list(iter_input_module_children(None)), [])
 
 
+class TestIterOperationPoints(unittest.TestCase):
+    """Shared op-point enumerator — one guard ladder for the button /
+    binary-sensor platforms and the known-id set."""
+
+    def test_yields_op_points_with_bus_address(self):
+        from custom_components.nikobus.router import iter_operation_points
+
+        buttons = {
+            "1A2B3C": {
+                "operation_points": {
+                    "1A": {"bus_address": "081032"},
+                    "1B": {"bus_address": "481032"},
+                }
+            }
+        }
+        got = [(a, k, op["bus_address"]) for a, k, op, _ in iter_operation_points(buttons)]
+        self.assertEqual(
+            got, [("1A2B3C", "1A", "081032"), ("1A2B3C", "1B", "481032")]
+        )
+
+    def test_skips_op_point_without_bus_address(self):
+        from custom_components.nikobus.router import iter_operation_points
+
+        buttons = {"X": {"operation_points": {"1A": {"description": "no bus addr"}}}}
+        self.assertEqual(list(iter_operation_points(buttons)), [])
+
+    def test_non_dict_operation_points_is_safe(self):
+        # The guard that binary_sensor / the known-id loop previously
+        # lacked: a list-shaped operation_points must not raise.
+        from custom_components.nikobus.router import iter_operation_points
+
+        buttons = {
+            "BAD": {"operation_points": [{"bus_address": "1"}]},  # list, not dict
+            "OK": {"operation_points": {"1A": {"bus_address": "AABBCC"}}},
+        }
+        got = [op["bus_address"] for _, _, op, _ in iter_operation_points(buttons)]
+        self.assertEqual(got, ["AABBCC"])
+
+    def test_non_dict_entry_and_none_are_safe(self):
+        from custom_components.nikobus.router import iter_operation_points
+
+        self.assertEqual(list(iter_operation_points(None)), [])
+        self.assertEqual(list(iter_operation_points({"X": "not-a-dict"})), [])
+
+
 if __name__ == "__main__":
     unittest.main()

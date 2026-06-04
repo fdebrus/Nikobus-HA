@@ -140,6 +140,32 @@ def iter_input_module_children(
         if is_input_module_child(phys):
             yield str(addr), phys
 
+
+def iter_operation_points(
+    buttons: Mapping[str, Any] | None,
+) -> Iterator[tuple[str, str, Mapping[str, Any], Mapping[str, Any]]]:
+    """Yield ``(physical_addr, key_label, op_point, phys)`` for every
+    button operation point carrying a ``bus_address``.
+
+    Single source of the guard ladder (entry is a dict → has a dict
+    ``operation_points`` → op-point is a dict → has a truthy
+    ``bus_address``) so the button platform, the binary-sensor platform
+    and the orphan-cleanup known-id set agree. (binary_sensor.py and the
+    known-id loop previously skipped the ``operation_points`` dict check,
+    which would raise ``AttributeError`` on a malformed list-shaped
+    entry.)"""
+    for physical_addr, phys in (buttons or {}).items():
+        if not isinstance(phys, dict):
+            continue
+        op_points = phys.get("operation_points")
+        if not isinstance(op_points, dict):
+            continue
+        for key_label, op_point in op_points.items():
+            if not isinstance(op_point, dict):
+                continue
+            if op_point.get("bus_address"):
+                yield str(physical_addr), str(key_label), op_point, phys
+
 # Module types we recognise but for which no entity schema is validated
 # yet — the inventory record alone makes the device visible in the HA
 # device registry, but no platform creates entities for it.
