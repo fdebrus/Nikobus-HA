@@ -77,5 +77,39 @@ class TestInputSwitchKnownIds(unittest.TestCase):
         self.assertNotIn("nikobus_input_switch_1df1e0", known)
 
 
+class TestInputChildHelpers(unittest.TestCase):
+    """Shared router helpers that the switch platform and the known-id
+    set both build on — they must agree on predicate and id format."""
+
+    def test_is_input_module_child(self):
+        from custom_components.nikobus.router import is_input_module_child
+
+        self.assertTrue(is_input_module_child({"pc_logic_parent_type": "pc_logic"}))
+        self.assertTrue(
+            is_input_module_child({"pc_logic_parent_type": "interface_module"})
+        )
+        self.assertFalse(is_input_module_child({"type": "Wall Button"}))
+        self.assertFalse(is_input_module_child(None))
+
+    def test_unique_id_format(self):
+        from custom_components.nikobus.router import input_latch_switch_unique_id
+
+        self.assertEqual(
+            input_latch_switch_unique_id("64A061"), "nikobus_input_switch_64a061"
+        )
+
+    def test_iter_yields_only_input_children(self):
+        from custom_components.nikobus.router import iter_input_module_children
+
+        buttons = {
+            "64A061": {"pc_logic_parent_type": "pc_logic"},
+            "1DF1E0": {"type": "Wall Button"},
+            "0E1234": {"pc_logic_parent_type": "interface_module"},
+        }
+        got = {addr for addr, _ in iter_input_module_children(buttons)}
+        self.assertEqual(got, {"64A061", "0E1234"})
+        self.assertEqual(list(iter_input_module_children(None)), [])
+
+
 if __name__ == "__main__":
     unittest.main()

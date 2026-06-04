@@ -25,7 +25,12 @@ from .const import (
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
-from .router import INPUT_MODULE_TYPES, OPAQUE_MODULE_TYPES
+from .router import (
+    INPUT_MODULE_TYPES,
+    OPAQUE_MODULE_TYPES,
+    input_label_prefix,
+    pc_logic_input_naming,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -106,43 +111,6 @@ def _category_for_button_type(type_str: str) -> str:
     return CATEGORY_WALL_BUTTONS
 
 
-def _input_label_prefix(phys: dict[str, Any]) -> str:
-    """Return the input-naming prefix for a synthesized input child.
-
-    PC-Logic (05-201) inputs use ``LM`` (Logic Module — matches Niko's
-    own terminology); Modular Interface (05-206) inputs use ``MI``
-    (Modular Interface). Both share the ``pc_logic_parent_*`` provenance
-    fields, so ``pc_logic_parent_type`` is the discriminator. Anything
-    that isn't explicitly the Modular Interface stays ``LM`` (covers the
-    PC-Logic value and missing/legacy entries — back-compat).
-    """
-    return "MI" if phys.get("pc_logic_parent_type") == "interface_module" else "LM"
-
-
-def _pc_logic_input_naming(
-    phys: dict[str, Any],
-) -> tuple[str, tuple[str, str]] | None:
-    """Return ``(device_name, via_device_identifier)`` if ``phys`` is a
-    synthesized input-module child (PC-Logic or Modular Interface);
-    else ``None``.
-
-    The library sets ``pc_logic_parent_address`` (the owning module
-    address), ``pc_logic_parent_type`` (``pc_logic`` /
-    ``interface_module``) and ``pc_logic_slot_index`` (1..N) on the
-    button-store entry when it synthesizes virtual buttons for module
-    inputs. HA parents the device directly under the owning module
-    device (instead of the wall-buttons category) and names it
-    ``LM-INPUT N`` for PC-Logic or ``MI-INPUT N`` for the Modular
-    Interface, matching each product's terminology.
-    """
-
-    parent_addr = phys.get("pc_logic_parent_address")
-    slot = phys.get("pc_logic_slot_index")
-    if not isinstance(parent_addr, str) or not isinstance(slot, int):
-        return None
-    return f"{_input_label_prefix(phys)}-INPUT {slot}", (DOMAIN, parent_addr.upper())
-
-
 def _remote_transmitter_naming(
     phys: dict[str, Any],
 ) -> tuple[str, tuple[str, str]] | None:
@@ -199,7 +167,7 @@ def register_wall_button_devices(
         if not isinstance(phys, dict):
             continue
 
-        pc_logic_naming = _pc_logic_input_naming(phys)
+        pc_logic_naming = pc_logic_input_naming(phys)
         if pc_logic_naming is not None:
             name, via_device = pc_logic_naming
             parent_addr = via_device[1]
@@ -492,7 +460,7 @@ def op_point_display_name(
             and key_label[1].isalpha()
             and isinstance(slot, int)
         ):
-            prefix = _input_label_prefix(parent_phys)
+            prefix = input_label_prefix(parent_phys)
             return f"Key {key_label[1].upper()} on {prefix}-INPUT {slot}"
     return op_point.get("description") or f"Push button {key_label}"
 

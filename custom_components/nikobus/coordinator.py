@@ -1236,7 +1236,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities."""
-        from .router import build_routing, build_unique_id, INPUT_MODULE_TYPES
+        from .router import (
+            build_routing,
+            build_unique_id,
+            input_latch_switch_unique_id,
+            is_input_module_child,
+            INPUT_MODULE_TYPES,
+        )
         known: set[str] = set()
         routing = build_routing(self.dict_module_data)
         for specs in routing.values():
@@ -1252,9 +1258,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     known.add(f"{DOMAIN}_button_{bus_addr}")
                     known.add(f"{DOMAIN}_push_button_{bus_addr}")
             # Stateful A/B latch switch for PC-Logic / Modular-Interface
-            # inputs (switch platform, ``nikobus_input_switch_<addr>``).
-            if phys.get("pc_logic_parent_type") in INPUT_MODULE_TYPES:
-                known.add(f"nikobus_input_switch_{str(in_addr).lower()}")
+            # inputs (switch platform). Shared helpers keep this in lock
+            # step with the switch platform's own id/predicate.
+            if is_input_module_child(phys):
+                known.add(input_latch_switch_unique_id(in_addr))
         # Input-class modules (PC-Logic, Modular Interface) skip ``build_routing``
         # because they don't drive output relays — emit their input-channel
         # button unique IDs directly so orphan-cleanup doesn't remove them.

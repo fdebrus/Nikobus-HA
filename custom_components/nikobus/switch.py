@@ -11,14 +11,15 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .button import _pc_logic_input_naming
 from .const import DOMAIN, EVENT_BUTTON_OPERATION, EVENT_BUTTON_PRESSED
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import (
-    INPUT_MODULE_TYPES,
     build_unique_id,
     get_routing,
+    input_latch_switch_unique_id,
+    iter_input_module_children,
+    pc_logic_input_naming,
     register_output_module_devices,
 )
 
@@ -105,14 +106,10 @@ async def async_setup_entry(
     # The input itself surfaces as a stateless button (button.py); this
     # adds a persistent on/off mirror: the 1A signal turns it on, 1B
     # turns it off, and turn_on/off drive the corresponding bus frame.
-    for physical_addr, phys in coordinator.dict_button_data.get(
-        "nikobus_button", {}
-    ).items():
-        if not isinstance(phys, dict):
-            continue
-        if phys.get("pc_logic_parent_type") not in INPUT_MODULE_TYPES:
-            continue
-        naming = _pc_logic_input_naming(phys)
+    for physical_addr, phys in iter_input_module_children(
+        coordinator.dict_button_data.get("nikobus_button", {})
+    ):
+        naming = pc_logic_input_naming(phys)
         ab = input_ab_addresses(phys)
         if naming is None or ab is None:
             continue
@@ -322,7 +319,7 @@ class NikobusInputLatchSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
         self._addr_1a = addr_1a
         self._addr_1b = addr_1b
         self._attr_name = "A/B state"
-        self._attr_unique_id = f"nikobus_input_switch_{physical_addr.lower()}"
+        self._attr_unique_id = input_latch_switch_unique_id(physical_addr)
         self._attr_is_on = False
 
     @property
