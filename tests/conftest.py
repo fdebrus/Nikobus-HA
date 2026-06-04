@@ -181,6 +181,12 @@ class _CoordinatorEntityStub:
     def async_on_remove(self, fn):
         pass
 
+    def async_write_ha_state(self):
+        pass
+
+    def _handle_coordinator_update(self):
+        pass
+
 
 _mod(
     "homeassistant.helpers.update_coordinator",
@@ -227,6 +233,17 @@ _mod(
 _mod("homeassistant.components.binary_sensor", BinarySensorEntity=type("BinarySensorEntity", (), {}), DOMAIN="binary_sensor")
 _mod("homeassistant.components.switch", SwitchEntity=type("SwitchEntity", (), {}), DOMAIN="switch")
 _mod("homeassistant.components.button", ButtonEntity=type("ButtonEntity", (), {}), DOMAIN="button")
+_mod(
+    "homeassistant.components.cover",
+    CoverEntity=type("CoverEntity", (), {}),
+    CoverDeviceClass=type("CoverDeviceClass", (), {"SHUTTER": "shutter"}),
+    CoverEntityFeature=type(
+        "CoverEntityFeature", (), {"OPEN": 1, "CLOSE": 2, "STOP": 4, "SET_POSITION": 8}
+    ),
+    ATTR_CURRENT_POSITION="current_position",
+    ATTR_POSITION="position",
+    DOMAIN="cover",
+)
 
 
 class _RestoreEntityStub:
