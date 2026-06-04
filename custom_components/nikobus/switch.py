@@ -118,7 +118,11 @@ async def async_setup_entry(
         entities.append(
             NikobusInputLatchSwitch(
                 coordinator,
-                physical_addr=str(physical_addr).upper(),
+                # Use the raw button-store key so the latch's device
+                # identifier matches the input-child device registered in
+                # button.py (which also uses the raw key) — otherwise a
+                # non-uppercase key would split them into two devices.
+                physical_addr=physical_addr,
                 addr_1a=addr_1a,
                 addr_1b=addr_1b,
                 device_name=device_name,

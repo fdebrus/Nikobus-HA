@@ -227,34 +227,6 @@ async def _apply_module_config(
     return len(flat), path
 
 
-# ---------------------------------------------------------------------------
-# Friendly-name overlay (2.11.5+)
-# ---------------------------------------------------------------------------
-#
-# Distinct from ``_apply_module_config`` / ``_apply_button_config`` above,
-# which fully REPLACE the stores from the manual files (used when there's
-# no PC-Link to provide inventory). The overlay enriches existing entries
-# in-place: same address present in both the live store AND the file →
-# copy user-editable fields (descriptions, entity_type, roller times,
-# LED triggers) from file onto the store entry. Modules in the file that
-# aren't in the store are silently ignored — PC-Link's inventory is the
-# authority for what exists.
-#
-# Use case: PC-Link installs whose users want their custom labels (from
-# an old YAML/JSON setup or from a sibling install) to survive the bus
-# discovery's generic "Switch Module" / "Output 1" defaults.
-
-_MODULE_OVERLAY_FIELDS = ("description",)
-_CHANNEL_OVERLAY_FIELDS = (
-    "description",
-    "entity_type",
-    "operation_time_up",
-    "operation_time_down",
-    "led_on",
-    "led_off",
-)
-
-
 def _extract_physical_info(
     entry: dict[str, Any],
 ) -> tuple[str, str, int, str, str] | None:

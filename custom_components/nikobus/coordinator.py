@@ -155,12 +155,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._module_states: dict[str, bytearray] = {}
 
         self.discovery_running = False
-        # Written by nikobus-connect (it holds this coordinator as
-        # ``self._coordinator``): set to PC_LINK in start_inventory_discovery
-        # and MODULE in the register-scan path, reset to None between phases.
-        # Read by ``_inventory_callback`` / ``_discovery_frame_callback`` to
-        # route $18 / $2E / $1E frames. Looks unassigned to a grep of this
-        # file — the writer is in the library. Do NOT remove.
+        # The following are written by nikobus-connect, which holds this
+        # coordinator as ``self._coordinator`` and assigns these attributes
+        # cross-object during discovery. They look unassigned to a grep of
+        # THIS file — the writer is in the library — so do NOT remove them:
+        # the library both writes and READS them (e.g. ``if not
+        # self._coordinator.discovery_module``), and a missing seed here
+        # would raise AttributeError if the library reads before its first
+        # write.
+        #   * ``discovery_module`` / ``discovery_module_address`` — current
+        #     per-module register-scan target; read in the library's frame
+        #     routing.
+        #   * ``inventory_query_type`` — PC_LINK / MODULE phase marker, read
+        #     by ``_inventory_callback`` / ``_discovery_frame_callback`` to
+        #     route $18 / $2E / $1E frames.
+        self.discovery_module = None
+        self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
         # Was the most recent ``start_module_scan`` a scan-all (every
@@ -1035,7 +1045,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         A/B latch switch, software-scene feedback LEDs, and CF /
         light-scene activation.
         """
-        if not address:
+        if not address or self.nikobus_command is None:
+            # No command handler before connect / during teardown —
+            # nothing to send rather than an AttributeError.
             return
         try:
             repeats = max(1, int(self._press_repeat))
