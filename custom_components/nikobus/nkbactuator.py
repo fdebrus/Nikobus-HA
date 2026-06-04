@@ -247,7 +247,7 @@ class NikobusActuator:
         """Identify impacted modules and trigger targeted refreshes."""
         hit = find_operation_point(self._dict_button_data, address)
         if hit is None:
-            _LOGGER.debug("Press from unknown button %s — run discovery to populate it", address)
+            _LOGGER.info("Press from unknown button %s — run discovery to populate it", address)
             return
         _physical_addr, _key_label, op_point = hit
         await self.process_button_modules(op_point, address, press_context)
