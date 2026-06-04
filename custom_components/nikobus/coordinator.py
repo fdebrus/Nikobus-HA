@@ -27,8 +27,11 @@ from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError,
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_PRESS_REPEAT,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
+    DEFAULT_PRESS_REPEAT,
+    PRESS_REPEAT_DELAY,
     DEVICE_ADDRESS_INVENTORY,
     DEVICE_INVENTORY_ANSWER,
     DISCOVERY_PHASE_ERROR,
@@ -111,6 +114,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._refresh_interval = _opts.get(CONF_REFRESH_INTERVAL, config_entry.data.get(CONF_REFRESH_INTERVAL, 120))
         self._has_feedback_module = _opts.get(CONF_HAS_FEEDBACK_MODULE, config_entry.data.get(CONF_HAS_FEEDBACK_MODULE, False))
         self._prior_gen3 = _opts.get(CONF_PRIOR_GEN3, config_entry.data.get(CONF_PRIOR_GEN3, False))
+        self._press_repeat = _opts.get(CONF_PRESS_REPEAT, config_entry.data.get(CONF_PRESS_REPEAT, DEFAULT_PRESS_REPEAT))
 
         super().__init__(
             hass,
@@ -1031,10 +1035,38 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     # Event / dispatcher
     # ------------------------------------------------------------------
 
+    async def async_send_button_press(self, address: str) -> None:
+        """Put a simulated button press on the bus as a short, spaced burst.
+
+        A real Nikobus button emits its telegram repeatedly for as long
+        as it's held, and modules only act on a command seen at least
+        twice (the bus protocol's noise/collision guard). A single ``#N``
+        frame is therefore unreliable under bus contention — the symptom
+        being presses that "sometimes" do nothing. We mirror the
+        reference firmware ("2 to register, 3 to be sure") by repeating
+        the frame ``CONF_PRESS_REPEAT`` times (default 3) with a small
+        inter-frame gap, kept short enough to read as a tap, not a hold.
+
+        Shared by every HA-originated press: input buttons, the input
+        A/B latch switch, software-scene feedback LEDs, and CF /
+        light-scene activation.
+        """
+        if not address:
+            return
+        try:
+            repeats = max(1, int(self._press_repeat))
+        except (TypeError, ValueError):
+            repeats = DEFAULT_PRESS_REPEAT
+        command = f"#N{address}\r#E1"
+        for i in range(repeats):
+            await self.nikobus_command.queue_command(command)
+            if i < repeats - 1:
+                await asyncio.sleep(PRESS_REPEAT_DELAY)
+
     async def async_event_handler(self, event: str, data: dict[str, Any]) -> None:
         """Dispatch events and trigger targeted entity updates."""
         if event == "ha_button_pressed":
-            await self.nikobus_command.queue_command(f"#N{data.get('address')}\r#E1")
+            await self.async_send_button_press(str(data.get("address") or ""))
 
         if address := data.get("impacted_module_address"):
             async_dispatcher_send(self.hass, f"{DOMAIN}_update_{address}")
@@ -1520,7 +1552,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             )
         addr = bus_address.upper()
         _LOGGER.info("Activating Nikobus CF broadcast: %s", addr)
-        await self.nikobus_command.queue_command(f"#N{addr}\r#E1")
+        await self.async_send_button_press(addr)
 
     async def _reconcile_post_discovery(
         self,

@@ -1,238 +1,242 @@
 {
-    "config": {
-        "step": {
-            "user": {
-                "title": "Connexion à Nikobus",
-                "description": "Entrez l'adresse de votre module PC-Link Nikobus.\n\n- **Port série** : `/dev/ttyUSB0` ou `COM3`\n- **Pont réseau** : `192.168.1.50:9999`",
-                "data": {
-                    "connection_string": "Connexion (port série ou IP:port)"
-                },
-                "data_description": {
-                    "connection_string": "Chemin du port série ou adresse TCP du pont PC-Link"
-                }
-            },
-            "hardware": {
-                "title": "Configuration matérielle",
-                "description": "Indiquez votre matériel Nikobus afin que l'intégration utilise la stratégie de mise à jour optimale.",
-                "data": {
-                    "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
-                    "prior_gen3": "PC-Link antérieur à la Gen 3"
-                },
-                "data_description": {
-                    "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire.",
-                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération."
-                }
-            },
-            "polling": {
-                "title": "Intervalle de scrutation",
-                "description": "Sans module Feedback, Home Assistant interroge périodiquement le bus Nikobus. Choisissez la fréquence.",
-                "data": {
-                    "refresh_interval": "Intervalle de scrutation (secondes)"
-                },
-                "data_description": {
-                    "refresh_interval": "Fréquence de lecture des états des modules sur le bus (60–3600 s)."
-                }
-            },
-            "reconfigure": {
-                "title": "Reconfigurer Nikobus",
-                "description": "Mettez à jour la connexion ou les paramètres matériels. La connexion sera retestée.",
-                "data": {
-                    "connection_string": "Connexion (port série ou IP:port)",
-                    "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
-                    "prior_gen3": "PC-Link antérieur à la Gen 3",
-                    "refresh_interval": "Intervalle de scrutation (secondes)"
-                }
-            }
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à Nikobus",
+        "description": "Entrez l'adresse de votre module PC-Link Nikobus.\n\n- **Port série** : `/dev/ttyUSB0` ou `COM3`\n- **Pont réseau** : `192.168.1.50:9999`",
+        "data": {
+          "connection_string": "Connexion (port série ou IP:port)"
         },
-        "error": {
-            "cannot_connect": "Impossible de se connecter au PC-Link Nikobus — vérifiez l'adresse et qu'aucun autre client n'est connecté",
-            "unknown": "Erreur inattendue — consultez les journaux Home Assistant pour plus de détails"
-        },
-        "abort": {
-            "already_configured": "Cette connexion Nikobus est déjà configurée."
+        "data_description": {
+          "connection_string": "Chemin du port série ou adresse TCP du pont PC-Link"
         }
+      },
+      "hardware": {
+        "title": "Configuration matérielle",
+        "description": "Indiquez votre matériel Nikobus afin que l'intégration utilise la stratégie de mise à jour optimale.",
+        "data": {
+          "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+          "prior_gen3": "PC-Link antérieur à la Gen 3",
+          "press_repeat": "Répétitions de l'appui simulé"
+        },
+        "data_description": {
+          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire.",
+          "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
+          "press_repeat": "Nombre de fois où chaque appui déclenché par HA (bouton, scène, CF, interrupteur) est envoyé sur le bus. Un vrai bouton répète son télégramme ; un seul envoi peut être manqué en cas de trafic. Défaut 3."
+        }
+      },
+      "polling": {
+        "title": "Intervalle de scrutation",
+        "description": "Sans module Feedback, Home Assistant interroge périodiquement le bus Nikobus. Choisissez la fréquence.",
+        "data": {
+          "refresh_interval": "Intervalle de scrutation (secondes)"
+        },
+        "data_description": {
+          "refresh_interval": "Fréquence de lecture des états des modules sur le bus (60–3600 s)."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurer Nikobus",
+        "description": "Mettez à jour la connexion ou les paramètres matériels. La connexion sera retestée.",
+        "data": {
+          "connection_string": "Connexion (port série ou IP:port)",
+          "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+          "prior_gen3": "PC-Link antérieur à la Gen 3",
+          "refresh_interval": "Intervalle de scrutation (secondes)"
+        }
+      }
     },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Nikobus",
-                "description": "Que souhaitez-vous faire ?",
-                "menu_options": {
-                    "hardware": "Modifier la configuration matérielle",
-                    "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)"
-                }
-            },
-            "hardware": {
-                "title": "Configuration matérielle",
-                "description": "Mettez à jour les paramètres matériels. L'intégration rechargera automatiquement.",
-                "data": {
-                    "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
-                    "prior_gen3": "PC-Link antérieur à la Gen 3"
-                },
-                "data_description": {
-                    "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état.",
-                    "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération."
-                }
-            },
-            "polling": {
-                "title": "Intervalle de scrutation",
-                "description": "À quelle fréquence Home Assistant doit-il interroger le bus Nikobus ?",
-                "data": {
-                    "refresh_interval": "Intervalle de scrutation (secondes)"
-                },
-                "data_description": {
-                    "refresh_interval": "Fréquence de lecture des états des modules (60–3600 s)."
-                }
-            },
-            "configure_modules": {
-                "title": "Personnaliser un module Nikobus",
-                "description": "Choisissez un module à modifier. Les champs issus de la découverte (modèle, adresse, nombre de canaux) restent en lecture seule ; seuls les champs utilisateur (descriptions, types d'entité, déclencheurs LED, temps de course) peuvent être modifiés ici.",
-                "data": {
-                    "module": "Module"
-                }
-            },
-            "edit_module": {
-                "title": "Module {address} ({module_type})",
-                "description": "Modèle : {model}. Modifiez la description du module, corrigez le type si la découverte s'est trompée, ou choisissez un canal à personnaliser. Note : relancer *Découvrir les modules et boutons* peut écraser un type forcé manuellement, jusqu'à ce que la bibliothèque apprenne à le respecter.",
-                "data": {
-                    "description": "Description du module",
-                    "module_type": "Type de module",
-                    "channel": "Canal"
-                }
-            },
-            "edit_channel": {
-                "title": "Module {address} — canal {channel}",
-                "description": "Configurez l'apparence de ce canal dans Home Assistant. Sélectionnez **Désactivé (masquer le canal)** dans la liste Type d'entité pour ne pas créer d'entité pour ce canal.",
-                "data": {
-                    "entity_type": "Type d'entité",
-                    "description": "Description du canal",
-                    "led_on": "Déclencheur LED allumée (adresse bus 6-hex, optionnel)",
-                    "led_off": "Déclencheur LED éteinte (adresse bus 6-hex, optionnel)",
-                    "operation_time_up": "Temps de course à l'ouverture (secondes)",
-                    "operation_time_down": "Temps de course à la fermeture (secondes)"
-                }
-            }
-        },
-        "abort": {
-            "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."
-        }
+    "error": {
+      "cannot_connect": "Impossible de se connecter au PC-Link Nikobus — vérifiez l'adresse et qu'aucun autre client n'est connecté",
+      "unknown": "Erreur inattendue — consultez les journaux Home Assistant pour plus de détails"
     },
-    "entity": {
-        "sensor": {
-            "connection": {
-                "name": "Connexion",
-                "state": {
-                    "connected": "Connecté",
-                    "reconnecting": "Reconnexion en cours",
-                    "disconnected": "Déconnecté"
-                }
-            },
-            "discovery_status": {
-                "name": "Statut de la découverte",
-                "state": {
-                    "idle": "Inactif",
-                    "pc_link": "Inventaire PC Link",
-                    "module_scan": "Analyse des modules",
-                    "finished": "Terminé",
-                    "error": "Erreur"
-                }
-            },
-            "discovery_progress": {
-                "name": "Progression de la découverte"
-            }
-        },
-        "button": {
-            "discover_modules_buttons": {
-                "name": "Découvrir modules et boutons"
-            },
-            "scan_all_module_links": {
-                "name": "Scanner les liens des modules"
-            }
-        }
-    },
-    "issues": {
-        "no_buttons_configured": {
-            "title": "Aucun bouton Nikobus configuré",
-            "fix_flow": {
-                "step": {
-                    "confirm": {
-                        "title": "Découvrir les modules et boutons Nikobus",
-                        "description": "Home Assistant n'a détecté aucun bouton Nikobus. Lancez maintenant un inventaire PC-Link pour compléter la configuration."
-                    }
-                }
-            }
-        },
-        "legacy_undecoded_buttons": {
-            "title": "{count} bouton(s) Nikobus signalé(s) comme hérité(s)",
-            "fix_flow": {
-                "step": {
-                    "init": {
-                        "title": "Examiner les boutons Nikobus hérités",
-                        "description": "Ces {count} bouton(s) sont signalés comme hérités après un scan complet de phase 2. La colonne Raison explique pourquoi :\n\n  - **no decoded links** — aucun module de sortie ne référence ce bouton. Soit un bouton mural utilisé uniquement pour des automatisations Home Assistant (à conserver), soit un résidu d'un précédent propriétaire (à purger).\n  - **residue / stale links** — les liens du bouton existent uniquement dans la mémoire de registre PC-Link / PC-Logic sans qu'aucun module de sortie actuel ne les enregistre, ou tous les modules liés ont été évincés. Typiquement une programmation résiduelle d'un précédent propriétaire que l'appairage DIN-button n'a pas effacée (à purger).\n\nPour récupérer un bouton purgé, relancez **Découvrir les modules et boutons** puis **Scanner les liens de tous les modules** — la bibliothèque réinsère tout ce qui figure encore dans le projet.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
-                        "data": {
-                            "addresses": "Boutons à supprimer"
-                        }
-                    }
-                },
-                "abort": {
-                    "not_loaded": "L'intégration Nikobus n'est pas chargée ; rechargez l'entrée puis réessayez.",
-                    "no_candidates": "Aucun bouton hérité ne reste — rien à faire."
-                }
-            }
-        }
-    },
-    "exceptions": {
-        "communication_error": {
-            "message": "Communication avec Nikobus échouée : {error}"
-        },
-        "discovery_already_running": {
-            "message": "Une découverte Nikobus est déjà en cours."
-        },
-        "discovery_not_initialized": {
-            "message": "La découverte Nikobus n'est pas initialisée."
-        },
-        "initialization_error": {
-            "message": "Échec de l'initialisation des composants Nikobus : {error}"
-        },
-        "no_loaded_entry": {
-            "message": "Aucune intégration Nikobus chargée. Configurez-en une avant d'appeler cette action."
-        },
-        "no_modules_known": {
-            "message": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link, puis relancez le scan des modules."
-        },
-        "no_inventory_source": {
-            "message": "Aucun PC-Link détecté sur le bus et aucun fichier de configuration manuelle trouvé. Installez un PC-Link ou créez nikobus_module_config.json (et éventuellement nikobus_button_config.json) dans votre répertoire de configuration Home Assistant, puis réessayez."
-        }
-    },
-    "selector": {
-        "module_type": {
-            "options": {
-                "switch_module": "Module d'interrupteurs",
-                "dimmer_module": "Module variateur",
-                "roller_module": "Module volet / store",
-                "other_module": "Autre (PC Logic / Feedback / non classé)"
-            }
-        },
-        "entity_type_switch_module": {
-            "options": {
-                "default": "Par défaut (interrupteur)",
-                "light": "Lumière",
-                "disabled": "Désactivé (masquer le canal)"
-            }
-        },
-        "entity_type_dimmer_module": {
-            "options": {
-                "default": "Par défaut (lumière)",
-                "disabled": "Désactivé (masquer le canal)"
-            }
-        },
-        "entity_type_roller_module": {
-            "options": {
-                "default": "Par défaut (volet)",
-                "switch": "Interrupteur",
-                "light": "Lumière",
-                "disabled": "Désactivé (masquer le canal)"
-            }
-        }
+    "abort": {
+      "already_configured": "Cette connexion Nikobus est déjà configurée."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nikobus",
+        "description": "Que souhaitez-vous faire ?",
+        "menu_options": {
+          "hardware": "Modifier la configuration matérielle",
+          "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)"
+        }
+      },
+      "hardware": {
+        "title": "Configuration matérielle",
+        "description": "Mettez à jour les paramètres matériels. L'intégration rechargera automatiquement.",
+        "data": {
+          "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+          "prior_gen3": "PC-Link antérieur à la Gen 3",
+          "press_repeat": "Répétitions de l'appui simulé"
+        },
+        "data_description": {
+          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état.",
+          "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
+          "press_repeat": "Nombre de fois où chaque appui déclenché par HA (bouton, scène, CF, interrupteur) est envoyé sur le bus. Un vrai bouton répète son télégramme ; un seul envoi peut être manqué en cas de trafic. Défaut 3."
+        }
+      },
+      "polling": {
+        "title": "Intervalle de scrutation",
+        "description": "À quelle fréquence Home Assistant doit-il interroger le bus Nikobus ?",
+        "data": {
+          "refresh_interval": "Intervalle de scrutation (secondes)"
+        },
+        "data_description": {
+          "refresh_interval": "Fréquence de lecture des états des modules (60–3600 s)."
+        }
+      },
+      "configure_modules": {
+        "title": "Personnaliser un module Nikobus",
+        "description": "Choisissez un module à modifier. Les champs issus de la découverte (modèle, adresse, nombre de canaux) restent en lecture seule ; seuls les champs utilisateur (descriptions, types d'entité, déclencheurs LED, temps de course) peuvent être modifiés ici.",
+        "data": {
+          "module": "Module"
+        }
+      },
+      "edit_module": {
+        "title": "Module {address} ({module_type})",
+        "description": "Modèle : {model}. Modifiez la description du module, corrigez le type si la découverte s'est trompée, ou choisissez un canal à personnaliser. Note : relancer *Découvrir les modules et boutons* peut écraser un type forcé manuellement, jusqu'à ce que la bibliothèque apprenne à le respecter.",
+        "data": {
+          "description": "Description du module",
+          "module_type": "Type de module",
+          "channel": "Canal"
+        }
+      },
+      "edit_channel": {
+        "title": "Module {address} — canal {channel}",
+        "description": "Configurez l'apparence de ce canal dans Home Assistant. Sélectionnez **Désactivé (masquer le canal)** dans la liste Type d'entité pour ne pas créer d'entité pour ce canal.",
+        "data": {
+          "entity_type": "Type d'entité",
+          "description": "Description du canal",
+          "led_on": "Déclencheur LED allumée (adresse bus 6-hex, optionnel)",
+          "led_off": "Déclencheur LED éteinte (adresse bus 6-hex, optionnel)",
+          "operation_time_up": "Temps de course à l'ouverture (secondes)",
+          "operation_time_down": "Temps de course à la fermeture (secondes)"
+        }
+      }
+    },
+    "abort": {
+      "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "connection": {
+        "name": "Connexion",
+        "state": {
+          "connected": "Connecté",
+          "reconnecting": "Reconnexion en cours",
+          "disconnected": "Déconnecté"
+        }
+      },
+      "discovery_status": {
+        "name": "Statut de la découverte",
+        "state": {
+          "idle": "Inactif",
+          "pc_link": "Inventaire PC Link",
+          "module_scan": "Analyse des modules",
+          "finished": "Terminé",
+          "error": "Erreur"
+        }
+      },
+      "discovery_progress": {
+        "name": "Progression de la découverte"
+      }
+    },
+    "button": {
+      "discover_modules_buttons": {
+        "name": "Découvrir modules et boutons"
+      },
+      "scan_all_module_links": {
+        "name": "Scanner les liens des modules"
+      }
+    }
+  },
+  "issues": {
+    "no_buttons_configured": {
+      "title": "Aucun bouton Nikobus configuré",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Découvrir les modules et boutons Nikobus",
+            "description": "Home Assistant n'a détecté aucun bouton Nikobus. Lancez maintenant un inventaire PC-Link pour compléter la configuration."
+          }
+        }
+      }
+    },
+    "legacy_undecoded_buttons": {
+      "title": "{count} bouton(s) Nikobus signalé(s) comme hérité(s)",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Examiner les boutons Nikobus hérités",
+            "description": "Ces {count} bouton(s) sont signalés comme hérités après un scan complet de phase 2. La colonne Raison explique pourquoi :\n\n  - **no decoded links** — aucun module de sortie ne référence ce bouton. Soit un bouton mural utilisé uniquement pour des automatisations Home Assistant (à conserver), soit un résidu d'un précédent propriétaire (à purger).\n  - **residue / stale links** — les liens du bouton existent uniquement dans la mémoire de registre PC-Link / PC-Logic sans qu'aucun module de sortie actuel ne les enregistre, ou tous les modules liés ont été évincés. Typiquement une programmation résiduelle d'un précédent propriétaire que l'appairage DIN-button n'a pas effacée (à purger).\n\nPour récupérer un bouton purgé, relancez **Découvrir les modules et boutons** puis **Scanner les liens de tous les modules** — la bibliothèque réinsère tout ce qui figure encore dans le projet.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
+            "data": {
+              "addresses": "Boutons à supprimer"
+            }
+          }
+        },
+        "abort": {
+          "not_loaded": "L'intégration Nikobus n'est pas chargée ; rechargez l'entrée puis réessayez.",
+          "no_candidates": "Aucun bouton hérité ne reste — rien à faire."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "communication_error": {
+      "message": "Communication avec Nikobus échouée : {error}"
+    },
+    "discovery_already_running": {
+      "message": "Une découverte Nikobus est déjà en cours."
+    },
+    "discovery_not_initialized": {
+      "message": "La découverte Nikobus n'est pas initialisée."
+    },
+    "initialization_error": {
+      "message": "Échec de l'initialisation des composants Nikobus : {error}"
+    },
+    "no_loaded_entry": {
+      "message": "Aucune intégration Nikobus chargée. Configurez-en une avant d'appeler cette action."
+    },
+    "no_modules_known": {
+      "message": "Aucun module Nikobus n'est encore configuré. Lancez d'abord un inventaire PC-Link, puis relancez le scan des modules."
+    },
+    "no_inventory_source": {
+      "message": "Aucun PC-Link détecté sur le bus et aucun fichier de configuration manuelle trouvé. Installez un PC-Link ou créez nikobus_module_config.json (et éventuellement nikobus_button_config.json) dans votre répertoire de configuration Home Assistant, puis réessayez."
+    }
+  },
+  "selector": {
+    "module_type": {
+      "options": {
+        "switch_module": "Module d'interrupteurs",
+        "dimmer_module": "Module variateur",
+        "roller_module": "Module volet / store",
+        "other_module": "Autre (PC Logic / Feedback / non classé)"
+      }
+    },
+    "entity_type_switch_module": {
+      "options": {
+        "default": "Par défaut (interrupteur)",
+        "light": "Lumière",
+        "disabled": "Désactivé (masquer le canal)"
+      }
+    },
+    "entity_type_dimmer_module": {
+      "options": {
+        "default": "Par défaut (lumière)",
+        "disabled": "Désactivé (masquer le canal)"
+      }
+    },
+    "entity_type_roller_module": {
+      "options": {
+        "default": "Par défaut (volet)",
+        "switch": "Interrupteur",
+        "light": "Lumière",
+        "disabled": "Désactivé (masquer le canal)"
+      }
+    }
+  }
 }
