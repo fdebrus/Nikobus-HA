@@ -145,22 +145,6 @@ MANUAL_MODULE_CONFIG_FILENAME: Final[str] = "nikobus_module_config.json"
 MANUAL_BUTTON_CONFIG_FILENAME: Final[str] = "nikobus_button_config.json"
 
 # =============================================================================
-# Serial Connection
-# =============================================================================
-COMMANDS_HANDSHAKE: Final[list[str]] = [
-    "++++",
-    "ATH0",
-    "ATZ",
-    "$10110000B8CF9D",
-    "#L0",
-    "#E0",
-    "#L0",
-    "#E1",
-]
-EXPECTED_HANDSHAKE_RESPONSE: Final[str] = "$0511"
-HANDSHAKE_TIMEOUT: Final[int] = 60  # Timeout for handshake in seconds
-
-# =============================================================================
 # Buttons
 # =============================================================================
 REFRESH_DELAY: Final[float] = 0.5  # Delay before retrieving status after button press
@@ -215,7 +199,6 @@ MAX_EXTENDED_RELEASE_MS: Final[int] = 5000
 # =============================================================================
 # Covers
 # =============================================================================
-DEFAULT_COVER_ASSUMED_STATE: Final[bool] = False
 DEFAULT_COVER_MOVEMENT_BUFFER: Final[float] = 3.0
 DEFAULT_COVER_DEBOUNCE_DELAY: Final[float] = 0.3
 DEFAULT_COVER_OPERATION_TIME: Final[float] = 30.0
@@ -223,11 +206,6 @@ DEFAULT_COVER_OPERATION_TIME: Final[float] = 30.0
 # =============================================================================
 # Listener
 # =============================================================================
-BUTTON_COMMAND_PREFIX: Final[str] = "#N"
-FEEDBACK_REFRESH_COMMAND: Final[tuple[str, str]] = ("$1012", "$1017")
-FEEDBACK_MODULE_ANSWER: Final[str] = "$1C"
-MANUAL_REFRESH_COMMAND: Final[tuple[str, str]] = ("$0512", "$0517")
-COMMAND_PROCESSED: Final[tuple[str, str]] = ("$0515", "$0516")
 DEVICE_ADDRESS_INVENTORY: Final[str] = "$18"
 DEVICE_INVENTORY_ANSWER: Final[tuple[str, str]] = ("$2E", "$1E")
 

@@ -93,7 +93,6 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
             model=model,
             via_device=(DOMAIN, physical_address),
         )
-        self._address = bus_addr
         self._attr_unique_id = f"{DOMAIN}_button_{bus_addr}"
 
         self._attr_is_on = False

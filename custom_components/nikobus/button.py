@@ -20,11 +20,10 @@ from .const import (
     CATEGORY_SYSTEM_MODULES,
     CATEGORY_WALL_BUTTONS,
     DOMAIN,
-    HUB_IDENTIFIER,
     SIGNAL_DISCOVERY_STATE,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity
+from .entity import NikobusEntity, hub_device_info
 from .router import (
     INPUT_MODULE_TYPES,
     OPAQUE_MODULE_TYPES,
@@ -304,15 +303,6 @@ def _ensure_pc_logic_parent_device(
     )
 
 
-def _hub_device_info() -> dr.DeviceInfo:
-    return dr.DeviceInfo(
-        identifiers={(DOMAIN, HUB_IDENTIFIER)},
-        name="Nikobus Bridge",
-        manufacturer=BRAND,
-        model="PC-Link Bridge",
-    )
-
-
 def _iter_module_records(
     dict_module_data: dict[str, Any], module_types: frozenset[str]
 ):
@@ -476,7 +466,7 @@ class NikobusPcLinkInventoryButton(ButtonEntity):
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
         self._attr_unique_id = f"{DOMAIN}_pc_link_inventory_button"
-        self._attr_device_info = _hub_device_info()
+        self._attr_device_info = hub_device_info()
 
     async def async_press(self) -> None:
         """Start PC Link inventory discovery.
@@ -518,7 +508,7 @@ class NikobusModuleScanButton(ButtonEntity):
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
         self._attr_unique_id = f"{DOMAIN}_module_scan_button"
-        self._attr_device_info = _hub_device_info()
+        self._attr_device_info = hub_device_info()
 
     @property
     def available(self) -> bool:

@@ -1,7 +1,7 @@
-"""Nikobus Configuration Handler - Load / Write configuration files for Nikobus.
+"""Nikobus Configuration Handler - Load configuration files for Nikobus.
 
 As of nikobus-connect 0.4.0 the module store lives in the HA Store
-(``.storage/nikobus.modules``). This handler only manages the scene config
+(``.storage/nikobus.modules``). This handler only loads the scene config
 file today; the module/button paths are intentionally absent.
 """
 
@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from typing import Any
 
 from aiofiles import open as aio_open
@@ -20,7 +19,6 @@ from .exceptions import NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
 _LOAD_TRANSFORMS: dict[str, str] = {}
-_WRITE_TRANSFORMS: dict[str, str] = {}
 
 
 class NikobusConfig:
@@ -55,38 +53,6 @@ class NikobusConfig:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
 
-    async def load_optional_json_data(self, file_name: str, data_type: str) -> dict[str, Any]:
-        """Load JSON data from a file, returning an empty dict if it does not exist."""
-        file_path = self._hass.config.path(file_name)
-        _LOGGER.debug("Loading optional %s data from %s", data_type, file_path)
-
-        try:
-            async with aio_open(file_path, mode="r") as file:
-                data = json.loads(await file.read())
-            return self._transform_loaded_data(data, data_type)
-        except FileNotFoundError:
-            _LOGGER.debug("Optional %s file not found: %s", data_type, file_path)
-            return {}
-        except json.JSONDecodeError as err:
-            _LOGGER.error(
-                "Failed to decode JSON in optional %s file: %s",
-                data_type,
-                err,
-                exc_info=True,
-            )
-            raise NikobusDataError(
-                f"Failed to decode JSON in optional {data_type} file: {err}"
-            ) from err
-        except asyncio.CancelledError:
-            raise
-        except Exception as err:
-            _LOGGER.error(
-                "Failed to load optional %s data: %s", data_type, err, exc_info=True
-            )
-            raise NikobusDataError(
-                f"Failed to load optional {data_type} data: {err}"
-            ) from err
-
     def _transform_loaded_data(self, data: dict[str, Any], data_type: str) -> dict[str, Any]:
         """Transform the loaded JSON data based on the data type."""
         transform_name = _LOAD_TRANSFORMS.get(data_type)
@@ -115,74 +81,3 @@ class NikobusConfig:
             _LOGGER.info("Created empty %s config: %s", data_type, file_path)
         except OSError as err:
             _LOGGER.warning("Could not create empty %s config: %s", data_type, err)
-
-    async def write_json_data(
-        self, file_name: str, data_type: str, data: dict[str, Any]
-    ) -> None:
-        """Write data to a JSON file, transforming it into a list format if necessary."""
-        file_path = self._hass.config.path(file_name)
-
-        tmp_path = file_path + ".tmp"
-        try:
-            transformed_data = self._transform_data_for_writing(data_type, data)
-            json_data = json.dumps(transformed_data, indent=4)
-            async with aio_open(tmp_path, "w") as file:
-                await file.write(json_data)
-            os.replace(tmp_path, file_path)
-
-        except IOError as err:
-            _LOGGER.error(
-                "Failed to write %s data to file %s: %s",
-                data_type.capitalize(),
-                file_name,
-                err,
-                exc_info=True,
-            )
-            self._cleanup_tmp(tmp_path)
-            raise NikobusDataError(
-                f"Failed to write {data_type.capitalize()} data to file {file_name}: {err}"
-            ) from err
-
-        except TypeError as err:
-            _LOGGER.error(
-                "Failed to serialize %s data to JSON: %s",
-                data_type,
-                err,
-                exc_info=True,
-            )
-            self._cleanup_tmp(tmp_path)
-            raise NikobusDataError(
-                f"Failed to serialize {data_type} data to JSON: {err}"
-            ) from err
-
-        except asyncio.CancelledError:
-            raise
-        except Exception as err:
-            _LOGGER.error(
-                "Unexpected error writing %s data to file %s: %s",
-                data_type,
-                file_name,
-                err,
-                exc_info=True,
-            )
-            self._cleanup_tmp(tmp_path)
-            raise NikobusDataError(
-                f"Unexpected error writing {data_type} data to file {file_name}: {err}"
-            ) from err
-
-    @staticmethod
-    def _cleanup_tmp(tmp_path: str) -> None:
-        """Remove a leftover .tmp file, ignoring errors."""
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-
-    def _transform_data_for_writing(
-        self, data_type: str, data: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Transform the data for writing based on the data type."""
-        transform_name = _WRITE_TRANSFORMS.get(data_type)
-        if not transform_name:
-            return data
-        return getattr(self, transform_name)(data)

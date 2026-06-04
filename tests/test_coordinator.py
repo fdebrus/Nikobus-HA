@@ -1613,7 +1613,7 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
 
         # Patch overlay so we can verify it's called.
         with patch(
-            "custom_components.nikobus.nkbmanual.async_apply_friendly_name_overlay",
+            "custom_components.nikobus.coordinator.async_apply_friendly_name_overlay",
             new_callable=AsyncMock, return_value=False,
         ) as overlay_mock:
             await coord.start_pc_link_inventory(auto_reload=False)
@@ -1635,7 +1635,7 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
             "custom_components.nikobus.nkbmanual.async_apply_manual_config",
             new_callable=AsyncMock, return_value=True,
         ) as apply_mock, patch(
-            "custom_components.nikobus.nkbmanual.async_apply_friendly_name_overlay",
+            "custom_components.nikobus.coordinator.async_apply_friendly_name_overlay",
             new_callable=AsyncMock, return_value=False,
         ) as overlay_mock:
             await coord.start_pc_link_inventory(auto_reload=False)

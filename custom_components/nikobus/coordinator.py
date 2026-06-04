@@ -155,8 +155,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._module_states: dict[str, bytearray] = {}
 
         self.discovery_running = False
-        self.discovery_module = None
-        self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
         # Was the most recent ``start_module_scan`` a scan-all (every
@@ -1016,9 +1014,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             await self.module_storage.async_save()
             await self.button_storage.async_save()
             self._rebuild_dict_module_data()
-            domain_data = self.hass.data.get(DOMAIN, {})
-            entry_data = domain_data.get(self.config_entry.entry_id, {})
-            entry_data.pop("routing", None)
+            self._invalidate_routing_cache()
             # Reload so platforms drop entities for the purged addresses.
             # Schedule rather than await — matches ``_async_options_updated``.
             self.hass.async_create_task(
@@ -1340,14 +1336,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.dict_module_data.clear()
         self.dict_module_data.update(grouped)
 
+    def _invalidate_routing_cache(self) -> None:
+        """Drop the cached router spec so the next access rebuilds it
+        (e.g. after modules are discovered, purged, or edited)."""
+        domain_data = self.hass.data.get(DOMAIN, {})
+        entry_data = domain_data.get(self.config_entry.entry_id, {})
+        entry_data.pop("routing", None)
+
     async def _async_on_module_save(self) -> None:
         """Persist the Store after discovery/user edits, then refresh derived views."""
         await self.module_storage.async_save()
         self._rebuild_dict_module_data()
         # Clear the cached router spec so newly-discovered modules show up.
-        domain_data = self.hass.data.get(DOMAIN, {})
-        entry_data = domain_data.get(self.config_entry.entry_id, {})
-        entry_data.pop("routing", None)
+        self._invalidate_routing_cache()
 
     @staticmethod
     def _collect_button_linked_modules(phys: dict[str, Any]) -> set[str]:
@@ -1752,9 +1753,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         await self.module_storage.async_save()
         await self.button_storage.async_save()
         self._rebuild_dict_module_data()
-        domain_data = self.hass.data.get(DOMAIN, {})
-        entry_data = domain_data.get(self.config_entry.entry_id, {})
-        entry_data.pop("routing", None)
+        self._invalidate_routing_cache()
         self.invalidate_controlled_by_index()
 
         _LOGGER.info(
@@ -2055,7 +2054,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # 3. Overlay friendly names from manual files (whether or not
         #    we used them as inventory source). No-op if files absent.
         try:
-            from .nkbmanual import async_apply_friendly_name_overlay
             overlaid = await async_apply_friendly_name_overlay(
                 self.hass, self.module_storage, self.dict_button_data
             )
