@@ -155,6 +155,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._module_states: dict[str, bytearray] = {}
 
         self.discovery_running = False
+        # Written by nikobus-connect (it holds this coordinator as
+        # ``self._coordinator``): set to PC_LINK in start_inventory_discovery
+        # and MODULE in the register-scan path, reset to None between phases.
+        # Read by ``_inventory_callback`` / ``_discovery_frame_callback`` to
+        # route $18 / $2E / $1E frames. Looks unassigned to a grep of this
+        # file — the writer is in the library. Do NOT remove.
         self.inventory_query_type: InventoryQueryType | None = None
         self._reload_task = None
         # Was the most recent ``start_module_scan`` a scan-all (every
