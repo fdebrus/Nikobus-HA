@@ -59,6 +59,7 @@ _mod(
     "homeassistant.core",
     HomeAssistant=type("HomeAssistant", (), {}),
     Event=type("Event", (), {}),
+    CALLBACK_TYPE=object,
     callback=_ha_callback,
 )
 class _ConfigEntry:
@@ -244,6 +245,14 @@ _mod(
     ATTR_POSITION="position",
     DOMAIN="cover",
 )
+_mod(
+    "homeassistant.components.light",
+    LightEntity=type("LightEntity", (), {}),
+    ColorMode=type("ColorMode", (), {"BRIGHTNESS": "brightness", "ONOFF": "onoff"}),
+    ATTR_BRIGHTNESS="brightness",
+    DOMAIN="light",
+)
+_mod("homeassistant.components.scene", Scene=type("Scene", (), {}))
 
 
 class _RestoreEntityStub:
