@@ -20,12 +20,17 @@ from .const import (
     CATEGORY_SYSTEM_MODULES,
     CATEGORY_WALL_BUTTONS,
     DOMAIN,
-    HUB_IDENTIFIER,
     SIGNAL_DISCOVERY_STATE,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity
-from .router import INPUT_MODULE_TYPES, OPAQUE_MODULE_TYPES
+from .entity import NikobusEntity, hub_device_info
+from .router import (
+    INPUT_MODULE_TYPES,
+    OPAQUE_MODULE_TYPES,
+    input_label_prefix,
+    iter_operation_points,
+    pc_logic_input_naming,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,21 +72,10 @@ def _iter_button_entities(
     buttons: dict[str, Any],
 ):
     """Yield one NikobusButtonEntity per discovered operation point."""
-    for physical_addr, phys in buttons.items():
-        if not isinstance(phys, dict):
-            continue
-        op_points = phys.get("operation_points") or {}
-        if not isinstance(op_points, dict):
-            continue
-        for key_label, op_point in op_points.items():
-            if not isinstance(op_point, dict):
-                continue
-            bus_addr = op_point.get("bus_address")
-            if not bus_addr:
-                continue
-            yield NikobusButtonEntity(
-                coordinator, physical_addr, key_label, op_point, parent_phys=phys
-            )
+    for physical_addr, key_label, op_point, phys in iter_operation_points(buttons):
+        yield NikobusButtonEntity(
+            coordinator, physical_addr, key_label, op_point, parent_phys=phys
+        )
 
 
 def _category_for_button_type(type_str: str) -> str:
@@ -104,43 +98,6 @@ def _category_for_button_type(type_str: str) -> str:
     if "rf" in lowered:
         return CATEGORY_REMOTES
     return CATEGORY_WALL_BUTTONS
-
-
-def _input_label_prefix(phys: dict[str, Any]) -> str:
-    """Return the input-naming prefix for a synthesized input child.
-
-    PC-Logic (05-201) inputs use ``LM`` (Logic Module — matches Niko's
-    own terminology); Modular Interface (05-206) inputs use ``MI``
-    (Modular Interface). Both share the ``pc_logic_parent_*`` provenance
-    fields, so ``pc_logic_parent_type`` is the discriminator. Anything
-    that isn't explicitly the Modular Interface stays ``LM`` (covers the
-    PC-Logic value and missing/legacy entries — back-compat).
-    """
-    return "MI" if phys.get("pc_logic_parent_type") == "interface_module" else "LM"
-
-
-def _pc_logic_input_naming(
-    phys: dict[str, Any],
-) -> tuple[str, tuple[str, str]] | None:
-    """Return ``(device_name, via_device_identifier)`` if ``phys`` is a
-    synthesized input-module child (PC-Logic or Modular Interface);
-    else ``None``.
-
-    The library sets ``pc_logic_parent_address`` (the owning module
-    address), ``pc_logic_parent_type`` (``pc_logic`` /
-    ``interface_module``) and ``pc_logic_slot_index`` (1..N) on the
-    button-store entry when it synthesizes virtual buttons for module
-    inputs. HA parents the device directly under the owning module
-    device (instead of the wall-buttons category) and names it
-    ``LM-INPUT N`` for PC-Logic or ``MI-INPUT N`` for the Modular
-    Interface, matching each product's terminology.
-    """
-
-    parent_addr = phys.get("pc_logic_parent_address")
-    slot = phys.get("pc_logic_slot_index")
-    if not isinstance(parent_addr, str) or not isinstance(slot, int):
-        return None
-    return f"{_input_label_prefix(phys)}-INPUT {slot}", (DOMAIN, parent_addr.upper())
 
 
 def _remote_transmitter_naming(
@@ -199,7 +156,7 @@ def register_wall_button_devices(
         if not isinstance(phys, dict):
             continue
 
-        pc_logic_naming = _pc_logic_input_naming(phys)
+        pc_logic_naming = pc_logic_input_naming(phys)
         if pc_logic_naming is not None:
             name, via_device = pc_logic_naming
             parent_addr = via_device[1]
@@ -333,15 +290,6 @@ def _ensure_pc_logic_parent_device(
         name=name,
         model=model,
         via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
-    )
-
-
-def _hub_device_info() -> dr.DeviceInfo:
-    return dr.DeviceInfo(
-        identifiers={(DOMAIN, HUB_IDENTIFIER)},
-        name="Nikobus Bridge",
-        manufacturer=BRAND,
-        model="PC-Link Bridge",
     )
 
 
@@ -492,7 +440,7 @@ def op_point_display_name(
             and key_label[1].isalpha()
             and isinstance(slot, int)
         ):
-            prefix = _input_label_prefix(parent_phys)
+            prefix = input_label_prefix(parent_phys)
             return f"Key {key_label[1].upper()} on {prefix}-INPUT {slot}"
     return op_point.get("description") or f"Push button {key_label}"
 
@@ -508,7 +456,7 @@ class NikobusPcLinkInventoryButton(ButtonEntity):
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
         self._attr_unique_id = f"{DOMAIN}_pc_link_inventory_button"
-        self._attr_device_info = _hub_device_info()
+        self._attr_device_info = hub_device_info()
 
     async def async_press(self) -> None:
         """Start PC Link inventory discovery.
@@ -550,7 +498,7 @@ class NikobusModuleScanButton(ButtonEntity):
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
         self._attr_unique_id = f"{DOMAIN}_module_scan_button"
-        self._attr_device_info = _hub_device_info()
+        self._attr_device_info = hub_device_info()
 
     @property
     def available(self) -> bool:

@@ -43,6 +43,20 @@ from .nkbstorage import NikobusModuleStorage
 _LOGGER = logging.getLogger(__name__)
 
 
+async def legacy_config_files_present(hass: HomeAssistant) -> list[str]:
+    """Return which legacy manual-config filenames exist in the config dir.
+
+    Used to warn that, as of 3.0.0, these files are no longer imported for
+    entity names (they remain only the no-PC-Link inventory fallback).
+    """
+    present: list[str] = []
+    for filename in (MANUAL_MODULE_CONFIG_FILENAME, MANUAL_BUTTON_CONFIG_FILENAME):
+        path = hass.config.path(filename)
+        if await hass.async_add_executor_job(os.path.exists, path):
+            present.append(filename)
+    return present
+
+
 async def _read_json(
     hass: HomeAssistant, filename: str
 ) -> tuple[str | None, dict[str, Any] | None]:
@@ -211,163 +225,6 @@ async def _apply_module_config(
     # truth).
     store.data["nikobus_module"] = flat
     return len(flat), path
-
-
-# ---------------------------------------------------------------------------
-# Friendly-name overlay (2.11.5+)
-# ---------------------------------------------------------------------------
-#
-# Distinct from ``_apply_module_config`` / ``_apply_button_config`` above,
-# which fully REPLACE the stores from the manual files (used when there's
-# no PC-Link to provide inventory). The overlay enriches existing entries
-# in-place: same address present in both the live store AND the file →
-# copy user-editable fields (descriptions, entity_type, roller times,
-# LED triggers) from file onto the store entry. Modules in the file that
-# aren't in the store are silently ignored — PC-Link's inventory is the
-# authority for what exists.
-#
-# Use case: PC-Link installs whose users want their custom labels (from
-# an old YAML/JSON setup or from a sibling install) to survive the bus
-# discovery's generic "Switch Module" / "Output 1" defaults.
-
-_MODULE_OVERLAY_FIELDS = ("description",)
-_CHANNEL_OVERLAY_FIELDS = (
-    "description",
-    "entity_type",
-    "operation_time_up",
-    "operation_time_down",
-    "led_on",
-    "led_off",
-)
-
-
-def _overlay_module(store_entry: dict[str, Any], file_entry: dict[str, Any]) -> bool:
-    """Apply user-editable fields from ``file_entry`` onto ``store_entry``.
-
-    Module-level fields (currently just ``description``) and the
-    per-channel fields listed in ``_CHANNEL_OVERLAY_FIELDS``. Matches
-    channels by INDEX (file's channel 0 → store's channel 0). Returns
-    True if any field was overwritten.
-    """
-    changed = False
-
-    for field in _MODULE_OVERLAY_FIELDS:
-        if field in file_entry and file_entry[field] not in ("", None):
-            if store_entry.get(field) != file_entry[field]:
-                store_entry[field] = file_entry[field]
-                changed = True
-
-    file_channels = file_entry.get("channels") or []
-    store_channels = store_entry.setdefault("channels", [])
-    for idx, file_ch in enumerate(file_channels):
-        if not isinstance(file_ch, dict):
-            continue
-        # Extend store channel list if file declares more than discovery
-        # found — won't happen for real installs but keeps the overlay
-        # robust against partial-discovery edge cases.
-        while idx >= len(store_channels):
-            store_channels.append({})
-        store_ch = store_channels[idx]
-        for field in _CHANNEL_OVERLAY_FIELDS:
-            if field in file_ch and file_ch[field] not in ("", None):
-                if store_ch.get(field) != file_ch[field]:
-                    store_ch[field] = file_ch[field]
-                    changed = True
-
-    return changed
-
-
-async def async_apply_friendly_name_overlay(
-    hass: HomeAssistant,
-    module_store: NikobusModuleStorage,
-    button_data: dict[str, Any],
-) -> bool:
-    """Overlay user-editable fields from the manual config files onto the
-    existing live stores. Does NOT add or remove modules/buttons — only
-    enriches entries that already exist (typically populated by PC-Link
-    inventory).
-
-    Returns True if any field was changed in either store (signal to
-    the caller to persist).
-    """
-    changed_any = False
-
-    # Module overlay
-    path, payload = await _read_json(hass, MANUAL_MODULE_CONFIG_FILENAME)
-    if path is not None and isinstance(payload, dict):
-        flat = convert_legacy_to_flat(payload)
-        store_modules = module_store.data.setdefault("nikobus_module", {})
-        applied = skipped = 0
-        for addr, file_entry in flat.items():
-            store_entry = store_modules.get(addr)
-            if store_entry is None:
-                skipped += 1
-                continue
-            if _overlay_module(store_entry, file_entry):
-                applied += 1
-                changed_any = True
-        _LOGGER.info(
-            "Friendly-name overlay: %d module(s) updated from %s "
-            "(%d file entries had no matching live module — ignored).",
-            applied, path, skipped,
-        )
-
-    # Button overlay — match by physical button address + op-point key.
-    path, payload = await _read_json(hass, MANUAL_BUTTON_CONFIG_FILENAME)
-    if path is not None and isinstance(payload, dict):
-        raw = payload.get("nikobus_button")
-        legacy_iter: list[dict[str, Any]] = []
-        if isinstance(raw, list):
-            legacy_iter = [e for e in raw if isinstance(e, dict)]
-        elif isinstance(raw, dict):
-            for addr, entry in raw.items():
-                if isinstance(entry, dict):
-                    merged = dict(entry)
-                    merged.setdefault("address", addr)
-                    legacy_iter.append(merged)
-
-        store_buttons = button_data.setdefault("nikobus_button", {})
-        applied = skipped = 0
-        for entry in legacy_iter:
-            description = str(entry.get("description") or "").strip()
-            physical = _extract_physical_info(entry)
-            if physical is None:
-                # Synthetic / IR / scene entry — match its standalone
-                # single-key store entry by bus_address.
-                bus_addr = str(entry.get("address") or "").strip().upper()
-                store_btn = store_buttons.get(bus_addr)
-                if store_btn is None or not description:
-                    skipped += 1
-                    continue
-                op = store_btn.get("operation_points", {}).get("1A")
-                if op is not None and op.get("description") != description:
-                    op["description"] = description
-                    store_btn["description"] = description
-                    applied += 1
-                    changed_any = True
-                continue
-
-            phys_addr, key_label, _channels, _type, _model = physical
-            store_btn = store_buttons.get(phys_addr)
-            if store_btn is None:
-                skipped += 1
-                continue
-            op = store_btn.get("operation_points", {}).get(key_label)
-            if op is None:
-                skipped += 1
-                continue
-            if description and op.get("description") != description:
-                op["description"] = description
-                applied += 1
-                changed_any = True
-
-        _LOGGER.info(
-            "Friendly-name overlay: %d op-point(s) updated from %s "
-            "(%d file entries had no matching live op-point — ignored).",
-            applied, path, skipped,
-        )
-
-    return changed_any
 
 
 def _extract_physical_info(

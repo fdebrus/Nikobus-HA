@@ -9,10 +9,27 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import BRAND, DOMAIN
+from .const import BRAND, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def hub_device_info() -> dr.DeviceInfo:
+    """DeviceInfo for the Nikobus bridge (hub).
+
+    Single source of truth for the bridge device — the ``via_device``
+    parent of the category devices and the device the bridge-level
+    entities (connection/discovery status, action buttons) attach to.
+    Shared by the button and sensor platforms and the hub registration
+    in ``__init__`` so they can't drift.
+    """
+    return dr.DeviceInfo(
+        identifiers={(DOMAIN, HUB_IDENTIFIER)},
+        name="Nikobus Bridge",
+        manufacturer=BRAND,
+        model="PC-Link Bridge",
+    )
 
 
 class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):

@@ -1611,15 +1611,9 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
             fake_start
         )
 
-        # Patch overlay so we can verify it's called.
-        with patch(
-            "custom_components.nikobus.nkbmanual.async_apply_friendly_name_overlay",
-            new_callable=AsyncMock, return_value=False,
-        ) as overlay_mock:
-            await coord.start_pc_link_inventory(auto_reload=False)
+        await coord.start_pc_link_inventory(auto_reload=False)
 
         coord.nikobus_discovery.start_inventory_discovery.assert_awaited_once()
-        overlay_mock.assert_awaited()
 
     async def test_pclink_timeout_falls_back_to_manual_files(self):
         coord = self._make_coord()
@@ -1634,15 +1628,11 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
         with patch(
             "custom_components.nikobus.nkbmanual.async_apply_manual_config",
             new_callable=AsyncMock, return_value=True,
-        ) as apply_mock, patch(
-            "custom_components.nikobus.nkbmanual.async_apply_friendly_name_overlay",
-            new_callable=AsyncMock, return_value=False,
-        ) as overlay_mock:
+        ) as apply_mock:
             await coord.start_pc_link_inventory(auto_reload=False)
 
-        # Fallback fired (manual import called); overlay ran afterwards.
+        # Fallback fired (manual import called).
         apply_mock.assert_awaited_once()
-        overlay_mock.assert_awaited()
 
     async def test_pclink_timeout_and_no_files_raises(self):
         from homeassistant.exceptions import HomeAssistantError

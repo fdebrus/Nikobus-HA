@@ -57,32 +57,45 @@ def _load_button_module():
     return sys.modules["custom_components.nikobus.button"]
 
 
-# --- _input_label_prefix --------------------------------------------------
+def _load_router_module():
+    _ensure_stubs()
+    if "custom_components.nikobus.router" not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            "custom_components.nikobus.router", COMP / "router.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        mod.__package__ = "custom_components.nikobus"
+        sys.modules["custom_components.nikobus.router"] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules["custom_components.nikobus.router"]
+
+
+# --- input_label_prefix (router) ------------------------------------------
 
 def test_prefix_pc_logic_is_lm() -> None:
-    button = _load_button_module()
-    assert button._input_label_prefix({"pc_logic_parent_type": "pc_logic"}) == "LM"
+    router = _load_router_module()
+    assert router.input_label_prefix({"pc_logic_parent_type": "pc_logic"}) == "LM"
 
 
 def test_prefix_interface_module_is_mi() -> None:
-    button = _load_button_module()
+    router = _load_router_module()
     assert (
-        button._input_label_prefix({"pc_logic_parent_type": "interface_module"})
+        router.input_label_prefix({"pc_logic_parent_type": "interface_module"})
         == "MI"
     )
 
 
 def test_prefix_missing_type_defaults_to_lm() -> None:
     # Back-compat: legacy entries without the discriminator stay LM.
-    button = _load_button_module()
-    assert button._input_label_prefix({}) == "LM"
+    router = _load_router_module()
+    assert router.input_label_prefix({}) == "LM"
 
 
-# --- _pc_logic_input_naming (device name) ---------------------------------
+# --- pc_logic_input_naming (device name, router) --------------------------
 
 def test_device_name_pc_logic() -> None:
-    button = _load_button_module()
-    name, via = button._pc_logic_input_naming(
+    router = _load_router_module()
+    name, via = router.pc_logic_input_naming(
         {
             "pc_logic_parent_address": "940c",
             "pc_logic_parent_type": "pc_logic",
@@ -90,12 +103,12 @@ def test_device_name_pc_logic() -> None:
         }
     )
     assert name == "LM-INPUT 3"
-    assert via == (button.DOMAIN, "940C")
+    assert via == (router.DOMAIN, "940C")
 
 
 def test_device_name_interface_module() -> None:
-    button = _load_button_module()
-    name, via = button._pc_logic_input_naming(
+    router = _load_router_module()
+    name, via = router.pc_logic_input_naming(
         {
             "pc_logic_parent_address": "1234",
             "pc_logic_parent_type": "interface_module",
@@ -103,12 +116,12 @@ def test_device_name_interface_module() -> None:
         }
     )
     assert name == "MI-INPUT 5"
-    assert via == (button.DOMAIN, "1234")
+    assert via == (router.DOMAIN, "1234")
 
 
 def test_device_name_non_input_returns_none() -> None:
-    button = _load_button_module()
-    assert button._pc_logic_input_naming({"type": "Bus push button"}) is None
+    router = _load_router_module()
+    assert router.pc_logic_input_naming({"type": "Bus push button"}) is None
 
 
 # --- op_point_display_name (per-key name) ---------------------------------

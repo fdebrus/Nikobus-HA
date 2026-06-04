@@ -16,7 +16,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
-from .const import DOMAIN, ISSUE_LEGACY_UNDECODED_BUTTONS
+from .const import ISSUE_LEGACY_UNDECODED_BUTTONS
 from .coordinator import NikobusDataCoordinator
 
 

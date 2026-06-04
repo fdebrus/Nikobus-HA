@@ -1,13 +1,10 @@
 """The Nikobus integration."""
 from __future__ import annotations
 
-import json
 import logging
-import os
 from typing import Any, Final
 
 import voluptuous as vol
-from aiofiles import open as aio_open
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
@@ -26,6 +23,7 @@ from homeassistant.components import (
 
 from .const import DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
+from .entity import hub_device_info
 from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 
 _LOGGER = logging.getLogger(__name__)
@@ -359,16 +357,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     # 6. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
-    # 7. Legacy per-button-description → device.name_by_user migration
-    #    was a one-shot that renamed ``nikobus_button_config.json`` to
-    #    ``.migrated`` after applying. As of 2.11.4 we leave manual
-    #    config files in place under their canonical names (they're
-    #    now the step-1 inventory source for no-PC-Link installs), so
-    #    the rename-on-success behaviour is no longer compatible.
-    #    Users wanting custom device names set them via the HA device
-    #    registry UI directly.
-
-    # 8. Surface repair issues for actionable misconfigurations.
+    # 7. Surface repair issues for actionable misconfigurations.
     coordinator.refresh_repair_issues()
 
     _LOGGER.info("Nikobus integration setup complete")
@@ -395,11 +384,7 @@ def _register_hub_device(hass: HomeAssistant, entry: NikobusConfigEntry) -> None
     """Register the Nikobus bridge (hub) as a device."""
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, HUB_IDENTIFIER)},
-        manufacturer="Niko",
-        name="Nikobus Bridge",
-        model="PC-Link Bridge",
+        config_entry_id=entry.entry_id, **hub_device_info()
     )
     _register_category_devices(hass, entry)
 

@@ -11,14 +11,15 @@ from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .button import _pc_logic_input_naming
-from .const import DOMAIN, EVENT_BUTTON_OPERATION, EVENT_BUTTON_PRESSED
+from .const import EVENT_BUTTON_OPERATION, EVENT_BUTTON_PRESSED
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import (
-    INPUT_MODULE_TYPES,
     build_unique_id,
     get_routing,
+    input_latch_switch_unique_id,
+    iter_input_module_children,
+    pc_logic_input_naming,
     register_output_module_devices,
 )
 
@@ -27,7 +28,7 @@ try:  # nikobus-connect provides the input-address math
         convert_nikobus_address,
         derive_pc_logic_input_physicals,
     )
-except Exception:  # pragma: no cover - defensive (older library)
+except ImportError:  # pragma: no cover - defensive (older library)
     convert_nikobus_address = None
     derive_pc_logic_input_physicals = None
 
@@ -59,13 +60,13 @@ def input_ab_addresses(phys: dict[str, Any]) -> tuple[str, str] | None:
     if not isinstance(parent, str) or not isinstance(slot, int) or slot < 1:
         return None
     try:
-        physicals = derive_pc_logic_input_physicals(parent, max(slot, 6))
-    except Exception:  # pragma: no cover - defensive
+        # Deriving exactly ``slot`` physicals yields the slot we want at
+        # ``[slot - 1]``; the library raises for an out-of-range slot.
+        physical = derive_pc_logic_input_physicals(parent, slot)[slot - 1]
+    except (ValueError, IndexError):  # pragma: no cover - defensive
         return None
-    if slot > len(physicals):
-        return None
-    addr_1a = convert_nikobus_address(physicals[slot - 1])
-    if not isinstance(addr_1a, str) or len(addr_1a) != 6:
+    addr_1a = convert_nikobus_address(physical)
+    if len(addr_1a) != 6:  # convert returns a "[...]" marker when it can't
         return None
     addr_1a = addr_1a.upper()
     addr_1b = format((int(addr_1a[0], 16) + 4) % 16, "X") + addr_1a[1:]
@@ -105,14 +106,10 @@ async def async_setup_entry(
     # The input itself surfaces as a stateless button (button.py); this
     # adds a persistent on/off mirror: the 1A signal turns it on, 1B
     # turns it off, and turn_on/off drive the corresponding bus frame.
-    for physical_addr, phys in coordinator.dict_button_data.get(
-        "nikobus_button", {}
-    ).items():
-        if not isinstance(phys, dict):
-            continue
-        if phys.get("pc_logic_parent_type") not in INPUT_MODULE_TYPES:
-            continue
-        naming = _pc_logic_input_naming(phys)
+    for physical_addr, phys in iter_input_module_children(
+        coordinator.dict_button_data.get("nikobus_button", {})
+    ):
+        naming = pc_logic_input_naming(phys)
         ab = input_ab_addresses(phys)
         if naming is None or ab is None:
             continue
@@ -121,7 +118,11 @@ async def async_setup_entry(
         entities.append(
             NikobusInputLatchSwitch(
                 coordinator,
-                physical_addr=str(physical_addr).upper(),
+                # Use the raw button-store key so the latch's device
+                # identifier matches the input-child device registered in
+                # button.py (which also uses the raw key) — otherwise a
+                # non-uppercase key would split them into two devices.
+                physical_addr=physical_addr,
                 addr_1a=addr_1a,
                 addr_1b=addr_1b,
                 device_name=device_name,
@@ -322,12 +323,8 @@ class NikobusInputLatchSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
         self._addr_1a = addr_1a
         self._addr_1b = addr_1b
         self._attr_name = "A/B state"
-        self._attr_unique_id = f"nikobus_input_switch_{physical_addr.lower()}"
+        self._attr_unique_id = input_latch_switch_unique_id(physical_addr)
         self._attr_is_on = False
-
-    @property
-    def is_on(self) -> bool:
-        return self._attr_is_on
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

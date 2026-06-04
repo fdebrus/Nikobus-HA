@@ -22,7 +22,6 @@ from .const import (
     DEFAULT_COVER_DEBOUNCE_DELAY,
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
-    DOMAIN,
     EVENT_BUTTON_PRESSED,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator

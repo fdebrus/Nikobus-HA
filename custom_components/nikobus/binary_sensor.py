@@ -14,6 +14,7 @@ from homeassistant.helpers.event import async_call_later
 from .button import op_point_display_name, register_wall_button_devices
 from .const import DOMAIN, EVENT_BUTTON_PRESSED
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
+from .router import iter_operation_points
 from .entity import NikobusEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,25 +36,12 @@ async def async_setup_entry(
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
     register_wall_button_devices(hass, entry, buttons, coordinator.dict_module_data)
 
-    entities: list[NikobusButtonBinarySensor] = []
-    for physical_addr, phys in buttons.items():
-        if not isinstance(phys, dict):
-            continue
-        for key_label, op_point in (phys.get("operation_points") or {}).items():
-            if not isinstance(op_point, dict):
-                continue
-            bus_addr = op_point.get("bus_address")
-            if not bus_addr:
-                continue
-            entities.append(
-                NikobusButtonBinarySensor(
-                    coordinator,
-                    physical_addr,
-                    key_label,
-                    op_point,
-                    parent_phys=phys,
-                )
-            )
+    entities: list[NikobusButtonBinarySensor] = [
+        NikobusButtonBinarySensor(
+            coordinator, physical_addr, key_label, op_point, parent_phys=phys
+        )
+        for physical_addr, key_label, op_point, phys in iter_operation_points(buttons)
+    ]
     async_add_entities(entities)
 
 
@@ -93,7 +81,6 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
             model=model,
             via_device=(DOMAIN, physical_address),
         )
-        self._address = bus_addr
         self._attr_unique_id = f"{DOMAIN}_button_{bus_addr}"
 
         self._attr_is_on = False

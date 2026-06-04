@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Iterator, Mapping
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -66,6 +66,105 @@ _CAPABILITIES = {
 #   * ``interface_module`` — Modular Interface 6 inputs (05-206).
 #     Promoted out of ``other_module`` into its own bucket in 0.5.10.
 INPUT_MODULE_TYPES: frozenset[str] = frozenset({"pc_logic", "interface_module"})
+
+
+# ---------------------------------------------------------------------------
+# Synthesized input-module children (PC-Logic / Modular Interface inputs)
+#
+# These live in the button store (``nikobus_button``) as synthesized
+# entries carrying ``pc_logic_parent_*`` provenance, not as output-module
+# channels — so they bypass ``build_routing``. The helpers below are the
+# single source of truth for *recognising* such a child, *naming* it, and
+# the *unique_id* of its A/B latch switch, shared by the button platform,
+# the switch platform, and the orphan-cleanup known-id set so those three
+# can't drift apart.
+# ---------------------------------------------------------------------------
+
+def input_label_prefix(phys: Mapping[str, Any]) -> str:
+    """Return the input-naming prefix for a synthesized input child.
+
+    PC-Logic (05-201) inputs use ``LM`` (Logic Module — matches Niko's
+    own terminology); Modular Interface (05-206) inputs use ``MI``
+    (Modular Interface). Both share the ``pc_logic_parent_*`` provenance
+    fields, so ``pc_logic_parent_type`` is the discriminator. Anything
+    that isn't explicitly the Modular Interface stays ``LM`` (covers the
+    PC-Logic value and missing/legacy entries — back-compat).
+    """
+    return "MI" if phys.get("pc_logic_parent_type") == "interface_module" else "LM"
+
+
+def pc_logic_input_naming(
+    phys: Mapping[str, Any],
+) -> tuple[str, tuple[str, str]] | None:
+    """Return ``(device_name, via_device_identifier)`` if ``phys`` is a
+    synthesized input-module child (PC-Logic or Modular Interface);
+    else ``None``.
+
+    The library sets ``pc_logic_parent_address`` (the owning module
+    address), ``pc_logic_parent_type`` (``pc_logic`` /
+    ``interface_module``) and ``pc_logic_slot_index`` (1..N) on the
+    button-store entry when it synthesizes virtual buttons for module
+    inputs. HA parents the device directly under the owning module
+    device (instead of the wall-buttons category) and names it
+    ``LM-INPUT N`` for PC-Logic or ``MI-INPUT N`` for the Modular
+    Interface, matching each product's terminology.
+    """
+    parent_addr = phys.get("pc_logic_parent_address")
+    slot = phys.get("pc_logic_slot_index")
+    if not isinstance(parent_addr, str) or not isinstance(slot, int):
+        return None
+    return f"{input_label_prefix(phys)}-INPUT {slot}", (DOMAIN, parent_addr.upper())
+
+
+def is_input_module_child(phys: Any) -> bool:
+    """True if a button-store entry is a synthesized PC-Logic / Modular
+    Interface input child (vs a real wall button / remote)."""
+    return (
+        isinstance(phys, Mapping)
+        and phys.get("pc_logic_parent_type") in INPUT_MODULE_TYPES
+    )
+
+
+def input_latch_switch_unique_id(physical_addr: str) -> str:
+    """Unique_id for an input's A/B latch switch (switch platform)."""
+    return f"nikobus_input_switch_{str(physical_addr).lower()}"
+
+
+def iter_input_module_children(
+    buttons: Mapping[str, Any] | None,
+) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    """Yield ``(physical_addr, phys)`` for every synthesized input child
+    in the button store — the single enumerator the switch platform and
+    the known-id set both build on."""
+    for addr, phys in (buttons or {}).items():
+        if is_input_module_child(phys):
+            yield str(addr), phys
+
+
+def iter_operation_points(
+    buttons: Mapping[str, Any] | None,
+) -> Iterator[tuple[str, str, Mapping[str, Any], Mapping[str, Any]]]:
+    """Yield ``(physical_addr, key_label, op_point, phys)`` for every
+    button operation point carrying a ``bus_address``.
+
+    Single source of the guard ladder (entry is a dict → has a dict
+    ``operation_points`` → op-point is a dict → has a truthy
+    ``bus_address``) so the button platform, the binary-sensor platform
+    and the orphan-cleanup known-id set agree. (binary_sensor.py and the
+    known-id loop previously skipped the ``operation_points`` dict check,
+    which would raise ``AttributeError`` on a malformed list-shaped
+    entry.)"""
+    for physical_addr, phys in (buttons or {}).items():
+        if not isinstance(phys, dict):
+            continue
+        op_points = phys.get("operation_points")
+        if not isinstance(op_points, dict):
+            continue
+        for key_label, op_point in op_points.items():
+            if not isinstance(op_point, dict):
+                continue
+            if op_point.get("bus_address"):
+                yield str(physical_addr), str(key_label), op_point, phys
 
 # Module types we recognise but for which no entity schema is validated
 # yet — the inventory record alone makes the device visible in the HA

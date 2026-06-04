@@ -61,7 +61,7 @@ from .const import (
 )
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
-from .nkbmanual import async_apply_friendly_name_overlay
+from .nkbmanual import legacy_config_files_present
 from .nkbstorage import (
     NikobusButtonStorage,
     NikobusCFStorage,
@@ -155,6 +155,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._module_states: dict[str, bytearray] = {}
 
         self.discovery_running = False
+        # The following are written by nikobus-connect, which holds this
+        # coordinator as ``self._coordinator`` and assigns these attributes
+        # cross-object during discovery. They look unassigned to a grep of
+        # THIS file — the writer is in the library — so do NOT remove them:
+        # the library both writes and READS them (e.g. ``if not
+        # self._coordinator.discovery_module``), and a missing seed here
+        # would raise AttributeError if the library reads before its first
+        # write.
+        #   * ``discovery_module`` / ``discovery_module_address`` — current
+        #     per-module register-scan target; read in the library's frame
+        #     routing.
+        #   * ``inventory_query_type`` — PC_LINK / MODULE phase marker, read
+        #     by ``_inventory_callback`` / ``_discovery_frame_callback`` to
+        #     route $18 / $2E / $1E frames.
         self.discovery_module = None
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
@@ -262,34 +276,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.dict_button_data = await self.button_storage.async_load()
             await self.cf_storage.async_load()
 
-            # Boot NEVER imports inventory from the legacy manual-config
-            # files. Building inventory from files is reserved for the
-            # explicit "Discover modules" action, which tries PC-Link
-            # first and only falls back to the files on probe failure
-            # (see ``start_pc_link_inventory`` →
-            # ``_apply_manual_inventory_as_fallback``).
-            #
-            # Importing at boot was wrong on two counts: it silently
-            # clobbered a PC-Link install's bus-discovered inventory from
-            # stale leftover files (2.12.2 guarded that), and — worse —
-            # it seeded a *fresh* PC-Link install from files before the
-            # user ever ran discovery (the provenance guard couldn't tell
-            # "fresh PC-Link install" from "no-PC-Link install"). The
-            # fix is to not import at boot at all.
-            #
-            # The names-only friendly-name overlay still runs: it never
-            # adds or removes modules/buttons, it only enriches entries
-            # that already exist in the stores, so file-authored names
-            # stay in sync each boot without re-running discovery.
-            changed = await async_apply_friendly_name_overlay(
-                self.hass,
-                self.module_storage,
-                self.dict_button_data,
-            )
-            if changed:
-                await self.module_storage.async_save()
-                await self.button_storage.async_save()
-                self._rebuild_dict_module_data()
+            # 3.0.0: the legacy friendly-name overlay (importing entity
+            # names from nikobus_module_config.json / nikobus_button_config.json
+            # on every boot) has been removed — entity names are managed in
+            # Home Assistant and preserved across reloads. The files are still
+            # consulted only as the inventory fallback for installs without a
+            # PC-Link (start_pc_link_inventory → _apply_manual_inventory_as_fallback).
+            # Warn if they're still present so users know the name-import no
+            # longer happens.
+            await self._warn_if_legacy_config_files_present()
+
             self.dict_scene_data = await self.nikobus_config.load_json_data(
                 "nikobus_scene_config.json", "scene"
             )
@@ -1016,9 +1012,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             await self.module_storage.async_save()
             await self.button_storage.async_save()
             self._rebuild_dict_module_data()
-            domain_data = self.hass.data.get(DOMAIN, {})
-            entry_data = domain_data.get(self.config_entry.entry_id, {})
-            entry_data.pop("routing", None)
+            self._invalidate_routing_cache()
             # Reload so platforms drop entities for the purged addresses.
             # Schedule rather than await — matches ``_async_options_updated``.
             self.hass.async_create_task(
@@ -1051,7 +1045,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         A/B latch switch, software-scene feedback LEDs, and CF /
         light-scene activation.
         """
-        if not address:
+        if not address or self.nikobus_command is None:
+            # No command handler before connect / during teardown —
+            # nothing to send rather than an AttributeError.
             return
         try:
             repeats = max(1, int(self._press_repeat))
@@ -1236,21 +1232,30 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities."""
-        from .router import build_routing, build_unique_id, INPUT_MODULE_TYPES
+        from .router import (
+            build_routing,
+            build_unique_id,
+            input_latch_switch_unique_id,
+            iter_input_module_children,
+            iter_operation_points,
+            INPUT_MODULE_TYPES,
+        )
         known: set[str] = set()
         routing = build_routing(self.dict_module_data)
         for specs in routing.values():
             for spec in specs:
                 known.add(build_unique_id(spec.domain, spec.kind, spec.address, spec.channel))
-        for phys in self.dict_button_data.get("nikobus_button", {}).values():
-            if not isinstance(phys, dict):
-                continue
-            for op_point in (phys.get("operation_points") or {}).values():
-                if not isinstance(op_point, dict):
-                    continue
-                if bus_addr := op_point.get("bus_address"):
-                    known.add(f"{DOMAIN}_button_{bus_addr}")
-                    known.add(f"{DOMAIN}_push_button_{bus_addr}")
+        buttons = self.dict_button_data.get("nikobus_button", {})
+        # Button + push-button ids, via the shared op-point enumerator
+        # (same guard ladder the button/binary-sensor platforms use).
+        for _addr, _key, op_point, _phys in iter_operation_points(buttons):
+            bus_addr = op_point["bus_address"]
+            known.add(f"{DOMAIN}_button_{bus_addr}")
+            known.add(f"{DOMAIN}_push_button_{bus_addr}")
+        # Stateful A/B latch switch ids for PC-Logic / Modular-Interface
+        # inputs — same enumerator the switch platform creates from.
+        for in_addr, _phys in iter_input_module_children(buttons):
+            known.add(input_latch_switch_unique_id(in_addr))
         # Input-class modules (PC-Logic, Modular Interface) skip ``build_routing``
         # because they don't drive output relays — emit their input-channel
         # button unique IDs directly so orphan-cleanup doesn't remove them.
@@ -1293,11 +1298,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if self.cf_storage is not None:
             for cf_addr in self.cf_storage.data.get("nikobus_cf", {}):
                 known.add(f"nikobus_cf_{str(cf_addr).lower()}")
-        # Stateful A/B latch switches for PC-Logic / Modular-Interface
-        # inputs (switch platform, unique_id ``nikobus_input_switch_<addr>``).
-        for in_addr, phys in self.dict_button_data.get("nikobus_button", {}).items():
-            if isinstance(phys, dict) and phys.get("pc_logic_parent_type") in INPUT_MODULE_TYPES:
-                known.add(f"nikobus_input_switch_{str(in_addr).lower()}")
         known.add(f"{DOMAIN}_connection_status")
         known.add(f"{DOMAIN}_discovery_status")
         known.add(f"{DOMAIN}_discovery_progress")
@@ -1334,14 +1334,37 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self.dict_module_data.clear()
         self.dict_module_data.update(grouped)
 
+    async def _warn_if_legacy_config_files_present(self) -> None:
+        """Warn if the deprecated manual-config files are still on disk.
+
+        As of 3.0.0 these files are no longer imported for entity names;
+        they're only consulted as the no-PC-Link inventory fallback.
+        """
+        present = await legacy_config_files_present(self.hass)
+        if present:
+            _LOGGER.warning(
+                "Legacy Nikobus config file(s) found: %s. As of 3.0.0 these "
+                "are no longer imported for entity names — names are managed "
+                "in Home Assistant and preserved across reloads. They are "
+                "only consulted as the inventory fallback for installs "
+                "without a PC-Link; if you use a PC-Link/bridge you can "
+                "delete them.",
+                ", ".join(present),
+            )
+
+    def _invalidate_routing_cache(self) -> None:
+        """Drop the cached router spec so the next access rebuilds it
+        (e.g. after modules are discovered, purged, or edited)."""
+        domain_data = self.hass.data.get(DOMAIN, {})
+        entry_data = domain_data.get(self.config_entry.entry_id, {})
+        entry_data.pop("routing", None)
+
     async def _async_on_module_save(self) -> None:
         """Persist the Store after discovery/user edits, then refresh derived views."""
         await self.module_storage.async_save()
         self._rebuild_dict_module_data()
         # Clear the cached router spec so newly-discovered modules show up.
-        domain_data = self.hass.data.get(DOMAIN, {})
-        entry_data = domain_data.get(self.config_entry.entry_id, {})
-        entry_data.pop("routing", None)
+        self._invalidate_routing_cache()
 
     @staticmethod
     def _collect_button_linked_modules(phys: dict[str, Any]) -> set[str]:
@@ -1746,9 +1769,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         await self.module_storage.async_save()
         await self.button_storage.async_save()
         self._rebuild_dict_module_data()
-        domain_data = self.hass.data.get(DOMAIN, {})
-        entry_data = domain_data.get(self.config_entry.entry_id, {})
-        entry_data.pop("routing", None)
+        self._invalidate_routing_cache()
         self.invalidate_controlled_by_index()
 
         _LOGGER.info(
@@ -2045,20 +2066,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     translation_domain=DOMAIN,
                     translation_key="no_inventory_source",
                 )
-
-        # 3. Overlay friendly names from manual files (whether or not
-        #    we used them as inventory source). No-op if files absent.
-        try:
-            from .nkbmanual import async_apply_friendly_name_overlay
-            overlaid = await async_apply_friendly_name_overlay(
-                self.hass, self.module_storage, self.dict_button_data
-            )
-            if overlaid:
-                await self.module_storage.async_save()
-                await self.button_storage.async_save()
-                self._rebuild_dict_module_data()
-        except Exception:  # noqa: BLE001
-            _LOGGER.exception("Friendly-name overlay failed; continuing")
 
     async def _try_pclink_inventory(self) -> bool:
         """Kick off the ``#A`` broadcast and decide if PC-Link is present.

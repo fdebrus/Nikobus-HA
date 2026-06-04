@@ -7,18 +7,13 @@ from typing import Any
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import (
-    BRAND,
-    DOMAIN,
-    HUB_IDENTIFIER,
-    SIGNAL_DISCOVERY_STATE,
-)
+from .const import DOMAIN, SIGNAL_DISCOVERY_STATE
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
+from .entity import hub_device_info
 
 PARALLEL_UPDATES = 0
 
@@ -41,15 +36,6 @@ async def async_setup_entry(
     ])
 
 
-def _hub_device_info() -> dr.DeviceInfo:
-    return dr.DeviceInfo(
-        identifiers={(DOMAIN, HUB_IDENTIFIER)},
-        name="Nikobus Bridge",
-        manufacturer=BRAND,
-        model="PC-Link Bridge",
-    )
-
-
 class NikobusConnectionSensor(CoordinatorEntity[NikobusDataCoordinator], SensorEntity):
     """Sensor that exposes the live Nikobus connection status."""
 
@@ -63,7 +49,7 @@ class NikobusConnectionSensor(CoordinatorEntity[NikobusDataCoordinator], SensorE
         """Initialize the sensor."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_connection_status"
-        self._attr_device_info = _hub_device_info()
+        self._attr_device_info = hub_device_info()
 
     @property
     def native_value(self) -> str:
@@ -88,7 +74,7 @@ class _DiscoverySignalEntity(SensorEntity):
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
-        self._attr_device_info = _hub_device_info()
+        self._attr_device_info = hub_device_info()
 
     async def async_added_to_hass(self) -> None:
         """Register dispatcher listener."""
