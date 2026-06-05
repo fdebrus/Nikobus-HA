@@ -2,6 +2,10 @@
 
 ## 3.2.1
 
+- **Progress bar now spans 0→100 % per button.** *Load Existing
+  Installation* previously opened at 30 % (the combined-pipeline weight of
+  the inventory+identity phases it doesn't run); each standalone scan now
+  rescales to fill the whole bar.
 - Renamed the two discovery buttons to match Nikobus software terminology:
   **Discover modules & buttons → Load Project Overview** (the PC-Link
   inventory read) and **Scan all module links → Load Existing Installation**
