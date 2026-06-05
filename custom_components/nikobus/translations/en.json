@@ -63,13 +63,13 @@
   "entity": {
     "button": {
       "discover_modules_buttons": {
-        "name": "Load Project Overview"
+        "name": "1. Load Project Overview"
       },
       "scan_all_module_links": {
-        "name": "Load Existing Installation"
+        "name": "2. Load Existing Installation"
       },
       "import_nkb_names": {
-        "name": "Import Names from .nkb"
+        "name": "3. Import Names from .nkb"
       }
     },
     "sensor": {

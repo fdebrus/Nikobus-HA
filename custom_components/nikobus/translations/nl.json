@@ -147,13 +147,13 @@
     },
     "button": {
       "discover_modules_buttons": {
-        "name": "Projectoverzicht laden"
+        "name": "1. Projectoverzicht laden"
       },
       "scan_all_module_links": {
-        "name": "Bestaande installatie laden"
+        "name": "2. Bestaande installatie laden"
       },
       "import_nkb_names": {
-        "name": "Namen importeren uit .nkb"
+        "name": "3. Namen importeren uit .nkb"
       }
     }
   },

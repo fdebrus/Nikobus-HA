@@ -147,13 +147,13 @@
     },
     "button": {
       "discover_modules_buttons": {
-        "name": "Charger l'aperçu du projet"
+        "name": "1. Charger l'aperçu du projet"
       },
       "scan_all_module_links": {
-        "name": "Charger l'installation existante"
+        "name": "2. Charger l'installation existante"
       },
       "import_nkb_names": {
-        "name": "Importer les noms depuis .nkb"
+        "name": "3. Importer les noms depuis .nkb"
       }
     }
   },
