@@ -53,5 +53,19 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         self.assertIsInstance(known, set)
 
 
+class TestKnownEntityIdsIncludeBridgeButtons(unittest.TestCase):
+    """The three hub config buttons must be in the known-id set, else the
+    orphan cleanup evicts them right after the button platform creates them
+    (the import-names button regressed exactly this way: created then
+    immediately removed at startup)."""
+
+    def test_all_three_bridge_buttons_are_known(self):
+        coord = _coord_with_cfs([])
+        known = coord.get_known_entity_unique_ids()
+        self.assertIn("nikobus_pc_link_inventory_button", known)
+        self.assertIn("nikobus_module_scan_button", known)
+        self.assertIn("nikobus_import_nkb_names_button", known)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1366,6 +1366,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         known.add(f"{DOMAIN}_discovery_progress")
         known.add(f"{DOMAIN}_pc_link_inventory_button")
         known.add(f"{DOMAIN}_module_scan_button")
+        known.add(f"{DOMAIN}_import_nkb_names_button")
         return known
 
     def _rebuild_dict_module_data(self) -> None:
