@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.3.1
+
+- Numbered the three bridge config buttons so they show in the intended
+  order (**1. Load Project Overview**, **2. Load Existing Installation**,
+  **3. Import Names from .nkb**) — HA sorts them alphabetically, which
+  otherwise put "Load Existing Installation" first. Display name only
+  (EN/FR/NL); entity ids unchanged.
+
 ## 3.3.0
 
 **Import device & entity names from your Nikobus `.nkb` project file.**
