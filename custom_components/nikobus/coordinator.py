@@ -926,11 +926,23 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     def get_scene_for_address(self, bus_address: Any) -> dict[str, Any] | None:
         """Return the classified CF/scene record an address triggers, or
-        ``None`` — used to cross-reference a button with the scene it fires."""
+        ``None`` — used to cross-reference a button with the scene it fires.
+
+        A scene can have several trigger addresses (one Central Function,
+        many inputs). The store is keyed on the canonical address, so we
+        match the canonical key first and then any address listed in a
+        scene's ``triggered_by``."""
         if self.cf_storage is None or not bus_address:
             return None
-        cf = self.cf_storage.data.get("nikobus_cf", {}).get(str(bus_address).upper())
-        return cf if isinstance(cf, dict) else None
+        addr = str(bus_address).upper()
+        scenes = self.cf_storage.data.get("nikobus_cf", {})
+        cf = scenes.get(addr)
+        if isinstance(cf, dict):
+            return cf
+        for cf in scenes.values():
+            if isinstance(cf, dict) and addr in (cf.get("triggered_by") or []):
+                return cf
+        return None
 
     def _build_controlled_by_index(self) -> dict[tuple[str, int], list[dict[str, Any]]]:
         """Build a (module_address_upper, channel) -> list[button record] index."""
@@ -1574,10 +1586,17 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 }
                 for m in getattr(cf, "outputs", [])
             ]
+            bus_address = str(getattr(cf, "bus_address", addr)).upper()
+            triggered_by = [
+                str(t).upper()
+                for t in (getattr(cf, "triggered_by", None) or [bus_address])
+            ]
             flat[str(addr).upper()] = {
-                "bus_address": str(getattr(cf, "bus_address", addr)).upper(),
+                "bus_address": bus_address,
                 "pattern": str(getattr(cf, "pattern", "unknown")),
                 "outputs": outputs,
+                # Every address that fires this CF (one CF, many triggers).
+                "triggered_by": triggered_by,
             }
 
         self.cf_storage.data["nikobus_cf"] = flat

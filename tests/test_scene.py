@@ -127,7 +127,7 @@ class TestCFSceneAttributes(unittest.TestCase):
     def test_triggered_by_falls_back_to_address(self):
         e, coord = self._make([])
         coord.get_button_context.return_value = None
-        self.assertEqual(e._trigger_label(), "DE4E2C")
+        self.assertEqual(e._trigger_labels(), ["DE4E2C"])
 
     def test_triggered_by_uses_button_name(self):
         e, coord = self._make([])
@@ -135,7 +135,42 @@ class TestCFSceneAttributes(unittest.TestCase):
             "0D1C80", "IR:30B", {"description": "IR code 30B"},
             {"type": "Push button with IR receiver"},
         )
-        self.assertEqual(e._trigger_label(), "IR 30B on 0D1C80 (DE4E2C)")
+        self.assertEqual(e._trigger_labels(), ["IR 30B on 0D1C80 (DE4E2C)"])
+
+    def test_multiple_triggers_listed(self):
+        coord = MagicMock()
+        coord.address_label = lambda a: a
+        coord.get_button_context = MagicMock(return_value=None)
+        e = NikobusCFSceneEntity(
+            coord,
+            bus_address="8B7086",
+            cf_config={
+                "pattern": "light_scene",
+                "outputs": [],
+                "triggered_by": ["8B7086", "DE4E2C"],
+            },
+        )
+        self.assertEqual(e._triggered_by, ["8B7086", "DE4E2C"])
+        self.assertEqual(e._trigger_labels(), ["8B7086", "DE4E2C"])
+
+    def test_handle_trigger_fires_on_secondary_trigger(self):
+        coord = MagicMock()
+        coord.address_label = lambda a: a
+        coord.get_button_context = MagicMock(return_value=None)
+        e = NikobusCFSceneEntity(
+            coord,
+            bus_address="8B7086",
+            cf_config={"pattern": "light_scene", "outputs": [],
+                       "triggered_by": ["8B7086", "DE4E2C"]},
+        )
+        e.hass = MagicMock()
+        e.entity_id = "scene.x"
+        ev = MagicMock()
+        ev.data = {"address": "DE4E2C"}  # the non-canonical trigger
+        e._handle_trigger(ev)
+        e.hass.bus.async_fire.assert_called_once()
+        _, payload = e.hass.bus.async_fire.call_args.args
+        self.assertEqual(payload["address"], "DE4E2C")
 
     def test_handle_trigger_fires_event_on_match(self):
         e, _ = self._make([{"module_address": "0E6C", "channel": 1,
@@ -174,6 +209,21 @@ class TestCoordinatorSceneHelpers(unittest.TestCase):
         self.assertIsNone(c.get_scene_for_address("FFFFFF"))
         c.cf_storage = None
         self.assertIsNone(c.get_scene_for_address("DE4E2C"))
+
+    def test_get_scene_for_address_matches_secondary_trigger(self):
+        c = self._coord()
+        c.cf_storage = MagicMock()
+        c.cf_storage.data = {"nikobus_cf": {"8B7086": {
+            "pattern": "light_scene", "outputs": [1],
+            "triggered_by": ["8B7086", "DE4E2C"]}}}
+        # canonical key resolves
+        self.assertIsNotNone(c.get_scene_for_address("8B7086"))
+        # a non-canonical trigger resolves to the same scene
+        self.assertEqual(
+            c.get_scene_for_address("de4e2c")["triggered_by"],
+            ["8B7086", "DE4E2C"],
+        )
+        self.assertIsNone(c.get_scene_for_address("FFFFFF"))
 
     def test_address_label_fallback_without_device(self):
         c = self._coord()
