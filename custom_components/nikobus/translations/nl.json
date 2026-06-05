@@ -147,10 +147,10 @@
     },
     "button": {
       "discover_modules_buttons": {
-        "name": "Modules en knoppen ontdekken"
+        "name": "Projectoverzicht laden"
       },
       "scan_all_module_links": {
-        "name": "Alle modulekoppelingen scannen"
+        "name": "Bestaande installatie laden"
       }
     }
   },

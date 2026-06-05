@@ -147,10 +147,10 @@
     },
     "button": {
       "discover_modules_buttons": {
-        "name": "Découvrir modules et boutons"
+        "name": "Charger l'aperçu du projet"
       },
       "scan_all_module_links": {
-        "name": "Scanner les liens des modules"
+        "name": "Charger l'installation existante"
       }
     }
   },

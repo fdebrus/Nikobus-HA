@@ -63,10 +63,10 @@
   "entity": {
     "button": {
       "discover_modules_buttons": {
-        "name": "Discover modules & buttons"
+        "name": "Load Project Overview"
       },
       "scan_all_module_links": {
-        "name": "Scan all module links"
+        "name": "Load Existing Installation"
       }
     },
     "sensor": {

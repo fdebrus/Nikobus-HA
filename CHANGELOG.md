@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.2.1
+
+- Renamed the two discovery buttons to match Nikobus software terminology:
+  **Discover modules & buttons → Load Project Overview** (the PC-Link
+  inventory read) and **Scan all module links → Load Existing Installation**
+  (reading each module's existing programming, Niko's "upload"). Updated for
+  EN/FR/NL. Entity ids are unchanged.
+
 ## 3.2.0
 
 Requires **`nikobus-connect >= 0.24.0`**.
