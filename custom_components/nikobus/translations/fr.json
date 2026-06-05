@@ -151,6 +151,9 @@
       },
       "scan_all_module_links": {
         "name": "Charger l'installation existante"
+      },
+      "import_nkb_names": {
+        "name": "Importer les noms depuis .nkb"
       }
     }
   },
@@ -194,6 +197,12 @@
     },
     "discovery_not_initialized": {
       "message": "La découverte Nikobus n'est pas initialisée."
+    },
+    "nkb_not_found": {
+      "message": "Aucun fichier .nkb trouvé. Placez l'export de votre projet Nikobus (un fichier .nkb, idéalement nommé nikobus.nkb) dans le répertoire de configuration de Home Assistant, puis réessayez."
+    },
+    "nkb_parse_failed": {
+      "message": "Impossible de lire le fichier .nkb : {error}. Il est peut-être d'une version non prise en charge ou corrompu."
     },
     "initialization_error": {
       "message": "Échec de l'initialisation des composants Nikobus : {error}"

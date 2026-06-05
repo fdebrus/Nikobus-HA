@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -2341,3 +2342,92 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_running = False
             self._discovery_finished_event.set()
             raise
+
+    async def async_import_nkb_names(self) -> dict[str, int]:
+        """Import user names from a ``.nkb`` project file in the config dir.
+
+        Reads the Nikobus PC-software export (a ZIP holding an MS Access
+        DB) and applies its module / button / IR-receiver names — each as
+        ``Name (Room)`` keyed on the bus address — as **suggested**
+        device and entity names.
+
+        Non-destructive: a device's user rename (``name_by_user``) is
+        never touched, and an entity is only named when it has no user
+        override. Entity rows are named only for single-entity devices;
+        multi-channel modules rely on device-name inheritance so we don't
+        stamp the same name onto every channel. Returns a summary dict
+        (``devices`` / ``entities`` / ``addresses`` / ``scenes``).
+        """
+        from .nkbnames import find_nkb_file, parse_nkb_names
+
+        path = find_nkb_file(self.hass.config.config_dir)
+        if path is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="nkb_not_found"
+            )
+        try:
+            names = await self.hass.async_add_executor_job(parse_nkb_names, path)
+        except Exception as err:
+            _LOGGER.exception("Failed to read .nkb file %s", path)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="nkb_parse_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+        name_map = names.addresses  # {ADDRESS_HEX_UPPER: "Name (Room)"}
+        dev_reg = dr.async_get(self.hass)
+        ent_reg = er.async_get(self.hass)
+        entry_id = self.config_entry.entry_id
+
+        # 1. Devices — match any identifier address against the name map.
+        matched: dict[str, str] = {}  # device_id -> imported name
+        devices_named = 0
+        for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
+            imported = next(
+                (
+                    name_map[ident.upper()]
+                    for domain, ident in device.identifiers
+                    if domain == DOMAIN and ident.upper() in name_map
+                ),
+                None,
+            )
+            if imported is None:
+                continue
+            matched[device.id] = imported
+            if device.name != imported:
+                dev_reg.async_update_device(device.id, name=imported)
+                devices_named += 1
+
+        # 2. Entities — only for single-entity matched devices, and only
+        # when the user hasn't set their own name. Multi-entity devices
+        # inherit the device name instead (no per-channel duplication).
+        by_device: dict[str, list] = {}
+        for ent in er.async_entries_for_config_entry(ent_reg, entry_id):
+            if ent.device_id:
+                by_device.setdefault(ent.device_id, []).append(ent)
+        entities_named = 0
+        for device_id, imported in matched.items():
+            ents = by_device.get(device_id, [])
+            if len(ents) != 1:
+                continue
+            ent = ents[0]
+            if ent.name is None and ent.original_name != imported:
+                ent_reg.async_update_entity(ent.entity_id, name=imported)
+                entities_named += 1
+
+        _LOGGER.info(
+            "Imported .nkb names from %s: %d devices, %d entities renamed "
+            "(%d addresses, %d scenes in file)",
+            path.name,
+            devices_named,
+            entities_named,
+            len(name_map),
+            len(names.scenes),
+        )
+        return {
+            "devices": devices_named,
+            "entities": entities_named,
+            "addresses": len(name_map),
+            "scenes": len(names.scenes),
+        }

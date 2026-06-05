@@ -67,6 +67,9 @@
       },
       "scan_all_module_links": {
         "name": "Load Existing Installation"
+      },
+      "import_nkb_names": {
+        "name": "Import Names from .nkb"
       }
     },
     "sensor": {
@@ -139,6 +142,12 @@
     },
     "discovery_not_initialized": {
       "message": "Nikobus discovery is not initialized."
+    },
+    "nkb_not_found": {
+      "message": "No .nkb file found. Put your Nikobus project export (a .nkb file, ideally named nikobus.nkb) in your Home Assistant config directory, then retry."
+    },
+    "nkb_parse_failed": {
+      "message": "Could not read the .nkb file: {error}. It may be an unsupported version or corrupt."
     },
     "initialization_error": {
       "message": "Failed to initialize Nikobus components: {error}"

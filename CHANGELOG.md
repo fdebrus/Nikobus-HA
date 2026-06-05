@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.3.0
+
+**Import device & entity names from your Nikobus `.nkb` project file.**
+
+The Nikobus PC software stores every module / button / IR receiver under a
+user-given name (with its room). A `.nkb` is a ZIP holding an MS Access
+database; this release reads it directly in HA and applies those names.
+
+- **New bridge button "Import Names from .nkb".** Put your `.nkb` export in
+  the Home Assistant config directory (ideally named `nikobus.nkb`) and
+  press the button. Names are applied as `Name (Room)` — e.g. the dimmer
+  becomes `Dimcontroller (Centrale)`, a wall button `Entree (Living)`.
+- **Non-destructive / suggested.** A device or entity you've already renamed
+  by hand is never overwritten. Multi-channel modules are named at the
+  device level (channels inherit it) so the same name isn't stamped onto
+  every channel; single-entity devices get their entity row named too.
+- **No external services.** Parsing is pure-Python (vendored Apache-2.0
+  `access_parser` + the `construct` dependency); the file never leaves your
+  machine.
+- Scenes (Central Functions) in the `.nkb` have no bus address, so their
+  names aren't auto-applied yet — that mapping is a later step.
+
 ## 3.2.1
 
 - **Progress bar now spans 0→100 % per button.** *Load Existing
