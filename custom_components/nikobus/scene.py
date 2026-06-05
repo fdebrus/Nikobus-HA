@@ -8,10 +8,16 @@ import uuid
 from typing import Any
 
 from homeassistant.components.scene import Scene
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CATEGORY_SCENES, DOMAIN
+from .button import op_point_display_name
+from .const import (
+    CATEGORY_SCENES,
+    DOMAIN,
+    EVENT_BUTTON_PRESSED,
+    EVENT_SCENE_ACTIVATED,
+)
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 
@@ -143,8 +149,63 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             "bus_address": self._bus_address,
             "pattern": self._pattern,
             "member_count": len(self._outputs),
-            "outputs": self._outputs,
+            # The button / IR code that fires this scene on the bus (the
+            # scene's own trigger address), as "Name (ADDRESS)".
+            "triggered_by": self._trigger_label(),
+            # Human-readable member list: module name (address) + level.
+            "outputs": self._human_outputs(),
         }
+
+    def _trigger_label(self) -> str:
+        """Display label of the button / IR code that triggers this scene."""
+        ctx = self.coordinator.get_button_context(self._bus_address)
+        if ctx is None:
+            return self._bus_address
+        physical_addr, key_label, op_point, phys = ctx
+        label = op_point_display_name(
+            physical_addr, key_label, op_point, parent_phys=phys
+        )
+        return f"{label} ({self._bus_address})"
+
+    def _human_outputs(self) -> list[dict[str, Any]]:
+        """Members with module names + level; address kept for reference."""
+        out_list: list[dict[str, Any]] = []
+        for member in self._outputs:
+            if not isinstance(member, dict):
+                continue
+            entry: dict[str, Any] = {
+                "module": self.coordinator.address_label(member.get("module_address")),
+                "channel": member.get("channel"),
+                "action": member.get("mode"),
+            }
+            level = member.get("t1")
+            if level not in (None, ""):
+                entry["level"] = level
+            out_list.append(entry)
+        return out_list
+
+    async def async_added_to_hass(self) -> None:
+        """Watch the bus so a physical scene activation fires an event."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_trigger)
+        )
+
+    @callback
+    def _handle_trigger(self, event: Event) -> None:
+        """Fire ``nikobus_scene_activated`` when this scene's trigger address
+        is seen on the bus — physical press or HA-originated frame alike."""
+        if str(event.data.get("address") or "").upper() != self._bus_address:
+            return
+        self.hass.bus.async_fire(
+            EVENT_SCENE_ACTIVATED,
+            {
+                "address": self._bus_address,
+                "name": self._attr_name,
+                "entity_id": self.entity_id,
+                "member_count": len(self._outputs),
+            },
+        )
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Send the CF activation broadcast on the bus."""

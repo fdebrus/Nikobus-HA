@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.1.0
+
+Scene presentation & cross-references (HA-side only, no new dependency).
+
+- **Scenes cross-link with their trigger.** A CF / light scene now exposes
+  a `triggered_by` attribute — the wall button / IR code that fires it,
+  as `Name (ADDRESS)` — and the triggering button / binary_sensor exposes
+  a `triggers_scene` attribute. You can find one from the other at a glance.
+- **Human-readable attributes.** Scene members and button "linked outputs"
+  now show the module's friendly name with the address in brackets
+  (e.g. `dimmer_module_d1 (0E6C)`) plus the level, instead of bare
+  addresses.
+- **New event `nikobus_scene_activated`** fires whenever a scene's trigger
+  address is seen on the bus (physical press *or* HA activation), carrying
+  the scene's `address` / `name` / `entity_id` / `member_count` — so
+  automations can react to a *scene* firing, not just a raw button press.
+- Scenes remain standard `scene.*` entities — activate with `scene.turn_on`.
+
 ## 3.0.1
 
 Requires **`nikobus-connect >= 0.23.0`**.

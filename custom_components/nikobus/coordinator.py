@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -864,6 +865,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             "status": phys.get("status"),
         }
 
+    def get_button_context(
+        self, bus_address: str
+    ) -> tuple[str, str, dict[str, Any], dict[str, Any] | None] | None:
+        """Return ``(physical_addr, key_label, op_point, phys)`` for the
+        button op-point at ``bus_address``, or ``None``. Lets callers
+        build the button's display name without re-walking the store."""
+        hit = find_operation_point(self.dict_button_data, bus_address)
+        if hit is None:
+            return None
+        physical_addr, key_label, op_point = hit
+        phys = (self.dict_button_data or {}).get("nikobus_button", {}).get(physical_addr)
+        return physical_addr, key_label, op_point, (phys if isinstance(phys, dict) else None)
+
     def get_button_linked_outputs(self, bus_address: str) -> list[dict[str, Any]]:
         """Return flattened output links for a soft button (bus address).
 
@@ -882,6 +896,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 if not isinstance(out, dict):
                     continue
                 flattened.append({
+                    "module": self.address_label(module_address),
                     "module_address": module_address,
                     "channel": out.get("channel"),
                     "mode": out.get("mode"),
@@ -889,6 +904,33 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     "t2": out.get("t2"),
                 })
         return flattened
+
+    def address_label(self, address: Any) -> str:
+        """Return ``"Friendly Name (ADDRESS)"`` for a module / button bus
+        address, from the HA device registry (so user renames are
+        reflected), falling back to the bare uppercase address. Lets
+        attributes show a human name while keeping the address for
+        reference."""
+        if not address:
+            return ""
+        addr = str(address).upper()
+        if self.hass is not None:
+            device = dr.async_get(self.hass).async_get_device(
+                identifiers={(DOMAIN, addr)}
+            )
+            if device is not None:
+                name = device.name_by_user or device.name
+                if name and name.upper() != addr and addr not in name.upper():
+                    return f"{name} ({addr})"
+        return addr
+
+    def get_scene_for_address(self, bus_address: Any) -> dict[str, Any] | None:
+        """Return the classified CF/scene record an address triggers, or
+        ``None`` — used to cross-reference a button with the scene it fires."""
+        if self.cf_storage is None or not bus_address:
+            return None
+        cf = self.cf_storage.data.get("nikobus_cf", {}).get(str(bus_address).upper())
+        return cf if isinstance(cf, dict) else None
 
     def _build_controlled_by_index(self) -> dict[tuple[str, int], list[dict[str, Any]]]:
         """Build a (module_address_upper, channel) -> list[button record] index."""
