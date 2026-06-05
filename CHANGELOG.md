@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.3.2
+
+- **Fix: the "Import Names from .nkb" button never appeared.** Its
+  unique_id was missing from the known-entity allowlist, so the startup
+  orphan-cleanup evicted it immediately after the button platform created
+  it (visible as the entity flashing in, then vanishing). Added it to the
+  allowlist alongside the other two bridge buttons, with a regression test
+  covering all three.
+
 ## 3.3.1
 
 - Numbered the three bridge config buttons so they show in the intended
