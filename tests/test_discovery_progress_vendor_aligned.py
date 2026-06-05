@@ -195,3 +195,56 @@ def test_handler_resets_counters_on_sub_phase_transition() -> None:
     # Fallback to 240 when register_total=0 (legacy/forensic guard)
     # is still applied, but the cached identity-phase total is gone.
     assert kwargs["registers_total"] == 240
+
+
+def _percent_coord(scope, sub_phase, *, regs_done=0, regs_total=0,
+                   mods_done=0, mods_total=0):
+    """Bare coordinator exercising the discovery_progress_percent property."""
+    from custom_components.nikobus.coordinator import NikobusDataCoordinator
+
+    c = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
+    c._discovery_scope = scope
+    c.discovery_sub_phase = sub_phase
+    c.discovery_phase = "scan"
+    c.discovery_registers_done = regs_done
+    c.discovery_registers_total = regs_total
+    c.discovery_modules_done = mods_done
+    c.discovery_modules_total = mods_total
+    return c
+
+
+def test_module_scan_progress_starts_at_zero() -> None:
+    """Load Existing Installation (register_scan only) opens at 0 %, not 30 %."""
+    c = _percent_coord("module_scan", "register_scan",
+                       regs_done=0, regs_total=48, mods_done=0, mods_total=4)
+    assert c.discovery_progress_percent == 0.0
+
+
+def test_module_scan_progress_reaches_full_range() -> None:
+    """Last module fully scanned → ~95 % within the register phase (the
+    remaining 5 % is finalizing), spanning the whole bar not 30→95."""
+    c = _percent_coord("module_scan", "register_scan",
+                       regs_done=48, regs_total=48, mods_done=3, mods_total=4)
+    # 4/4 of the register phase maps to (95-30)/70*100 ≈ 92.9
+    assert c.discovery_progress_percent > 90.0
+
+
+def test_module_scan_finalizing_near_complete() -> None:
+    c = _percent_coord("module_scan", "finalizing")
+    # finalizing midpoint: raw 97.5 → (97.5-30)/70*100 ≈ 96.4
+    assert 95.0 <= c.discovery_progress_percent <= 99.9
+
+
+def test_inventory_scope_spans_full_bar() -> None:
+    """Load Project Overview (inventory+identity) spans 0→100 on its own."""
+    c = _percent_coord("inventory", "identity",
+                       regs_done=0, regs_total=0, mods_done=1, mods_total=1)
+    # identity done=1/1 → raw 30 → /30*100 = 100 → capped 99.9
+    assert c.discovery_progress_percent == 99.9
+
+
+def test_full_scope_unchanged() -> None:
+    """A combined run keeps the stacked value (register_scan floor 30)."""
+    c = _percent_coord("full", "register_scan",
+                       regs_done=0, regs_total=48, mods_done=0, mods_total=4)
+    assert c.discovery_progress_percent == 30.0

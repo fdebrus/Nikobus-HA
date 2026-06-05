@@ -48,6 +48,7 @@ async def async_setup_entry(
     entities: list[ButtonEntity] = [
         NikobusPcLinkInventoryButton(coordinator),
         NikobusModuleScanButton(coordinator),
+        NikobusImportNkbNamesButton(coordinator),
     ]
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
@@ -534,6 +535,42 @@ class NikobusModuleScanButton(ButtonEntity):
         self.hass.async_create_background_task(
             self._coordinator.start_module_scan(),
             name="nikobus_module_scan_discovery",
+        )
+
+
+class NikobusImportNkbNamesButton(ButtonEntity):
+    """Bridge button that imports device/entity names from a ``.nkb`` file.
+
+    Reads the Nikobus PC-software project export (a ``.nkb`` placed in the
+    HA config dir) and applies its module / button / IR-receiver names as
+    suggested device and entity names. Non-destructive — manual renames
+    are preserved.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "import_nkb_names"
+    _attr_should_poll = False
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        self._coordinator = coordinator
+        self._attr_unique_id = f"{DOMAIN}_import_nkb_names_button"
+        self._attr_device_info = hub_device_info()
+
+    async def async_press(self) -> None:
+        """Import names from the ``.nkb`` in the config dir.
+
+        Awaited directly (not backgrounded): the parse runs in an
+        executor and the registry writes are fast, so this returns
+        quickly while still surfacing not-found / parse errors to the
+        user as the button action result.
+        """
+        _LOGGER.info("Importing Nikobus names from .nkb via UI button")
+        result = await self._coordinator.async_import_nkb_names()
+        _LOGGER.info(
+            "Nikobus .nkb name import done: %s devices, %s entities",
+            result["devices"],
+            result["entities"],
         )
 
 

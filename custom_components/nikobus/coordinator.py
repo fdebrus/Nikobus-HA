@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -183,6 +184,14 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # before that, almost every button reads as ``legacy_undecoded``
         # by default (no module's register table has been decoded yet).
         self._last_module_scan_was_full: bool = False
+
+        # Which slice of the full discovery pipeline the running operation
+        # covers, so the progress bar can rescale to 0–100 for each
+        # standalone button. ``"inventory"`` = Load Project Overview
+        # (inventory+identity); ``"module_scan"`` = Load Existing
+        # Installation (register-scan+finalizing); ``"full"`` = the whole
+        # pipeline (no rescale). See ``discovery_progress_percent``.
+        self._discovery_scope: str = "full"
 
         # --- Discovery progress tracking (for UI) ---
         # `discovery_phase` stays on the legacy enum for backward-compat with
@@ -2008,7 +2017,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 return 40.0
             return 0.0
 
-        return min(99.9, round(floor + phase_frac * phase_weight, 1))
+        raw = floor + phase_frac * phase_weight
+
+        # Each discovery button runs only one slice of the full pipeline.
+        # Rescale that slice to span the whole bar so a standalone scan
+        # reads 0→100 instead of, e.g., Load Existing Installation opening
+        # at 30 % — the cumulative weight of the inventory+identity phases
+        # it skips. ``"full"`` (a combined run) keeps the raw stacked value.
+        overview_span = DISCOVERY_WEIGHT_INVENTORY + DISCOVERY_WEIGHT_IDENTITY
+        if self._discovery_scope == "module_scan":
+            raw = (raw - overview_span) / (100 - overview_span) * 100
+        elif self._discovery_scope == "inventory":
+            raw = raw / overview_span * 100
+
+        return min(99.9, round(max(0.0, raw), 1))
 
     def _update_discovery_state(
         self,
@@ -2094,6 +2116,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
         self._last_module_scan_was_full = False
+        self._discovery_scope = "inventory"
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_PC_LINK,
             message="Probing for PC-Link…",
@@ -2232,6 +2255,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # Tracked for ``_reconcile_post_discovery`` — only after a
         # scan-all is ``legacy_undecoded`` a trustworthy signal.
         self._last_module_scan_was_full = module_address is None
+        self._discovery_scope = "module_scan"
 
         if module_address:
             target = module_address.strip().upper()
@@ -2318,3 +2342,92 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self.discovery_running = False
             self._discovery_finished_event.set()
             raise
+
+    async def async_import_nkb_names(self) -> dict[str, int]:
+        """Import user names from a ``.nkb`` project file in the config dir.
+
+        Reads the Nikobus PC-software export (a ZIP holding an MS Access
+        DB) and applies its module / button / IR-receiver names — each as
+        ``Name (Room)`` keyed on the bus address — as **suggested**
+        device and entity names.
+
+        Non-destructive: a device's user rename (``name_by_user``) is
+        never touched, and an entity is only named when it has no user
+        override. Entity rows are named only for single-entity devices;
+        multi-channel modules rely on device-name inheritance so we don't
+        stamp the same name onto every channel. Returns a summary dict
+        (``devices`` / ``entities`` / ``addresses`` / ``scenes``).
+        """
+        from .nkbnames import find_nkb_file, parse_nkb_names
+
+        path = find_nkb_file(self.hass.config.config_dir)
+        if path is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="nkb_not_found"
+            )
+        try:
+            names = await self.hass.async_add_executor_job(parse_nkb_names, path)
+        except Exception as err:
+            _LOGGER.exception("Failed to read .nkb file %s", path)
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="nkb_parse_failed",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+        name_map = names.addresses  # {ADDRESS_HEX_UPPER: "Name (Room)"}
+        dev_reg = dr.async_get(self.hass)
+        ent_reg = er.async_get(self.hass)
+        entry_id = self.config_entry.entry_id
+
+        # 1. Devices — match any identifier address against the name map.
+        matched: dict[str, str] = {}  # device_id -> imported name
+        devices_named = 0
+        for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
+            imported = next(
+                (
+                    name_map[ident.upper()]
+                    for domain, ident in device.identifiers
+                    if domain == DOMAIN and ident.upper() in name_map
+                ),
+                None,
+            )
+            if imported is None:
+                continue
+            matched[device.id] = imported
+            if device.name != imported:
+                dev_reg.async_update_device(device.id, name=imported)
+                devices_named += 1
+
+        # 2. Entities — only for single-entity matched devices, and only
+        # when the user hasn't set their own name. Multi-entity devices
+        # inherit the device name instead (no per-channel duplication).
+        by_device: dict[str, list] = {}
+        for ent in er.async_entries_for_config_entry(ent_reg, entry_id):
+            if ent.device_id:
+                by_device.setdefault(ent.device_id, []).append(ent)
+        entities_named = 0
+        for device_id, imported in matched.items():
+            ents = by_device.get(device_id, [])
+            if len(ents) != 1:
+                continue
+            ent = ents[0]
+            if ent.name is None and ent.original_name != imported:
+                ent_reg.async_update_entity(ent.entity_id, name=imported)
+                entities_named += 1
+
+        _LOGGER.info(
+            "Imported .nkb names from %s: %d devices, %d entities renamed "
+            "(%d addresses, %d scenes in file)",
+            path.name,
+            devices_named,
+            entities_named,
+            len(name_map),
+            len(names.scenes),
+        )
+        return {
+            "devices": devices_named,
+            "entities": entities_named,
+            "addresses": len(name_map),
+            "scenes": len(names.scenes),
+        }

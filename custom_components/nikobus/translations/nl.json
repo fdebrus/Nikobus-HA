@@ -147,10 +147,13 @@
     },
     "button": {
       "discover_modules_buttons": {
-        "name": "Modules en knoppen ontdekken"
+        "name": "Projectoverzicht laden"
       },
       "scan_all_module_links": {
-        "name": "Alle modulekoppelingen scannen"
+        "name": "Bestaande installatie laden"
+      },
+      "import_nkb_names": {
+        "name": "Namen importeren uit .nkb"
       }
     }
   },
@@ -194,6 +197,12 @@
     },
     "discovery_not_initialized": {
       "message": "Nikobus-ontdekking is niet geïnitialiseerd."
+    },
+    "nkb_not_found": {
+      "message": "Geen .nkb-bestand gevonden. Plaats de export van je Nikobus-project (een .nkb-bestand, bij voorkeur nikobus.nkb genoemd) in de Home Assistant-configuratiemap en probeer het opnieuw."
+    },
+    "nkb_parse_failed": {
+      "message": "Kon het .nkb-bestand niet lezen: {error}. Mogelijk een niet-ondersteunde versie of beschadigd."
     },
     "initialization_error": {
       "message": "Initialisatie van Nikobus-componenten mislukt: {error}"
