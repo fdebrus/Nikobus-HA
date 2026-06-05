@@ -94,5 +94,156 @@ class TestCFSceneActivation(unittest.TestCase):
         coord.async_activate_cf_broadcast.assert_awaited_once_with("DE4E2C")
 
 
+class TestCFSceneAttributes(unittest.TestCase):
+    def _make(self, outputs):
+        coord = MagicMock()
+        coord.address_label = lambda a: f"mod_{a} ({a})" if a else ""
+        coord.get_button_context = MagicMock(return_value=None)
+        e = NikobusCFSceneEntity(
+            coord,
+            bus_address="DE4E2C",
+            cf_config={"pattern": "light_scene", "outputs": outputs},
+        )
+        return e, coord
+
+    def test_human_outputs_label_module_and_level(self):
+        e, _ = self._make([
+            {"module_address": "0E6C", "channel": 1,
+             "mode": "M04 (Light scene on)", "t1": "6%"},
+            {"module_address": "8394", "channel": 1, "mode": "M02 (Open)", "t1": None},
+        ])
+        outs = e._human_outputs()
+        self.assertEqual(
+            outs[0],
+            {"module": "mod_0E6C (0E6C)", "channel": 1,
+             "action": "M04 (Light scene on)", "level": "6%"},
+        )
+        # no level key when t1 is empty
+        self.assertEqual(
+            outs[1],
+            {"module": "mod_8394 (8394)", "channel": 1, "action": "M02 (Open)"},
+        )
+
+    def test_triggered_by_falls_back_to_address(self):
+        e, coord = self._make([])
+        coord.get_button_context.return_value = None
+        self.assertEqual(e._trigger_labels(), ["DE4E2C"])
+
+    def test_triggered_by_uses_button_name(self):
+        e, coord = self._make([])
+        coord.get_button_context.return_value = (
+            "0D1C80", "IR:30B", {"description": "IR code 30B"},
+            {"type": "Push button with IR receiver"},
+        )
+        self.assertEqual(e._trigger_labels(), ["IR 30B on 0D1C80 (DE4E2C)"])
+
+    def test_multiple_triggers_listed(self):
+        coord = MagicMock()
+        coord.address_label = lambda a: a
+        coord.get_button_context = MagicMock(return_value=None)
+        e = NikobusCFSceneEntity(
+            coord,
+            bus_address="8B7086",
+            cf_config={
+                "pattern": "light_scene",
+                "outputs": [],
+                "triggered_by": ["8B7086", "DE4E2C"],
+            },
+        )
+        self.assertEqual(e._triggered_by, ["8B7086", "DE4E2C"])
+        self.assertEqual(e._trigger_labels(), ["8B7086", "DE4E2C"])
+
+    def test_handle_trigger_fires_on_secondary_trigger(self):
+        coord = MagicMock()
+        coord.address_label = lambda a: a
+        coord.get_button_context = MagicMock(return_value=None)
+        e = NikobusCFSceneEntity(
+            coord,
+            bus_address="8B7086",
+            cf_config={"pattern": "light_scene", "outputs": [],
+                       "triggered_by": ["8B7086", "DE4E2C"]},
+        )
+        e.hass = MagicMock()
+        e.entity_id = "scene.x"
+        ev = MagicMock()
+        ev.data = {"address": "DE4E2C"}  # the non-canonical trigger
+        e._handle_trigger(ev)
+        e.hass.bus.async_fire.assert_called_once()
+        _, payload = e.hass.bus.async_fire.call_args.args
+        self.assertEqual(payload["address"], "DE4E2C")
+
+    def test_handle_trigger_fires_event_on_match(self):
+        e, _ = self._make([{"module_address": "0E6C", "channel": 1,
+                            "mode": "M04 (Light scene on)"}])
+        e.hass = MagicMock()
+        e.entity_id = "scene.nikobus_scene_de4e2c"
+        ev = MagicMock()
+        ev.data = {"address": "DE4E2C"}
+        e._handle_trigger(ev)
+        e.hass.bus.async_fire.assert_called_once()
+        name, payload = e.hass.bus.async_fire.call_args.args
+        self.assertEqual(name, "nikobus_scene_activated")
+        self.assertEqual(payload["address"], "DE4E2C")
+        self.assertEqual(payload["member_count"], 1)
+
+    def test_handle_trigger_ignores_other_address(self):
+        e, _ = self._make([])
+        e.hass = MagicMock()
+        ev = MagicMock()
+        ev.data = {"address": "AAAAAA"}
+        e._handle_trigger(ev)
+        e.hass.bus.async_fire.assert_not_called()
+
+
+class TestCoordinatorSceneHelpers(unittest.TestCase):
+    def _coord(self):
+        from custom_components.nikobus.coordinator import NikobusDataCoordinator
+        return NikobusDataCoordinator.__new__(NikobusDataCoordinator)
+
+    def test_get_scene_for_address(self):
+        c = self._coord()
+        c.cf_storage = MagicMock()
+        c.cf_storage.data = {"nikobus_cf": {"DE4E2C": {"pattern": "light_scene",
+                                                       "outputs": [1, 2, 3]}}}
+        self.assertEqual(c.get_scene_for_address("de4e2c")["outputs"], [1, 2, 3])
+        self.assertIsNone(c.get_scene_for_address("FFFFFF"))
+        c.cf_storage = None
+        self.assertIsNone(c.get_scene_for_address("DE4E2C"))
+
+    def test_get_scene_for_address_matches_secondary_trigger(self):
+        c = self._coord()
+        c.cf_storage = MagicMock()
+        c.cf_storage.data = {"nikobus_cf": {"8B7086": {
+            "pattern": "light_scene", "outputs": [1],
+            "triggered_by": ["8B7086", "DE4E2C"]}}}
+        # canonical key resolves
+        self.assertIsNotNone(c.get_scene_for_address("8B7086"))
+        # a non-canonical trigger resolves to the same scene
+        self.assertEqual(
+            c.get_scene_for_address("de4e2c")["triggered_by"],
+            ["8B7086", "DE4E2C"],
+        )
+        self.assertIsNone(c.get_scene_for_address("FFFFFF"))
+
+    def test_address_label_fallback_without_device(self):
+        c = self._coord()
+        c.hass = None
+        self.assertEqual(c.address_label("0e6c"), "0E6C")
+        self.assertEqual(c.address_label(""), "")
+
+    def test_address_label_uses_device_name(self):
+        from unittest.mock import patch
+        c = self._coord()
+        c.hass = MagicMock()
+        dev = MagicMock()
+        dev.name_by_user = None
+        dev.name = "dimmer_module_d1"
+        reg = MagicMock()
+        reg.async_get_device.return_value = dev
+        with patch("custom_components.nikobus.coordinator.dr.async_get",
+                   return_value=reg):
+            self.assertEqual(c.address_label("0E6C"), "dimmer_module_d1 (0E6C)")
+
+
 if __name__ == "__main__":
     unittest.main()

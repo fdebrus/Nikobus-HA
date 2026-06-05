@@ -50,6 +50,10 @@ CATEGORY_DEVICES: Final[tuple[tuple[str, str, str], ...]] = (
 # =============================================================================
 EVENT_BUTTON_OPERATION: Final[str] = "nikobus_button_operation"
 EVENT_BUTTON_PRESSED: Final[str] = "nikobus_button_pressed"
+# Fired when a discovered CF/light scene is activated on the bus (its
+# trigger address is seen) — lets automations react to a scene firing,
+# whether triggered physically or from HA.
+EVENT_SCENE_ACTIVATED: Final[str] = "nikobus_scene_activated"
 
 # =============================================================================
 # Discovery

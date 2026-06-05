@@ -8,10 +8,16 @@ import uuid
 from typing import Any
 
 from homeassistant.components.scene import Scene
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import CATEGORY_SCENES, DOMAIN
+from .button import op_point_display_name
+from .const import (
+    CATEGORY_SCENES,
+    DOMAIN,
+    EVENT_BUTTON_PRESSED,
+    EVENT_SCENE_ACTIVATED,
+)
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 
@@ -132,6 +138,13 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
         self._bus_address = addr
         self._pattern = pattern
         self._outputs = outputs if isinstance(outputs, list) else []
+        # Every address that fires this scene (one CF, many triggers).
+        # Falls back to the canonical address for older stored records.
+        triggers = cf_config.get("triggered_by")
+        if isinstance(triggers, list) and triggers:
+            self._triggered_by = [str(t).upper() for t in triggers]
+        else:
+            self._triggered_by = [addr]
         self._attr_name = name
         self._attr_unique_id = f"nikobus_cf_{addr.lower()}"
 
@@ -143,8 +156,69 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             "bus_address": self._bus_address,
             "pattern": self._pattern,
             "member_count": len(self._outputs),
-            "outputs": self._outputs,
+            # Every button / IR code that fires this scene on the bus, each
+            # as "Name (ADDRESS)" (one Central Function, many triggers).
+            "triggered_by": self._trigger_labels(),
+            # Human-readable member list: module name (address) + level.
+            "outputs": self._human_outputs(),
         }
+
+    def _trigger_labels(self) -> list[str]:
+        """Display labels of every button / IR code that triggers this scene."""
+        return [self._trigger_label(addr) for addr in self._triggered_by]
+
+    def _trigger_label(self, address: str) -> str:
+        """Display label of a single trigger address, as "Name (ADDRESS)"."""
+        ctx = self.coordinator.get_button_context(address)
+        if ctx is None:
+            return address
+        physical_addr, key_label, op_point, phys = ctx
+        label = op_point_display_name(
+            physical_addr, key_label, op_point, parent_phys=phys
+        )
+        return f"{label} ({address})"
+
+    def _human_outputs(self) -> list[dict[str, Any]]:
+        """Members with module names + level; address kept for reference."""
+        out_list: list[dict[str, Any]] = []
+        for member in self._outputs:
+            if not isinstance(member, dict):
+                continue
+            entry: dict[str, Any] = {
+                "module": self.coordinator.address_label(member.get("module_address")),
+                "channel": member.get("channel"),
+                "action": member.get("mode"),
+            }
+            level = member.get("t1")
+            if level not in (None, ""):
+                entry["level"] = level
+            out_list.append(entry)
+        return out_list
+
+    async def async_added_to_hass(self) -> None:
+        """Watch the bus so a physical scene activation fires an event."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_trigger)
+        )
+
+    @callback
+    def _handle_trigger(self, event: Event) -> None:
+        """Fire ``nikobus_scene_activated`` when any of this scene's trigger
+        addresses is seen on the bus — physical press or HA-originated frame
+        alike (one Central Function, many triggers)."""
+        fired = str(event.data.get("address") or "").upper()
+        if fired not in self._triggered_by:
+            return
+        self.hass.bus.async_fire(
+            EVENT_SCENE_ACTIVATED,
+            {
+                "address": fired,
+                "name": self._attr_name,
+                "entity_id": self.entity_id,
+                "member_count": len(self._outputs),
+            },
+        )
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Send the CF activation broadcast on the bus."""

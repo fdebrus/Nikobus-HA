@@ -605,6 +605,12 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             status = wall_info.get("status")
             if status in ("legacy_orphan", "legacy_undecoded"):
                 attrs["wall_button_status"] = status
+        # Cross-reference: if this button's address is also a discovered
+        # CF/light scene, surface the scene it fires.
+        scene = self.coordinator.get_scene_for_address(self._address)
+        if scene:
+            members = len(scene.get("outputs") or [])
+            attrs["triggers_scene"] = f"Nikobus scene {self._address} ({members} ch)"
         return attrs
 
     async def async_press(self) -> None:

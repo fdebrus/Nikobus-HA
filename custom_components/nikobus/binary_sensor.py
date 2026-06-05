@@ -100,6 +100,10 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         if wall_info:
             attrs["wall_button_model"] = wall_info.get("model")
             attrs["wall_button_type"] = wall_info.get("type")
+        scene = self.coordinator.get_scene_for_address(self._address)
+        if scene:
+            members = len(scene.get("outputs") or [])
+            attrs["triggers_scene"] = f"Nikobus scene {self._address} ({members} ch)"
         return attrs
 
     @property
