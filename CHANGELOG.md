@@ -1,5 +1,34 @@
 # Changelog
 
+## 3.5.0
+
+**`.nkb`-sourced scenes — shutter & master scenes now import as real scenes.**
+
+Light scenes self-identify on the bus (their preset-recall modes), so they
+were already surfaced. Shutter / "all-off" / master scenes have no such
+fingerprint — they're indistinguishable from an ordinary multi-output
+button — so discovery can't tell they're scenes. But the `.nkb` *does* mark
+them (the Central-Function grouping). "Import Names from .nkb" now uses that:
+
+- For every named CF group that **isn't** already a discovered light-scene,
+  it finds the on-bus address that fires the group by matching the group's
+  **member set** against the full routing graph (every button/IR op-point's
+  linked outputs), then creates a `scene.*` entity with the group's real
+  name (e.g. `ShuttersSalonCuisine`, `CloseHouse - Leave`).
+- Activation **fires the trigger address** — so the modules handle roller
+  run-times themselves (no HA-side timed stops), exactly like pressing the
+  physical button.
+- Authoritative, not heuristic: a group is imported only because the `.nkb`
+  designates it a Central Function. Multi-output buttons are never promoted
+  on their own, and you're never asked to classify anything.
+- A group with no on-bus trigger (e.g. `ShuttersUp`/`Down` with no button)
+  can't be fired from HA, so it's skipped.
+- `.nkb`-sourced scenes are preserved across re-discovery (a re-scan only
+  refreshes the auto-detected CFs).
+
+After an import that creates scenes, the integration reloads so the new
+`scene.*` entities appear.
+
 ## 3.4.0
 
 `.nkb` import v2 — rooms become Areas, and scenes get their real names.
