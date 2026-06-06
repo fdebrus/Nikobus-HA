@@ -283,8 +283,10 @@ def test_import_names_areas_and_scene_match():
     names = {c.args[0]: c.kwargs.get("name")
              for c in dev_reg.async_update_device.call_args_list
              if "name" in c.kwargs}
-    assert names == {"d1": "Dimcontroller", "d2": "Entree",
-                     "d3": "Scene - Test"}  # name has NO room suffix
+    # name carries the room (disambiguates generic repeated names); scenes
+    # (no room) keep their bare name.
+    assert names == {"d1": "Dimcontroller (Centrale)", "d2": "Entree (Living)",
+                     "d3": "Scene - Test"}
     # areas assigned for the two room-bearing devices (not the scene)
     area_calls = [c for c in dev_reg.async_update_device.call_args_list
                   if "area_id" in c.kwargs]
