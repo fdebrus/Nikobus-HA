@@ -35,10 +35,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      # Home Assistant is stubbed in tests/conftest.py, so the only real
-      # runtime deps the suite needs are pytest and construct (used by the
-      # vendored access_parser the .nkb tests import).
-      - run: pip install pytest construct
+      # Home Assistant itself is stubbed in tests/conftest.py, but the
+      # integration modules still import the real library + helpers at load
+      # time, so install the manifest's runtime requirements alongside pytest.
+      - run: >
+          pip install pytest
+          aiofiles "pyserial-asyncio-fast>=0.16"
+          "nikobus-connect>=0.24.0" "construct>=2.10"
       - run: python -m pytest -q
 
   hassfest:

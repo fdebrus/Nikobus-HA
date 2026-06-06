@@ -1,14 +1,14 @@
 {
   "domain": "nikobus",
   "name": "Nikobus",
-  "version": "3.6.0",
-  "documentation": "https://github.com/fdebrus/nikobus-ha",
-  "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
   "codeowners": ["@fdebrus"],
   "config_flow": true,
   "dependencies": ["file_upload"],
+  "documentation": "https://github.com/fdebrus/nikobus-ha",
   "integration_type": "hub",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/fdebrus/nikobus-ha/issues",
+  "loggers": ["nikobus", "nikobus_connect"],
   "quality_scale": "gold",
   "requirements": [
     "aiofiles>=25.1.0",
@@ -16,5 +16,5 @@
     "nikobus-connect>=0.24.0",
     "construct>=2.10"
   ],
-  "loggers": ["nikobus", "nikobus_connect"]
+  "version": "3.6.0"
 }
