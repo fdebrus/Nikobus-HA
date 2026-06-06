@@ -38,8 +38,9 @@ jobs:
       # Home Assistant itself is stubbed in tests/conftest.py, but the
       # integration modules still import the real library + helpers at load
       # time, so install the manifest's runtime requirements alongside pytest.
+      # async tests use @pytest.mark.asyncio, so pytest-asyncio is required.
       - run: >
-          pip install pytest
+          pip install pytest pytest-asyncio
           aiofiles "pyserial-asyncio-fast>=0.16"
           "nikobus-connect>=0.24.0" "construct>=2.10"
       - run: python -m pytest -q
