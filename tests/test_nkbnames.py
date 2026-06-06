@@ -159,7 +159,7 @@ def test_parse_raises_without_mdb(tmp_path):
 # --------------------------------------------------------------------------- #
 # coordinator.async_import_nkb_names — names, areas, scene match
 # --------------------------------------------------------------------------- #
-def _coord(cf=None):
+def _coord(cf=None, button_data=None):
     from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
     c = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
@@ -172,11 +172,34 @@ def _coord(cf=None):
     c.hass.async_add_executor_job = _aaej
     c.config_entry = MagicMock()
     c.config_entry.entry_id = "E1"
+    c.dict_button_data = button_data or {}
     c.cf_storage = None
     if cf is not None:
         c.cf_storage = MagicMock()
-        c.cf_storage.data = {"nikobus_cf": cf}
+        c.cf_storage.data = {"nikobus_cf": dict(cf)}
+
+        async def _save():
+            return None
+
+        c.cf_storage.async_save = _save
     return c
+
+
+def _opbtn(bus_address, *outputs):
+    """Button-store physical with one op-point. outputs: (mod, ch, mode)."""
+    by_mod = {}
+    for mod, ch, mode in outputs:
+        by_mod.setdefault(mod, []).append({"channel": ch, "mode": mode})
+    return {
+        "operation_points": {
+            "K": {
+                "bus_address": bus_address,
+                "linked_modules": [
+                    {"module_address": m, "outputs": o} for m, o in by_mod.items()
+                ],
+            }
+        }
+    }
 
 
 def _device(dev_id, addr, name="old", area_id=None):
@@ -255,7 +278,8 @@ def test_import_names_areas_and_scene_match():
     with _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
         result = _run(coord.async_import_nkb_names())
 
-    assert result == {"devices": 3, "entities": 2, "areas": 2, "scenes": 1}
+    assert result == {"devices": 3, "entities": 2, "areas": 2,
+                      "scenes": 1, "scenes_created": 0}
     names = {c.args[0]: c.kwargs.get("name")
              for c in dev_reg.async_update_device.call_args_list
              if "name" in c.kwargs}
@@ -265,6 +289,79 @@ def test_import_names_areas_and_scene_match():
     area_calls = [c for c in dev_reg.async_update_device.call_args_list
                   if "area_id" in c.kwargs]
     assert {c.args[0] for c in area_calls} == {"d1", "d2"}
+
+
+def test_import_creates_nkb_sourced_shutter_scene():
+    """A named group with no matching CF (shutter scene — no light-scene
+    mode) is created in cf_storage, keyed on the address that fires its
+    member set, sourced 'nkb' with its real name."""
+    data = NkbData(
+        addresses={},
+        scenes=[SceneDef("ShuttersSalonCuisine",
+                         frozenset({("9105", 3, "M01"), ("9105", 5, "M01")}))],
+    )
+    # no CF for these members, but two op-points drive the exact set
+    coord = _coord(cf={}, button_data={"nikobus_button": {
+        "1843B4": _opbtn("AB1234", ("9105", 3, "M01 (Open - stop - close)"),
+                         ("9105", 5, "M01 (Open - stop - close)")),
+        "0D1C80": _opbtn("CD5678", ("9105", 3, "M01 (Open - stop - close)"),
+                         ("9105", 5, "M01 (Open - stop - close)")),
+    }})
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names())
+
+    assert result["scenes_created"] == 1
+    cf = coord.cf_storage.data["nikobus_cf"]
+    # canonical = sorted-first of {AB1234, CD5678}
+    assert "AB1234" in cf
+    entry = cf["AB1234"]
+    assert entry["source"] == "nkb"
+    assert entry["name"] == "ShuttersSalonCuisine"
+    assert entry["triggered_by"] == ["AB1234", "CD5678"]
+    assert {(o["module_address"], o["channel"]) for o in entry["outputs"]} == \
+        {("9105", 3), ("9105", 5)}
+    # a reload is scheduled so the scene platform creates the entity
+    coord.hass.async_create_task.assert_called_once()
+
+
+def test_import_skips_triggerless_group():
+    """A group whose member set no op-point drives (no on-bus trigger) is
+    not created."""
+    data = NkbData(addresses={},
+                   scenes=[SceneDef("ShuttersUp",
+                                    frozenset({("9105", 1, "M02")}))])
+    coord = _coord(cf={}, button_data={"nikobus_button": {}})  # empty graph
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names())
+    assert result["scenes_created"] == 0
+    assert coord.cf_storage.data["nikobus_cf"] == {}
+
+
+def test_ingest_preserves_nkb_sourced_scenes():
+    """A re-discovery must not wipe nkb-sourced scenes."""
+    from unittest.mock import AsyncMock
+
+    coord = _coord(cf={
+        "AB1234": {"bus_address": "AB1234", "pattern": "nkb_scene",
+                   "outputs": [], "source": "nkb", "name": "ShuttersUp"},
+    })
+    # library re-classifies one discovered light scene
+    cfb = MagicMock()
+    cfb.bus_address = "DE4E2C"
+    cfb.pattern = "light_scene"
+    cfb.triggered_by = ["DE4E2C"]
+    cfb.outputs = []
+    coord.nikobus_discovery = MagicMock()
+    coord.nikobus_discovery.discovered_cf_broadcasts = {"DE4E2C": cfb}
+    coord.cf_storage.async_save = AsyncMock()
+
+    _run(coord._ingest_cf_broadcasts())
+
+    cf = coord.cf_storage.data["nikobus_cf"]
+    assert "AB1234" in cf and cf["AB1234"]["source"] == "nkb"  # preserved
+    assert "DE4E2C" in cf  # discovered, freshly ingested
 
 
 def test_import_does_not_override_existing_area():

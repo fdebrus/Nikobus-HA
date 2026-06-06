@@ -162,7 +162,7 @@ class AccessParser(object):
         reconstructed_column_data = {}
         for chunk in chunk_type_one:
             if not chunk.data.column_name:
-                LOGGER.error("Error while parsing MSysObjects table chunk.")
+                LOGGER.debug("Skipping unparseable MSysObjects chunk (optional metadata).")
                 continue
             data_values = {}
             for dv in chunk.data.data:
@@ -171,7 +171,7 @@ class AccessParser(object):
                     name = table_names[dv.name_index]
                     data_values[name] = val
                 except IndexError:
-                    LOGGER.error("Error while parsing MSysObjects table chunk.")
+                    LOGGER.debug("Skipping unparseable MSysObjects chunk (optional metadata).")
                     continue
             reconstructed_column_data[chunk.data.column_name] = data_values
         return reconstructed_column_data

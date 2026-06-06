@@ -40,6 +40,20 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         self.assertIn("nikobus_cf_0d1c9e", known)
         self.assertIn("nikobus_cf_0ffec8", known)
 
+    def test_nkb_sourced_scene_unique_ids_are_known(self):
+        """.nkb-sourced (source='nkb') scenes live in cf_storage too, so the
+        orphan-cleanup must not evict them on the post-import reload — they
+        ride the same allowlist as discovered CFs (regression guard, since a
+        hard-coded unique_id once slipped the allowlist for the import
+        button)."""
+        coord = _coord_with_cfs([])
+        coord.cf_storage.data = {"nikobus_cf": {
+            "AB1234": {"bus_address": "AB1234", "pattern": "nkb_scene",
+                       "outputs": [], "source": "nkb", "name": "ShuttersUp"},
+        }}
+        known = coord.get_known_entity_unique_ids()
+        self.assertIn("nikobus_cf_ab1234", known)
+
     def test_no_cfs_is_safe(self):
         coord = _coord_with_cfs([])
         known = coord.get_known_entity_unique_ids()

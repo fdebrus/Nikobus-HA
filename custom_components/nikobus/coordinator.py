@@ -104,6 +104,30 @@ _PROBE_OUTER_DELAY_S = 3.0
 _REGISTRY_SOURCES = frozenset({"pc_link_registry", "pc_logic_registry"})
 
 
+def _member_set_from_outputs(outputs) -> frozenset:
+    """Frozenset of ``(module_upper, channel, mode_code)`` for an output
+    list — the canonical key for matching a scene/CF by its members,
+    used identically on ``.nkb`` groups, CF entries and routing-graph
+    op-points so the three are directly comparable."""
+    from .nkbnames import _mode_code
+
+    out = set()
+    for o in outputs or []:
+        if not isinstance(o, dict):
+            continue
+        mod = o.get("module_address")
+        ch = o.get("channel")
+        code = _mode_code(o.get("mode"))
+        if isinstance(mod, str) and isinstance(ch, int) and code:
+            out.add((mod.upper(), ch, code))
+    return frozenset(out)
+
+
+def _cf_member_set(cf: dict) -> frozenset:
+    """Member-set key for a stored ``nikobus_cf`` entry."""
+    return _member_set_from_outputs((cf or {}).get("outputs"))
+
+
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
 
@@ -1609,12 +1633,20 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 "triggered_by": triggered_by,
             }
 
-        self.cf_storage.data["nikobus_cf"] = flat
+        # Preserve any .nkb-sourced scenes (added by async_import_nkb_names);
+        # discovery never produces them, so a re-scan must not wipe them.
+        preserved = {
+            addr: entry
+            for addr, entry in (self.cf_storage.data.get("nikobus_cf") or {}).items()
+            if isinstance(entry, dict) and entry.get("source") == "nkb"
+        }
+        self.cf_storage.data["nikobus_cf"] = {**preserved, **flat}
         await self.cf_storage.async_save()
         _LOGGER.info(
-            "CF broadcasts persisted: %d entries (%s)",
+            "CF broadcasts persisted: %d discovered + %d nkb-sourced (%s)",
             len(flat),
-            sorted(flat.keys()),
+            len(preserved),
+            sorted({**preserved, **flat}.keys()),
         )
 
     async def async_activate_cf_broadcast(self, bus_address: str) -> None:
@@ -2368,7 +2400,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         """
         from homeassistant.helpers import area_registry as ar
 
-        from .nkbnames import _mode_code, find_nkb_file, parse_nkb
+        from .nkbnames import find_nkb_file, parse_nkb
 
         path = find_nkb_file(self.hass.config.config_dir)
         if path is None:
@@ -2387,27 +2419,54 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         name_map = data.addresses  # {ADDR: (name, room)}
 
-        # Match named scene groups to discovered CF entities by member set
-        # → {CF_wire_address_upper: scene_name}.
+        # Match named scene groups to **existing** CF entities by member set
+        # → {CF_wire_address_upper: scene_name} (these are the light scenes
+        # discovery already surfaced; we just name them).
         scene_by_members = {sc.members: sc.name for sc in data.scenes}
         cf_name_by_addr: dict[str, str] = {}
+        matched_scene_members: set = set()
         if self.cf_storage is not None:
             for cf_addr, cf in self.cf_storage.data.get("nikobus_cf", {}).items():
-                members = frozenset(
-                    (
-                        str(o.get("module_address")).upper(),
-                        int(o["channel"]),
-                        _mode_code(o.get("mode")),
-                    )
-                    for o in (cf.get("outputs") or [])
-                    if isinstance(o, dict)
-                    and o.get("module_address")
-                    and isinstance(o.get("channel"), int)
-                    and _mode_code(o.get("mode"))
-                )
+                members = _cf_member_set(cf)
                 hit = scene_by_members.get(members)
                 if hit:
                     cf_name_by_addr[str(cf_addr).upper()] = hit
+                    matched_scene_members.add(members)
+
+        # Create scenes for named groups that AREN'T a discovered CF — the
+        # shutter / master scenes (no light-scene mode, so discovery never
+        # surfaces them). Find each group's firing address by matching its
+        # member set against the full routing graph (every op-point's linked
+        # outputs), then persist it as an nkb-sourced CF that activates by
+        # firing that address (the module handles roller timing itself).
+        scenes_created = 0
+        if self.cf_storage is not None:
+            graph = self._build_routing_graph()
+            existing = self.cf_storage.data.setdefault("nikobus_cf", {})
+            new_entries: dict[str, dict] = {}
+            for sc in data.scenes:
+                if sc.members in matched_scene_members or not sc.members:
+                    continue  # already a CF, or trigger-less (no members)
+                hit = graph.get(sc.members)
+                if hit is None:
+                    continue  # no on-bus trigger drives this set → can't fire
+                addrs, outputs = hit
+                canonical = addrs[0]
+                if canonical in existing or canonical in new_entries:
+                    continue
+                new_entries[canonical] = {
+                    "bus_address": canonical,
+                    "pattern": "nkb_scene",
+                    "outputs": outputs,
+                    "triggered_by": addrs,
+                    "source": "nkb",
+                    "name": sc.name,
+                }
+                cf_name_by_addr[canonical] = sc.name
+            if new_entries:
+                existing.update(new_entries)
+                await self.cf_storage.async_save()
+                scenes_created = len(new_entries)
 
         dev_reg = dr.async_get(self.hass)
         ent_reg = er.async_get(self.hass)
@@ -2463,18 +2522,88 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         _LOGGER.info(
             "Imported .nkb from %s: %d devices, %d entities, %d areas, "
-            "%d scenes (%d addresses, %d scene groups in file)",
+            "%d scenes named, %d scenes created (%d addresses, %d groups "
+            "in file)",
             path.name,
             devices_named,
             entities_named,
             areas_set,
-            len(cf_name_by_addr),
+            len(cf_name_by_addr) - scenes_created,
+            scenes_created,
             len(name_map),
             len(data.scenes),
         )
+
+        # New scene entities only appear once the scene platform re-runs.
+        if scenes_created:
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            )
+
         return {
             "devices": devices_named,
             "entities": entities_named,
             "areas": areas_set,
-            "scenes": len(cf_name_by_addr),
+            "scenes": len(cf_name_by_addr) - scenes_created,
+            "scenes_created": scenes_created,
         }
+
+    def _build_routing_graph(self) -> dict:
+        """Map every op-point's member set → ``(firing addresses, outputs)``.
+
+        The routing graph is the full set of ``trigger → linked outputs``
+        relations from the button store — the same data discovery decodes.
+        Used to find the on-bus address that fires a named ``.nkb`` scene
+        group (matched by member set), including the shutter / master
+        groups that have no light-scene mode and so never become CF
+        entities on their own. Addresses driving an identical output set
+        (one scene, several triggers) are grouped; the sorted-first is the
+        canonical activation address.
+        """
+        graph: dict[frozenset, tuple[list[str], list[dict]]] = {}
+        buttons = (self.dict_button_data or {}).get("nikobus_button", {})
+        if not isinstance(buttons, dict):
+            return {}
+        for phys in buttons.values():
+            if not isinstance(phys, dict):
+                continue
+            for op in (phys.get("operation_points") or {}).values():
+                if not isinstance(op, dict):
+                    continue
+                addr = op.get("bus_address")
+                if not isinstance(addr, str) or not addr:
+                    continue
+                outputs: list[dict] = []
+                seen: set = set()
+                for link in op.get("linked_modules") or []:
+                    if not isinstance(link, dict):
+                        continue
+                    mod = link.get("module_address")
+                    if not isinstance(mod, str):
+                        continue
+                    for o in link.get("outputs") or []:
+                        if not isinstance(o, dict):
+                            continue
+                        ch = o.get("channel")
+                        mode = o.get("mode")
+                        if not (isinstance(ch, int) and isinstance(mode, str)):
+                            continue
+                        dedupe = (mod.upper(), ch, mode)
+                        if dedupe in seen:
+                            continue
+                        seen.add(dedupe)
+                        outputs.append(
+                            {
+                                "module_address": mod.upper(),
+                                "channel": ch,
+                                "mode": mode,
+                                "t1": o.get("t1") if isinstance(o.get("t1"), str) else None,
+                                "t2": o.get("t2") if isinstance(o.get("t2"), str) else None,
+                            }
+                        )
+                members = _member_set_from_outputs(outputs)
+                if not members:
+                    continue
+                entry = graph.setdefault(members, ([], outputs))
+                entry[0].append(addr.upper())
+        return {m: (sorted(set(a)), o) for m, (a, o) in graph.items()}

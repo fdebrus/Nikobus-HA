@@ -113,17 +113,20 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
         outputs = cf_config.get("outputs") or []
         member_count = len(outputs) if isinstance(outputs, list) else 0
 
-        # Build a default friendly name from what we know on the bus.
-        # The .nkb-derived user name (if/when the integration ingests
-        # the file) will replace this via the standard HA rename flow.
-        if pattern == "switch_pair":
+        # A name imported from the .nkb (nkb-sourced scenes — shutter /
+        # master groups that carry their real project name) wins outright.
+        # Otherwise build a default from what we know on the bus; the user
+        # can still rename via the standard HA flow.
+        imported = cf_config.get("name")
+        if isinstance(imported, str) and imported.strip():
+            name = imported.strip()
+        elif pattern == "switch_pair":
             name = f"Nikobus switch CF {addr} ({member_count} ch)"
         elif pattern == "roller_pair":
             name = f"Nikobus roller CF {addr} ({member_count} ch)"
-        elif pattern == "light_scene":
-            # CF triggered by a real wall button / IR input, detected
-            # from a light-scene/preset member mode (the "MCF" link
-            # fingerprint). ``addr`` is the trigger's bus address.
+        elif pattern in ("light_scene", "nkb_scene"):
+            # CF triggered by a real wall button / IR input. ``addr`` is
+            # the trigger's bus address.
             name = f"Nikobus scene {addr} ({member_count} ch)"
         else:
             name = f"Nikobus CF {addr} ({member_count} ch)"
