@@ -1,19 +1,40 @@
-"""Tests for .nkb name extraction and the registry-apply import."""
+"""Tests for .nkb parsing (names + rooms + scenes) and the registry apply."""
 
 from __future__ import annotations
 
 import asyncio
 import zipfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from custom_components.nikobus.nkbnames import (
     CANONICAL_NKB_FILENAME,
-    NkbNames,
+    NkbData,
+    SceneDef,
+    _fmt_addr,
+    _mode_code,
     find_nkb_file,
-    parse_nkb_names,
+    parse_nkb,
 )
+
+
+# --------------------------------------------------------------------------- #
+# helpers
+# --------------------------------------------------------------------------- #
+def test_fmt_addr_module_is_4hex_button_is_6hex():
+    assert _fmt_addr(3692) == "0E6C"      # 0x0E6C, 16-bit module
+    assert _fmt_addr(37900) == "940C"
+    assert _fmt_addr(1590196) == "1843B4"  # 24-bit button
+    assert _fmt_addr(859264) == "0D1C80"
+
+
+def test_mode_code_extracts_leading_m():
+    assert _mode_code("M12 (Preset on)") == "M12"
+    assert _mode_code("M04") == "M04"
+    assert _mode_code("MCF") is None
+    assert _mode_code(None) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -41,21 +62,49 @@ def test_find_none_when_ambiguous(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# parse_nkb_names — transformation logic, parser stubbed
+# parse_nkb — addresses, rooms, scene member sets (parser stubbed)
 # --------------------------------------------------------------------------- #
 class _FakeParser:
-    """Stands in for the vendored AccessParser, column->list shape."""
+    """Stands in for the vendored AccessParser. A tiny but representative
+    install: a dimmer (0E6C/Centrale), a button (1843B4/Living), and a
+    'Scene - Test' group whose trigger drives dimmer ch1 in M12."""
 
     _TABLES = {
         "Component": {
             "KeyComponent": [1, 2, 3, 4],
             "KeyLocation": [10, 11, 99, 10],
-            "PhysicalAddress": [3692, 859264, -1, 0],  # 0E6C, 0D1C80, scene, skip
-            "StrUserName": ["Dimcontroller", "Canape", "Scene - Dinner", ""],
+            "PhysicalAddress": [3692, 1590196, -1, 0],  # 0E6C, 1843B4, scene, skip
+            "StrUserName": ["Dimcontroller", "Entree", "Scene - Test", ""],
         },
         "Location": {
             "KeyLocation": [10, 11, 99],
             "StrUserName": ["Centrale", "Living", "S_DB_GROUPS"],
+        },
+        "Objecten": {
+            "KeyObject": [100, 200, 300],
+            "KeyComponent": [1, 2, 3],     # output, trigger-input, group
+            "KeyObjectBase": [500, 600, 700],
+            "ObjectAddress": [0, 0, 0],
+            "PhysicalObjectAddress": [0, 0, 0],
+            "StrUserName": [None, "Input", None],
+        },
+        "ObjectBase": {
+            "KeyObjectBase": [500, 600, 700],
+            "ObjectAddress": [0, 0, 0],    # ch1 for the output
+            "Prefix": ["O01", "1A", "CF"],
+            "StrDescription": [None, None, None],
+        },
+        "LinkModeBase": {
+            "KeyLinkMode": [10, 13],
+            "StrMode": ["M12", "MCF"],
+        },
+        "Connection": {
+            "KeyConnection": [1, 2],
+            # MCF: group(300) -> trigger(200); member: output(100) <- trigger(200)
+            "KeyObjectOut": [300, 100],
+            "KeyObjectIn": [200, 200],
+            "KeyLinkMode": [13, 10],
+            "ParamValue1": [-1, 10],
         },
     }
 
@@ -69,38 +118,48 @@ class _FakeParser:
 def _make_nkb_zip(tmp_path):
     nkb = tmp_path / "p.nkb"
     with zipfile.ZipFile(nkb, "w") as zf:
-        zf.writestr("__niko__.mdb", b"dummy-bytes")
+        zf.writestr("__niko__.mdb", b"dummy")
     return nkb
 
 
-def test_parse_maps_addresses_rooms_and_scenes(tmp_path):
+def _parse(tmp_path):
     nkb = _make_nkb_zip(tmp_path)
     with patch(
         "custom_components.nikobus.vendor.access_parser.AccessParser", _FakeParser
     ):
-        result = parse_nkb_names(nkb)
-    assert isinstance(result, NkbNames)
-    # PhysicalAddress decimal -> 24-bit hex, with room label
-    assert result.addresses == {
-        "000E6C": "Dimcontroller (Centrale)",
-        "0D1C80": "Canape (Living)",
+        return parse_nkb(nkb)
+
+
+def test_parse_addresses_with_rooms(tmp_path):
+    data = _parse(tmp_path)
+    assert isinstance(data, NkbData)
+    assert data.addresses == {
+        "0E6C": ("Dimcontroller", "Centrale"),
+        "1843B4": ("Entree", "Living"),
     }
-    # PhysicalAddress == -1 -> scene name, no room (group sentinel stripped)
-    assert result.scenes == {"Scene - Dinner": ""}
+
+
+def test_parse_scene_member_set(tmp_path):
+    data = _parse(tmp_path)
+    assert len(data.scenes) == 1
+    sc = data.scenes[0]
+    assert sc.name == "Scene - Test"
+    # trigger(200) drives output(100)=0E6C ch1 in M12; MCF link excluded
+    assert sc.members == frozenset({("0E6C", 1, "M12")})
 
 
 def test_parse_raises_without_mdb(tmp_path):
     nkb = tmp_path / "bad.nkb"
     with zipfile.ZipFile(nkb, "w") as zf:
-        zf.writestr("notes.txt", b"no mdb here")
+        zf.writestr("notes.txt", b"no mdb")
     with pytest.raises(ValueError):
-        parse_nkb_names(nkb)
+        parse_nkb(nkb)
 
 
 # --------------------------------------------------------------------------- #
-# coordinator.async_import_nkb_names — registry apply + non-clobber guards
+# coordinator.async_import_nkb_names — names, areas, scene match
 # --------------------------------------------------------------------------- #
-def _coord():
+def _coord(cf=None):
     from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
     c = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
@@ -113,15 +172,19 @@ def _coord():
     c.hass.async_add_executor_job = _aaej
     c.config_entry = MagicMock()
     c.config_entry.entry_id = "E1"
+    c.cf_storage = None
+    if cf is not None:
+        c.cf_storage = MagicMock()
+        c.cf_storage.data = {"nikobus_cf": cf}
     return c
 
 
-def _device(dev_id, addr, name="old", name_by_user=None):
+def _device(dev_id, addr, name="old", area_id=None):
     d = MagicMock()
     d.id = dev_id
     d.identifiers = {("nikobus", addr)}
     d.name = name
-    d.name_by_user = name_by_user
+    d.area_id = area_id
     return d
 
 
@@ -138,80 +201,103 @@ def _run(coro):
     return asyncio.new_event_loop().run_until_complete(coro)
 
 
-def test_import_names_devices_and_single_entity():
-    c = _coord()
-    names = NkbNames(
-        addresses={"0E6C": "Dimcontroller (Centrale)", "1843B4": "Entree (Living)"},
-        scenes={"Scene - TV": ""},
+def _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
+    import contextlib
+
+    @contextlib.contextmanager
+    def ctx():
+        with patch("custom_components.nikobus.nkbnames.find_nkb_file",
+                   return_value=Path("/cfg/nikobus.nkb")), \
+             patch("custom_components.nikobus.nkbnames.parse_nkb",
+                   return_value=data), \
+             patch("homeassistant.helpers.area_registry.async_get",
+                   return_value=area_reg, create=True), \
+             patch("custom_components.nikobus.coordinator.dr.async_get",
+                   return_value=dev_reg), \
+             patch("custom_components.nikobus.coordinator.er.async_get",
+                   return_value=ent_reg), \
+             patch("custom_components.nikobus.coordinator.dr.async_entries_for_config_entry",
+                   return_value=devices, create=True), \
+             patch("custom_components.nikobus.coordinator.er.async_entries_for_config_entry",
+                   return_value=entities, create=True):
+            yield
+    return ctx()
+
+
+def test_import_names_areas_and_scene_match():
+    data = NkbData(
+        addresses={
+            "0E6C": ("Dimcontroller", "Centrale"),
+            "1843B4": ("Entree", "Living"),
+        },
+        scenes=[SceneDef("Scene - Test", frozenset({("0E6C", 1, "M12")}))],
     )
-    # dimmer device: 3 entities -> device renamed, entities inherit (not renamed)
-    # button device: 1 entity, no user name -> both renamed
-    dev_dim = _device("d1", "0E6C")
-    dev_btn = _device("d2", "1843B4")
-    dev_unmatched = _device("d3", "FFFFFF")
-    devices = [dev_dim, dev_btn, dev_unmatched]
+    # a CF whose members match the scene -> should be named
+    coord = _coord(cf={"DE4E2C": {
+        "outputs": [{"module_address": "0E6C", "channel": 1,
+                     "mode": "M12 (Preset on)"}]}})
+
+    dev_dim = _device("d1", "0E6C")               # module, 3 entities
+    dev_btn = _device("d2", "1843B4")             # button, 1 entity
+    dev_cf = _device("d3", "DE4E2C", name="Nikobus scene DE4E2C")
+    devices = [dev_dim, dev_btn, dev_cf]
     entities = [
-        _entity("light.a", "d1"),
-        _entity("light.b", "d1"),
-        _entity("light.c", "d1"),
-        _entity("binary_sensor.btn", "d2", name=None, original_name="Key A"),
+        _entity("light.a", "d1"), _entity("light.b", "d1"),
+        _entity("binary_sensor.btn", "d2", original_name="Key A"),
+        _entity("scene.de4e2c", "d3"),
     ]
-    dev_reg, ent_reg = MagicMock(), MagicMock()
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    area = MagicMock()
+    area.id = "area_living"
+    area_reg.async_get_area_by_name.return_value = None
+    area_reg.async_create.return_value = area
 
-    with patch("custom_components.nikobus.nkbnames.find_nkb_file",
-               return_value=__import__("pathlib").Path("/cfg/nikobus.nkb")), \
-         patch("custom_components.nikobus.nkbnames.parse_nkb_names",
-               return_value=names), \
-         patch("custom_components.nikobus.coordinator.dr.async_get",
-               return_value=dev_reg), \
-         patch("custom_components.nikobus.coordinator.er.async_get",
-               return_value=ent_reg), \
-         patch("custom_components.nikobus.coordinator.dr.async_entries_for_config_entry",
-               return_value=devices, create=True), \
-         patch("custom_components.nikobus.coordinator.er.async_entries_for_config_entry",
-               return_value=entities, create=True):
-        result = _run(c.async_import_nkb_names())
+    with _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names())
 
-    assert result == {"devices": 2, "entities": 1, "addresses": 2, "scenes": 1}
-    # both matched devices renamed
-    renamed = {ca.args[0]: ca.kwargs["name"]
-               for ca in dev_reg.async_update_device.call_args_list}
-    assert renamed == {"d1": "Dimcontroller (Centrale)", "d2": "Entree (Living)"}
-    # only the single-entity device's entity renamed
-    ent_reg.async_update_entity.assert_called_once_with(
-        "binary_sensor.btn", name="Entree (Living)"
+    assert result == {"devices": 3, "entities": 2, "areas": 2, "scenes": 1}
+    names = {c.args[0]: c.kwargs.get("name")
+             for c in dev_reg.async_update_device.call_args_list
+             if "name" in c.kwargs}
+    assert names == {"d1": "Dimcontroller", "d2": "Entree",
+                     "d3": "Scene - Test"}  # name has NO room suffix
+    # areas assigned for the two room-bearing devices (not the scene)
+    area_calls = [c for c in dev_reg.async_update_device.call_args_list
+                  if "area_id" in c.kwargs]
+    assert {c.args[0] for c in area_calls} == {"d1", "d2"}
+
+
+def test_import_does_not_override_existing_area():
+    data = NkbData(
+        addresses={"1843B4": ("Entree", "Living")}, scenes=[]
     )
+    coord = _coord()
+    dev = _device("d2", "1843B4", area_id="already_set")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [dev], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names())
+    assert result["areas"] == 0
+    area_reg.async_create.assert_not_called()
 
 
-def test_import_preserves_user_named_entity():
-    c = _coord()
-    names = NkbNames(addresses={"1843B4": "Entree (Living)"}, scenes={})
-    dev_btn = _device("d2", "1843B4")
-    # entity already user-named -> must NOT be touched
-    ent = _entity("binary_sensor.btn", "d2", name="My Custom Name")
-    dev_reg, ent_reg = MagicMock(), MagicMock()
-    with patch("custom_components.nikobus.nkbnames.find_nkb_file",
-               return_value=__import__("pathlib").Path("/cfg/x.nkb")), \
-         patch("custom_components.nikobus.nkbnames.parse_nkb_names",
-               return_value=names), \
-         patch("custom_components.nikobus.coordinator.dr.async_get",
-               return_value=dev_reg), \
-         patch("custom_components.nikobus.coordinator.er.async_get",
-               return_value=ent_reg), \
-         patch("custom_components.nikobus.coordinator.dr.async_entries_for_config_entry",
-               return_value=[dev_btn], create=True), \
-         patch("custom_components.nikobus.coordinator.er.async_entries_for_config_entry",
-               return_value=[ent], create=True):
-        result = _run(c.async_import_nkb_names())
-    assert result["entities"] == 0
-    ent_reg.async_update_entity.assert_not_called()
+def test_import_scene_no_match_when_members_differ():
+    data = NkbData(
+        addresses={}, scenes=[SceneDef("Scene - X", frozenset({("0E6C", 1, "M12")}))]
+    )
+    coord = _coord(cf={"AAAAAA": {
+        "outputs": [{"module_address": "0E6C", "channel": 2,  # different channel
+                     "mode": "M12 (Preset on)"}]}})
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [_device("d", "AAAAAA")], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names())
+    assert result["scenes"] == 0
 
 
 def test_import_raises_when_no_file():
     from homeassistant.exceptions import HomeAssistantError
 
-    c = _coord()
+    coord = _coord()
     with patch("custom_components.nikobus.nkbnames.find_nkb_file",
                return_value=None):
         with pytest.raises(HomeAssistantError):
-            _run(c.async_import_nkb_names())
+            _run(coord.async_import_nkb_names())

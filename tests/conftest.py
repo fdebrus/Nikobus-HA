@@ -130,6 +130,9 @@ _mod(
 # homeassistant.helpers.entity_registry
 _mod("homeassistant.helpers.entity_registry", async_get=lambda hass: None)
 
+# homeassistant.helpers.area_registry
+_mod("homeassistant.helpers.area_registry", async_get=lambda hass: None)
+
 # homeassistant.helpers.issue_registry — used by coordinator.refresh_repair_issues
 class _IssueSeverity:
     WARNING = "warning"

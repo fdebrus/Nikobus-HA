@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.4.0
+
+`.nkb` import v2 — rooms become Areas, and scenes get their real names.
+
+- **Rooms → Home Assistant Areas.** "Import Names from .nkb" now places each
+  device in an **Area** matching its `.nkb` room (`Living`, `Cuisine`,
+  `Chambre Parents`…), and the device name no longer carries the `(Room)`
+  suffix — the Area provides that context. An Area you've already assigned
+  by hand is never changed.
+- **Scene names.** A named Central Function group in the `.nkb`
+  (`Scene - Dinner`, `Scene - TV`…) is matched to a discovered CF entity by
+  **member set** — the group has no bus address, but its trigger's output
+  links spell out the exact `(module, channel, mode)` set discovery reads,
+  so the match is unambiguous (an on-scene and an off-scene on the same
+  channels stay distinct because the mode differs). The matched CF's
+  device/entity is then named.
+- Fixed a latent address-format bug: 16-bit **module** addresses are keyed
+  as 4-hex (`0E6C`), 24-bit button/IR addresses as 6-hex (`1843B4`) — so
+  module names now match (previously they'd have been missed).
+
 ## 3.3.2
 
 - **Fix: the "Import Names from .nkb" button never appeared.** Its
