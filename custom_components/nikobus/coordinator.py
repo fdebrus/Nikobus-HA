@@ -2345,21 +2345,30 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             raise
 
     async def async_import_nkb_names(self) -> dict[str, int]:
-        """Import user names from a ``.nkb`` project file in the config dir.
+        """Import names, rooms and scene names from a ``.nkb`` project file.
 
         Reads the Nikobus PC-software export (a ZIP holding an MS Access
-        DB) and applies its module / button / IR-receiver names — each as
-        ``Name (Room)`` keyed on the bus address — as **suggested**
-        device and entity names.
+        DB) and applies, all **suggested** / non-destructive:
 
-        Non-destructive: a device's user rename (``name_by_user``) is
-        never touched, and an entity is only named when it has no user
-        override. Entity rows are named only for single-entity devices;
-        multi-channel modules rely on device-name inheritance so we don't
-        stamp the same name onto every channel. Returns a summary dict
-        (``devices`` / ``entities`` / ``addresses`` / ``scenes``).
+        * **Device + entity names** — module / button / IR-receiver names
+          keyed on the bus address. A device's user rename
+          (``name_by_user``) is never touched; an entity is named only
+          when it has no user override, and only on single-entity devices
+          (multi-channel modules inherit the device name).
+        * **Areas** — each device is placed in a Home Assistant Area
+          matching its ``.nkb`` room (unless the user already set one).
+        * **Scene names** — a named Central Function group is matched to a
+          discovered CF entity by **member set** (the group has no bus
+          address; its trigger's output links spell out the same
+          ``(module, channel, mode)`` set discovery reads), then the CF's
+          device/entity is named.
+
+        Returns a summary (``devices`` / ``entities`` / ``areas`` /
+        ``scenes``).
         """
-        from .nkbnames import find_nkb_file, parse_nkb_names
+        from homeassistant.helpers import area_registry as ar
+
+        from .nkbnames import _mode_code, find_nkb_file, parse_nkb
 
         path = find_nkb_file(self.hass.config.config_dir)
         if path is None:
@@ -2367,7 +2376,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 translation_domain=DOMAIN, translation_key="nkb_not_found"
             )
         try:
-            names = await self.hass.async_add_executor_job(parse_nkb_names, path)
+            data = await self.hass.async_add_executor_job(parse_nkb, path)
         except Exception as err:
             _LOGGER.exception("Failed to read .nkb file %s", path)
             raise HomeAssistantError(
@@ -2376,59 +2385,96 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 translation_placeholders={"error": str(err)},
             ) from err
 
-        name_map = names.addresses  # {ADDRESS_HEX_UPPER: "Name (Room)"}
+        name_map = data.addresses  # {ADDR: (name, room)}
+
+        # Match named scene groups to discovered CF entities by member set
+        # → {CF_wire_address_upper: scene_name}.
+        scene_by_members = {sc.members: sc.name for sc in data.scenes}
+        cf_name_by_addr: dict[str, str] = {}
+        if self.cf_storage is not None:
+            for cf_addr, cf in self.cf_storage.data.get("nikobus_cf", {}).items():
+                members = frozenset(
+                    (
+                        str(o.get("module_address")).upper(),
+                        int(o["channel"]),
+                        _mode_code(o.get("mode")),
+                    )
+                    for o in (cf.get("outputs") or [])
+                    if isinstance(o, dict)
+                    and o.get("module_address")
+                    and isinstance(o.get("channel"), int)
+                    and _mode_code(o.get("mode"))
+                )
+                hit = scene_by_members.get(members)
+                if hit:
+                    cf_name_by_addr[str(cf_addr).upper()] = hit
+
         dev_reg = dr.async_get(self.hass)
         ent_reg = er.async_get(self.hass)
+        area_reg = ar.async_get(self.hass)
         entry_id = self.config_entry.entry_id
 
-        # 1. Devices — match any identifier address against the name map.
-        matched: dict[str, str] = {}  # device_id -> imported name
-        devices_named = 0
-        for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
-            imported = next(
-                (
-                    name_map[ident.upper()]
-                    for domain, ident in device.identifiers
-                    if domain == DOMAIN and ident.upper() in name_map
-                ),
-                None,
-            )
-            if imported is None:
-                continue
-            matched[device.id] = imported
-            if device.name != imported:
-                dev_reg.async_update_device(device.id, name=imported)
-                devices_named += 1
+        def _lookup(device) -> tuple[str, str] | None:
+            """(name, room) for a device from address names or scene match."""
+            for domain, ident in device.identifiers:
+                if domain != DOMAIN:
+                    continue
+                key = ident.upper()
+                if key in name_map:
+                    return name_map[key]
+                if key in cf_name_by_addr:
+                    return (cf_name_by_addr[key], "")
+            return None
 
-        # 2. Entities — only for single-entity matched devices, and only
-        # when the user hasn't set their own name. Multi-entity devices
-        # inherit the device name instead (no per-channel duplication).
+        # 1. Devices — name (room dropped; the Area carries it) + Area.
+        matched: dict[str, str] = {}  # device_id -> name
+        devices_named = areas_set = 0
+        for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
+            hit = _lookup(device)
+            if hit is None:
+                continue
+            name, room = hit
+            matched[device.id] = name
+            if device.name != name:
+                dev_reg.async_update_device(device.id, name=name)
+                devices_named += 1
+            if room and device.area_id is None:
+                area = area_reg.async_get_area_by_name(
+                    room
+                ) or area_reg.async_create(room)
+                dev_reg.async_update_device(device.id, area_id=area.id)
+                areas_set += 1
+
+        # 2. Entities — single-entity matched devices only, never clobbering
+        # a user-set name.
         by_device: dict[str, list] = {}
         for ent in er.async_entries_for_config_entry(ent_reg, entry_id):
             if ent.device_id:
                 by_device.setdefault(ent.device_id, []).append(ent)
         entities_named = 0
-        for device_id, imported in matched.items():
+        for device_id, name in matched.items():
             ents = by_device.get(device_id, [])
             if len(ents) != 1:
                 continue
             ent = ents[0]
-            if ent.name is None and ent.original_name != imported:
-                ent_reg.async_update_entity(ent.entity_id, name=imported)
+            if ent.name is None and ent.original_name != name:
+                ent_reg.async_update_entity(ent.entity_id, name=name)
                 entities_named += 1
 
         _LOGGER.info(
-            "Imported .nkb names from %s: %d devices, %d entities renamed "
-            "(%d addresses, %d scenes in file)",
+            "Imported .nkb from %s: %d devices, %d entities, %d areas, "
+            "%d scenes (%d addresses, %d scene groups in file)",
             path.name,
             devices_named,
             entities_named,
+            areas_set,
+            len(cf_name_by_addr),
             len(name_map),
-            len(names.scenes),
+            len(data.scenes),
         )
         return {
             "devices": devices_named,
             "entities": entities_named,
-            "addresses": len(name_map),
-            "scenes": len(names.scenes),
+            "areas": areas_set,
+            "scenes": len(cf_name_by_addr),
         }
