@@ -61,7 +61,8 @@
         "description": "Que souhaitez-vous faire ?",
         "menu_options": {
           "hardware": "Modifier la configuration matérielle",
-          "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)"
+          "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)",
+          "upload_nkb": "Téléverser le fichier projet .nkb"
         }
       },
       "hardware": {
@@ -115,10 +116,21 @@
           "operation_time_up": "Temps de course à l'ouverture (secondes)",
           "operation_time_down": "Temps de course à la fermeture (secondes)"
         }
+      },
+      "upload_nkb": {
+        "title": "Téléverser le projet Nikobus (.nkb)",
+        "description": "Sélectionnez l'export de votre projet Nikobus (n'importe quel nom). Il est validé et enregistré sous nikobus.nkb dans votre dossier de configuration. Appuyez ensuite sur « Importer les noms depuis .nkb » sur le Nikobus Bridge.",
+        "data": {
+          "file": "Fichier projet (.nkb)"
+        }
       }
     },
     "abort": {
       "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."
+    },
+    "error": {
+      "invalid_nkb": "Ce fichier n'est pas un projet Nikobus .nkb lisible (il doit s'agir de l'export .nkb — une archive ZIP contenant la base de données du projet).",
+      "upload_failed": "Impossible d'enregistrer le fichier téléversé. Consultez les journaux Home Assistant."
     }
   },
   "entity": {

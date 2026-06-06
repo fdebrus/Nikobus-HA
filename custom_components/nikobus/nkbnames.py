@@ -39,6 +39,9 @@ _MCF_MODE = "MCF"
 
 _MODE_CODE_RE = re.compile(r"M\d+", re.IGNORECASE)
 
+# Output object prefix → channel number (``O01`` → 1, ``O12`` → 12).
+_OUTPUT_PREFIX_RE = re.compile(r"^O(\d+)$", re.IGNORECASE)
+
 
 def _fmt_addr(physical_address: int) -> str:
     """Format a ``PhysicalAddress`` to match our bus-address identifiers.
@@ -179,9 +182,14 @@ def _extract_scenes(
         return _fmt_addr(pa) if isinstance(pa, int) and pa > 0 else None
 
     def channel(obj) -> int | None:
+        # Channel = the output's ``Prefix`` number (``O01`` -> 1), which
+        # matches Home Assistant's per-channel numbering for EVERY module
+        # type. (``ObjectAddress`` can't be used: roller outputs occupy
+        # pairs, so a roller module's ``ObjectAddress`` runs 0,2,4,… while
+        # HA numbers the rollers 1,2,3,… — the prefix is the aligned index.)
         base = objectbase.get((obj or {}).get("KeyObjectBase"), {})
-        oa = base.get("ObjectAddress")
-        return (oa + 1) if isinstance(oa, int) else None
+        m = _OUTPUT_PREFIX_RE.match(str(base.get("Prefix") or ""))
+        return int(m.group(1)) if m else None
 
     scenes: list[SceneDef] = []
     for comp in components:

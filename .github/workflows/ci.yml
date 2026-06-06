@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Lints custom_components/nikobus per ruff.toml (vendored code excluded).
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --output-format=github"
+
+  test:
+    name: Tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # Home Assistant itself is stubbed in tests/conftest.py, but the
+      # integration modules still import the real library + helpers at load
+      # time, so install the manifest's runtime requirements alongside pytest.
+      # async tests use @pytest.mark.asyncio, so pytest-asyncio is required.
+      - run: >
+          pip install pytest pytest-asyncio
+          aiofiles "pyserial-asyncio-fast>=0.16"
+          "nikobus-connect>=0.24.0" "construct>=2.10"
+      - run: python -m pytest -q
+
+  hassfest:
+    name: Hassfest (manifest validation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # Not (yet) in home-assistant/brands; skip that check so a valid
+          # custom integration isn't failed for it.
+          ignore: brands
