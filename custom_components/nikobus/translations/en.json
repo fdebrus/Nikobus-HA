@@ -175,7 +175,9 @@
       "channel_not_found": "The selected channel was not found."
     },
     "error": {
-      "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty)."
+      "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty).",
+      "invalid_nkb": "That file isn't a readable Nikobus .nkb project (it must be the .nkb export — a ZIP containing the project database).",
+      "upload_failed": "Could not save the uploaded file. Check the Home Assistant logs."
     },
     "step": {
       "hardware": {
@@ -196,7 +198,8 @@
         "description": "What would you like to do?",
         "menu_options": {
           "configure_modules": "Customize a module (description, entity type, LED triggers, travel time)",
-          "hardware": "Change hardware settings"
+          "hardware": "Change hardware settings",
+          "upload_nkb": "Upload .nkb project file"
         },
         "title": "Nikobus"
       },
@@ -236,6 +239,13 @@
           "led_off": "LED-off trigger (6-hex bus address, optional)",
           "operation_time_up": "Travel time up (seconds)",
           "operation_time_down": "Travel time down (seconds)"
+        }
+      },
+      "upload_nkb": {
+        "title": "Upload Nikobus project (.nkb)",
+        "description": "Select your Nikobus project export (any filename). It's validated and saved as nikobus.nkb in your Home Assistant config folder. Then press “Import Names from .nkb” on the Nikobus Bridge.",
+        "data": {
+          "file": "Project file (.nkb)"
         }
       }
     }

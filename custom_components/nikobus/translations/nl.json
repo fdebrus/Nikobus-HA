@@ -61,7 +61,8 @@
         "description": "Wat wilt u doen?",
         "menu_options": {
           "hardware": "Hardware-instellingen wijzigen",
-          "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)"
+          "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)",
+          "upload_nkb": "Projectbestand .nkb uploaden"
         }
       },
       "hardware": {
@@ -115,10 +116,21 @@
           "operation_time_up": "Looptijd omhoog (seconden)",
           "operation_time_down": "Looptijd omlaag (seconden)"
         }
+      },
+      "upload_nkb": {
+        "title": "Nikobus-project (.nkb) uploaden",
+        "description": "Selecteer de export van je Nikobus-project (elke bestandsnaam). Het wordt gevalideerd en opgeslagen als nikobus.nkb in je configuratiemap. Druk daarna op “Namen importeren uit .nkb” op de Nikobus Bridge.",
+        "data": {
+          "file": "Projectbestand (.nkb)"
+        }
       }
     },
     "abort": {
       "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
+    },
+    "error": {
+      "invalid_nkb": "Dit bestand is geen leesbaar Nikobus .nkb-project (het moet de .nkb-export zijn — een ZIP met de projectdatabase).",
+      "upload_failed": "Kon het geüploade bestand niet opslaan. Controleer de Home Assistant-logboeken."
     }
   },
   "entity": {

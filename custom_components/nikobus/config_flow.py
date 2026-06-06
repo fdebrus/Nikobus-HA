@@ -11,6 +11,8 @@ from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.selector import (
+    FileSelector,
+    FileSelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -36,6 +38,15 @@ from nikobus_connect import NikobusConnect
 from nikobus_connect.discovery import find_module
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class _NkbUploadError(Exception):
+    """A `.nkb` upload failed; ``key`` is the translation/error key."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
 
 # Module hardware capabilities: which HA entity types each module type can back.
 #
@@ -424,7 +435,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         the declarative source of truth. Users on manual-config should
         edit the JSON files directly to make customisations stick.
         """
-        menu_options = ["hardware", "configure_modules"]
+        menu_options = ["hardware", "configure_modules", "upload_nkb"]
         return self.async_show_menu(
             step_id="init",
             menu_options=menu_options,
@@ -457,6 +468,68 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             step_id="polling",
             data_schema=_polling_schema(self._current()),
         )
+
+    # --- Upload the .nkb project file --------------------------------------
+
+    async def async_step_upload_nkb(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Upload a Nikobus ``.nkb`` project file into the config dir.
+
+        Prompts for a file (any name), validates it parses as a real
+        ``.nkb`` (a ZIP holding the MS Access DB), and saves it as the
+        canonical ``nikobus.nkb`` in the HA config directory so the
+        **Import Names from .nkb** button can pick it up. Doesn't change
+        any options; the file *is* the result.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await self._save_uploaded_nkb(user_input["file"])
+            except _NkbUploadError as err:
+                errors["base"] = err.key
+            else:
+                # No options change — just close the flow with success.
+                return self.async_create_entry(
+                    title="", data=dict(self.config_entry.options)
+                )
+
+        return self.async_show_form(
+            step_id="upload_nkb",
+            data_schema=vol.Schema(
+                {vol.Required("file"): FileSelector(FileSelectorConfig(accept=".nkb"))}
+            ),
+            errors=errors,
+        )
+
+    async def _save_uploaded_nkb(self, file_id: str) -> None:
+        """Validate the uploaded file is a real ``.nkb`` and save it as
+        ``nikobus.nkb`` in the config dir. Runs the blocking file work in
+        an executor; raises :class:`_NkbUploadError` on a bad file."""
+        from homeassistant.components.file_upload import process_uploaded_file
+
+        from .nkbnames import CANONICAL_NKB_FILENAME, parse_nkb
+
+        hass = self.hass
+        dest = hass.config.path(CANONICAL_NKB_FILENAME)
+
+        def _validate_and_save() -> None:
+            import shutil
+
+            with process_uploaded_file(hass, file_id) as src:
+                try:
+                    parse_nkb(src)  # parses → it's a usable .nkb
+                except Exception as err:  # noqa: BLE001 — surface as flow error
+                    raise _NkbUploadError("invalid_nkb") from err
+                shutil.copyfile(src, dest)
+
+        try:
+            await hass.async_add_executor_job(_validate_and_save)
+        except _NkbUploadError:
+            raise
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Failed to save uploaded .nkb file")
+            raise _NkbUploadError("upload_failed") from err
 
     # --- Module customization ----------------------------------------------
 

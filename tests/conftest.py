@@ -311,8 +311,13 @@ _mod(
     NumberSelectorMode=type("NumberSelectorMode", (), {"BOX": "box", "SLIDER": "slider"}),
     TextSelector=lambda *a, **k: None,
     TextSelectorConfig=lambda *a, **k: None,
+    FileSelector=lambda *a, **k: None,
+    FileSelectorConfig=lambda *a, **k: None,
 )
 _mod("homeassistant.data_entry_flow", FlowResult=dict)
+# homeassistant.components.file_upload — process_uploaded_file is patched
+# per-test; stub the module so config_flow's lazy import resolves.
+_mod("homeassistant.components.file_upload", process_uploaded_file=None)
 _mod("homeassistant.components.repairs", RepairsFlow=type("RepairsFlow", (), {}))
 
 

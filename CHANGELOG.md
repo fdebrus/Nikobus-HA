@@ -1,7 +1,12 @@
 # Changelog
 
-## 3.5.2
+## 3.6.0
 
+- **Upload your `.nkb` from the UI.** Settings → Devices & Services →
+  Nikobus → **Configure → Upload .nkb project file**: pick the export (any
+  filename), it's validated (must parse as a real `.nkb`) and saved as
+  `nikobus.nkb` in the config directory. Then press **Import Names from
+  .nkb**. No more copying files over Samba/SSH.
 - **Fix: shutter / roller scenes from the `.nkb` are now created.** The
   scene member channel was read from the wrong field — roller outputs sit
   in output *pairs*, so a roller module's `ObjectAddress` runs `0,2,4,…`
@@ -10,6 +15,8 @@
   Leave`) fail the member-set match, so 0 were created. The channel is now
   taken from the output's `Prefix` (`O02` → 2), which matches HA's
   numbering for every module type. Re-run **Import Names from .nkb**.
+- **CI** (repo): ruff + pytest (py3.12/3.13) + hassfest + HACS validation
+  run on every PR.
 
 ## 3.5.1
 
