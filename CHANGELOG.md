@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.5.1
+
+- **Imported device names keep their room** — `Entree (Living)` — *and* still
+  get the Area. Nikobus names are often generic and repeated per room (an
+  `Entree` in every room); 3.4.0/3.5.0 dropped the room from the name, leaving
+  a wall of identical names in entity pickers / automations where the Area
+  isn't shown. The room now stays in the name to disambiguate (scenes, which
+  have no room, keep their bare name). Re-run **Import Names from .nkb** to
+  apply.
+
 ## 3.5.0
 
 **`.nkb`-sourced scenes — shutter & master scenes now import as real scenes.**
@@ -28,12 +38,6 @@ them (the Central-Function grouping). "Import Names from .nkb" now uses that:
 
 After an import that creates scenes, the integration reloads so the new
 `scene.*` entities appear.
-
-Also: device names now keep the room — `Entree (Living)` — *and* get the
-Area. Nikobus names are often generic and repeated per room (an `Entree`
-in every room), so dropping the room (as 3.4.0 did) left a wall of
-identical names in entity pickers / automations where the Area isn't
-shown. The room stays in the name to disambiguate.
 
 ## 3.4.0
 
