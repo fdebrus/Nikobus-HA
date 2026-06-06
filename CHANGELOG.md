@@ -29,6 +29,12 @@ them (the Central-Function grouping). "Import Names from .nkb" now uses that:
 After an import that creates scenes, the integration reloads so the new
 `scene.*` entities appear.
 
+Also: device names now keep the room — `Entree (Living)` — *and* get the
+Area. Nikobus names are often generic and repeated per room (an `Entree`
+in every room), so dropping the room (as 3.4.0 did) left a wall of
+identical names in entity pickers / automations where the Area isn't
+shown. The room stays in the name to disambiguate.
+
 ## 3.4.0
 
 `.nkb` import v2 — rooms become Areas, and scenes get their real names.

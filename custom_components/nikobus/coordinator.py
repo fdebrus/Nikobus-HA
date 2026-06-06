@@ -2485,17 +2485,21 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     return (cf_name_by_addr[key], "")
             return None
 
-        # 1. Devices — name (room dropped; the Area carries it) + Area.
-        matched: dict[str, str] = {}  # device_id -> name
+        # 1. Devices — name as ``Name (Room)`` (Nikobus names are often
+        # generic and repeated per room, e.g. "Entree" in every room, so the
+        # room must stay in the name to disambiguate in pickers/automations
+        # where the Area isn't shown) + assign the Area.
+        matched: dict[str, str] = {}  # device_id -> display name
         devices_named = areas_set = 0
         for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
             hit = _lookup(device)
             if hit is None:
                 continue
             name, room = hit
-            matched[device.id] = name
-            if device.name != name:
-                dev_reg.async_update_device(device.id, name=name)
+            display = f"{name} ({room})" if room else name
+            matched[device.id] = display
+            if device.name != display:
+                dev_reg.async_update_device(device.id, name=display)
                 devices_named += 1
             if room and device.area_id is None:
                 area = area_reg.async_get_area_by_name(
@@ -2511,13 +2515,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             if ent.device_id:
                 by_device.setdefault(ent.device_id, []).append(ent)
         entities_named = 0
-        for device_id, name in matched.items():
+        for device_id, display in matched.items():
             ents = by_device.get(device_id, [])
             if len(ents) != 1:
                 continue
             ent = ents[0]
-            if ent.name is None and ent.original_name != name:
-                ent_reg.async_update_entity(ent.entity_id, name=name)
+            if ent.name is None and ent.original_name != display:
+                ent_reg.async_update_entity(ent.entity_id, name=display)
                 entities_named += 1
 
         _LOGGER.info(
