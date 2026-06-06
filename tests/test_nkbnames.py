@@ -90,8 +90,10 @@ class _FakeParser:
         },
         "ObjectBase": {
             "KeyObjectBase": [500, 600, 700],
-            "ObjectAddress": [0, 0, 0],    # ch1 for the output
-            "Prefix": ["O01", "1A", "CF"],
+            # output's ObjectAddress=2 (e.g. a roller pair) but Prefix=O02 →
+            # channel must come from the prefix (2), not ObjectAddress+1 (3).
+            "ObjectAddress": [2, 0, 0],
+            "Prefix": ["O02", "1A", "CF"],
             "StrDescription": [None, None, None],
         },
         "LinkModeBase": {
@@ -144,8 +146,9 @@ def test_parse_scene_member_set(tmp_path):
     assert len(data.scenes) == 1
     sc = data.scenes[0]
     assert sc.name == "Scene - Test"
-    # trigger(200) drives output(100)=0E6C ch1 in M12; MCF link excluded
-    assert sc.members == frozenset({("0E6C", 1, "M12")})
+    # trigger(200) drives output(100)=0E6C in M12; channel 2 from Prefix
+    # O02 (NOT 3 from ObjectAddress+1); MCF link excluded.
+    assert sc.members == frozenset({("0E6C", 2, "M12")})
 
 
 def test_parse_raises_without_mdb(tmp_path):
