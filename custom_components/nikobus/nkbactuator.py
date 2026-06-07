@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from nikobus_connect.discovery import find_module, find_operation_point
 
 from .const import (
@@ -28,6 +29,7 @@ from .const import (
     REFRESH_DELAY,
     RELEASE_THRESHOLD_MS,
     SHORT_PRESS,
+    operation_signal,
 )
 
 if TYPE_CHECKING:
@@ -309,6 +311,11 @@ class NikobusActuator:
                     "impacted_module_group": group,
                 }
             )
+            # Internal per-address wake for this module's output entities,
+            # alongside the public bus event above (which automations may
+            # consume). The targeted signal reaches only the impacted
+            # module's entities instead of every output entity on the bus.
+            async_dispatcher_send(self._hass, operation_signal(addr))
 
             # ==========================================
             # 2. Strict Module Debouncer (Prevents UI Jumps)

@@ -50,6 +50,19 @@ CATEGORY_DEVICES: Final[tuple[tuple[str, str, str], ...]] = (
 # =============================================================================
 EVENT_BUTTON_OPERATION: Final[str] = "nikobus_button_operation"
 EVENT_BUTTON_PRESSED: Final[str] = "nikobus_button_pressed"
+
+
+def operation_signal(address: str) -> str:
+    """Per-address dispatcher signal for a button-operation notification.
+
+    Sent when a press impacts a module so that module's output entities
+    can invalidate their optimistic state. Routing by address means only
+    the impacted module's entities wake — unlike a listener on the shared
+    ``EVENT_BUTTON_OPERATION`` bus event, where every output entity is
+    invoked and all but the matching channels filter themselves out.
+    Mirrors the coordinator's per-address ``{DOMAIN}_update_{address}``.
+    """
+    return f"{DOMAIN}_operation_{address.upper()}"
 # Fired when a discovered CF/light scene is activated on the bus (its
 # trigger address is seen) — lets automations react to a scene firing,
 # whether triggered physically or from HA.
