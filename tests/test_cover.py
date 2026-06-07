@@ -307,6 +307,24 @@ class TestHandleCoordinatorUpdate(unittest.TestCase):
         self.assertEqual(ent._start_motion_logic.call_args.args[0], "opening")
         self.assertEqual(ent._movement_source, "nikobus")
 
+    def test_idle_unchanged_poll_skips_write(self):
+        # An idle cover polled with the same bus state writes once, then
+        # diffs out the redundant re-renders.
+        ent, _ = self._setup(STATE_STOPPED, state=STATE_STOPPED)
+        ent.async_write_ha_state = MagicMock()
+        ent._handle_coordinator_update()
+        ent._handle_coordinator_update()
+        ent._handle_coordinator_update()
+        self.assertEqual(ent.async_write_ha_state.call_count, 1)
+
+    def test_position_change_writes(self):
+        ent, _ = self._setup(STATE_STOPPED, state=STATE_STOPPED)
+        ent.async_write_ha_state = MagicMock()
+        ent._handle_coordinator_update()           # initial render
+        ent._position = ent._position + 25         # e.g. motion advanced it
+        ent._handle_coordinator_update()           # position changed -> writes
+        self.assertEqual(ent.async_write_ha_state.call_count, 2)
+
 
 class TestSetCoverPosition(unittest.TestCase):
     def test_noop_when_already_at_target(self):

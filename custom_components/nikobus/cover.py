@@ -181,6 +181,12 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         """Return if the cover is open (100)."""
         return self.current_cover_position == 100
 
+    def _render_state(self) -> Any:
+        """Diff on bus state + rounded position so an idle, unchanged poll
+        skips the write. Position updates during motion are written
+        directly by the motion loop and so bypass this entirely."""
+        return (self._state, self.current_cover_position)
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes, merging with parent attributes."""
