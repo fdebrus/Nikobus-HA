@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from custom_components.nikobus.const import operation_signal
 from custom_components.nikobus.light import (
     NikobusDimmerEntity,
     NikobusRelayEntity,
@@ -34,12 +35,6 @@ def _coord():
     c.get_switch_state = MagicMock(return_value=False)
     c.get_cover_state = MagicMock(return_value=0x00)
     return c
-
-
-def _event(module_address):
-    ev = MagicMock()
-    ev.data = {"impacted_module_address": module_address}
-    return ev
 
 
 class TestDimmer(unittest.TestCase):
@@ -97,18 +92,26 @@ class TestDimmer(unittest.TestCase):
         self.assertIsNone(e._optimistic_brightness)
         c.api.turn_off_light.assert_awaited_once_with("0E6C", 1, current_brightness=90)
 
-    def test_nikobus_event_clears_optimistic_on_match(self):
+    def test_button_operation_clears_optimistic_state(self):
+        # The signal is per-module, so any delivery is for this dimmer.
         e, _ = self._make()
         e._optimistic_brightness = 100
         e._is_on = True
-        e._handle_nikobus_event(_event("0E6C"))
+        e.async_write_ha_state = MagicMock()
+        e._handle_button_operation()
         self.assertIsNone(e._optimistic_brightness)
+        self.assertIsNone(e._is_on)
 
-    def test_nikobus_event_ignores_other_module(self):
+    def test_subscribes_to_its_module_operation_signal(self):
         e, _ = self._make()
-        e._optimistic_brightness = 100
-        e._handle_nikobus_event(_event("DEAD"))
-        self.assertEqual(e._optimistic_brightness, 100)
+        e.hass = MagicMock()
+        with patch(
+            "custom_components.nikobus.light.async_dispatcher_connect",
+            return_value=lambda: None,
+        ) as conn:
+            _run(e.async_added_to_hass())
+        signals = [c.args[1] for c in conn.call_args_list]
+        self.assertIn(operation_signal("0E6C"), signals)
 
 
 class TestRelayLight(unittest.TestCase):

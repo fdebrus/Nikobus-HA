@@ -7,12 +7,13 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
 from .button import op_point_display_name, register_wall_button_devices
-from .const import DOMAIN, EVENT_BUTTON_PRESSED
+from .const import DOMAIN, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .router import iter_operation_points
 from .entity import NikobusEntity
@@ -115,9 +116,13 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         """Register event listeners when added to Home Assistant."""
         await super().async_added_to_hass()
         
-        # Listen directly for button press events for this specific address
+        # Per-address signal: only this button's sensor is woken on its
+        # own press, instead of a global EVENT_BUTTON_PRESSED listener
+        # that every button sensor runs and filters by address.
         self.async_on_remove(
-            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_button_event)
+            async_dispatcher_connect(
+                self.hass, press_signal(self._address), self._handle_button_event
+            )
         )
 
         def _cancel_reset_timer() -> None:
@@ -128,13 +133,10 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         self.async_on_remove(_cancel_reset_timer)
 
     @callback
-    def _handle_button_event(self, event: Event) -> None:
-        """Handle button press events from the Nikobus bus."""
-        if event.data.get("address") != self._address:
-            return
-
+    def _handle_button_event(self, data: dict) -> None:
+        """This button was pressed (routed by address) — pulse to 'pressed'."""
         _LOGGER.debug("Button %s pressed", self._address)
-        
+
         self._attr_is_on = True
         self.async_write_ha_state()
 

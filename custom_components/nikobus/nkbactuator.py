@@ -30,6 +30,7 @@ from .const import (
     RELEASE_THRESHOLD_MS,
     SHORT_PRESS,
     operation_signal,
+    press_signal,
 )
 
 if TYPE_CHECKING:
@@ -311,11 +312,6 @@ class NikobusActuator:
                     "impacted_module_group": group,
                 }
             )
-            # Internal per-address wake for this module's output entities,
-            # alongside the public bus event above (which automations may
-            # consume). The targeted signal reaches only the impacted
-            # module's entities instead of every output entity on the bus.
-            async_dispatcher_send(self._hass, operation_signal(addr))
 
             # ==========================================
             # 2. Strict Module Debouncer (Prevents UI Jumps)
@@ -399,8 +395,24 @@ class NikobusActuator:
             
         # Log the event exactly as it is fired to the Home Assistant bus
         _LOGGER.debug("[%s] Firing HA Event: %s | Payload: %s", state.press_id, event_type, payload)
-        
+
         self._hass.bus.async_fire(event_type, payload)
+
+        # Internal per-address wake alongside the public bus event, so a
+        # notification reaches only the entities of the addresses it
+        # concerns rather than every output / button entity filtering a
+        # shared event (see operation_signal / press_signal). Automations
+        # still consume the bus events fired above.
+        if event_type == EVENT_BUTTON_OPERATION:
+            if module := payload.get("impacted_module_address"):
+                async_dispatcher_send(self._hass, operation_signal(module))
+        elif event_type == EVENT_BUTTON_PRESSED:
+            seen: set[str] = set()
+            for key in ("address", "module_address"):
+                addr = payload.get(key)
+                if addr and addr not in seen:
+                    seen.add(addr)
+                    async_dispatcher_send(self._hass, press_signal(addr), payload)
 
     def _derive_button_context(self, address: str) -> tuple[str | None, int | None]:
         """Determine the primary (module_address, channel) link from discovery."""

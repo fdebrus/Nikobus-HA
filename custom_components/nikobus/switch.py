@@ -7,12 +7,12 @@ import logging
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import EVENT_BUTTON_PRESSED, operation_signal
+from .const import operation_signal, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import (
@@ -342,14 +342,19 @@ class NikobusInputLatchSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
         last = await self.async_get_last_state()
         if last is not None and last.state in ("on", "off"):
             self._attr_is_on = last.state == "on"
-        self.async_on_remove(
-            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_button_event)
-        )
+        # Per-address signals for this input's two bus addresses (1A / 1B),
+        # so only this latch is woken — not every entity on a press.
+        for addr in (self._addr_1a, self._addr_1b):
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    self.hass, press_signal(addr), self._handle_button_event
+                )
+            )
 
     @callback
-    def _handle_button_event(self, event: Event) -> None:
+    def _handle_button_event(self, data: dict) -> None:
         """Latch on the 1A signal, clear on the 1B signal."""
-        addr = str(event.data.get("address") or "").upper()
+        addr = str(data.get("address") or "").upper()
         if addr == self._addr_1a:
             self._attr_is_on = True
             self.async_write_ha_state()

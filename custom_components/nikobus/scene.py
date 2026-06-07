@@ -8,15 +8,16 @@ import uuid
 from typing import Any
 
 from homeassistant.components.scene import Scene
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .button import op_point_display_name
 from .const import (
     CATEGORY_SCENES,
     DOMAIN,
-    EVENT_BUTTON_PRESSED,
     EVENT_SCENE_ACTIVATED,
+    press_signal,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
@@ -199,20 +200,23 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
         return out_list
 
     async def async_added_to_hass(self) -> None:
-        """Watch the bus so a physical scene activation fires an event."""
+        """Watch this scene's trigger addresses so a physical activation
+        fires an event. One per-address signal per trigger (one Central
+        Function, many triggers) wakes only this scene, not every scene."""
         await super().async_added_to_hass()
-        self.async_on_remove(
-            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_trigger)
-        )
+        for addr in self._triggered_by:
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    self.hass, press_signal(addr), self._handle_trigger
+                )
+            )
 
     @callback
-    def _handle_trigger(self, event: Event) -> None:
-        """Fire ``nikobus_scene_activated`` when any of this scene's trigger
+    def _handle_trigger(self, data: dict) -> None:
+        """Fire ``nikobus_scene_activated`` when one of this scene's trigger
         addresses is seen on the bus — physical press or HA-originated frame
-        alike (one Central Function, many triggers)."""
-        fired = str(event.data.get("address") or "").upper()
-        if fired not in self._triggered_by:
-            return
+        alike. Routed by address, so any delivery here is a match."""
+        fired = str(data.get("address") or "").upper()
         self.hass.bus.async_fire(
             EVENT_SCENE_ACTIVATED,
             {

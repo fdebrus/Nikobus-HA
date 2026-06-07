@@ -63,6 +63,18 @@ def operation_signal(address: str) -> str:
     Mirrors the coordinator's per-address ``{DOMAIN}_update_{address}``.
     """
     return f"{DOMAIN}_operation_{address.upper()}"
+
+
+def press_signal(address: str) -> str:
+    """Per-address dispatcher signal for a button-press notification.
+
+    Sent when a button frame is seen on the bus, keyed by both the button
+    ``address`` and the impacted ``module_address``, so only the entities
+    concerned with that address wake — instead of every binary sensor /
+    cover / scene running a shared ``EVENT_BUTTON_PRESSED`` listener and
+    filtering itself out. The payload mirrors the bus event's data dict.
+    """
+    return f"{DOMAIN}_press_{address.upper()}"
 # Fired when a discovered CF/light scene is activated on the bus (its
 # trigger address is seen) — lets automations react to a scene firing,
 # whether triggered physically or from HA.
