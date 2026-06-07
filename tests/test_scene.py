@@ -81,6 +81,33 @@ class TestFeedbackLedDispatch(unittest.TestCase):
         )
 
 
+class TestSceneActivationErrors(unittest.TestCase):
+    """A bus failure during a software-scene activation surfaces as a
+    translated HomeAssistantError, not the raw library exception."""
+
+    def test_activate_translates_bus_error(self):
+        from homeassistant.exceptions import HomeAssistantError
+
+        coord = MagicMock()
+        coord.get_module_type.return_value = "switch_module"
+        coord.nikobus_module_states = {"C1C7": bytearray(12)}
+        coord.get_module_channel_count.return_value = 6
+        coord.async_event_handler = AsyncMock()
+        coord.api.set_output_states_for_module = AsyncMock(
+            side_effect=RuntimeError("bus down")
+        )
+        e = NikobusSceneEntity(coord, {
+            "id": "s1",
+            "channels": [{"module_id": "C1C7", "channel": 1, "state": "on"}],
+            "feedback_led": None,
+        })
+        e.name = "Test Scene"  # Entity.name isn't provided by the test stubs
+        with self.assertRaises(HomeAssistantError) as cm:
+            _run(e.async_activate())
+        self.assertEqual(cm.exception.translation_key, "communication_error")
+        self.assertIsInstance(cm.exception.__cause__, RuntimeError)
+
+
 class TestCFSceneActivation(unittest.TestCase):
     def test_activate_broadcasts_bus_address(self):
         coord = MagicMock()
