@@ -470,7 +470,7 @@ class NikobusPcLinkInventoryButton(ButtonEntity):
         flow through the same channel as the discovery state's error
         field, plus the integration log.
         """
-        _LOGGER.info("PC Link inventory discovery triggered via UI button")
+        _LOGGER.info("PC-Link inventory discovery triggered via UI button")
         if self._coordinator.discovery_running:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
@@ -658,7 +658,7 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         """Execute the button press command on the Nikobus bus."""
-        _LOGGER.debug("UI Button pressed for address: %s", self._address)
+        _LOGGER.debug("UI button pressed for address %s", self._address)
         await self.coordinator.async_event_handler(
             "ha_button_pressed", {"address": self._address}
         )

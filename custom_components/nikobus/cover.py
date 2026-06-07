@@ -244,13 +244,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if new_bus_state == STATE_ERROR:
             if self._movement_source == "ha":
                 _LOGGER.debug(
-                    "Cover %s ch%d: motor-protection (0x03) after HA move — sending VALUE=0.",
+                    "Cover %s ch%d motor-protection (0x03) after HA move — writing 0 to clear",
                     self._address, self._channel,
                 )
                 self.hass.async_create_task(self._stop(send_stop=True, force_api=True))
             else:
                 _LOGGER.debug(
-                    "Cover %s ch%d: motor-protection (0x03) after Nikobus move — waiting for auto-clear.",
+                    "Cover %s ch%d motor-protection (0x03) after Nikobus move — waiting for auto-clear",
                     self._address, self._channel,
                 )
                 self.hass.async_create_task(self._stop(send_stop=False))
@@ -419,7 +419,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             pass
         except Exception as err:
             _LOGGER.error(
-                "Cover %s ch%d: motion loop error — forcing stop: %s",
+                "Cover %s ch%d motion loop failed — forcing stop: %s",
                 self._address,
                 self._channel,
                 err,
