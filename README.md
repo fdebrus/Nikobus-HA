@@ -10,7 +10,16 @@
   <a href="https://github.com/fdebrus/Nikobus-HA/stargazers"><img src="https://img.shields.io/github/stars/fdebrus/Nikobus-HA?style=flat&label=Stars" alt="GitHub stars"></a>
 </p>
 
-Control your **Nikobus** installation from Home Assistant — switches, dimmers, and shutters as native entities, plus button presses as automation triggers. Modules and buttons are discovered automatically from the bus; there are no address lists to maintain by hand.
+Control your **Nikobus** installation from Home Assistant — switches, dimmers, and shutters as native entities, plus button presses as automation triggers. Modules and buttons are **discovered automatically from the bus**, and your real names, rooms, and scenes can be **imported from your `.nkb` project file**. There are no address lists to maintain by hand.
+
+### Highlights
+
+- 🔌 **Automatic discovery** — modules and physical buttons are enumerated straight from the PC-Link; no manual address tables.
+- 💡 **Native entities** — switches, dimmers (with brightness), and shutters (with simulated position) per channel.
+- 🎛️ **Buttons as triggers** — every keypad key, IR code, and input becomes an event source (and a press-simulation button) for automations.
+- 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names, **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply.
+- 🎬 **Scenes that fire atomically** — Central Function scenes are activated on the bus the same way a physical scene key would, with no per-channel fan-out.
+- ⚡ **Real-time or polled** — instant pushed state with a Feedback Module, or a configurable poll without one.
 
 ---
 
@@ -21,6 +30,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - [Supported hardware](#supported-hardware)
 - [Installation & setup](#installation--setup)
 - [Discovery workflow](#discovery-workflow)
+- [Importing from your `.nkb` project](#importing-from-your-nkb-project)
 - [Buttons, inputs & the entity model](#buttons-inputs--the-entity-model)
 - [Events & automations](#events--automations)
 - [Scenes](#scenes)
@@ -36,9 +46,10 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 
 1. **Install** via HACS (custom repository) and restart Home Assistant.
 2. **Add the integration**: *Settings → Devices & Services → Add Integration → Nikobus*. Enter your PC-Link connection — a serial path (`/dev/ttyUSB0`) or TCP bridge (`192.168.2.50:9999`).
-3. Open the **Nikobus Bridge** device and press **Discover modules & buttons** — this enumerates the bus via the PC-Link.
-4. Press **Scan all module links** — this maps which button drives which output, and extracts scenes.
-5. Done. Your modules appear as lights / switches / covers; buttons appear as devices you can trigger automations from.
+3. Open the **Nikobus Bridge** device and press **1. Load Project Overview** — this enumerates the bus via the PC-Link.
+4. Press **2. Load Existing Installation** — this maps which button drives which output, and extracts scenes.
+5. *(Optional)* [Upload your `.nkb`](#importing-from-your-nkb-project) and press **3. Import Names from .nkb** to pull in your real names, rooms, and scenes.
+6. Done. Your modules appear as lights / switches / covers; buttons appear as devices you can trigger automations from.
 
 > A large install takes a few minutes to scan. Progress is shown on the Bridge device's **Discovery status** / **Discovery progress** sensors.
 
@@ -50,6 +61,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - **One client at a time.** Only one program may talk to the bus. Stop the Nikobus PC software (and any other bridge) before starting Home Assistant.
 - **A connection path**: a USB/serial adapter (`/dev/ttyUSB0`) or a TCP-to-serial bridge (`host:port`).
 - **(Optional) a Feedback Module (05-207)** wired to the PC-Link. If present, enable the toggle during setup and module states are pushed in real time; without one, HA polls on a configurable interval.
+- **(Optional) your `.nkb` project file** — the export from the Nikobus PC software. Not required to run, but it's the only place your friendly names, rooms, and scene groupings live. See [Importing from your `.nkb` project](#importing-from-your-nkb-project).
 
 ---
 
@@ -103,27 +115,31 @@ One HA **device** is created per physical button, with one button-entity + binar
 6. If neither toggle is set, choose a **polling interval** (60–3600 s, default 120).
 7. Finish, then run [discovery](#discovery-workflow).
 
-Module and button data live in Home Assistant's own storage (`.storage/nikobus.modules`, `.storage/nikobus.buttons`, `.storage/nikobus.cfs`). You don't hand-edit these — they're populated by discovery. (Scenes are the one optional JSON file; see [Scenes](#scenes).)
+Module and button data live in Home Assistant's own storage (`.storage/nikobus.modules`, `.storage/nikobus.buttons`, `.storage/nikobus.cfs`). You don't hand-edit these — they're populated by discovery.
 
 ---
 
 ## Discovery workflow
 
-Everything is driven from the **Nikobus Bridge** device page.
+Everything is driven from the **Nikobus Bridge** device page. The three buttons are meant to be pressed **in order**, top to bottom.
 
-### 1. Discover modules & buttons
+### 1. Load Project Overview
 
-Press **Discover modules & buttons**. The integration probes the PC-Link, walks its inventory, and creates a device for every module and every physical button on the bus.
+Press **1. Load Project Overview**. The integration probes the PC-Link, walks its inventory, and creates a device for every module and every physical button on the bus.
 
 Two diagnostic sensors track progress:
 - **Discovery status** — live per-register message (with a coarse `phase` attribute for automations).
 - **Discovery progress** — 0–100 %.
 
-### 2. Scan all module links
+### 2. Load Existing Installation
 
-Press **Scan all module links**. This reads each output module's link table and records which button drives which channel (the `linked_modules` metadata). It also extracts **Central Function (CF)** scenes found in those tables. The button is disabled until an inventory has run.
+Press **2. Load Existing Installation**. This reads each output module's link table and records which button drives which channel (the `linked_modules` metadata). It also extracts **Central Function (CF)** scenes found in those tables. The button is disabled until an inventory has run.
 
-### 3. Customize a module *(optional)*
+### 3. Import Names from .nkb *(optional)*
+
+Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scenes from your project file in one shot. This is the quick, **non-destructive** path — see [Importing from your `.nkb` project](#importing-from-your-nkb-project) for the file upload step and for the *choose-what-to-import* form with an overwrite option.
+
+### Customize a module *(optional)*
 
 *Configure → Customize a module* lets you, per channel:
 - **Description** → the entity name.
@@ -135,9 +151,43 @@ Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 
 ### Installs without a PC-Link
 
-If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Discover modules* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory.
+If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Load Project Overview* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory.
 
-> **3.0.0:** these files are now an **inventory source only**. The previous behaviour that imported their descriptions as friendly names on every startup has been removed — entity names live in Home Assistant (see [Renaming](#renaming)). If you only kept the files for their names and you have a PC-Link, you can delete them; the integration logs a warning when it finds them.
+> **Since 3.0.0** these files are an **inventory source only**. The previous behaviour that imported their descriptions as friendly names on every startup has been removed — entity names live in Home Assistant (see [Renaming](#renaming)). If you only kept the files for their names and you have a PC-Link, you can delete them; the integration logs a warning when it finds them.
+
+---
+
+## Importing from your `.nkb` project
+
+The bus tells the integration *what* is installed and *how it's wired* — but not what you **called** things. Your friendly names ("Appliques Salon"), your rooms, and your named scene groupings live only in the Nikobus PC software's project file. The `.nkb` import reads them and applies them to Home Assistant.
+
+> A `.nkb` is the project export from the Nikobus PC software (a ZIP holding the project database). Nothing leaves your machine — it's parsed locally inside Home Assistant.
+
+### Step 1 — Upload the file
+
+*Settings → Devices & Services → Nikobus → **Configure → Upload .nkb project file***. Pick your export (any filename); it's **validated** (it must parse as a real `.nkb`) and saved as `nikobus.nkb` in your config folder. No copying over Samba/SSH.
+
+> Prefer to place it yourself? Drop the file in `/config` as `nikobus.nkb` (or as the only `*.nkb` there) and skip this step.
+
+### Step 2 — Import
+
+You have two ways to apply it:
+
+**Quick path — the button.** Press **3. Import Names from .nkb** on the Bridge device. It imports **everything, non-destructively**: it fills in names/Areas where you haven't set your own, and never clobbers a manual rename.
+
+**Choose what to import.** *Configure → Import from .nkb (choose what)* opens a form where you tick exactly which categories to apply, with an optional **overwrite** toggle:
+
+| Category | What it sets |
+|---|---|
+| **Device names** | Modules, buttons, IR receivers → `Name (Room)` (the room disambiguates the often-repeated Nikobus names). |
+| **Channel names** | The per-output entities you actually toggle — each light / cover / switch (e.g. `Appliques Salon`, `Terrasse`). |
+| **Areas** | Each device is placed into a Home Assistant **Area** matching its Nikobus room (created if needed). |
+| **Scenes** | Named scene groups — both light scenes and **shutter / master scenes** (see [Scenes](#scenes)). |
+| **Overwrite** *(toggle)* | **Off (default):** suggested only — a name or Area you set by hand always wins. **On:** force the `.nkb` values over your existing names/Areas. |
+
+So you can, for example, refresh just the **channel names** without disturbing the Areas you've already organised, or re-run with **overwrite** after a project change to push the latest names through.
+
+> Re-running is safe and idempotent — unchanged entries are skipped, and (without overwrite) anything you've personalised is left alone.
 
 ---
 
@@ -197,7 +247,12 @@ Conversely, every light / switch / cover exposes a **`controlled_by`** attribute
 
 ### Renaming
 
-Discovered devices get generic names like `Bus push button, 4 control buttons (1843B4)`. Rename them in the HA UI (*device → ⋮ → Rename*); HA stores this as `name_by_user` and **preserves it across reloads, restarts, and re-discovery** (names are keyed by the entity's stable `unique_id`).
+Discovered devices get generic names like `Bus push button, 4 control buttons (1843B4)`. You have two ways to give them friendly names:
+
+- **In bulk, from your project** — [import them from the `.nkb`](#importing-from-your-nkb-project). This is the fastest way to name a whole install at once, rooms and all.
+- **By hand** — rename in the HA UI (*device → ⋮ → Rename*). HA stores this as `name_by_user` and **preserves it across reloads, restarts, and re-discovery** (names are keyed by the entity's stable `unique_id`).
+
+The two coexist: a non-overwrite `.nkb` import only *suggests* names, so anything you've renamed by hand is left untouched.
 
 ### IR codes across multiple receivers
 
@@ -312,11 +367,11 @@ action:
 
 ## Scenes
 
-Two independent sources produce scene entities. Most installs only need the first.
+Scene entities come from up to three sources. Most installs are covered by the first two, which need no configuration.
 
-### CF broadcasts (auto-extracted)
+### CF broadcasts (auto-extracted from the bus)
 
-A Nikobus **Central Function (CF)** is a multi-output activation that already lives on the bus — every "scene" key on a keypad is a CF. **Scan all module links** reads them from the module link tables, classifies them (`switch_pair` / `roller_pair`), and persists them to `.storage/nikobus.cfs`. They appear as scene entities automatically, e.g.:
+A Nikobus **Central Function (CF)** is a multi-output activation that already lives on the bus — every "scene" key on a keypad is a CF. **2. Load Existing Installation** reads them from the module link tables, classifies them (`switch_pair` / `roller_pair`), and persists them to `.storage/nikobus.cfs`. They appear as scene entities automatically, e.g.:
 
 - `Nikobus switch CF 384102 (22 ch)`
 - `Nikobus roller CF 3880CB (6 ch)`
@@ -333,9 +388,16 @@ outputs:
 
 **Activating a CF from HA is indistinguishable from a physical press** — the integration emits the same `#N<address>\r#E1` frame, so modules fire atomically on the bus (no per-channel fan-out, no partial-activation risk). Roller travel uses each module's stored M01/M02/M03 timings. No configuration needed; CFs are re-extracted on every scan.
 
-> CF scenes get generic names (`Nikobus switch CF …`). The friendly names from your Nikobus "Groups" are not imported — rename the scene entities in HA if you want.
+> CF scenes get generic names (`Nikobus switch CF …`). [Import from your `.nkb`](#importing-from-your-nkb-project) to give them their real names — and to surface scenes the bus alone can't (next).
 
-> **Upgrading to 3.0.0:** light-scene CFs are now keyed on the address the bus actually emits (the wire form), which both fixes activation and splits a multi-key trigger into one scene per key. As a result a light-scene's `unique_id` (and entity id) **changes on the first discovery after upgrade** — the old `scene.nikobus_cf_…` entity is replaced by one or more new ones. Re-point any automation or dashboard that referenced the old entity. CF *switch/roller* scenes are unaffected.
+### `.nkb`-sourced scenes (named light + shutter/master scenes)
+
+Light scenes self-identify on the bus (their preset-recall modes), so the step above already surfaces them. **Shutter / "all-off" / master scenes have no such fingerprint** — on the bus they're indistinguishable from an ordinary multi-output button — so discovery can't tell they're scenes. Your `.nkb` *does* mark them (the Central-Function grouping).
+
+Selecting **Scenes** during a [`.nkb` import](#importing-from-your-nkb-project) uses that information to:
+
+- **name** matched light-scene CFs with their real project names, and
+- **create** the shutter / master scenes that discovery couldn't, as real scene entities (keyed on the address that fires them, sourced from the `.nkb` and preserved across future re-discovery).
 
 ### User-authored scenes (`nikobus_scene_config.json`)
 
@@ -358,7 +420,9 @@ For HA-side per-channel groupings that **don't** exist as a CF on the bus. Loade
 
 Activation sends one command per channel (HA-driven fan-out), touching only the channels you list.
 
-**Which one?** A scene that already exists in Nikobus → it's a CF, no config. A new cross-module grouping → write it in the JSON file.
+**Which one?** A scene that already exists in Nikobus → it's a CF, no config needed (import the `.nkb` for its name). A new cross-module grouping that doesn't exist in Nikobus → write it in the JSON file.
+
+> **Upgrading to 3.0.0:** light-scene CFs are now keyed on the address the bus actually emits (the wire form), which both fixes activation and splits a multi-key trigger into one scene per key. As a result a light-scene's `unique_id` (and entity id) **changes on the first discovery after upgrade** — the old `scene.nikobus_cf_…` entity is replaced by one or more new ones. Re-point any automation or dashboard that referenced the old entity. CF *switch/roller* scenes are unaffected.
 
 ---
 
@@ -384,7 +448,14 @@ If your install has a **PC-Logic (05-201) configured as master**, the PC-Logic a
 
 ### Buttons missing, or a button shows the wrong number of control points
 
-Run **Discover modules & buttons** followed by **Scan all module links** while connected to the PC-Link. If a specific physical button type isn't recognised at all, its device-type byte may be uncatalogued — open an issue with the diagnostics download and the model number printed on the button.
+Run **1. Load Project Overview** followed by **2. Load Existing Installation** while connected to the PC-Link. If a specific physical button type isn't recognised at all, its device-type byte may be uncatalogued — open an issue with the diagnostics download and the model number printed on the button.
+
+### The `.nkb` import did nothing / "no .nkb file found"
+
+- Make sure the file is uploaded: *Configure → Upload .nkb project file* (it's saved as `nikobus.nkb`), or place it in `/config` yourself as `nikobus.nkb`.
+- If several `*.nkb` files are in `/config` and none is named `nikobus.nkb`, the integration won't guess — rename the one to import to `nikobus.nkb`.
+- Names/Areas you'd already set by hand are **left alone** unless you tick **Overwrite** in *Import from .nkb (choose what)*. If a non-overwrite run "did nothing", it likely had nothing new to fill in.
+- A file that won't parse (corrupt / not a real export) is reported as an error and nothing is changed.
 
 ### Entities show as `Manual button`, or some entities are missing after an upgrade
 
@@ -394,14 +465,14 @@ To clear it:
 
 1. **Stop Home Assistant completely** (not just reload — `.storage` is rewritten on shutdown, so deleting while running won't stick).
 2. Delete `.storage/nikobus.buttons` and `.storage/nikobus.modules`.
-   *(Keep any `nikobus_*_config.json` files if you rely on them for descriptions.)*
-3. Start HA, then run **Discover modules & buttons** → **Scan all module links**.
+   *(Keep any `nikobus_*_config.json` files if you rely on them for inventory.)*
+3. Start HA, then run **1. Load Project Overview** → **2. Load Existing Installation**.
 
 The store rebuilds cleanly with proper device types and no duplicates. Names you set in the HA UI are keyed by `unique_id` and reattach automatically.
 
 ### Custom channel/button names didn't carry over
 
-Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`), not in the integration's store — so a clean re-discovery preserves them as long as the bus addresses are unchanged. (Removed in **3.0.0**: names are no longer imported from a legacy `nikobus_button_config.json`; set them in HA and they persist.)
+Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`), not in the integration's store — so a clean re-discovery preserves them as long as the bus addresses are unchanged. (Removed in **3.0.0**: names are no longer imported from a legacy `nikobus_button_config.json`; set them in HA, or [import them from your `.nkb`](#importing-from-your-nkb-project), and they persist.)
 
 ### State is slow to update
 
@@ -424,6 +495,7 @@ Without a Feedback Module, external changes (manual relay actuation, another cli
 - **Polling latency without a Feedback Module** (60–3600 s; presses still refresh immediately).
 - **One config entry per HA instance.** Two separate Nikobus buses can't share one Home Assistant.
 - **Inventory comes from the PC-Link.** A PC-Logic cannot serve the device inventory (see [Troubleshooting](#troubleshooting)).
+- **Friendly names, rooms, and named scenes come from the `.nkb`.** The bus carries wiring, not labels — without the project file, devices keep their generic discovered names.
 
 ---
 
@@ -441,14 +513,15 @@ The code is split into two packages.
 
 **This integration (`custom_components/nikobus/`)** — the Home Assistant glue:
 
-- `coordinator.py` — wires the library together; owns polling, discovery lifecycle, and state signals.
+- `coordinator.py` — wires the library together; owns polling, discovery lifecycle, state signals, and the `.nkb` name/Area/scene apply.
 - `nkbstorage.py` — the three HA Stores (`nikobus.modules`, `nikobus.buttons`, `nikobus.cfs`).
+- `nkbnames.py` — reads names, rooms, per-channel names, and scene groups from a `.nkb` project (Access database in a ZIP, parsed with a vendored pure-Python reader).
 - `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs (inventory source only).
 - `nkbactuator.py` — turns incoming button frames into HA events with debounce + duration tracking.
 - `nkbconfig.py` — scene-file loader/writer.
 - `nkbtravelcalculator.py` — virtual cover-position tracking.
 - `router.py` — maps module channels to HA entity types; builds the `controlled_by` reverse index.
-- `config_flow.py` — config flow (connection → hardware → polling) and the Configure options menu.
+- `config_flow.py` — config flow (connection → hardware → polling) and the Configure options menu (customize, upload `.nkb`, import `.nkb`).
 - `repairs.py` — the "No Nikobus buttons configured" repair flow.
 - `diagnostics.py` — the diagnostics download for bug reports.
 - `entity.py` + the platforms (`light` / `switch` / `cover` / `button` / `binary_sensor` / `sensor` / `scene`).
@@ -460,7 +533,7 @@ The code is split into two packages.
 
 ### Interoperability
 
-The integration talks to Nikobus hardware over its serial bus. It was developed independently, solely for interoperability between Home Assistant and Nikobus hardware the user already owns, in line with Article 6 of Directive 2009/24/EC.
+The integration talks to Nikobus hardware over its serial bus. It was developed independently, solely for interoperability between Home Assistant and Nikobus hardware the user already owns, in line with Article 6 of Directive 2009/24/EC. The `.nkb` reader parses a project file the user already owns, locally, for the same purpose.
 
 ---
 
