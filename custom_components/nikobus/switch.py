@@ -184,11 +184,13 @@ class NikobusBaseSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
             )
         )
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Invalidate cache when hardware data is received."""
+    def _invalidate_optimistic(self) -> None:
+        """Drop the optimistic state so the real hardware state is read."""
         self._is_on = None
-        super()._handle_coordinator_update()
+
+    def _render_state(self) -> Any:
+        """Diff on the resolved on/off so an unchanged poll skips the write."""
+        return self.is_on
 
     @callback
     def _handle_button_operation(self) -> None:

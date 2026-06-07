@@ -110,11 +110,13 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
             )
         )
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Invalidate optimistic cache when coordinator gets true hardware data."""
+    def _invalidate_optimistic(self) -> None:
+        """Drop the optimistic state so the real hardware state is read."""
         self._is_on = None
-        super()._handle_coordinator_update()
+
+    def _render_state(self) -> Any:
+        """Diff on the resolved on/off so an unchanged poll skips the write."""
+        return self.is_on
 
     @callback
     def _handle_button_operation(self) -> None:
@@ -154,11 +156,14 @@ class NikobusDimmerEntity(NikobusBaseLight):
             return self._optimistic_brightness
         return self.coordinator.get_light_brightness(self._address, self._channel)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Invalidate optimistic caches when coordinator gets true hardware data."""
+    def _invalidate_optimistic(self) -> None:
+        """Also drop the optimistic brightness for this dimmer."""
+        super()._invalidate_optimistic()
         self._optimistic_brightness = None
-        super()._handle_coordinator_update()
+
+    def _render_state(self) -> Any:
+        """Diff on resolved on/off + brightness for the dimmer."""
+        return (self.is_on, self.brightness)
 
     @callback
     def _handle_button_operation(self) -> None:
