@@ -10,6 +10,8 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
+from homeassistant.exceptions import HomeAssistantError
+
 from custom_components.nikobus.switch import (
     NikobusRelaySwitchEntity,
     NikobusCoverSwitchEntity,
@@ -58,8 +60,10 @@ class TestRelaySwitch(unittest.TestCase):
     def test_turn_on_reverts_on_error(self):
         e, c = self._make()
         c.api.turn_on_switch.side_effect = RuntimeError("x")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(HomeAssistantError) as cm:
             _run(e.async_turn_on())
+        self.assertEqual(cm.exception.translation_key, "communication_error")
+        self.assertIsInstance(cm.exception.__cause__, RuntimeError)
         self.assertIsNone(e._is_on)
 
 
@@ -88,8 +92,9 @@ class TestCoverSwitch(unittest.TestCase):
     def test_turn_off_reverts_on_error(self):
         e, c = self._make()
         c.api.stop_cover.side_effect = RuntimeError("x")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(HomeAssistantError) as cm:
             _run(e.async_turn_off())
+        self.assertEqual(cm.exception.translation_key, "communication_error")
         self.assertIsNone(e._is_on)
 
 

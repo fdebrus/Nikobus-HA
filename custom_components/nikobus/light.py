@@ -8,11 +8,12 @@ from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import operation_signal
+from .const import DOMAIN, operation_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import build_unique_id, get_routing, register_output_module_devices
@@ -20,6 +21,16 @@ from .router import build_unique_id, get_routing, register_output_module_devices
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
+
+
+def _command_error(err: Exception) -> HomeAssistantError:
+    """A bus command failed — surface it as a translated HA error so the
+    user sees a clean message instead of the raw library exception."""
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="communication_error",
+        translation_placeholders={"error": str(err)},
+    )
 
 
 async def async_setup_entry(
@@ -207,7 +218,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
             self._is_on = None
             self._optimistic_brightness = None
             self.async_write_ha_state()
-            raise err
+            raise _command_error(err) from err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the dimmer with optimistic UI update and error fallback."""
@@ -229,7 +240,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
             self._is_on = None
             self._optimistic_brightness = None
             self.async_write_ha_state()
-            raise err
+            raise _command_error(err) from err
 
 
 class NikobusRelayEntity(NikobusBaseLight):
@@ -264,7 +275,7 @@ class NikobusRelayEntity(NikobusBaseLight):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise err
+            raise _command_error(err) from err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Open relay with optimistic UI update and error fallback."""
@@ -278,7 +289,7 @@ class NikobusRelayEntity(NikobusBaseLight):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise err
+            raise _command_error(err) from err
 
 
 class NikobusCoverLightEntity(NikobusBaseLight):
@@ -313,7 +324,7 @@ class NikobusCoverLightEntity(NikobusBaseLight):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise err
+            raise _command_error(err) from err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn light off via cover stop command with optimistic UI update and error fallback."""
@@ -327,4 +338,4 @@ class NikobusCoverLightEntity(NikobusBaseLight):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise err
+            raise _command_error(err) from err
