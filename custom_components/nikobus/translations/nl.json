@@ -242,6 +242,9 @@
     },
     "no_inventory_source": {
       "message": "Geen PC-Link gedetecteerd op de bus en geen handmatige configuratiebestanden gevonden. Installeer een PC-Link of maak nikobus_module_config.json (en eventueel nikobus_button_config.json) aan in uw Home Assistant-configuratiemap en probeer het opnieuw."
+    },
+    "setup_data_error": {
+      "message": "Kon de Nikobus-configuratie niet laden: {error}"
     }
   },
   "selector": {

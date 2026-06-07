@@ -166,6 +166,9 @@
     },
     "not_connected": {
       "message": "Nikobus bus is not connected — cannot send a command. Check the connection and retry."
+    },
+    "setup_data_error": {
+      "message": "Could not load Nikobus configuration: {error}"
     }
   },
   "options": {
