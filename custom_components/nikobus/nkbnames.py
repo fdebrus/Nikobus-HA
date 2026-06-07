@@ -78,6 +78,16 @@ class NkbData(NamedTuple):
     addresses: dict[str, tuple[str, str]]
     #: Named scene groups with member sets, for member-set matching.
     scenes: list[SceneDef]
+    #: ``{(MODULE_ADDR_UPPER, channel): name}`` — per-output channel names
+    #: (the light / cover / switch the user actually toggles). Read-only, so
+    #: the empty-dict default is safe.
+    outputs: dict[tuple[str, int], str] = {}
+
+
+# Generic per-output placeholders in the .nkb that aren't real names.
+_OUTPUT_PLACEHOLDERS = frozenset(
+    {"output", "switch output", "shutter output", "dimmer output"}
+)
 
 
 def find_nkb_file(config_dir: str) -> Path | None:
@@ -137,7 +147,31 @@ def parse_nkb(nkb_path: str | Path) -> NkbData:
     scenes = _extract_scenes(
         components, comp_by_key, objecten, connections, linkmodes, objectbase
     )
-    return NkbData(addresses=addresses, scenes=scenes)
+    outputs = _extract_outputs(comp_by_key, objecten, objectbase)
+    return NkbData(addresses=addresses, scenes=scenes, outputs=outputs)
+
+
+def _extract_outputs(
+    comp_by_key, objecten, objectbase
+) -> dict[tuple[str, int], str]:
+    """``{(MODULE_ADDR, channel): name}`` for output channels with a real
+    user name. Channel is the output's ``Prefix`` number (``O02`` → 2);
+    generic placeholders (``Output``, ``Switch output``…) are skipped."""
+    out: dict[tuple[str, int], str] = {}
+    for o in objecten:
+        comp = comp_by_key.get(o.get("KeyComponent"), {})
+        pa = comp.get("PhysicalAddress")
+        if not (isinstance(pa, int) and 0 < pa < 0x10000):
+            continue  # output modules are 16-bit (4-hex) addresses
+        base = objectbase.get(o.get("KeyObjectBase"), {})
+        m = _OUTPUT_PREFIX_RE.match(str(base.get("Prefix") or ""))
+        if not m:
+            continue
+        name = (o.get("StrUserName") or "").strip()
+        if not name or name.lower() in _OUTPUT_PLACEHOLDERS:
+            continue
+        out[(_fmt_addr(pa), int(m.group(1)))] = name
+    return out
 
 
 def _extract_addresses(

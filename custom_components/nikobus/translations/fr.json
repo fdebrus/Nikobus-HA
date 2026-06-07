@@ -62,7 +62,8 @@
         "menu_options": {
           "hardware": "Modifier la configuration matérielle",
           "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)",
-          "upload_nkb": "Téléverser le fichier projet .nkb"
+          "upload_nkb": "Téléverser le fichier projet .nkb",
+          "import_nkb": "Importer depuis .nkb (choisir)"
         }
       },
       "hardware": {
@@ -123,6 +124,17 @@
         "data": {
           "file": "Fichier projet (.nkb)"
         }
+      },
+      "import_nkb": {
+        "title": "Importer depuis .nkb",
+        "description": "Choisissez ce qu'il faut importer depuis votre nikobus.nkb. Par défaut, rien de ce que vous avez renommé manuellement n'est touché — cochez **Écraser** pour remplacer vos noms/zones existants par ceux du .nkb.",
+        "data": {
+          "device_names": "Noms des appareils (modules, boutons, récepteurs IR)",
+          "channel_names": "Noms des canaux (lumières, volets, interrupteurs)",
+          "areas": "Zones (depuis les pièces)",
+          "scenes": "Scènes (lumière + volets/maître)",
+          "overwrite": "Écraser les noms/zones que j'ai déjà définis"
+        }
       }
     },
     "abort": {
@@ -130,7 +142,10 @@
     },
     "error": {
       "invalid_nkb": "Ce fichier n'est pas un projet Nikobus .nkb lisible (il doit s'agir de l'export .nkb — une archive ZIP contenant la base de données du projet).",
-      "upload_failed": "Impossible d'enregistrer le fichier téléversé. Consultez les journaux Home Assistant."
+      "upload_failed": "Impossible d'enregistrer le fichier téléversé. Consultez les journaux Home Assistant.",
+      "nkb_nothing_selected": "Choisissez au moins un élément à importer.",
+      "nkb_not_found": "Aucun fichier .nkb trouvé — téléversez-en un d'abord (Configurer → Téléverser le fichier projet .nkb).",
+      "nkb_parse_failed": "Impossible de lire le fichier .nkb. Consultez les journaux Home Assistant."
     }
   },
   "entity": {

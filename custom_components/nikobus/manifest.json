@@ -16,5 +16,5 @@
     "nikobus-connect>=0.24.0",
     "construct>=2.10"
   ],
-  "version": "3.6.0"
+  "version": "3.7.0"
 }

@@ -32,7 +32,9 @@ from .const import (
     DEFAULT_PRESS_REPEAT,
     DOMAIN,
 )
-from .coordinator import NikobusConfigEntry
+from homeassistant.exceptions import HomeAssistantError
+
+from .coordinator import NKB_IMPORT_CATEGORIES, NikobusConfigEntry
 from .exceptions import NikobusConnectionError
 from nikobus_connect import NikobusConnect
 from nikobus_connect.discovery import find_module
@@ -435,7 +437,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         the declarative source of truth. Users on manual-config should
         edit the JSON files directly to make customisations stick.
         """
-        menu_options = ["hardware", "configure_modules", "upload_nkb"]
+        menu_options = ["hardware", "configure_modules", "upload_nkb", "import_nkb"]
         return self.async_show_menu(
             step_id="init",
             menu_options=menu_options,
@@ -530,6 +532,50 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         except Exception as err:  # noqa: BLE001
             _LOGGER.exception("Failed to save uploaded .nkb file")
             raise _NkbUploadError("upload_failed") from err
+
+    # --- Import names / channels / Areas / scenes from the .nkb ------------
+
+    async def async_step_import_nkb(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Apply the `.nkb` selectively, with an optional overwrite.
+
+        Lets the user choose which categories to import (device names,
+        per-channel names, Areas, scenes) and whether to overwrite names /
+        Areas they've already set. The ``Import Names from .nkb`` bridge
+        button remains the quick "everything, non-destructive" path.
+        """
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            cats = {c for c in NKB_IMPORT_CATEGORIES if user_input.get(c)}
+            if not cats:
+                errors["base"] = "nkb_nothing_selected"
+            else:
+                try:
+                    await self._coordinator().async_import_nkb_names(
+                        categories=cats, overwrite=bool(user_input.get("overwrite"))
+                    )
+                except HomeAssistantError as err:
+                    errors["base"] = getattr(err, "translation_key", None) \
+                        or "nkb_parse_failed"
+                else:
+                    return self.async_create_entry(
+                        title="", data=dict(self.config_entry.options)
+                    )
+
+        return self.async_show_form(
+            step_id="import_nkb",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional("device_names", default=True): bool,
+                    vol.Optional("channel_names", default=True): bool,
+                    vol.Optional("areas", default=True): bool,
+                    vol.Optional("scenes", default=True): bool,
+                    vol.Optional("overwrite", default=False): bool,
+                }
+            ),
+            errors=errors,
+        )
 
     # --- Module customization ----------------------------------------------
 
