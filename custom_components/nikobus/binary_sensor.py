@@ -109,13 +109,20 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
 
     @property
     def state(self) -> str:
-        """Override to return 'pressed' if on, else 'idle'."""
+        """Report ``pressed`` / ``idle`` rather than the binary_sensor
+        default ``on`` / ``off``.
+
+        Deliberately non-standard: a Nikobus button is momentary, so
+        ``pressed`` / ``idle`` reads better in the UI and in automations
+        (``to: "pressed"``) than ``on`` / ``off``. ``is_on`` still tracks
+        the underlying boolean for anything that needs it.
+        """
         return "pressed" if self._attr_is_on else "idle"
 
     async def async_added_to_hass(self) -> None:
         """Register event listeners when added to Home Assistant."""
         await super().async_added_to_hass()
-        
+
         # Per-address signal: only this button's sensor is woken on its
         # own press, instead of a global EVENT_BUTTON_PRESSED listener
         # that every button sensor runs and filters by address.

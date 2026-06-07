@@ -200,7 +200,7 @@ Every physical button is one **device**. Each *operation point* on it — a key 
 | Entity | Direction | Use |
 |---|---|---|
 | **Button** | HA → bus | Press it to emit the same bus frame a physical press would (simulate the press). |
-| **Binary sensor** *(disabled by default)* | bus → HA | Turns `on` briefly when the real button is pressed; use it in state-based automations. |
+| **Binary sensor** *(disabled by default)* | bus → HA | Pulses to `pressed` (then back to `idle` after ~1 s) when the real button is pressed; use it in state-based automations. |
 
 > Binary sensors are **disabled by default** — enable them on the device page if you want to monitor presses.
 
@@ -225,7 +225,7 @@ Input addresses are computed by firmware from the module's own address (not stor
 trigger:
   - platform: state
     entity_id: binary_sensor.lm_input_1_key_a
-    to: "on"
+    to: "pressed"   # these sensors report "pressed" / "idle"
 ```
 
 ### What each button exposes
