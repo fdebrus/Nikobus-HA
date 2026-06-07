@@ -91,20 +91,29 @@ class _DiscoverySignalEntity(SensorEntity):
 
 
 class NikobusDiscoveryStatusSensor(_DiscoverySignalEntity):
-    """Text sensor showing the current discovery status line.
+    """Discovery status sensor: coarse phase as the state, live detail as
+    attributes.
 
-    Reports ``discovery_status_message`` (e.g.
-    ``"Scanning module 0E6C (2/10) — register 0x87 of 0xFF (145 records)"``)
-    as the native value so the user sees per-register progress in real
-    time instead of a coarse enum that sits at ``"module_scan"`` for the
-    entire register-scan phase. The previous enum classification
-    (``idle|pc_link|module_scan|finished|error``) is still exposed as the
-    ``phase`` attribute for automations that grouped on it.
+    The **state** is the coarse phase (``idle|pc_link|module_scan|
+    finished|error``) — low cardinality, so the history is a handful of
+    clean transitions rather than hundreds of distinct per-register
+    strings. The live line (e.g. ``"Scanning module 0E6C (2/10) —
+    register 0x87 of 0xFF (145 records)"``) and the fine-grained detail
+    are attributes, all in ``_unrecorded_attributes`` so the per-register
+    churn during a scan never reaches the recorder.
     """
 
     _attr_has_entity_name = True
     _attr_translation_key = "discovery_status"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    # Transient progress detail — visible live, never worth recording.
+    _unrecorded_attributes = frozenset(
+        {
+            "message", "phase", "sub_phase", "current_module", "modules_done",
+            "modules_total", "register_current", "registers_done",
+            "registers_total", "decoded_records", "last_error",
+        }
+    )
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         super().__init__(coordinator)
@@ -112,12 +121,13 @@ class NikobusDiscoveryStatusSensor(_DiscoverySignalEntity):
 
     @property
     def native_value(self) -> str:
-        return self._coordinator.discovery_status_message
+        return self._coordinator.discovery_phase
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         c = self._coordinator
         return {
+            "message": c.discovery_status_message,
             "phase": c.discovery_phase,
             "sub_phase": c.discovery_sub_phase,
             "current_module": c.discovery_current_module,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -13,6 +14,10 @@ from .const import BRAND, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+# Sentinel return for ``_render_state``: this entity opts out of
+# write-diffing and writes on every coordinator update (the default).
+_NO_DIFF = object()
 
 
 def hub_device_info() -> dr.DeviceInfo:
@@ -61,6 +66,41 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         if via_device is not None:
             device_info["via_device"] = via_device
         self._attr_device_info = device_info
+
+        #: Last ``(available, render_state)`` actually written, for diffing.
+        self._last_render: tuple | None = None
+
+    def _invalidate_optimistic(self) -> None:
+        """Drop optimistic caches before the real state is read (override)."""
+
+    def _render_state(self) -> Any:
+        """Return the displayed state used to skip redundant writes.
+
+        Override to opt this entity into write-diffing (returning a
+        hashable that captures what the user sees). The default opts out
+        — the entity writes on every coordinator update.
+        """
+        return _NO_DIFF
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Write HA state on a coordinator update, skipping the write when
+        nothing the user sees has changed.
+
+        Each output module is polled every cycle and entities are woken
+        per module; without this, every channel re-rendered (and recom-
+        puted its attributes) every cycle even when its byte was
+        unchanged. Diffing on ``(available, render_state)`` collapses an
+        unchanged cycle to a cheap comparison.
+        """
+        self._invalidate_optimistic()
+        state = self._render_state()
+        if state is not _NO_DIFF:
+            signature = (self.available, state)
+            if signature == self._last_render:
+                return
+            self._last_render = signature
+        super()._handle_coordinator_update()
 
     @property
     def available(self) -> bool:

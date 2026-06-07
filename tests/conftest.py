@@ -193,6 +193,8 @@ class _DataUpdateCoordinatorStub:
 class _CoordinatorEntityStub:
     """Minimal stub for CoordinatorEntity."""
 
+    available = True  # NikobusEntity.available reads super().available
+
     def __class_getitem__(cls, item):
         return cls
 
@@ -209,7 +211,8 @@ class _CoordinatorEntityStub:
         pass
 
     def _handle_coordinator_update(self):
-        pass
+        # Real CoordinatorEntity writes HA state on every update.
+        self.async_write_ha_state()
 
 
 _mod(

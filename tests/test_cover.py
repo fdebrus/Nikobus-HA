@@ -231,27 +231,31 @@ class TestStop(unittest.TestCase):
 
 
 class TestHandleButtonPressed(unittest.TestCase):
-    def _event(self, **data):
-        ev = MagicMock()
-        ev.data = data
-        return ev
+    # The signal is routed by module address, so the handler only filters
+    # by channel (one roller module carries several covers).
 
-    def test_ignores_other_module(self):
+    def test_subscribes_to_its_module_press_signal(self):
+        from custom_components.nikobus.const import press_signal
+
         ent, _ = _make_cover()
-        ent._state = STATE_STOPPED
-        _run(ent._handle_button_pressed(self._event(module_address="DEAD", channel=1)))
-        self.assertIsNone(ent._last_button_press_monotonic)
+        with patch(
+            "custom_components.nikobus.cover.async_dispatcher_connect",
+            return_value=lambda: None,
+        ) as conn:
+            _run(ent.async_added_to_hass())
+        signals = [c.args[1] for c in conn.call_args_list]
+        self.assertIn(press_signal("9105"), signals)
 
     def test_ignores_other_channel(self):
         ent, _ = _make_cover()
         ent._state = STATE_STOPPED
-        _run(ent._handle_button_pressed(self._event(module_address="9105", channel=2)))
+        _run(ent._handle_button_pressed({"channel": 2}))
         self.assertIsNone(ent._last_button_press_monotonic)
 
     def test_records_timestamp_when_stopped(self):
         ent, _ = _make_cover()
         ent._state = STATE_STOPPED
-        _run(ent._handle_button_pressed(self._event(module_address="9105", channel=1)))
+        _run(ent._handle_button_pressed({"channel": 1}))
         self.assertIsNotNone(ent._last_button_press_monotonic)
 
     def test_press_while_moving_is_a_stop(self):
@@ -259,7 +263,7 @@ class TestHandleButtonPressed(unittest.TestCase):
         ent._state = STATE_OPENING
         ent._movement_source = "ha"
         ent._stop = AsyncMock()
-        _run(ent._handle_button_pressed(self._event(module_address="9105", channel=1)))
+        _run(ent._handle_button_pressed({"channel": 1}))
         ent._stop.assert_awaited_once_with(send_stop=True)
 
 
@@ -302,6 +306,24 @@ class TestHandleCoordinatorUpdate(unittest.TestCase):
         ent._start_motion_logic.assert_called_once()
         self.assertEqual(ent._start_motion_logic.call_args.args[0], "opening")
         self.assertEqual(ent._movement_source, "nikobus")
+
+    def test_idle_unchanged_poll_skips_write(self):
+        # An idle cover polled with the same bus state writes once, then
+        # diffs out the redundant re-renders.
+        ent, _ = self._setup(STATE_STOPPED, state=STATE_STOPPED)
+        ent.async_write_ha_state = MagicMock()
+        ent._handle_coordinator_update()
+        ent._handle_coordinator_update()
+        ent._handle_coordinator_update()
+        self.assertEqual(ent.async_write_ha_state.call_count, 1)
+
+    def test_position_change_writes(self):
+        ent, _ = self._setup(STATE_STOPPED, state=STATE_STOPPED)
+        ent.async_write_ha_state = MagicMock()
+        ent._handle_coordinator_update()           # initial render
+        ent._position = ent._position + 25         # e.g. motion advanced it
+        ent._handle_coordinator_update()           # position changed -> writes
+        self.assertEqual(ent.async_write_ha_state.call_count, 2)
 
 
 class TestSetCoverPosition(unittest.TestCase):

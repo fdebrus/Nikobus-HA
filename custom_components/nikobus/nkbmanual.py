@@ -76,7 +76,7 @@ async def _read_json(
         return path, json.loads(raw)
     except (OSError, json.JSONDecodeError) as err:
         _LOGGER.warning(
-            "Manual-config: %s is unreadable (%s); skipping.", path, err
+            "Manual config: %s is unreadable (%s) — skipping", path, err
         )
         return None, None
 
@@ -647,8 +647,8 @@ def _consolidate_legacy_1a_only_buttons(
         out[addr] = entry
     out.update(new_entries)
     _LOGGER.info(
-        "Manual-config: consolidated %d 1A-only button faces into "
-        "%d canonical multi-key button(s).",
+        "Manual config: consolidated %d 1A-only button faces into "
+        "%d canonical multi-key button(s)",
         len(consumed), len(new_entries),
     )
     return out
@@ -677,7 +677,7 @@ async def async_apply_manual_config(
         raise
     except Exception:  # noqa: BLE001
         _LOGGER.exception(
-            "Manual-config: error applying %s; module store left unchanged",
+            "Manual config: failed to apply %s — module store left unchanged",
             MANUAL_MODULE_CONFIG_FILENAME,
         )
         modules_loaded = 0
@@ -691,7 +691,7 @@ async def async_apply_manual_config(
         raise
     except Exception:  # noqa: BLE001
         _LOGGER.exception(
-            "Manual-config: error applying %s; button store left unchanged",
+            "Manual config: failed to apply %s — button store left unchanged",
             MANUAL_BUTTON_CONFIG_FILENAME,
         )
         buttons_loaded = 0
@@ -705,7 +705,7 @@ async def async_apply_manual_config(
         # silently no-op here so PC-Link installs don't log noise on
         # every startup.
         _LOGGER.debug(
-            "Manual-config: neither %s nor %s present in %s; skipping import.",
+            "Manual config: neither %s nor %s found in %s — skipping import",
             MANUAL_MODULE_CONFIG_FILENAME,
             MANUAL_BUTTON_CONFIG_FILENAME,
             hass.config.path(""),
@@ -713,10 +713,9 @@ async def async_apply_manual_config(
         return False
 
     _LOGGER.info(
-        "Manual-config applied (declarative): modules=%d (source=%s) "
-        "buttons=%d physical / %d operation-points (source=%s). "
-        "Reload the integration after editing either file to apply "
-        "changes.",
+        "Manual config applied (declarative): modules=%d (source=%s), "
+        "buttons=%d physical / %d operation-points (source=%s) — reload "
+        "the integration after editing either file to apply changes",
         modules_loaded,
         module_path or "—",
         buttons_loaded,

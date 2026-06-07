@@ -167,7 +167,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             await coordinator.nikobus_discovery.start_inventory_discovery()
         elif custom_range:
             _LOGGER.info(
-                "Forensic Nikobus scan | module=%s registers=0x%02X..0x%02X sub=%s",
+                "Forensic scan of module %s — registers 0x%02X..0x%02X, sub=%s",
                 module_address,
                 register_start,
                 register_end,
@@ -180,7 +180,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 sub_byte=sub_byte,
             )
         else:
-            _LOGGER.info("Starting manual Nikobus discovery for module: %s", module_address)
+            _LOGGER.info("Starting discovery for module %s", module_address)
             await coordinator.nikobus_discovery.query_module_inventory(module_address)
 
     hass.services.async_register(

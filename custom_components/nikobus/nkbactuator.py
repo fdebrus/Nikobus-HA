@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from nikobus_connect.discovery import find_module, find_operation_point
 
 from .const import (
@@ -28,6 +29,8 @@ from .const import (
     REFRESH_DELAY,
     RELEASE_THRESHOLD_MS,
     SHORT_PRESS,
+    operation_signal,
+    press_signal,
 )
 
 if TYPE_CHECKING:
@@ -280,7 +283,7 @@ class NikobusActuator:
         press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
 
         impacted = self._derive_impacted_modules(op_point)
-        _LOGGER.debug("[%s] Processing button %s: %d modules impacted", press_id, button_address, len(impacted))
+        _LOGGER.debug("[%s] Button %s impacts %d module(s)", press_id, button_address, len(impacted))
 
         for addr, group in impacted:
 
@@ -291,7 +294,7 @@ class NikobusActuator:
             is_initial_press = press_context is not None and press_context.get("duration_s") == 0.0
 
             if requires_long_press and is_initial_press:
-                _LOGGER.debug("[%s] Ignoring initial press for Dimmer %s (Group %s). Waiting for release.", press_id, addr, group)
+                _LOGGER.debug("[%s] Dimmer %s group %s — ignoring initial press, waiting for release", press_id, addr, group)
                 continue
 
             # ==========================================
@@ -315,7 +318,7 @@ class NikobusActuator:
             # ==========================================
             cache_key = f"{addr}_{group}"
             if cache_key in self._module_refresh_tasks:
-                _LOGGER.debug("[%s] Canceling previous pending refresh for %s (Group %s)", press_id, addr, group)
+                _LOGGER.debug("[%s] Cancelling pending refresh for module %s group %s", press_id, addr, group)
                 self._module_refresh_tasks[cache_key].cancel()
 
             # ==========================================
@@ -325,46 +328,47 @@ class NikobusActuator:
                 try:
                     # STEP 1: Immediate UI Update (Skip for dimmers)
                     if not m_requires_long_press:
-                        _LOGGER.debug("[%s] Step 1: Immediate refresh for %s (Group %s)", m_press_id, m_addr, m_group)
+                        _LOGGER.debug("[%s] Immediate refresh of module %s group %s", m_press_id, m_addr, m_group)
                         await asyncio.sleep(0.3)
-                        
-                        # Bus Clearance Check
+
+                        # Skip while the button is still held — a read now
+                        # would collide on the bus; defer to the release.
                         if button_address.upper() in self._press_states:
-                            _LOGGER.debug("[%s] Button still held. Aborting Step 1 to prevent collision. Deferring to release event.", m_press_id)
+                            _LOGGER.debug("[%s] Button still held — deferring refresh to release", m_press_id)
                             return
-                        
+
                         try:
                             new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
                             if new_state:
-                                _LOGGER.debug("[%s] Step 1 Success for %s: %s", m_press_id, m_addr, new_state)
+                                _LOGGER.debug("[%s] Module %s read %s on immediate refresh", m_press_id, m_addr, new_state)
                                 self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
                                 await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
                         except asyncio.CancelledError:
                             raise
                         except Exception as err:
-                            _LOGGER.debug("[%s] Step 1 Quick fetch failed for %s: %s", m_press_id, m_addr, err)
+                            _LOGGER.debug("[%s] Immediate refresh of module %s failed: %s", m_press_id, m_addr, err)
 
-                    # STEP 2: Delayed Check for Settled State
+                    # Read again once the outputs have settled.
                     delay = DIMMER_DELAY if m_requires_long_press else max(0, REFRESH_DELAY - 0.3)
-                    _LOGGER.debug("[%s] Step 2: Waiting %.1fs for settled state on %s", m_press_id, delay, m_addr)
-                    
+                    _LOGGER.debug("[%s] Waiting %.1fs for module %s to settle", m_press_id, delay, m_addr)
+
                     await asyncio.sleep(delay)
 
-                    _LOGGER.debug("[%s] Step 2: Requesting final state for %s (Group %s)", m_press_id, m_addr, m_group)
+                    _LOGGER.debug("[%s] Reading settled state of module %s group %s", m_press_id, m_addr, m_group)
                     new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
-                    
+
                     if new_state:
-                        _LOGGER.debug("[%s] Step 2 Success for %s: %s", m_press_id, m_addr, new_state)
+                        _LOGGER.debug("[%s] Module %s settled at %s", m_press_id, m_addr, new_state)
                         self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
                         await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
                     else:
-                        _LOGGER.warning("[%s] Step 2: Module %s returned empty state", m_press_id, m_addr)
+                        _LOGGER.warning("[%s] Module %s returned an empty settled state", m_press_id, m_addr)
 
                 except asyncio.CancelledError:
-                    _LOGGER.debug("[%s] Refresh task for %s was cancelled by a newer press", m_press_id, m_addr)
-                    return 
+                    _LOGGER.debug("[%s] Refresh of module %s cancelled by a newer press", m_press_id, m_addr)
+                    return
                 except Exception as err:
-                    _LOGGER.error("[%s] Error refreshing module %s (Group %s): %s", m_press_id, m_addr, m_group, err)
+                    _LOGGER.error("[%s] Failed to refresh module %s group %s: %s", m_press_id, m_addr, m_group, err)
                 finally:
                     # Clean up the task reference when done
                     if self._module_refresh_tasks.get(cache_key) == asyncio.current_task():
@@ -391,9 +395,25 @@ class NikobusActuator:
             payload.update(extra)
             
         # Log the event exactly as it is fired to the Home Assistant bus
-        _LOGGER.debug("[%s] Firing HA Event: %s | Payload: %s", state.press_id, event_type, payload)
-        
+        _LOGGER.debug("[%s] Fire %s — %s", state.press_id, event_type, payload)
+
         self._hass.bus.async_fire(event_type, payload)
+
+        # Internal per-address wake alongside the public bus event, so a
+        # notification reaches only the entities of the addresses it
+        # concerns rather than every output / button entity filtering a
+        # shared event (see operation_signal / press_signal). Automations
+        # still consume the bus events fired above.
+        if event_type == EVENT_BUTTON_OPERATION:
+            if module := payload.get("impacted_module_address"):
+                async_dispatcher_send(self._hass, operation_signal(module))
+        elif event_type == EVENT_BUTTON_PRESSED:
+            seen: set[str] = set()
+            for key in ("address", "module_address"):
+                addr = payload.get(key)
+                if addr and addr not in seen:
+                    seen.add(addr)
+                    async_dispatcher_send(self._hass, press_signal(addr), payload)
 
     def _derive_button_context(self, address: str) -> tuple[str | None, int | None]:
         """Determine the primary (module_address, channel) link from discovery."""

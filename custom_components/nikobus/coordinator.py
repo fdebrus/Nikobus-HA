@@ -431,7 +431,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def _event_callback(self, message: str) -> None:
         """Route non-feedback bus events (buttons, ACKs, discovery frames)."""
         _LOGGER.debug(
-            "Nikobus press frame: %s  (raw bytes hex: %s)",
+            "Press frame %s (raw hex %s)",
             message,
             message.encode().hex(),
         )
@@ -483,7 +483,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         except asyncio.CancelledError:
             raise
         except Exception as err:
-            _LOGGER.error("Feedback callback error: %s", err)
+            _LOGGER.error("Feedback callback failed: %s", err)
 
     async def _inventory_callback(self, message: str, discovery_active: bool) -> None:
         """Route $18 inventory frames."""
@@ -690,7 +690,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 registers_total=effective_register_total,
             )
         except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.debug("Discovery progress handler error: %s", err)
+            _LOGGER.debug("Discovery progress handler failed: %s", err)
 
     # ------------------------------------------------------------------
     # Data update
@@ -720,7 +720,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     failures += failed_n
             return None
         except NikobusDataError as err:
-            _LOGGER.error("Error fetching Nikobus data: %s", err)
+            _LOGGER.error("Failed to fetch Nikobus data: %s", err)
             raise UpdateFailed(f"Data refresh failed: {err}") from err
         finally:
             if (
@@ -762,6 +762,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             chan_count = len(channels)
             groups = (1,) if chan_count <= 6 else (1, 2)
 
+            changed = False
             for g in groups:
                 polled += 1
                 try:
@@ -772,7 +773,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         if buf is None:
                             buf = bytearray(12)
                             self._module_states[normalized] = buf
-                        buf[start : start + 6] = bytes.fromhex(state_hex[:12])
+                        new_bytes = bytes.fromhex(state_hex[:12])
+                        if buf[start : start + 6] != new_bytes:
+                            buf[start : start + 6] = new_bytes
+                            changed = True
                     else:
                         failed += 1
                 except asyncio.CancelledError:
@@ -794,10 +798,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         "Error refreshing %s group %d: %s", normalized, g, err
                     )
 
-            await self.async_event_handler(
-                "nikobus_refreshed",
-                {"impacted_module_address": normalized},
-            )
+            # Only wake this module's entities when its state actually
+            # changed. The coordinator's own post-poll ``async_update_
+            # listeners`` still re-renders everything (cheaply, since
+            # entities diff before writing), so an unchanged module needs
+            # no targeted dispatch — which on a quiet bus is every module.
+            if changed:
+                await self.async_event_handler(
+                    "nikobus_refreshed",
+                    {"impacted_module_address": normalized},
+                )
         return polled, failed
 
     # ------------------------------------------------------------------
@@ -1258,7 +1268,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         while not self._stopping:
             attempt += 1
             self._reconnect_attempts += 1
-            _LOGGER.info("Nikobus reconnect attempt %d (delay %ds)…", attempt, delay)
+            _LOGGER.info("Nikobus reconnect attempt %d (delay %ds)", attempt, delay)
             self.async_update_listeners()
             try:
                 await self.nikobus_connection.connect()
@@ -1338,16 +1348,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             try:
                 await self.nikobus_listener.stop()
             except NikobusError as err:
-                _LOGGER.error("Error stopping listener: %s", err)
+                _LOGGER.error("Failed to stop listener: %s", err)
         if self.nikobus_command:
             try:
                 await self.nikobus_command.stop()
             except NikobusError as err:
-                _LOGGER.error("Error stopping command handler: %s", err)
+                _LOGGER.error("Failed to stop command handler: %s", err)
         try:
             await self.nikobus_connection.disconnect()
         except NikobusError as err:
-            _LOGGER.error("Error disconnecting: %s", err)
+            _LOGGER.error("Failed to disconnect: %s", err)
 
     # ------------------------------------------------------------------
     # Misc helpers
@@ -1790,7 +1800,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 outer_delay=_PROBE_OUTER_DELAY_S,
             )
         except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.error("detect_stale_inventory failed: %s", err)
+            _LOGGER.error("Stale-inventory detection failed: %s", err)
             return
 
         absent = {str(a).upper() for a in (manifest.get("absent_modules") or [])}
@@ -2251,8 +2261,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 )
             except asyncio.TimeoutError:
                 _LOGGER.info(
-                    "Step 1: no PC-Link response within %.1fs — falling "
-                    "back to manual config files.",
+                    "No PC-Link response within %.1fs — falling back to "
+                    "manual config files",
                     self._PCLINK_PROBE_TIMEOUT,
                 )
                 # Library's inactivity timer will fire on_discovery_finished
@@ -2365,8 +2375,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         str(addr).upper() for addr in modules.keys()
                     )
             _LOGGER.debug(
-                "start_module_scan ALL — dict_module_data buckets=%s, "
-                "queue=%s",
+                "Module scan (all) — buckets=%s, queue=%s",
                 {k: list(v.keys()) if isinstance(v, dict) else v
                  for k, v in self.dict_module_data.items()},
                 self._discovery_module_order,

@@ -6,7 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from custom_components.nikobus.sensor import NikobusConnectionSensor
+from custom_components.nikobus.sensor import (
+    NikobusConnectionSensor,
+    NikobusDiscoveryStatusSensor,
+)
 from custom_components.nikobus.const import DOMAIN, HUB_IDENTIFIER
 
 _ICONS_JSON = (
@@ -170,6 +173,35 @@ class TestSensorMetadata(unittest.TestCase):
             identifiers={(DOMAIN, HUB_IDENTIFIER)},
         )
         self.assertIn((DOMAIN, HUB_IDENTIFIER), sensor._attr_device_info["identifiers"])
+
+
+class TestDiscoveryStatusSensor(unittest.TestCase):
+    """State is the coarse phase (clean, low-cardinality history); the
+    live per-register line and detail are unrecorded attributes."""
+
+    def _sensor(self, phase="module_scan", message="Scanning module 0E6C (2/10)"):
+        coord = MagicMock()
+        coord.discovery_phase = phase
+        coord.discovery_status_message = message
+        sensor = NikobusDiscoveryStatusSensor.__new__(NikobusDiscoveryStatusSensor)
+        sensor._coordinator = coord
+        return sensor
+
+    def test_state_is_the_coarse_phase(self):
+        self.assertEqual(self._sensor(phase="pc_link").native_value, "pc_link")
+
+    def test_live_message_is_an_attribute(self):
+        s = self._sensor(message="register 0x87 of 0xFF (145 records)")
+        self.assertEqual(
+            s.extra_state_attributes["message"],
+            "register 0x87 of 0xFF (145 records)",
+        )
+
+    def test_volatile_detail_is_unrecorded(self):
+        # The per-register churn (incl. the message) never reaches history.
+        unrecorded = NikobusDiscoveryStatusSensor._unrecorded_attributes
+        for key in self._sensor().extra_state_attributes:
+            self.assertIn(key, unrecorded)
 
 
 if __name__ == "__main__":

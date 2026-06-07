@@ -128,7 +128,7 @@ Everything is driven from the **Nikobus Bridge** device page. The three buttons 
 Press **1. Load Project Overview**. The integration probes the PC-Link, walks its inventory, and creates a device for every module and every physical button on the bus.
 
 Two diagnostic sensors track progress:
-- **Discovery status** — live per-register message (with a coarse `phase` attribute for automations).
+- **Discovery status** — its state is the coarse phase (`idle` / `pc_link` / `module_scan` / `finished` / `error`), so history stays clean; the live per-register line is in the `message` attribute, alongside the fine-grained detail (all kept out of the recorder).
 - **Discovery progress** — 0–100 %.
 
 ### 2. Load Existing Installation

@@ -14,7 +14,8 @@ from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
 )
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -22,7 +23,7 @@ from .const import (
     DEFAULT_COVER_DEBOUNCE_DELAY,
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
-    EVENT_BUTTON_PRESSED,
+    press_signal,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
@@ -180,6 +181,12 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         """Return if the cover is open (100)."""
         return self.current_cover_position == 100
 
+    def _render_state(self) -> Any:
+        """Diff on bus state + rounded position so an idle, unchanged poll
+        skips the write. Position updates during motion are written
+        directly by the motion loop and so bypass this entirely."""
+        return (self._state, self.current_cover_position)
+
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return the state attributes, merging with parent attributes."""
@@ -200,8 +207,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._position = float(pos)
                 self._calculator.set_position(self._position)
 
+        # Per-address signal keyed by this cover's module address: only
+        # this module's covers are woken on a press, instead of a global
+        # EVENT_BUTTON_PRESSED listener every cover runs. Channel is still
+        # filtered below (one module carries several covers).
         self.async_on_remove(
-            self.hass.bus.async_listen(EVENT_BUTTON_PRESSED, self._handle_button_pressed)
+            async_dispatcher_connect(
+                self.hass, press_signal(self._address), self._handle_button_pressed
+            )
         )
 
         def _cancel_cover_tasks() -> None:
@@ -231,13 +244,13 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         if new_bus_state == STATE_ERROR:
             if self._movement_source == "ha":
                 _LOGGER.debug(
-                    "Cover %s ch%d: motor-protection (0x03) after HA move — sending VALUE=0.",
+                    "Cover %s ch%d motor-protection (0x03) after HA move — writing 0 to clear",
                     self._address, self._channel,
                 )
                 self.hass.async_create_task(self._stop(send_stop=True, force_api=True))
             else:
                 _LOGGER.debug(
-                    "Cover %s ch%d: motor-protection (0x03) after Nikobus move — waiting for auto-clear.",
+                    "Cover %s ch%d motor-protection (0x03) after Nikobus move — waiting for auto-clear",
                     self._address, self._channel,
                 )
                 self.hass.async_create_task(self._stop(send_stop=False))
@@ -269,8 +282,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         super()._handle_coordinator_update()
 
-    async def _handle_button_pressed(self, event: Event) -> None:
-        """Handle a physical Nikobus button press event.
+    async def _handle_button_pressed(self, data: dict) -> None:
+        """Handle a physical Nikobus button press event (routed by module).
 
         Records the press timestamp (for detection-latency calculation) only
         when the cover is currently stopped — meaning this press is starting a
@@ -280,12 +293,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         Channel filtering prevents covers on the same roller module from
         sharing timestamps when unrelated buttons are pressed.
         """
-        if str(event.data.get("module_address", "")).upper() != str(self._address).upper():
-            return
-
         # Only process events for this specific channel to avoid cross-channel
         # timestamp pollution on multi-channel roller modules.
-        event_channel = event.data.get("channel")
+        event_channel = data.get("channel")
         if event_channel is not None and int(event_channel) != self._channel:
             return
 
@@ -409,7 +419,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             pass
         except Exception as err:
             _LOGGER.error(
-                "Cover %s ch%d: motion loop error — forcing stop: %s",
+                "Cover %s ch%d motion loop failed — forcing stop: %s",
                 self._address,
                 self._channel,
                 err,

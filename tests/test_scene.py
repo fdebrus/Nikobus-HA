@@ -165,9 +165,8 @@ class TestCFSceneAttributes(unittest.TestCase):
         )
         e.hass = MagicMock()
         e.entity_id = "scene.x"
-        ev = MagicMock()
-        ev.data = {"address": "DE4E2C"}  # the non-canonical trigger
-        e._handle_trigger(ev)
+        # Routed by address, so any delivery is one of this scene's triggers.
+        e._handle_trigger({"address": "DE4E2C"})
         e.hass.bus.async_fire.assert_called_once()
         _, payload = e.hass.bus.async_fire.call_args.args
         self.assertEqual(payload["address"], "DE4E2C")
@@ -177,22 +176,35 @@ class TestCFSceneAttributes(unittest.TestCase):
                             "mode": "M04 (Light scene on)"}])
         e.hass = MagicMock()
         e.entity_id = "scene.nikobus_scene_de4e2c"
-        ev = MagicMock()
-        ev.data = {"address": "DE4E2C"}
-        e._handle_trigger(ev)
+        e._handle_trigger({"address": "DE4E2C"})
         e.hass.bus.async_fire.assert_called_once()
         name, payload = e.hass.bus.async_fire.call_args.args
         self.assertEqual(name, "nikobus_scene_activated")
         self.assertEqual(payload["address"], "DE4E2C")
         self.assertEqual(payload["member_count"], 1)
 
-    def test_handle_trigger_ignores_other_address(self):
-        e, _ = self._make([])
+    def test_subscribes_to_each_trigger_signal(self):
+        from unittest.mock import patch
+
+        from custom_components.nikobus.const import press_signal
+
+        coord = MagicMock()
+        coord.address_label = lambda a: a
+        coord.get_button_context = MagicMock(return_value=None)
+        e = NikobusCFSceneEntity(
+            coord, bus_address="8B7086",
+            cf_config={"pattern": "light_scene", "outputs": [],
+                       "triggered_by": ["8B7086", "DE4E2C"]},
+        )
         e.hass = MagicMock()
-        ev = MagicMock()
-        ev.data = {"address": "AAAAAA"}
-        e._handle_trigger(ev)
-        e.hass.bus.async_fire.assert_not_called()
+        with patch(
+            "custom_components.nikobus.scene.async_dispatcher_connect",
+            return_value=lambda: None,
+        ) as conn:
+            _run(e.async_added_to_hass())
+        signals = [c.args[1] for c in conn.call_args_list]
+        self.assertIn(press_signal("8B7086"), signals)
+        self.assertIn(press_signal("DE4E2C"), signals)
 
 
 class TestCoordinatorSceneHelpers(unittest.TestCase):

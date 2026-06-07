@@ -7,11 +7,12 @@ import logging
 from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
-from homeassistant.core import Event, HomeAssistant, callback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import EVENT_BUTTON_OPERATION
+from .const import operation_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
 from .router import build_unique_id, get_routing, register_output_module_devices
@@ -98,22 +99,29 @@ class NikobusBaseLight(NikobusEntity, LightEntity, RestoreEntity):
         if last_state := await self.async_get_last_state():
             self._is_on = last_state.state == "on"
 
+        # Per-address signal: only this module's entities are woken on a
+        # press, instead of a global EVENT_BUTTON_OPERATION listener that
+        # every output entity runs and filters by address.
         self.async_on_remove(
-            self.hass.bus.async_listen(EVENT_BUTTON_OPERATION, self._handle_nikobus_event)
+            async_dispatcher_connect(
+                self.hass,
+                operation_signal(self._address),
+                self._handle_button_operation,
+            )
         )
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Invalidate optimistic cache when coordinator gets true hardware data."""
-        self._is_on = None  
-        super()._handle_coordinator_update()
+    def _invalidate_optimistic(self) -> None:
+        """Drop the optimistic state so the real hardware state is read."""
+        self._is_on = None
+
+    def _render_state(self) -> Any:
+        """Diff on the resolved on/off so an unchanged poll skips the write."""
+        return self.is_on
 
     @callback
-    def _handle_nikobus_event(self, event: Event) -> None:
-        """Handle physical button operation events."""
-        if str(event.data.get("impacted_module_address")) != str(self._address):
-            return
-        
+    def _handle_button_operation(self) -> None:
+        """A press impacted this module — drop optimistic state so the
+        next read reflects the new hardware state."""
         self._is_on = None
         self.async_write_ha_state()
 
@@ -148,18 +156,20 @@ class NikobusDimmerEntity(NikobusBaseLight):
             return self._optimistic_brightness
         return self.coordinator.get_light_brightness(self._address, self._channel)
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Invalidate optimistic caches when coordinator gets true hardware data."""
+    def _invalidate_optimistic(self) -> None:
+        """Also drop the optimistic brightness for this dimmer."""
+        super()._invalidate_optimistic()
         self._optimistic_brightness = None
-        super()._handle_coordinator_update()
+
+    def _render_state(self) -> Any:
+        """Diff on resolved on/off + brightness for the dimmer."""
+        return (self.is_on, self.brightness)
 
     @callback
-    def _handle_nikobus_event(self, event: Event) -> None:
-        """Handle physical button operation events."""
-        if str(event.data.get("impacted_module_address")) == str(self._address):
-            self._optimistic_brightness = None
-        super()._handle_nikobus_event(event)
+    def _handle_button_operation(self) -> None:
+        """Also drop the optimistic brightness for this dimmer's module."""
+        self._optimistic_brightness = None
+        super()._handle_button_operation()
 
     def _previous_brightness(self) -> int:
         """Best estimate of the wall LED's current "we last broadcast" state.

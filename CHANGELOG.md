@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.8.0
+
+Performance & logging pass — no behaviour or configuration changes.
+
+- **Per-address wakeups.** A button press used to wake *every* output/button
+  entity on a shared bus event, each filtering itself out by address — O(N)
+  per press. Presses (and per-module poll refreshes) are now routed by
+  address so only the impacted module's / button's entities are notified.
+  On a large install that's a handful of callbacks per press instead of one
+  per entity.
+- **Skip redundant state writes.** Switch, light and cover now diff their
+  resolved state before writing, so an unchanged poll cycle is a cheap
+  comparison instead of a full re-render. Availability changes and real
+  state changes still write.
+- **Quieter polling.** A module is only re-broadcast to its entities when its
+  bytes actually changed; the coordinator's own post-poll refresh still
+  covers everything.
+- **Cleaner discovery history.** The discovery-status sensor's state is now
+  the coarse phase (`idle` / `pc_link` / `module_scan` / `finished` /
+  `error`); the live per-register line moved to a `message` attribute and the
+  volatile detail is kept out of the recorder.
+- **Standardised log messages** across the integration (one consistent style;
+  levels unchanged).
+
 ## 3.7.0
 
 - **Import per-channel output names.** The `.nkb` import now also reads the

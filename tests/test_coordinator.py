@@ -72,6 +72,7 @@ class _FakeCoord:
     set_bytearray_group_state = NikobusDataCoordinator.set_bytearray_group_state
     _feedback_callback = NikobusDataCoordinator._feedback_callback
     get_cover_operation_time = NikobusDataCoordinator.get_cover_operation_time
+    _refresh_module_type = NikobusDataCoordinator._refresh_module_type
 
 
 def _coord(states=None, module_data=None):
@@ -2026,6 +2027,46 @@ class TestCollectButtonLinkedModules(unittest.TestCase):
             }
         }
         self.assertEqual(self._collect(phys), {"AABB"})
+
+
+class TestRefreshModuleTypeDispatch(unittest.TestCase):
+    """The poll wakes a module's entities only when its bytes changed; the
+    coordinator's own post-poll global refresh covers the rest."""
+
+    def _run(self, coro):
+        return asyncio.new_event_loop().run_until_complete(coro)
+
+    def _setup(self, state_hex):
+        c = _coord(states={})
+        c.async_event_handler = AsyncMock()
+        c.nikobus_command.get_output_state = AsyncMock(return_value=state_hex)
+        return c
+
+    def test_dispatches_on_first_read_and_on_change_only(self):
+        c = self._setup("0102030405060708090A0B0C")
+        modules = {"C1C7": {"channels": [1, 2, 3, 4]}}
+
+        polled, failed = self._run(c._refresh_module_type(modules))
+        self.assertEqual((polled, failed), (1, 0))
+        self.assertEqual(c.async_event_handler.await_count, 1)  # empty -> real
+
+        self._run(c._refresh_module_type(modules))              # identical poll
+        self.assertEqual(c.async_event_handler.await_count, 1)  # no extra wake
+
+        c.nikobus_command.get_output_state = AsyncMock(
+            return_value="FF02030405060708090A0B0C"
+        )
+        self._run(c._refresh_module_type(modules))              # byte changed
+        self.assertEqual(c.async_event_handler.await_count, 2)
+
+    def test_unchanged_module_never_dispatches(self):
+        c = _coord(states={"C1C7": bytearray.fromhex("0102030405060708090A0B0C")})
+        c.async_event_handler = AsyncMock()
+        c.nikobus_command.get_output_state = AsyncMock(
+            return_value="0102030405060708090A0B0C"
+        )
+        self._run(c._refresh_module_type({"C1C7": {"channels": [1, 2, 3, 4]}}))
+        c.async_event_handler.assert_not_awaited()
 
 
 if __name__ == "__main__":
