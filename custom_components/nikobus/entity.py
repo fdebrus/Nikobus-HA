@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from homeassistant.core import callback
@@ -12,8 +11,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import BRAND, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
-
-_LOGGER = logging.getLogger(__name__)
 
 # Sentinel return for ``_render_state``: this entity opts out of
 # write-diffing and writes on every coordinator update (the default).
@@ -56,7 +53,7 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         self._device_name = name
         self._device_model = model
 
-        # Platinum Architecture: Groups channels under a single physical device.
+        # Group every channel of a module under one physical device.
         device_info = dr.DeviceInfo(
             identifiers={(DOMAIN, self._address)},
             name=self._device_name,
@@ -118,7 +115,7 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
     async def async_added_to_hass(self) -> None:
         """Register targeted signal listener for this specific module address."""
         await super().async_added_to_hass()
-        
+
         signal = f"{DOMAIN}_update_{self._address}"
         self.async_on_remove(
             async_dispatcher_connect(self.hass, signal, self._handle_coordinator_update)
