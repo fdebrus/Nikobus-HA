@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Iterable, Iterator, Mapping
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -44,6 +45,7 @@ def register_output_module_devices(
             via_device=(DOMAIN, CATEGORY_OUTPUT_MODULES),
         )
         registered.add(spec.address)
+
 
 _ROUTING_CACHE_KEY = "routing"
 
@@ -196,7 +198,7 @@ class EntitySpec:
 def build_unique_id(domain: str, kind: str, address: str, channel: int) -> str:
     """Build a globally unique ID for a Nikobus entity.
 
-    Includes domain and kind to prevent collisions when the same physical 
+    Includes domain and kind to prevent collisions when the same physical
     channel is used differently.
     """
     return f"{DOMAIN}_{domain}_{kind}_{address}_{channel}"
@@ -213,11 +215,11 @@ def _modules_to_address_map(modules: Any) -> dict[str, Mapping[str, Any]]:
 
     if isinstance(modules, list):
         return {
-            str(item.get("address")).upper(): item 
-            for item in modules 
+            str(item.get("address")).upper(): item
+            for item in modules
             if isinstance(item, Mapping) and item.get("address")
         }
-        
+
     _LOGGER.warning(
         "_modules_to_address_map received unexpected type %s — no entities will be created for this module group",
         type(modules).__name__,
@@ -232,12 +234,12 @@ def get_routing(
     domain_data = hass.data.setdefault(DOMAIN, {})
     entry_data = domain_data.setdefault(entry.entry_id, {})
     routing = entry_data.get(_ROUTING_CACHE_KEY)
-    
+
     if routing is None:
         _LOGGER.debug("Building entity routing for config entry %s", entry.entry_id)
         routing = build_routing(dict_module_data)
         entry_data[_ROUTING_CACHE_KEY] = routing
-        
+
     return routing
 
 
@@ -246,7 +248,7 @@ def build_routing(
 ) -> dict[str, list[EntitySpec]]:
     """Analyze all modules and assign channels to Home Assistant domains.
 
-    This ensures that each channel results in exactly one entity type, 
+    This ensures that each channel results in exactly one entity type,
     even if it belongs to a versatile module (like a roller module used for lights).
     """
     routing: dict[str, list[EntitySpec]] = {"cover": [], "switch": [], "light": []}
@@ -315,7 +317,7 @@ def build_routing(
 def _resolve_entity_type(module_type: str, channel_info: Mapping[str, Any]) -> str:
     """Resolve the specific entity type for a channel based on configuration."""
     explicit_type = channel_info.get("entity_type")
-    
+
     if explicit_type:
         if _is_supported_entity_type(module_type, explicit_type):
             return explicit_type
@@ -349,15 +351,13 @@ def _map_entity_type(module_type: str, entity_type: str) -> tuple[str, str]:
     if module_type == "roller_module":
         if entity_type == "cover":
             return "cover", "cover"
-        return ("light", "cover_binary") if entity_type == "light" else (
-            "switch",
-            "cover_binary",
-        )
+        if entity_type == "light":
+            return "light", "cover_binary"
+        return "switch", "cover_binary"
 
     if module_type == "switch_module":
-        return ("light", "relay_switch") if entity_type == "light" else (
-            "switch",
-            "relay_switch",
-        )
+        if entity_type == "light":
+            return "light", "relay_switch"
+        return "switch", "relay_switch"
 
     return "switch", "relay_switch"
