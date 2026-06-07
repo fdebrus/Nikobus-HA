@@ -317,6 +317,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         return "disconnected"
 
     def _get_update_interval(self) -> timedelta | None:
+        # No poll timer in push mode. A feedback module pushes state
+        # unprompted; older PC-Links (prior_gen3) can't sustain the poll
+        # cadence, so they run push-only too (button presses + feedback
+        # frames drive refreshes). Everything else polls on the interval.
         if self._has_feedback_module or self._prior_gen3:
             return None
         return timedelta(seconds=self._refresh_interval)
@@ -537,7 +541,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_PC_LINK,
                 message=(
-                    f"PC Link inventory: {self.discovery_registers_done}/"
+                    f"PC-Link inventory: {self.discovery_registers_done}/"
                     f"{self.discovery_registers_total} registers, "
                     f"{devices_found} device(s) found"
                 ),
@@ -633,7 +637,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 registers_done = 0
 
             if sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
-                message = "PC Link inventory: enumerating bus addresses…"
+                message = "PC-Link inventory: enumerating bus addresses…"
             elif sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
                 message = (
                     f"Identifying modules ({module_index}/{module_total})…"
@@ -1193,15 +1197,19 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 await asyncio.sleep(PRESS_REPEAT_DELAY)
 
     async def async_event_handler(self, event: str, data: dict[str, Any]) -> None:
-        """Dispatch events and trigger targeted entity updates."""
+        """Send an HA-originated press, or wake the impacted module's entities.
+
+        ``ha_button_pressed`` only queues the bus frame; the resulting bus
+        feedback dispatches the targeted update once the state actually
+        changes, so there's nothing to refresh here — returning avoids a
+        pointless wake of every entity.
+        """
         if event == "ha_button_pressed":
             await self.async_send_button_press(str(data.get("address") or ""))
+            return
 
         if address := data.get("impacted_module_address"):
             async_dispatcher_send(self.hass, f"{DOMAIN}_update_{address}")
-        else:
-            _LOGGER.debug("Global broadcast refresh triggered")
-            self.async_update_listeners()
 
     # ------------------------------------------------------------------
     # Connection lost / reconnect
@@ -1311,8 +1319,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 return
             except asyncio.CancelledError:
                 raise
-            except Exception as err:
-                _LOGGER.error("Subsystem restart failed after reconnect: %s — retrying", err)
+            except Exception:
+                _LOGGER.exception("Subsystem restart failed after reconnect — retrying")
                 await self.nikobus_connection.disconnect()
                 try:
                     await asyncio.sleep(delay)
@@ -1799,8 +1807,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 outer_attempts=_PROBE_OUTER_ATTEMPTS,
                 outer_delay=_PROBE_OUTER_DELAY_S,
             )
-        except Exception as err:  # pragma: no cover - defensive
-            _LOGGER.error("Stale-inventory detection failed: %s", err)
+        except Exception:  # pragma: no cover - defensive
+            _LOGGER.exception("Stale-inventory detection failed")
             return
 
         absent = {str(a).upper() for a in (manifest.get("absent_modules") or [])}
@@ -2009,8 +2017,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 await self.hass.config_entries.async_reload(self.config_entry.entry_id)
             except asyncio.CancelledError:
                 raise
-            except Exception as err:
-                _LOGGER.error("Failed to reload config entry after discovery: %s", err)
+            except Exception:
+                _LOGGER.exception("Failed to reload config entry after discovery")
 
         self._reload_task = self.hass.async_create_task(_reload())
 
