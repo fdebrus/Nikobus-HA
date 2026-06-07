@@ -9,6 +9,7 @@ from typing import Any
 
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -243,7 +244,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         """Initialize the Nikobus scene."""
         scene_id = scene_config["id"]
         description = scene_config.get("description", f"Scene {scene_id}")
-        
+
         super().__init__(
             coordinator=coordinator,
             address=scene_id,
@@ -254,10 +255,10 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         self._scene_id = scene_id
         self._attr_name = description
         self._attr_unique_id = f"nikobus_scene_{scene_id}"
-        
+
         self._channels = scene_config.get("channels", [])
         self._feedback_leds = self._normalize_feedback_leds(scene_config.get("feedback_led"))
-        
+
         # Guard against overlapping roller release tasks
         self._module_tokens: dict[str, str] = {}
         self._roller_stop_tasks: list[asyncio.Task[None]] = []
@@ -275,6 +276,19 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         self.async_on_remove(_cancel_roller_tasks)
 
     async def async_activate(self, **kwargs: Any) -> None:
+        """Activate the scene, surfacing a bus failure as a clean error."""
+        try:
+            await self._activate()
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="communication_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
+
+    async def _activate(self) -> None:
         """Activate the scene by setting multiple module channels."""
         _LOGGER.info("Activating Nikobus scene: %s", self.name)
 
@@ -318,7 +332,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 # Determine direction based on the state being sent
                 direction = "up" if byte_val == STATE_OPEN else "down"
                 op_time = self.coordinator.get_cover_operation_time(module_id, chan_num, direction=direction)
-    
+
                 if op_time > 0:
                     module_task = roller_tasks.setdefault(module_id, {"indexes": set(), "delay": 0})
                     module_task["indexes"].add(idx)
@@ -362,16 +376,16 @@ class NikobusSceneEntity(NikobusEntity, Scene):
     async def _apply_module_state(self, module_id: str, state: bytearray) -> None:
         """Push the bytearray state to the Nikobus module via coordinator."""
         num_chans = self.coordinator.get_module_channel_count(module_id)
-        
+
         # Update Group 1 (1-6)
         self.coordinator.set_bytearray_group_state(module_id, 1, state[:6].hex())
-        
+
         # Update Group 2 (7-12) if applicable
         if num_chans > 6:
             self.coordinator.set_bytearray_group_state(module_id, 2, state[6:12].hex())
 
         await self.coordinator.api.set_output_states_for_module(address=module_id)
-        
+
         # Notify coordinator of manual refresh
         await self.coordinator.async_event_handler(
             "nikobus_refreshed", {"impacted_module_address": module_id}
