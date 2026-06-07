@@ -177,7 +177,10 @@
     "error": {
       "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty).",
       "invalid_nkb": "That file isn't a readable Nikobus .nkb project (it must be the .nkb export — a ZIP containing the project database).",
-      "upload_failed": "Could not save the uploaded file. Check the Home Assistant logs."
+      "upload_failed": "Could not save the uploaded file. Check the Home Assistant logs.",
+      "nkb_nothing_selected": "Pick at least one thing to import.",
+      "nkb_not_found": "No .nkb file found — upload one first (Configure → Upload .nkb project file).",
+      "nkb_parse_failed": "Could not read the .nkb file. See the Home Assistant logs."
     },
     "step": {
       "hardware": {
@@ -199,7 +202,8 @@
         "menu_options": {
           "configure_modules": "Customize a module (description, entity type, LED triggers, travel time)",
           "hardware": "Change hardware settings",
-          "upload_nkb": "Upload .nkb project file"
+          "upload_nkb": "Upload .nkb project file",
+          "import_nkb": "Import from .nkb (choose what)"
         },
         "title": "Nikobus"
       },
@@ -246,6 +250,17 @@
         "description": "Select your Nikobus project export (any filename). It's validated and saved as nikobus.nkb in your Home Assistant config folder. Then press “Import Names from .nkb” on the Nikobus Bridge.",
         "data": {
           "file": "Project file (.nkb)"
+        }
+      },
+      "import_nkb": {
+        "title": "Import from .nkb",
+        "description": "Choose what to import from your nikobus.nkb. By default nothing you've renamed by hand is touched — tick **Overwrite** to replace your existing names/Areas with the .nkb ones.",
+        "data": {
+          "device_names": "Device names (modules, buttons, IR receivers)",
+          "channel_names": "Channel names (lights, covers, switches)",
+          "areas": "Areas (from rooms)",
+          "scenes": "Scenes (light + shutter/master)",
+          "overwrite": "Overwrite names/Areas I've already set"
         }
       }
     }

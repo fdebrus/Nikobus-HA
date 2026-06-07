@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.7.0
+
+- **Import per-channel output names.** The `.nkb` import now also reads the
+  name of each output you actually toggle — the light / cover / switch
+  behind a channel (e.g. `Appliques Salon`, `Terrasse`) — and applies it to
+  the matching entity, not just the module/button device names.
+- **Choose what to import.** Settings → Devices & Services → Nikobus →
+  **Configure → Import Names from .nkb** is now a form: tick which
+  categories to apply — **device names**, **channel names**, **Areas**,
+  **scenes** — so you can, say, import channel names without touching the
+  Areas you've already organised.
+- **Overwrite toggle.** Off by default (suggested names only, a manual
+  rename always wins). Turn it on to force the `.nkb` names / Areas onto
+  entries you've previously set yourself.
+- The **Import Names from .nkb** button stays the one-press path: it imports
+  everything, non-destructively.
+
 ## 3.6.0
 
 - **Upload your `.nkb` from the UI.** Settings → Devices & Services →

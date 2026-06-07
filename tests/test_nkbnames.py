@@ -86,7 +86,7 @@ class _FakeParser:
             "KeyObjectBase": [500, 600, 700],
             "ObjectAddress": [0, 0, 0],
             "PhysicalObjectAddress": [0, 0, 0],
-            "StrUserName": [None, "Input", None],
+            "StrUserName": ["Appliques Salon", "Input", None],
         },
         "ObjectBase": {
             "KeyObjectBase": [500, 600, 700],
@@ -149,6 +149,30 @@ def test_parse_scene_member_set(tmp_path):
     # trigger(200) drives output(100)=0E6C in M12; channel 2 from Prefix
     # O02 (NOT 3 from ObjectAddress+1); MCF link excluded.
     assert sc.members == frozenset({("0E6C", 2, "M12")})
+
+
+def test_parse_extracts_output_channel_names(tmp_path):
+    data = _parse(tmp_path)
+    # output object (0E6C, Prefix O02) carries the real name "Appliques
+    # Salon"; channel 2 from the prefix, not ObjectAddress.
+    assert data.outputs == {("0E6C", 2): "Appliques Salon"}
+
+
+def test_extract_outputs_skips_placeholders(tmp_path):
+    from custom_components.nikobus.nkbnames import _extract_outputs
+
+    comp_by_key = {1: {"PhysicalAddress": 3692}}
+    objecten = [
+        {"KeyComponent": 1, "KeyObjectBase": 5, "StrUserName": "Switch output"},
+        {"KeyComponent": 1, "KeyObjectBase": 6, "StrUserName": "  "},
+        {"KeyComponent": 1, "KeyObjectBase": 7, "StrUserName": "Terrasse"},
+    ]
+    objectbase = {
+        5: {"Prefix": "O01"}, 6: {"Prefix": "O03"}, 7: {"Prefix": "O04"},
+    }
+    assert _extract_outputs(comp_by_key, objecten, objectbase) == {
+        ("0E6C", 4): "Terrasse"
+    }
 
 
 def test_parse_raises_without_mdb(tmp_path):
@@ -214,12 +238,13 @@ def _device(dev_id, addr, name="old", area_id=None):
     return d
 
 
-def _entity(eid, device_id, name=None, original_name=None):
+def _entity(eid, device_id, name=None, original_name=None, unique_id=None):
     e = MagicMock()
     e.entity_id = eid
     e.device_id = device_id
     e.name = name
     e.original_name = original_name
+    e.unique_id = unique_id
     return e
 
 
@@ -281,7 +306,7 @@ def test_import_names_areas_and_scene_match():
     with _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
         result = _run(coord.async_import_nkb_names())
 
-    assert result == {"devices": 3, "entities": 2, "areas": 2,
+    assert result == {"devices": 3, "entities": 2, "channels": 0, "areas": 2,
                       "scenes": 1, "scenes_created": 0}
     names = {c.args[0]: c.kwargs.get("name")
              for c in dev_reg.async_update_device.call_args_list
@@ -403,3 +428,92 @@ def test_import_raises_when_no_file():
                return_value=None):
         with pytest.raises(HomeAssistantError):
             _run(coord.async_import_nkb_names())
+
+
+# --------------------------------------------------------------------------- #
+# channel names, category selection, overwrite
+# --------------------------------------------------------------------------- #
+def test_import_names_output_channels():
+    """Per-output entities get the .nkb channel name (matched by unique_id);
+    a placeholder/unset name is filled, an unmatched channel is left alone."""
+    data = NkbData(
+        addresses={}, scenes=[],
+        outputs={("0E6C", 1): "Appliques Salon", ("9105", 2): "Terrasse"},
+    )
+    coord = _coord()
+    entities = [
+        _entity("light.a", "d1", unique_id="nikobus_light_module_0E6C_1"),
+        _entity("cover.b", "d2", unique_id="nikobus_cover_module_9105_2"),
+        _entity("switch.c", "d3", unique_id="nikobus_switch_module_AAAA_5"),
+        _entity("binary_sensor.btn", "d4", unique_id="nikobus_binary_sensor_1843B4_1"),
+    ]
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], entities, dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"channel_names"}))
+
+    assert result["channels"] == 2
+    renamed = {c.args[0]: c.kwargs.get("name")
+               for c in ent_reg.async_update_entity.call_args_list}
+    assert renamed == {"light.a": "Appliques Salon", "cover.b": "Terrasse"}
+
+
+def test_import_category_selection_limits_work():
+    """Selecting only ``device_names`` touches no areas and no scenes."""
+    data = NkbData(
+        addresses={"1843B4": ("Entree", "Living")}, scenes=[],
+    )
+    coord = _coord()
+    dev = _device("d2", "1843B4")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [dev], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    assert result["devices"] == 1
+    assert result["areas"] == 0
+    area_reg.async_create.assert_not_called()
+    area_calls = [c for c in dev_reg.async_update_device.call_args_list
+                  if "area_id" in c.kwargs]
+    assert area_calls == []
+
+
+def test_import_overwrite_replaces_user_set_names():
+    """Overwrite forces the device name onto ``name_by_user`` and the
+    channel name onto an entity the user already renamed."""
+    data = NkbData(
+        addresses={"0E6C": ("Dimcontroller", "Centrale")}, scenes=[],
+        outputs={("0E6C", 1): "Appliques Salon"},
+    )
+    coord = _coord()
+    dev = _device("d1", "0E6C", name="old")
+    dev.name_by_user = "MyOwnName"
+    # two entities -> device-name logic leaves them to the channel loop
+    chan = _entity("light.a", "d1", name="MyOwnLight",
+                   unique_id="nikobus_light_module_0E6C_1")
+    chan2 = _entity("light.b", "d1", unique_id="nikobus_light_module_0E6C_2")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [dev], [chan, chan2], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(
+            categories={"device_names", "channel_names"}, overwrite=True))
+
+    assert result["devices"] == 1
+    assert result["channels"] == 1
+    dev_reg.async_update_device.assert_any_call(
+        "d1", name_by_user="Dimcontroller (Centrale)")
+    ent_reg.async_update_entity.assert_called_once_with(
+        "light.a", name="Appliques Salon")
+
+
+def test_import_no_overwrite_keeps_user_set_channel_name():
+    """Without overwrite, a channel the user already named is left alone."""
+    data = NkbData(
+        addresses={}, scenes=[], outputs={("0E6C", 1): "Appliques Salon"},
+    )
+    coord = _coord()
+    chan = _entity("light.a", "d1", name="MyOwnLight",
+                   unique_id="nikobus_light_module_0E6C_1")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [chan], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"channel_names"}))
+
+    assert result["channels"] == 0
+    ent_reg.async_update_entity.assert_not_called()

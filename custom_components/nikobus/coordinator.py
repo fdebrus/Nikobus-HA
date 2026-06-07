@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -126,6 +127,41 @@ def _member_set_from_outputs(outputs) -> frozenset:
 def _cf_member_set(cf: dict) -> frozenset:
     """Member-set key for a stored ``nikobus_cf`` entry."""
     return _member_set_from_outputs((cf or {}).get("outputs"))
+
+
+def _output_entity_key(unique_id) -> tuple[str, int] | None:
+    """``(MODULE_ADDR_UPPER, channel)`` for a per-channel output entity's
+    unique_id (``nikobus_{light|switch|cover}_{kind}_{addr}_{ch}``), else
+    ``None`` — used to match ``.nkb`` output names to entities."""
+    if not isinstance(unique_id, str):
+        return None
+    parts = unique_id.split("_")
+    if len(parts) < 5 or parts[0] != DOMAIN:
+        return None
+    if parts[1] not in ("light", "switch", "cover"):
+        return None
+    addr, ch = parts[-2], parts[-1]
+    if not (ch.isdigit() and re.fullmatch(r"[0-9A-Fa-f]+", addr)):
+        return None
+    return (addr.upper(), int(ch))
+
+
+def _apply_entity_name(ent_reg, ent, name: str, overwrite: bool) -> bool:
+    """Set an entity's name; return True if changed. Non-overwrite only
+    fills a blank (no user name set); overwrite replaces any user name."""
+    if overwrite:
+        if ent.name != name:
+            ent_reg.async_update_entity(ent.entity_id, name=name)
+            return True
+        return False
+    if ent.name is None and ent.original_name != name:
+        ent_reg.async_update_entity(ent.entity_id, name=name)
+        return True
+    return False
+
+
+#: The selectable ``.nkb`` import categories (all applied by default).
+NKB_IMPORT_CATEGORIES = ("device_names", "channel_names", "areas", "scenes")
 
 
 class NikobusDataCoordinator(DataUpdateCoordinator[None]):
@@ -2376,31 +2412,33 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             self._discovery_finished_event.set()
             raise
 
-    async def async_import_nkb_names(self) -> dict[str, int]:
-        """Import names, rooms and scene names from a ``.nkb`` project file.
+    async def async_import_nkb_names(
+        self,
+        categories: set[str] | None = None,
+        overwrite: bool = False,
+    ) -> dict[str, int]:
+        """Import names, rooms, channel names and scenes from a ``.nkb``.
 
-        Reads the Nikobus PC-software export (a ZIP holding an MS Access
-        DB) and applies, all **suggested** / non-destructive:
+        ``categories`` selects what to apply (default: everything):
 
-        * **Device + entity names** — module / button / IR-receiver names
-          keyed on the bus address. A device's user rename
-          (``name_by_user``) is never touched; an entity is named only
-          when it has no user override, and only on single-entity devices
-          (multi-channel modules inherit the device name).
-        * **Areas** — each device is placed in a Home Assistant Area
-          matching its ``.nkb`` room (unless the user already set one).
-        * **Scene names** — a named Central Function group is matched to a
-          discovered CF entity by **member set** (the group has no bus
-          address; its trigger's output links spell out the same
-          ``(module, channel, mode)`` set discovery reads), then the CF's
-          device/entity is named.
+        * ``"device_names"`` — module / button / IR-receiver **device**
+          names (``Name (Room)``).
+        * ``"channel_names"`` — the per-output **entity** names (the
+          light / cover / switch the user actually toggles, e.g.
+          ``Appliques Salon``, ``Terrasse``).
+        * ``"areas"`` — each device into a Home Assistant Area = its room.
+        * ``"scenes"`` — match / create the Central Function scene entities.
 
-        Returns a summary (``devices`` / ``entities`` / ``areas`` /
-        ``scenes``).
+        ``overwrite`` forces a name/Area even where the user has set their
+        own; default off (suggested, never clobbers a manual rename).
+
+        Returns a per-category count summary.
         """
         from homeassistant.helpers import area_registry as ar
 
         from .nkbnames import find_nkb_file, parse_nkb
+
+        cats = set(categories) if categories else set(NKB_IMPORT_CATEGORIES)
 
         path = find_nkb_file(self.hass.config.config_dir)
         if path is None:
@@ -2419,37 +2457,28 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
         name_map = data.addresses  # {ADDR: (name, room)}
 
-        # Match named scene groups to **existing** CF entities by member set
-        # → {CF_wire_address_upper: scene_name} (these are the light scenes
-        # discovery already surfaced; we just name them).
-        scene_by_members = {sc.members: sc.name for sc in data.scenes}
+        # Scenes: match named groups to existing CFs (light scenes) and
+        # create entities for the rest (shutter / master groups) — only if
+        # the "scenes" category is selected.
         cf_name_by_addr: dict[str, str] = {}
-        matched_scene_members: set = set()
-        if self.cf_storage is not None:
+        scenes_created = 0
+        if "scenes" in cats and self.cf_storage is not None:
+            scene_by_members = {sc.members: sc.name for sc in data.scenes}
+            matched_scene_members: set = set()
             for cf_addr, cf in self.cf_storage.data.get("nikobus_cf", {}).items():
-                members = _cf_member_set(cf)
-                hit = scene_by_members.get(members)
+                hit = scene_by_members.get(_cf_member_set(cf))
                 if hit:
                     cf_name_by_addr[str(cf_addr).upper()] = hit
-                    matched_scene_members.add(members)
-
-        # Create scenes for named groups that AREN'T a discovered CF — the
-        # shutter / master scenes (no light-scene mode, so discovery never
-        # surfaces them). Find each group's firing address by matching its
-        # member set against the full routing graph (every op-point's linked
-        # outputs), then persist it as an nkb-sourced CF that activates by
-        # firing that address (the module handles roller timing itself).
-        scenes_created = 0
-        if self.cf_storage is not None:
+                    matched_scene_members.add(_cf_member_set(cf))
             graph = self._build_routing_graph()
             existing = self.cf_storage.data.setdefault("nikobus_cf", {})
             new_entries: dict[str, dict] = {}
             for sc in data.scenes:
                 if sc.members in matched_scene_members or not sc.members:
-                    continue  # already a CF, or trigger-less (no members)
+                    continue
                 hit = graph.get(sc.members)
                 if hit is None:
-                    continue  # no on-bus trigger drives this set → can't fire
+                    continue
                 addrs, outputs = hit
                 canonical = addrs[0]
                 if canonical in existing or canonical in new_entries:
@@ -2474,7 +2503,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         entry_id = self.config_entry.entry_id
 
         def _lookup(device) -> tuple[str, str] | None:
-            """(name, room) for a device from address names or scene match."""
             for domain, ident in device.identifiers:
                 if domain != DOMAIN:
                     continue
@@ -2485,10 +2513,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     return (cf_name_by_addr[key], "")
             return None
 
-        # 1. Devices — name as ``Name (Room)`` (Nikobus names are often
-        # generic and repeated per room, e.g. "Entree" in every room, so the
-        # room must stay in the name to disambiguate in pickers/automations
-        # where the Area isn't shown) + assign the Area.
+        do_names = "device_names" in cats
+        do_areas = "areas" in cats
         matched: dict[str, str] = {}  # device_id -> display name
         devices_named = areas_set = 0
         for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
@@ -2498,47 +2524,69 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             name, room = hit
             display = f"{name} ({room})" if room else name
             matched[device.id] = display
-            if device.name != display:
-                dev_reg.async_update_device(device.id, name=display)
-                devices_named += 1
-            if room and device.area_id is None:
+            if do_names:
+                # Non-overwrite sets the integration default (``name``), so a
+                # manual rename (``name_by_user``) still wins; overwrite sets
+                # ``name_by_user`` to force the .nkb name.
+                if overwrite:
+                    if device.name_by_user != display:
+                        dev_reg.async_update_device(device.id, name_by_user=display)
+                        devices_named += 1
+                elif device.name != display:
+                    dev_reg.async_update_device(device.id, name=display)
+                    devices_named += 1
+            if do_areas and room and (overwrite or device.area_id is None):
                 area = area_reg.async_get_area_by_name(
                     room
                 ) or area_reg.async_create(room)
-                dev_reg.async_update_device(device.id, area_id=area.id)
-                areas_set += 1
+                if device.area_id != area.id:
+                    dev_reg.async_update_device(device.id, area_id=area.id)
+                    areas_set += 1
 
-        # 2. Entities — single-entity matched devices only, never clobbering
-        # a user-set name.
-        by_device: dict[str, list] = {}
-        for ent in er.async_entries_for_config_entry(ent_reg, entry_id):
-            if ent.device_id:
-                by_device.setdefault(ent.device_id, []).append(ent)
+        entities = list(er.async_entries_for_config_entry(ent_reg, entry_id))
+
+        # Device-name → the entity of a single-entity matched device (wall
+        # buttons, latch switches); multi-entity modules inherit the device
+        # name, and their channels are named individually below.
         entities_named = 0
-        for device_id, display in matched.items():
-            ents = by_device.get(device_id, [])
-            if len(ents) != 1:
-                continue
-            ent = ents[0]
-            if ent.name is None and ent.original_name != display:
-                ent_reg.async_update_entity(ent.entity_id, name=display)
-                entities_named += 1
+        if do_names:
+            by_device: dict[str, list] = {}
+            for ent in entities:
+                if ent.device_id:
+                    by_device.setdefault(ent.device_id, []).append(ent)
+            for device_id, display in matched.items():
+                ents = by_device.get(device_id, [])
+                if len(ents) == 1 and _apply_entity_name(
+                    ent_reg, ents[0], display, overwrite
+                ):
+                    entities_named += 1
+
+        # Channel names — the per-output light / cover / switch entities.
+        channels_named = 0
+        if "channel_names" in cats and data.outputs:
+            for ent in entities:
+                key = _output_entity_key(ent.unique_id)
+                if key is None:
+                    continue
+                nm = data.outputs.get(key)
+                if nm and _apply_entity_name(ent_reg, ent, nm, overwrite):
+                    channels_named += 1
 
         _LOGGER.info(
-            "Imported .nkb from %s: %d devices, %d entities, %d areas, "
-            "%d scenes named, %d scenes created (%d addresses, %d groups "
-            "in file)",
+            "Imported .nkb from %s (overwrite=%s, categories=%s): %d devices, "
+            "%d device-entities, %d channels, %d areas, %d scenes named, "
+            "%d scenes created",
             path.name,
+            overwrite,
+            sorted(cats),
             devices_named,
             entities_named,
+            channels_named,
             areas_set,
             len(cf_name_by_addr) - scenes_created,
             scenes_created,
-            len(name_map),
-            len(data.scenes),
         )
 
-        # New scene entities only appear once the scene platform re-runs.
         if scenes_created:
             self.hass.async_create_task(
                 self.hass.config_entries.async_reload(self.config_entry.entry_id)
@@ -2547,6 +2595,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         return {
             "devices": devices_named,
             "entities": entities_named,
+            "channels": channels_named,
             "areas": areas_set,
             "scenes": len(cf_name_by_addr) - scenes_created,
             "scenes_created": scenes_created,

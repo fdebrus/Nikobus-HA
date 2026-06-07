@@ -62,7 +62,8 @@
         "menu_options": {
           "hardware": "Hardware-instellingen wijzigen",
           "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)",
-          "upload_nkb": "Projectbestand .nkb uploaden"
+          "upload_nkb": "Projectbestand .nkb uploaden",
+          "import_nkb": "Importeren uit .nkb (kiezen)"
         }
       },
       "hardware": {
@@ -123,6 +124,17 @@
         "data": {
           "file": "Projectbestand (.nkb)"
         }
+      },
+      "import_nkb": {
+        "title": "Importeren uit .nkb",
+        "description": "Kies wat je wilt importeren uit je nikobus.nkb. Standaard wordt niets aangeraakt wat je handmatig hebt hernoemd — vink **Overschrijven** aan om je bestaande namen/gebieden te vervangen door die uit de .nkb.",
+        "data": {
+          "device_names": "Apparaatnamen (modules, knoppen, IR-ontvangers)",
+          "channel_names": "Kanaalnamen (lichten, rolluiken, schakelaars)",
+          "areas": "Gebieden (uit kamers)",
+          "scenes": "Scènes (licht + rolluik/master)",
+          "overwrite": "Namen/gebieden die ik al heb ingesteld overschrijven"
+        }
       }
     },
     "abort": {
@@ -130,7 +142,10 @@
     },
     "error": {
       "invalid_nkb": "Dit bestand is geen leesbaar Nikobus .nkb-project (het moet de .nkb-export zijn — een ZIP met de projectdatabase).",
-      "upload_failed": "Kon het geüploade bestand niet opslaan. Controleer de Home Assistant-logboeken."
+      "upload_failed": "Kon het geüploade bestand niet opslaan. Controleer de Home Assistant-logboeken.",
+      "nkb_nothing_selected": "Kies minstens één ding om te importeren.",
+      "nkb_not_found": "Geen .nkb-bestand gevonden — upload er eerst een (Configureren → Projectbestand .nkb uploaden).",
+      "nkb_parse_failed": "Kon het .nkb-bestand niet lezen. Zie de Home Assistant-logboeken."
     }
   },
   "entity": {
