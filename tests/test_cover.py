@@ -230,6 +230,31 @@ class TestStop(unittest.TestCase):
         coord.api.stop_cover.assert_awaited_once()
 
 
+class TestActionErrors(unittest.TestCase):
+    """A failed bus command surfaces as a translated HomeAssistantError."""
+
+    def test_open_translates_bus_error(self):
+        from homeassistant.exceptions import HomeAssistantError
+
+        ent, coord = _make_cover()
+        ent._state = STATE_STOPPED
+        coord.api.open_cover = AsyncMock(side_effect=RuntimeError("bus down"))
+        with self.assertRaises(HomeAssistantError) as cm:
+            _run(ent.async_open_cover())
+        self.assertEqual(cm.exception.translation_key, "communication_error")
+        self.assertIsInstance(cm.exception.__cause__, RuntimeError)
+
+    def test_stop_translates_bus_error(self):
+        from homeassistant.exceptions import HomeAssistantError
+
+        ent, coord = _make_cover()
+        ent._state = STATE_OPENING
+        coord.api.stop_cover = AsyncMock(side_effect=RuntimeError("bus down"))
+        with self.assertRaises(HomeAssistantError) as cm:
+            _run(ent.async_stop_cover())
+        self.assertEqual(cm.exception.translation_key, "communication_error")
+
+
 class TestHandleButtonPressed(unittest.TestCase):
     # The signal is routed by module address, so the handler only filters
     # by channel (one roller module carries several covers).
