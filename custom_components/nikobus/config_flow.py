@@ -9,6 +9,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.selector import (
     FileSelector,
@@ -22,6 +23,8 @@ from homeassistant.helpers.selector import (
     TextSelector,
     TextSelectorConfig,
 )
+from nikobus_connect import NikobusConnect
+from nikobus_connect.discovery import find_module
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -32,12 +35,12 @@ from .const import (
     DEFAULT_PRESS_REPEAT,
     DOMAIN,
 )
-from homeassistant.exceptions import HomeAssistantError
-
-from .coordinator import NKB_IMPORT_CATEGORIES, NikobusConfigEntry
+from .coordinator import (
+    NKB_IMPORT_CATEGORIES,
+    NikobusConfigEntry,
+    NikobusDataCoordinator,
+)
 from .exceptions import NikobusConnectionError
-from nikobus_connect import NikobusConnect
-from nikobus_connect.discovery import find_module
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -383,11 +386,6 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_import(
-        self, import_config: dict[str, Any]
-    ) -> config_entries.FlowResult:
-        return await self.async_step_user(import_config)
-
 
 # ---------------------------------------------------------------------------
 # Options flow
@@ -398,8 +396,8 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
 
     Discovery itself (PC-Link inventory + module-link scan) is no
     longer reachable from this options flow; both actions live on the
-    Nikobus Bridge device's button entities (`Discover modules &
-    buttons` and `Scan all module links`). Routing scans through the
+    Nikobus Bridge device's button entities (`1. Load Project Overview`
+    and `2. Load Existing Installation`). Routing scans through the
     options flow on top of the device buttons gave users two
     different entry points for the same operation, and the flow's
     progress-dialog → terminal-step plumbing was where the
@@ -415,7 +413,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         """Merge entry data + options so defaults reflect the live settings."""
         return {**self.config_entry.data, **self.config_entry.options}
 
-    def _coordinator(self):
+    def _coordinator(self) -> NikobusDataCoordinator | None:
         return self.config_entry.runtime_data
 
     # --- Step 1: main menu --------------------------------------------------
@@ -644,7 +642,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             #
             # Discovery normally owns ``module_type`` and re-merges it
             # from the inventory's ``device_type`` byte every time the
-            # user runs *Discover modules & buttons*. That round-trip
+            # user runs *1. Load Project Overview*. That round-trip
             # clobbers any UI override done here — by design today (see
             # ``nikobus_connect.discovery.fileio.merge_module_inventory``
             # at the line ``existing["module_type"] = module_type``). A
