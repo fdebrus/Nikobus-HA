@@ -762,6 +762,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             chan_count = len(channels)
             groups = (1,) if chan_count <= 6 else (1, 2)
 
+            changed = False
             for g in groups:
                 polled += 1
                 try:
@@ -772,7 +773,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         if buf is None:
                             buf = bytearray(12)
                             self._module_states[normalized] = buf
-                        buf[start : start + 6] = bytes.fromhex(state_hex[:12])
+                        new_bytes = bytes.fromhex(state_hex[:12])
+                        if buf[start : start + 6] != new_bytes:
+                            buf[start : start + 6] = new_bytes
+                            changed = True
                     else:
                         failed += 1
                 except asyncio.CancelledError:
@@ -794,10 +798,16 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                         "Error refreshing %s group %d: %s", normalized, g, err
                     )
 
-            await self.async_event_handler(
-                "nikobus_refreshed",
-                {"impacted_module_address": normalized},
-            )
+            # Only wake this module's entities when its state actually
+            # changed. The coordinator's own post-poll ``async_update_
+            # listeners`` still re-renders everything (cheaply, since
+            # entities diff before writing), so an unchanged module needs
+            # no targeted dispatch — which on a quiet bus is every module.
+            if changed:
+                await self.async_event_handler(
+                    "nikobus_refreshed",
+                    {"impacted_module_address": normalized},
+                )
         return polled, failed
 
     # ------------------------------------------------------------------
