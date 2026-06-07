@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.8.1
+
+- **Fix: don't leak the bus connection when setup fails partway.** If the
+  connection opened but a later setup step failed, the bus was left open;
+  because only one client may hold the bus, every retry then failed. Setup
+  now tears the connection back down before retrying.
+- **Cleaner unload.** Platforms are unloaded before the connection stack is
+  stopped, and the coordinator is only stopped if the unload succeeded.
+- Setup failures now surface translated messages instead of raw text.
+
 ## 3.8.0
 
 Performance & logging pass — no behaviour or configuration changes.

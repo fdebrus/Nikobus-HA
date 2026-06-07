@@ -67,7 +67,7 @@ def _parse_register_byte(value: Any) -> int:
         try:
             n = int(text, 16)
         except ValueError:
-            raise vol.Invalid(f"Cannot parse '{value}' as a hex register byte")
+            raise vol.Invalid(f"Cannot parse '{value}' as a hex register byte") from None
     if not (0 <= n <= 0xFF):
         raise vol.Invalid(f"Register {n:#x} out of range 0x00..0xFF")
     return n
@@ -327,18 +327,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     entry.runtime_data = coordinator
 
     # 2. Connect and prepare internal buffers.
+    # ``connect`` opens the transport before initialising the listener /
+    # command stack, so a failure mid-setup can leave the bus open. Tear
+    # the coordinator back down before retrying — only one client may hold
+    # the bus, so a leaked connection would make every retry fail.
     try:
         await coordinator.connect()
     except NikobusConnectionError as err:
+        await coordinator.stop()
         raise ConfigEntryNotReady(
-            f"Cannot connect to Nikobus: {err}"
+            translation_domain=DOMAIN,
+            translation_key="communication_error",
+            translation_placeholders={"error": str(err)},
         ) from err
     except NikobusDataError as err:
+        await coordinator.stop()
         raise ConfigEntryNotReady(
-            f"Check your Nikobus config files — {err}"
+            translation_domain=DOMAIN,
+            translation_key="setup_data_error",
+            translation_placeholders={"error": str(err)},
         ) from err
     except NikobusError as err:
-        raise ConfigEntryNotReady(f"Nikobus setup error: {err}") from err
+        await coordinator.stop()
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="initialization_error",
+            translation_placeholders={"error": str(err)},
+        ) from err
 
     _register_hub_device(hass, entry)
 
@@ -414,6 +429,7 @@ def _register_category_devices(
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
+
 async def _async_cleanup_orphan_entities(
     hass: HomeAssistant, entry: NikobusConfigEntry, coordinator: NikobusDataCoordinator
 ) -> None:
@@ -422,7 +438,7 @@ async def _async_cleanup_orphan_entities(
     dev_reg = dr.async_get(hass)
 
     valid_entity_ids = coordinator.get_known_entity_unique_ids()
-    
+
     # Remove orphan entities
     entities = [
         entity for entity in ent_reg.entities.values()
@@ -454,9 +470,14 @@ async def _async_cleanup_orphan_entities(
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
-    """Unload the integration and stop background tasks."""
-    coordinator = entry.runtime_data
-    if coordinator:
-        await coordinator.stop()
+    """Unload the integration and stop background tasks.
 
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    Unload the platforms first so entities are gone before the protocol
+    stack is torn down, and only stop the coordinator if that succeeded —
+    a refused unload must not leave a stopped coordinator behind a still
+    loaded entry.
+    """
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok and (coordinator := entry.runtime_data):
+        await coordinator.stop()
+    return unload_ok
