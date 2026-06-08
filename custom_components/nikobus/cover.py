@@ -282,7 +282,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         super()._handle_coordinator_update()
 
-    async def _handle_button_pressed(self, data: dict) -> None:
+    async def _handle_button_pressed(self, data: dict[str, Any]) -> None:
         """Handle a physical Nikobus button press event (routed by module).
 
         Records the press timestamp (for detection-latency calculation) only

@@ -212,7 +212,7 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             )
 
     @callback
-    def _handle_trigger(self, data: dict) -> None:
+    def _handle_trigger(self, data: dict[str, Any]) -> None:
         """Fire ``nikobus_scene_activated`` when one of this scene's trigger
         addresses is seen on the bus — physical press or HA-originated frame
         alike. Routed by address, so any delivery here is a match."""

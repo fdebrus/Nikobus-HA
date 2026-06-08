@@ -250,7 +250,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             outer_attempts,
             outer_delay,
         )
-        manifest: dict = await coordinator.nikobus_discovery.detect_stale_inventory(
+        manifest: dict[str, Any] = await coordinator.nikobus_discovery.detect_stale_inventory(
             outer_attempts=outer_attempts,
             outer_delay=outer_delay,
         )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -72,7 +73,7 @@ async def async_setup_entry(
 def _iter_button_entities(
     coordinator: NikobusDataCoordinator,
     buttons: dict[str, Any],
-):
+) -> Iterator[NikobusButtonEntity]:
     """Yield one NikobusButtonEntity per discovered operation point."""
     for physical_addr, key_label, op_point, phys in iter_operation_points(buttons):
         yield NikobusButtonEntity(
@@ -297,7 +298,7 @@ def _ensure_pc_logic_parent_device(
 
 def _iter_module_records(
     dict_module_data: dict[str, Any], module_types: frozenset[str]
-):
+) -> Iterator[tuple[str, str, dict[str, Any]]]:
     """Yield ``(module_type, address, module_data)`` for the requested buckets."""
     for module_type in module_types:
         bucket = dict_module_data.get(module_type)

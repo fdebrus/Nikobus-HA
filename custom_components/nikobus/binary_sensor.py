@@ -140,7 +140,7 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
         self.async_on_remove(_cancel_reset_timer)
 
     @callback
-    def _handle_button_event(self, data: dict) -> None:
+    def _handle_button_event(self, data: dict[str, Any]) -> None:
         """This button was pressed (routed by address) — pulse to 'pressed'."""
         _LOGGER.debug("Button %s pressed", self._address)
 
