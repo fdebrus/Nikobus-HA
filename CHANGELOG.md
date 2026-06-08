@@ -25,6 +25,11 @@ Robustness, i18n & cleanup pass — a few user-facing fixes, otherwise internal.
   and helpers, refreshed stale in-code / README references, and tidied the
   test suite (closed leaked event loops, strengthened a few weak tests).
   The full test suite stays green.
+- **Type-checks against the `nikobus-connect` library directly.** The
+  library now ships a `py.typed` marker (0.25.0), so the integration's
+  use of its API is type-checked for real — the `ignore_missing_imports`
+  override for it has been dropped and the dependency pinned to
+  `nikobus-connect>=0.25.0`.
 
 ## 3.8.1
 
