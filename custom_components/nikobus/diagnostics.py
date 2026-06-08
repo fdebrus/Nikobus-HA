@@ -235,10 +235,10 @@ async def async_get_config_entry_diagnostics(
         },
         "coordinator": {
             "connection_status": coordinator.connection_status,
-            "reconnect_attempts": coordinator._reconnect_attempts,
+            "reconnect_attempts": coordinator.reconnect_attempts,
             "last_connected": (
-                coordinator._last_connected.isoformat()
-                if coordinator._last_connected
+                coordinator.last_connected.isoformat()
+                if coordinator.last_connected
                 else None
             ),
             "module_count": len(coordinator.dict_module_data),

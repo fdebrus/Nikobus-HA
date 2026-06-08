@@ -24,8 +24,8 @@ def _make_coordinator(is_connected=True, reconnect_task=None, reconnect_attempts
     coord = MagicMock()
     coord.nikobus_connection.is_connected = is_connected
     coord._reconnect_task = reconnect_task
-    coord._reconnect_attempts = reconnect_attempts
-    coord._last_connected = last_connected
+    coord.reconnect_attempts = reconnect_attempts
+    coord.last_connected = last_connected
     coord.connection_string = "192.168.1.1:8000"
 
     # Wire the real connection_status property
@@ -125,8 +125,8 @@ class TestSensorIcon(unittest.TestCase):
 class TestSensorAttributes(unittest.TestCase):
     def _sensor(self, last_connected=None, reconnect_attempts=0, connection_string="host:1234"):
         coord = MagicMock()
-        coord._last_connected = last_connected
-        coord._reconnect_attempts = reconnect_attempts
+        coord.last_connected = last_connected
+        coord.reconnect_attempts = reconnect_attempts
         coord.connection_string = connection_string
         sensor = NikobusConnectionSensor.__new__(NikobusConnectionSensor)
         sensor.coordinator = coord
