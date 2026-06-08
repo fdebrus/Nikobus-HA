@@ -669,7 +669,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                 entry["channels"] = channels_list
 
             selected = user_input.get("channel")
-            await coordinator._async_on_module_save()
+            await coordinator.async_on_module_save()
 
             if selected and selected != "done":
                 try:
@@ -784,7 +784,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                     _set_time_or_drop(channel, "operation_time_up", up)
                     _set_time_or_drop(channel, "operation_time_down", down)
 
-                await coordinator._async_on_module_save()
+                await coordinator.async_on_module_save()
                 # Return to the module step so the user can edit another
                 # channel or finish.
                 self._edit_channel_index = None
