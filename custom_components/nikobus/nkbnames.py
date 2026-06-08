@@ -68,7 +68,7 @@ class SceneDef(NamedTuple):
 
     name: str
     #: ``frozenset`` of ``(module_addr_upper, channel, mode_code)``.
-    members: frozenset
+    members: frozenset[tuple[str, int, str]]
 
 
 class NkbData(NamedTuple):
@@ -152,7 +152,7 @@ def parse_nkb(nkb_path: str | Path) -> NkbData:
 
 
 def _extract_outputs(
-    comp_by_key, objecten, objectbase
+    comp_by_key: dict, objecten: list[dict], objectbase: dict
 ) -> dict[tuple[str, int], str]:
     """``{(MODULE_ADDR, channel): name}`` for output channels with a real
     user name. Channel is the output's ``Prefix`` number (``O02`` → 2);
@@ -194,7 +194,12 @@ def _extract_addresses(
 
 
 def _extract_scenes(
-    components, comp_by_key, objecten, connections, linkmodes, objectbase
+    components: list[dict],
+    comp_by_key: dict,
+    objecten: list[dict],
+    connections: list[dict],
+    linkmodes: dict,
+    objectbase: dict,
 ) -> list[SceneDef]:
     """Resolve each named CF group to its ``(module, channel, mode)`` members.
 
