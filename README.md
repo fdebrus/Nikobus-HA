@@ -35,6 +35,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - [Events & automations](#events--automations)
 - [Scenes](#scenes)
 - [Connectivity](#connectivity)
+- [Services](#services)
 - [Troubleshooting](#troubleshooting)
 - [Known limitations](#known-limitations)
 - [How the integration works](#how-the-integration-works)
@@ -450,6 +451,87 @@ trigger:
 
 ---
 
+## Services
+
+The integration registers four services in the `nikobus.` domain. All appear in **Developer Tools → Actions** with a form (from `services.yaml`) and can be called from scripts and automations.
+
+### `nikobus.query_module_inventory`
+
+Triggers a discovery scan. It has three modes depending on which fields you pass:
+
+- **Full inventory** — no fields: re-enumerate every module and button from the PC-Link.
+- **Single module** — `module_address` only: re-scan one module's link table.
+- **Forensic register read** — `module_address` + `register_start` + `register_end` (+ optional `sub_byte`): read a specific register range, for reverse-engineering / diagnostics.
+
+| Field | Required | Example | Description |
+|---|---|---|---|
+| `module_address` | no | `"05"` | Module to scan. Omit for a full PC-Link inventory. |
+| `register_start` | forensic | `"0x70"` | First register (forensic mode). |
+| `register_end` | forensic | `"0x83"` | Last register (forensic mode). |
+| `sub_byte` | no | `"04"` | Memory bank — `04` output link table (default), `00` module header, `01` BP-cell / vendor map. |
+
+Forensic mode requires `module_address`, `register_start` **and** `register_end` together. No response value; results go to the integration log and the stores. Can't run while another discovery is in progress.
+
+```yaml
+action: nikobus.query_module_inventory
+data:
+  module_address: "05"
+```
+
+### `nikobus.send_button_press`
+
+Fires a button-press frame on the bus for `address` — exactly as if that physical key or IR code were pressed. Handy for triggering a Central Function / light scene, or a virtual / off-bus address that discovery doesn't know about, from an automation.
+
+| Field | Required | Example | Description |
+|---|---|---|---|
+| `address` | **yes** | `"84DFFC"` | 6-hex bus address to broadcast. **Quote it** — the YAML scientific-notation trap. |
+
+No response value.
+
+```yaml
+action: nikobus.send_button_press
+data:
+  address: "84DFFC"
+```
+
+### `nikobus.detect_stale_inventory`
+
+Probes every known output module for **bus presence** and returns which respond and which don't — useful after replacing hardware, or with a second-hand PC-Link that still carries the previous install's records. **Read-only**: it never modifies storage (pair it with `purge_stale_inventory`).
+
+| Field | Required | Default | Description |
+|---|---|---|---|
+| `outer_attempts` | no | `1` | Full-sweep passes (1–3); raise on a busy bus. |
+| `outer_delay` | no | `0` | Seconds between passes (0–10). |
+
+**Returns** (response data): `checked`, `present_modules`, `absent_modules`, and `orphaned_buttons` (buttons whose links all point at absent modules).
+
+```yaml
+action: nikobus.detect_stale_inventory
+data:
+  outer_attempts: 2
+  outer_delay: 3
+response_variable: stale
+```
+
+### `nikobus.purge_stale_inventory`
+
+Removes the given module addresses (and any buttons orphaned by them) from the persisted module + button stores. Feed it the `absent_modules` from `detect_stale_inventory` once you've confirmed they're really gone.
+
+| Field | Required | Example | Description |
+|---|---|---|---|
+| `addresses` | **yes** | `["CCDD", "EEFF"]` | Module addresses to remove. |
+
+**Returns** (response data): `removed_modules`, `removed_buttons`, `not_found`.
+
+```yaml
+action: nikobus.purge_stale_inventory
+data:
+  addresses: ["CCDD", "EEFF"]
+response_variable: purged
+```
+
+---
+
 ## Troubleshooting
 
 ### Discovery says "No PC-Link" although I have one (PC-Logic installs)
@@ -488,12 +570,9 @@ Friendly names you set in Home Assistant live in HA's entity/device registry (ke
 
 Without a Feedback Module, external changes (manual relay actuation, another client) are only seen on the next poll. Physical button presses still trigger immediate targeted refreshes. Add a 05-207 Feedback Module for real-time updates, or lower the polling interval.
 
-### Services for advanced cleanup
+### Stale records from a previous install
 
-- `nikobus.detect_stale_inventory` — probes modules for bus presence and returns which are absent.
-- `nikobus.purge_stale_inventory` — removes the given module addresses from storage.
-- `nikobus.query_module_inventory` — low-level register read (diagnostics).
-- `nikobus.send_button_press` — emit a button frame for an off-bus / virtual address.
+A second-hand PC-Link (or replaced hardware) can leave records for modules that are no longer on the bus. Run [`nikobus.detect_stale_inventory`](#nikobusdetect_stale_inventory) to see which addresses don't respond, then [`nikobus.purge_stale_inventory`](#nikobuspurge_stale_inventory) to remove the ones you confirm are gone. See [Services](#services) for all four services and their parameters.
 
 ---
 
