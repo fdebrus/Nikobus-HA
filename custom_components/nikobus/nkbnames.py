@@ -31,6 +31,11 @@ _LOGGER = logging.getLogger(__name__)
 
 CANONICAL_NKB_FILENAME = "nikobus.nkb"
 
+# Hard ceiling on the decompressed ``.mdb`` we'll read from a ``.nkb``.
+# A real Nikobus project DB is a few MB; this only exists to bound a
+# crafted (decompression-bomb) archive. Generous on purpose.
+_MAX_MDB_BYTES = 64 * 1024 * 1024  # 64 MiB
+
 # Location bucket the software uses for virtual groups (scenes), not a room.
 _GROUP_LOCATION_SENTINEL = "S_DB_GROUPS"
 
@@ -128,8 +133,25 @@ def parse_nkb(nkb_path: str | Path) -> NkbData:
             )
             if mdb_name is None:
                 raise ValueError("no .mdb inside the .nkb archive")
-            zf.extract(mdb_name, tmp)
-        db = AccessParser(str(Path(tmp) / mdb_name))
+            # Read the .mdb through a hard byte cap and write it under a
+            # FIXED local name. Two reasons, both defending against a
+            # crafted .nkb:
+            #   * the byte cap stops a decompression-bomb member from
+            #     exhausting memory/disk (``read`` decompresses lazily, so
+            #     a 10 GB member only ever yields ``_MAX_MDB_BYTES`` here);
+            #   * the fixed output name means an attacker-controlled member
+            #     path (``/etc/x.mdb``, ``../../x.mdb``) can't redirect the
+            #     AccessParser read outside ``tmp`` — unlike ``Path(tmp) /
+            #     mdb_name``, which an absolute or ``..`` name escapes.
+            with zf.open(mdb_name) as member:
+                data = member.read(_MAX_MDB_BYTES + 1)
+            if len(data) > _MAX_MDB_BYTES:
+                raise ValueError(
+                    f".mdb exceeds the {_MAX_MDB_BYTES}-byte safety limit"
+                )
+            mdb_path = Path(tmp) / "project.mdb"
+            mdb_path.write_bytes(data)
+        db = AccessParser(str(mdb_path))
         components = _rows(db, "Component")
         locations = {
             r["KeyLocation"]: r["StrUserName"] for r in _rows(db, "Location")
