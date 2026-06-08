@@ -8,8 +8,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import timezone as _tz
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
@@ -223,7 +222,7 @@ class NikobusActuator:
     async def _handle_release(self, state: PressState, press_duration: float) -> None:
         """Cleanup and process module updates upon button release."""
         bucket = self._get_bucket(press_duration)
-        
+
         # 1. Base Release Event
         self._fire_event("nikobus_button_released", state, state_value="released", duration=press_duration, bucket=bucket)
 
@@ -383,7 +382,7 @@ class NikobusActuator:
             "address": state.address,
             "module_address": state.module_address,
             "channel": state.channel,
-            "ts": datetime.now(_tz.utc).isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "press_id": state.press_id,
             "state": kwargs.get("state_value"),
             "duration_s": kwargs.get("duration"),
@@ -393,7 +392,7 @@ class NikobusActuator:
         }
         if extra := kwargs.get("extra"):
             payload.update(extra)
-            
+
         # Log the event exactly as it is fired to the Home Assistant bus
         _LOGGER.debug("[%s] Fire %s — %s", state.press_id, event_type, payload)
 
