@@ -435,6 +435,16 @@ Activation sends one command per channel (HA-driven fan-out), touching only the 
 
 On a dropped connection the integration reconnects with exponential back-off (5 s → 10 s → 20 s → … capped at 60 s). Entities go unavailable until the link is restored, then resume without an HA restart.
 
+The **Connection** sensor on the Bridge device exposes the live status (`connected` / `reconnecting` / `disconnected`) and carries diagnostic attributes you can use in automations: `last_connected` (timestamp of the last successful connect), `reconnect_attempts` (consecutive retries since), and `connection_string`. For example, alert when the bus has been down for a while:
+
+```yaml
+trigger:
+  - platform: state
+    entity_id: sensor.nikobus_bridge_connection
+    to: "disconnected"
+    for: "00:05:00"
+```
+
 ![TCP bridge example 1](https://github.com/fdebrus/Nikobus-HA/assets/33791533/10c79eaf-3362-4891-b5da-1b827faae8d1)
 ![TCP bridge example 2](https://github.com/fdebrus/Nikobus-HA/assets/33791533/9c0b11ad-0a1c-4728-ab5e-5e68be6452a8)
 
