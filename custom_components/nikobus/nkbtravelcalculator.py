@@ -1,5 +1,7 @@
 """Position calculator for time-based Nikobus covers."""
 
+from __future__ import annotations
+
 import time
 
 
@@ -53,5 +55,4 @@ class NikobusTravelCalculator:
 
         if self._direction == 1:
             return min(100.0, self._start_pos + progress)
-        else:
-            return max(0.0, self._start_pos - progress)
+        return max(0.0, self._start_pos - progress)
