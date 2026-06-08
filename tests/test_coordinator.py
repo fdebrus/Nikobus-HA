@@ -2034,7 +2034,11 @@ class TestRefreshModuleTypeDispatch(unittest.TestCase):
     coordinator's own post-poll global refresh covers the rest."""
 
     def _run(self, coro):
-        return asyncio.new_event_loop().run_until_complete(coro)
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
 
     def _setup(self, state_hex):
         c = _coord(states={})

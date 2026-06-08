@@ -23,7 +23,11 @@ def _coord(press_repeat=DEFAULT_PRESS_REPEAT):
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 class TestButtonPressRepeat(unittest.TestCase):
