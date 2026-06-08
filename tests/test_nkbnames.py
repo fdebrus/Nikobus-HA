@@ -249,7 +249,11 @@ def _entity(eid, device_id, name=None, original_name=None, unique_id=None):
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _patches(data, devices, entities, dev_reg, ent_reg, area_reg):

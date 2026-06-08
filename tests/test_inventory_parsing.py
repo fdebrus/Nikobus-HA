@@ -1,3 +1,5 @@
+import asyncio
+import shutil
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
@@ -36,11 +38,23 @@ class TestInventoryParsing(unittest.IsolatedAsyncioTestCase):
 
         self.coordinator = FakeCoordinator()
         self._tmp_dir = tempfile.mkdtemp()
+
+        # Close any coroutine handed to create_task — the discovery's
+        # internal timeout watchdogs — so they aren't reported as
+        # "never awaited". We mock scheduling rather than run it.
+        def _fake_create_task(arg, *a, **kw):
+            if asyncio.iscoroutine(arg):
+                arg.close()
+            return MagicMock()
+
         self.discovery = NikobusDiscovery(
             self.coordinator,
             config_dir=self._tmp_dir,
-            create_task=MagicMock(return_value=MagicMock()),
+            create_task=_fake_create_task,
         )
+
+    async def asyncTearDown(self) -> None:
+        shutil.rmtree(self._tmp_dir, ignore_errors=True)
 
     async def test_parse_pclink_inventory_response_populates_modules_and_buttons(self):
         module_payload = _build_inventory_payload(0x01, b"\x12\x34")

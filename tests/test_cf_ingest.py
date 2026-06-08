@@ -17,7 +17,11 @@ from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
 
 def _run(coro):
-    return asyncio.new_event_loop().run_until_complete(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _stub_cf_member(module_address, channel, mode, t1=None, t2=None):
