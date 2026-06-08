@@ -294,9 +294,13 @@
     "detect_stale_inventory": {
       "description": "Probes every known output module (switch, dimmer, roller) on the bus and reports which ones don't respond. Returns a manifest with checked / present / absent module lists plus orphaned button addresses. Does not modify configuration; pair with purge_stale_inventory after reviewing the results.",
       "fields": {
-        "timeout": {
-          "description": "Per-module probe timeout. Worst-case scan time is roughly N modules × timeout.",
-          "name": "Probe timeout (seconds)"
+        "outer_attempts": {
+          "name": "Sweep passes",
+          "description": "How many full detection passes to run (1–3). More passes improves reliability on a slow or busy bus."
+        },
+        "outer_delay": {
+          "name": "Delay between passes (seconds)",
+          "description": "Bus-quiet wait inserted between detection passes (0–10 s)."
         }
       },
       "name": "Detect stale inventory"
@@ -310,6 +314,16 @@
         }
       },
       "name": "Purge stale inventory"
+    },
+    "send_button_press": {
+      "name": "Send button press",
+      "description": "Simulate a Nikobus button press on the bus for the given address — fires the same telegram a physical press would.",
+      "fields": {
+        "address": {
+          "name": "Address",
+          "description": "Bus address of the button to simulate (e.g. 84DFFC)."
+        }
+      }
     }
   },
   "selector": {

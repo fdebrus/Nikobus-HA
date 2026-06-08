@@ -43,6 +43,12 @@
           "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
           "prior_gen3": "PC-Link antérieur à la Gen 3",
           "refresh_interval": "Intervalle de scrutation (secondes)"
+        },
+        "data_description": {
+          "connection_string": "Chemin du périphérique série ou adresse TCP du pont PC-Link",
+          "has_feedbackmodule": "Lorsqu'il est activé, le module de retour (Feedback Module) transmet automatiquement les changements d'état — aucune interrogation nécessaire.",
+          "prior_gen3": "Active les ajustements de compatibilité pour le matériel PC-Link de première et deuxième génération.",
+          "refresh_interval": "Fréquence de lecture de l'état des modules sur le bus (60–3600 s). Des valeurs plus basses accélèrent les mises à jour mais augmentent le trafic du bus."
         }
       }
     },
@@ -138,14 +144,17 @@
       }
     },
     "abort": {
-      "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer."
+      "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer.",
+      "channel_not_found": "Le canal sélectionné est introuvable.",
+      "module_not_found": "Le module sélectionné est introuvable dans le stockage."
     },
     "error": {
       "invalid_nkb": "Ce fichier n'est pas un projet Nikobus .nkb lisible (il doit s'agir de l'export .nkb — une archive ZIP contenant la base de données du projet).",
       "upload_failed": "Impossible d'enregistrer le fichier téléversé. Consultez les journaux Home Assistant.",
       "nkb_nothing_selected": "Choisissez au moins un élément à importer.",
       "nkb_not_found": "Aucun fichier .nkb trouvé — téléversez-en un d'abord (Configurer → Téléverser le fichier projet .nkb).",
-      "nkb_parse_failed": "Impossible de lire le fichier .nkb. Consultez les journaux Home Assistant."
+      "nkb_parse_failed": "Impossible de lire le fichier .nkb. Consultez les journaux Home Assistant.",
+      "invalid_hex_address": "L'adresse de la LED doit comporter exactement 6 caractères hexadécimaux (ou être vide)."
     }
   },
   "entity": {
@@ -245,6 +254,18 @@
     },
     "setup_data_error": {
       "message": "Impossible de charger la configuration Nikobus : {error}"
+    },
+    "cf_no_address": {
+      "message": "Impossible d'activer une fonction centrale (CF) Nikobus sans adresse de bus."
+    },
+    "forensic_range_incomplete": {
+      "message": "Le mode forensic nécessite à la fois register_start et register_end. Fournissez les deux ou omettez les deux."
+    },
+    "forensic_requires_module_address": {
+      "message": "L'analyse forensic des registres nécessite un module_address. Spécifiez-en un (par ex. 940C) — la plage de registres ne peut pas être appliquée à tous les modules."
+    },
+    "not_connected": {
+      "message": "Le bus Nikobus n'est pas connecté — impossible d'envoyer une commande. Vérifiez la connexion et réessayez."
     }
   },
   "selector": {
@@ -275,6 +296,64 @@
         "switch": "Interrupteur",
         "light": "Lumière",
         "disabled": "Désactivé (masquer le canal)"
+      }
+    }
+  },
+  "services": {
+    "detect_stale_inventory": {
+      "name": "Détecter l'inventaire obsolète",
+      "description": "Interroge chaque module de sortie connu (interrupteur, variateur, volet) sur le bus et signale ceux qui ne répondent pas. Renvoie un manifeste avec les listes de modules vérifiés / présents / absents ainsi que les adresses de boutons orphelines. Ne modifie pas la configuration ; à utiliser avec purge_stale_inventory après avoir examiné les résultats.",
+      "fields": {
+        "outer_attempts": {
+          "name": "Passes de balayage",
+          "description": "Nombre de passes de détection complètes à exécuter (1–3). Davantage de passes améliore la fiabilité sur un bus lent ou chargé."
+        },
+        "outer_delay": {
+          "name": "Délai entre les passes (secondes)",
+          "description": "Temps d'attente (bus au repos) inséré entre les passes de détection (0–10 s)."
+        }
+      }
+    },
+    "purge_stale_inventory": {
+      "name": "Purger l'inventaire obsolète",
+      "description": "Supprime les adresses indiquées des stockages persistants de modules et de boutons, puis recharge l'intégration afin que les entités des adresses purgées soient supprimées. Exécutez d'abord detect_stale_inventory pour obtenir la liste des adresses pouvant être supprimées en toute sécurité.",
+      "fields": {
+        "addresses": {
+          "name": "Adresses",
+          "description": "Liste des adresses de modules / boutons à supprimer (comparées sans tenir compte de la casse dans les deux stockages)."
+        }
+      }
+    },
+    "query_module_inventory": {
+      "name": "Interroger l'inventaire des modules",
+      "description": "Déclenche une analyse d'inventaire des modules Nikobus. Sans paramètres, analyse tous les modules de sortie. Avec un module_address, analyse uniquement ce module en utilisant les plages adaptées à chaque type de module. Avec register_start + register_end (et éventuellement sub_byte), exécute une analyse en mode forensic exactement sur la plage demandée — utile pour rétro-concevoir l'agencement du stockage des modules PC-Logic, des modules d'interface ou des zones inconnues de n'importe quel module.",
+      "fields": {
+        "module_address": {
+          "name": "Adresse du module",
+          "description": "Adresse de module Nikobus facultative (par ex. 940C, F586). Sans celle-ci, analyse tous les modules de sortie connus."
+        },
+        "register_start": {
+          "name": "Début de registre",
+          "description": "Mode forensic — borne inférieure de la plage de registres à analyser, sous forme d'octet hexadécimal (par ex. 0x70 ou 70). Nécessite register_end et un module_address spécifique. Lorsqu'elle est fournie, l'analyse ne parcourt que cette plage et ignore la logique de passe supplémentaire de production."
+        },
+        "register_end": {
+          "name": "Fin de registre",
+          "description": "Mode forensic — borne supérieure de la plage de registres à analyser, sous forme d'octet hexadécimal (par ex. 0x83 ou 83). Doit être ≥ register_start."
+        },
+        "sub_byte": {
+          "name": "Sous-octet",
+          "description": "Sélecteur de banque mémoire pour le mode forensic (par défaut 04 — table de liens de sortie). Autres banques observées : 00 (en-tête / identité du module), 01 (enregistrements BP-cell)."
+        }
+      }
+    },
+    "send_button_press": {
+      "name": "Envoyer un appui sur un bouton",
+      "description": "Simule l'appui sur un bouton Nikobus sur le bus pour l'adresse indiquée — émet le même télégramme qu'un appui physique.",
+      "fields": {
+        "address": {
+          "name": "Adresse",
+          "description": "Adresse de bus du bouton à simuler (par ex. 84DFFC)."
+        }
       }
     }
   }
