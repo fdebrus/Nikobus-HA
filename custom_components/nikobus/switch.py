@@ -8,14 +8,13 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, operation_signal, press_signal
+from .const import operation_signal, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity
+from .entity import NikobusEntity, command_error
 from .router import (
     build_unique_id,
     get_routing,
@@ -37,16 +36,6 @@ except ImportError:  # pragma: no cover - defensive (older library)
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
-
-
-def _command_error(err: Exception) -> HomeAssistantError:
-    """A bus command failed — surface it as a translated HA error so the
-    user sees a clean message instead of the raw library exception."""
-    return HomeAssistantError(
-        translation_domain=DOMAIN,
-        translation_key="communication_error",
-        translation_placeholders={"error": str(err)},
-    )
 
 
 def input_ab_addresses(phys: dict[str, Any]) -> tuple[str, str] | None:
@@ -241,7 +230,7 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise _command_error(err) from err
+            raise command_error(err) from err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Open relay with optimistic UI update and error fallback."""
@@ -255,7 +244,7 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise _command_error(err) from err
+            raise command_error(err) from err
 
 
 class NikobusCoverSwitchEntity(NikobusBaseSwitch):
@@ -288,7 +277,7 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise _command_error(err) from err
+            raise command_error(err) from err
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Trigger 'Stop/Close' on cover module with optimistic UI update and error fallback."""
@@ -302,7 +291,7 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
         except Exception as err:
             self._is_on = None
             self.async_write_ha_state()
-            raise _command_error(err) from err
+            raise command_error(err) from err
 
 class NikobusInputLatchSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
     """Stateful on/off latch for a PC-Logic / Modular-Interface input.

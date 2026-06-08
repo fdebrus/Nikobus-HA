@@ -15,7 +15,6 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -24,27 +23,16 @@ from .const import (
     DEFAULT_COVER_DEBOUNCE_DELAY,
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
-    DOMAIN,
     press_signal,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity
+from .entity import NikobusEntity, command_error
 from .nkbtravelcalculator import NikobusTravelCalculator
 from .router import build_unique_id, get_routing, register_output_module_devices
 
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
-
-
-def _command_error(err: Exception) -> HomeAssistantError:
-    """A bus command failed — surface it as a translated HA error so the
-    user sees a clean message instead of the raw library exception."""
-    return HomeAssistantError(
-        translation_domain=DOMAIN,
-        translation_key="communication_error",
-        translation_placeholders={"error": str(err)},
-    )
 
 
 def _parse_operation_time(value: Any, fallback: float, label: str, address: str) -> float:
@@ -326,7 +314,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         except asyncio.CancelledError:
             raise
         except Exception as err:
-            raise _command_error(err) from err
+            raise command_error(err) from err
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         """Close cover command."""
@@ -335,7 +323,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         except asyncio.CancelledError:
             raise
         except Exception as err:
-            raise _command_error(err) from err
+            raise command_error(err) from err
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         """Stop cover command."""
@@ -344,7 +332,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         except asyncio.CancelledError:
             raise
         except Exception as err:
-            raise _command_error(err) from err
+            raise command_error(err) from err
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         """Move cover to a specific percentage."""
