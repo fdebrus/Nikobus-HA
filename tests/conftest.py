@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock
 
 ROOT = Path(__file__).parent.parent
 COMP = ROOT / "custom_components" / "nikobus"
-DISCO_LIB = ROOT / "nikobus-discovery"  # standalone PyPI library
 
 
 # ---------------------------------------------------------------------------
@@ -360,8 +359,9 @@ _niko.__path__ = [str(COMP)]
 _load("custom_components.nikobus.exceptions", COMP / "exceptions.py")
 _load("custom_components.nikobus.const", COMP / "const.py")
 
-# Discovery is now the standalone nikobus_discovery PyPI library.
-# It is installed via `pip install -e nikobus-discovery/` and imported directly.
+# Discovery lives in the standalone nikobus-connect PyPI package
+# (`pip install nikobus-connect`, imported as `nikobus_connect`); the
+# integration imports it directly, so there's nothing to load here.
 
 _load("custom_components.nikobus.nkbactuator", COMP / "nkbactuator.py")
 _load("custom_components.nikobus.nkbconfig", COMP / "nkbconfig.py")
