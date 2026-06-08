@@ -1,5 +1,23 @@
 # Changelog
 
+## 3.8.2
+
+Robustness & cleanup pass — one user-facing fix, otherwise internal.
+
+- **Friendlier errors when a command can't reach the bus.** Turning a
+  switch / light / cover on or off — or activating a scene — now surfaces a
+  clean, translated "communication failed" message when the bus is
+  unreachable, instead of the raw library exception. The optimistic UI
+  state still rolls back on failure.
+- **Lighter button handling.** A latch-switch toggle or a simulated button
+  press no longer wakes *every* entity on the bus to filter itself out;
+  only the affected addresses are notified.
+- **Internal tidy — no behaviour or configuration changes.** Removed a
+  couple of unreachable code paths, de-duplicated the storage wrappers and
+  the command-error helper, modernised imports / typing across the
+  platforms and helpers, and refreshed stale in-code / README references.
+  The full test suite stays green.
+
 ## 3.8.1
 
 - **Fix: don't leak the bus connection when setup fails partway.** If the
