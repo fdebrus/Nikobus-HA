@@ -173,9 +173,12 @@ class TestSetByteArrayState(unittest.TestCase):
         c.set_bytearray_state("C1C7", 1, 0xFF)
         self.assertEqual(c.nikobus_module_states["C1C7"][0], 0xFF)
 
-    def test_unknown_address_does_not_raise(self):
+    def test_unknown_address_autovivifies_buffer(self):
+        # A single-channel write to an unknown address allocates a fresh
+        # 12-byte buffer (optimistic write) — it is NOT a silent no-op.
         c = _coord()
-        c.set_bytearray_state("FFFF", 1, 0xFF)  # silent no-op
+        c.set_bytearray_state("FFFF", 1, 0xFF)
+        self.assertEqual(c.nikobus_module_states["FFFF"][0], 0xFF)
 
     def test_channel_0_does_not_write(self):
         c = _coord(states={"C1C7": bytearray([0x11])})
@@ -226,9 +229,12 @@ class TestSetByteArrayGroupState(unittest.TestCase):
         c.set_bytearray_group_state("C1C7", 1, "GGGGGGGGGGGG")
         self.assertEqual(bytes(c.nikobus_module_states["C1C7"]), original)
 
-    def test_unknown_address_does_not_raise(self):
+    def test_unknown_address_is_a_no_op(self):
+        # Unlike set_bytearray_state, the group write does NOT allocate a
+        # buffer for an unknown module — it leaves the store untouched.
         c = _coord()
         c.set_bytearray_group_state("UNKNOWN", 1, "AABBCCDDEEFF")
+        self.assertNotIn("UNKNOWN", c.nikobus_module_states)
 
 
 # ---------------------------------------------------------------------------
@@ -272,10 +278,17 @@ class TestFeedbackCallback(unittest.IsolatedAsyncioTestCase):
         await c._feedback_callback(1, "$1CC7C1")  # too short
         self.assertEqual(c.nikobus_module_states["C1C7"], bytearray(12))
 
-    async def test_unknown_module_ignored(self):
+    async def test_unknown_module_auto_allocated(self):
+        # Feedback is authoritative: a frame from a not-yet-known module
+        # auto-allocates its buffer and records the state (the callback's
+        # "Auto-allocate if module wasn't pre-registered" path) — it is
+        # not ignored.
         c = _coord(states={})
         frame = _feedback_frame("C7C1", "AABBCCDDEEFF")
-        await c._feedback_callback(1, frame)  # should not raise
+        await c._feedback_callback(1, frame)
+        self.assertEqual(
+            c.nikobus_module_states["C1C7"][:6], bytearray.fromhex("AABBCCDDEEFF")
+        )
 
     async def test_resolve_pending_get_called_when_command_set(self):
         c = _coord(states={"C1C7": bytearray(12)})
