@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -15,6 +16,21 @@ from .coordinator import NikobusDataCoordinator
 # Sentinel return for ``_render_state``: this entity opts out of
 # write-diffing and writes on every coordinator update (the default).
 _NO_DIFF = object()
+
+
+def command_error(err: Exception) -> HomeAssistantError:
+    """A failed bus command as a translated HA error.
+
+    Shared by the output platforms (switch / light / cover / scene): each
+    entity action wraps a failed bus command with
+    ``raise command_error(err) from err`` so the user sees a clean message
+    instead of the raw library exception.
+    """
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="communication_error",
+        translation_placeholders={"error": str(err)},
+    )
 
 
 def hub_device_info() -> dr.DeviceInfo:

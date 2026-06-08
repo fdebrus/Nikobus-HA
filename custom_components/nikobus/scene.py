@@ -9,7 +9,6 @@ from typing import Any
 
 from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -21,7 +20,7 @@ from .const import (
     press_signal,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity
+from .entity import NikobusEntity, command_error
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -282,11 +281,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         except asyncio.CancelledError:
             raise
         except Exception as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="communication_error",
-                translation_placeholders={"error": str(err)},
-            ) from err
+            raise command_error(err) from err
 
     async def _activate(self) -> None:
         """Activate the scene by setting multiple module channels."""
