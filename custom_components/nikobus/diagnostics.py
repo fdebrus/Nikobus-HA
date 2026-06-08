@@ -16,13 +16,15 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     DOMAIN,
 )
-from .coordinator import NikobusConfigEntry
+from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import device_entry_diagnostics
 
 TO_REDACT = {CONF_CONNECTION_STRING}
 
 
-def _per_module_decode_metrics(coordinator) -> dict[str, dict[str, Any]]:
+def _per_module_decode_metrics(
+    coordinator: NikobusDataCoordinator,
+) -> dict[str, dict[str, Any]]:
     """Build per-output-module decode-quality metrics.
 
     For each module address surface:
@@ -106,7 +108,7 @@ def _per_module_decode_metrics(coordinator) -> dict[str, dict[str, Any]]:
         ch_total = channel_counts.get(module_addr, 0)
         channels_seen: set[int] = {r["channel"] for r in recs}
         buttons_seen: set[str] = {r["button_phys"] for r in recs}
-        modes_seen: Counter = Counter(
+        modes_seen: Counter[str] = Counter(
             r["mode"] for r in recs if r["mode"] is not None
         )
         t1_values = sorted({r["t1"] for r in recs if r["t1"]})
@@ -144,7 +146,7 @@ def _per_module_decode_metrics(coordinator) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _button_decode_metrics(coordinator) -> dict[str, Any]:
+def _button_decode_metrics(coordinator: NikobusDataCoordinator) -> dict[str, Any]:
     """Top-level button-store decode metrics.
 
     Surfaces aggregate counts useful for sanity-checking what came out
