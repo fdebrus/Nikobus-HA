@@ -6,6 +6,9 @@
             },
             "scan_all_module_links": {
                 "default": "mdi:cog-sync"
+            },
+            "import_nkb_names": {
+                "default": "mdi:file-import"
             }
         },
         "sensor": {
@@ -35,6 +38,15 @@
     "services": {
         "query_module_inventory": {
             "service": "mdi:magnify-scan"
+        },
+        "send_button_press": {
+            "service": "mdi:gesture-tap-button"
+        },
+        "detect_stale_inventory": {
+            "service": "mdi:radar"
+        },
+        "purge_stale_inventory": {
+            "service": "mdi:delete-sweep"
         }
     }
 }
