@@ -2,20 +2,28 @@
 
 ## 3.8.2
 
-Robustness & cleanup pass — one user-facing fix, otherwise internal.
+Robustness, i18n & cleanup pass — a few user-facing fixes, otherwise internal.
 
 - **Friendlier errors when a command can't reach the bus.** Turning a
   switch / light / cover on or off — or activating a scene — now surfaces a
   clean, translated "communication failed" message when the bus is
   unreachable, instead of the raw library exception. The optimistic UI
   state still rolls back on failure.
+- **Complete French & Dutch translations.** Filled in 29 strings that were
+  English-only (error messages, the reconfigure form, and the diagnostic
+  service descriptions), corrected a stale service field, and added the
+  missing translations for the *Send button press* action.
+- **Icons for the last bridge button and the services.** The *Import Names
+  from .nkb* button and the three inventory services now show their own
+  icons instead of the generic fallback glyph.
 - **Lighter button handling.** A latch-switch toggle or a simulated button
   press no longer wakes *every* entity on the bus to filter itself out;
   only the affected addresses are notified.
-- **Internal tidy — no behaviour or configuration changes.** Removed a
-  couple of unreachable code paths, de-duplicated the storage wrappers and
-  the command-error helper, modernised imports / typing across the
-  platforms and helpers, and refreshed stale in-code / README references.
+- **Internal tidy — no behaviour or configuration changes.** Removed a few
+  unreachable code paths, de-duplicated the storage wrappers and the
+  command-error helper, modernised imports / typing across the platforms
+  and helpers, refreshed stale in-code / README references, and tidied the
+  test suite (closed leaked event loops, strengthened a few weak tests).
   The full test suite stays green.
 
 ## 3.8.1
