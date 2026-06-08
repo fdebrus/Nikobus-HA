@@ -1367,6 +1367,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     await task
             setattr(self, task_attr, None)
 
+        # Cancel the actuator's in-flight press / refresh tasks too, so a
+        # button press being processed during unload can't touch the
+        # command handler / connection after we stop them below.
+        actuator = getattr(self, "nikobus_actuator", None)
+        if actuator:
+            actuator.stop()
+
         # 2. Then stop subsystems in reverse start order.
         if self.nikobus_listener:
             try:

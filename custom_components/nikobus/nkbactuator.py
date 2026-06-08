@@ -89,6 +89,23 @@ class NikobusActuator:
         self._press_states: dict[str, PressState] = {}
         self._module_refresh_tasks: dict[str, asyncio.Task[None]] = {}
 
+    def stop(self) -> None:
+        """Cancel all in-flight press-release and module-refresh tasks.
+
+        Called from ``NikobusDataCoordinator.stop()`` so a config-entry
+        unload/reload doesn't leave a button-press handler running against
+        a torn-down command handler / connection. Tasks self-terminate in
+        a few seconds anyway, but cancelling makes teardown deterministic.
+        """
+        for state in self._press_states.values():
+            if state.release_task and not state.release_task.done():
+                state.release_task.cancel()
+        self._press_states.clear()
+        for task in self._module_refresh_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._module_refresh_tasks.clear()
+
     async def handle_button_press(self, address: str) -> None:
         """Handle incoming button frames with frame-count duration tracking.
 

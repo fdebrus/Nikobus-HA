@@ -84,6 +84,28 @@ def _events_of(actuator: NikobusActuator, event_type: str) -> list[dict]:
     ]
 
 
+def test_stop_cancels_inflight_tasks():
+    """stop() cancels in-flight release + refresh tasks and clears the maps."""
+    actuator = _make_actuator()
+
+    release = MagicMock()
+    release.done.return_value = False
+    actuator._press_states["AA0000"] = PressState(
+        address="AA0000", press_start=0.0, last_press_time=0.0,
+        press_id="x", module_address=None, channel=None, release_task=release,
+    )
+    refresh = MagicMock()
+    refresh.done.return_value = False
+    actuator._module_refresh_tasks["BB00_1"] = refresh
+
+    actuator.stop()
+
+    release.cancel.assert_called_once()
+    refresh.cancel.assert_called_once()
+    assert actuator._press_states == {}
+    assert actuator._module_refresh_tasks == {}
+
+
 # ---------------------------------------------------------------------------
 # Frame-count duration
 # ---------------------------------------------------------------------------
