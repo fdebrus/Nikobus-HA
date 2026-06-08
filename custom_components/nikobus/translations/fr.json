@@ -304,9 +304,13 @@
       "name": "Détecter l'inventaire obsolète",
       "description": "Interroge chaque module de sortie connu (interrupteur, variateur, volet) sur le bus et signale ceux qui ne répondent pas. Renvoie un manifeste avec les listes de modules vérifiés / présents / absents ainsi que les adresses de boutons orphelines. Ne modifie pas la configuration ; à utiliser avec purge_stale_inventory après avoir examiné les résultats.",
       "fields": {
-        "timeout": {
-          "name": "Délai d'attente (secondes)",
-          "description": "Délai d'attente par module. Le temps d'analyse au pire cas est d'environ N modules × délai."
+        "outer_attempts": {
+          "name": "Passes de balayage",
+          "description": "Nombre de passes de détection complètes à exécuter (1–3). Davantage de passes améliore la fiabilité sur un bus lent ou chargé."
+        },
+        "outer_delay": {
+          "name": "Délai entre les passes (secondes)",
+          "description": "Temps d'attente (bus au repos) inséré entre les passes de détection (0–10 s)."
         }
       }
     },
@@ -339,6 +343,16 @@
         "sub_byte": {
           "name": "Sous-octet",
           "description": "Sélecteur de banque mémoire pour le mode forensic (par défaut 04 — table de liens de sortie). Autres banques observées : 00 (en-tête / identité du module), 01 (enregistrements BP-cell)."
+        }
+      }
+    },
+    "send_button_press": {
+      "name": "Envoyer un appui sur un bouton",
+      "description": "Simule l'appui sur un bouton Nikobus sur le bus pour l'adresse indiquée — émet le même télégramme qu'un appui physique.",
+      "fields": {
+        "address": {
+          "name": "Adresse",
+          "description": "Adresse de bus du bouton à simuler (par ex. 84DFFC)."
         }
       }
     }

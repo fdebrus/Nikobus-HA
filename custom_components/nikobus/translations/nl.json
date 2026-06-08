@@ -304,9 +304,13 @@
       "name": "Verouderde inventaris detecteren",
       "description": "Test elke bekende uitgangsmodule (schakelaar, dimmer, rolluik) op de bus en meldt welke niet reageren. Geeft een overzicht terug met lijsten van gecontroleerde / aanwezige / afwezige modules plus verweesde knopadressen. Wijzigt de configuratie niet; gebruik samen met purge_stale_inventory na het bekijken van de resultaten.",
       "fields": {
-        "timeout": {
-          "name": "Time-out (seconden)",
-          "description": "Time-out per module. De scantijd in het slechtste geval is ongeveer N modules × time-out."
+        "outer_attempts": {
+          "name": "Detectiedoorgangen",
+          "description": "Aantal volledige detectiedoorgangen om uit te voeren (1–3). Meer doorgangen verbetert de betrouwbaarheid op een trage of drukke bus."
+        },
+        "outer_delay": {
+          "name": "Vertraging tussen doorgangen (seconden)",
+          "description": "Wachttijd (rustige bus) tussen detectiedoorgangen (0–10 s)."
         }
       }
     },
@@ -339,6 +343,16 @@
         "sub_byte": {
           "name": "Sub-byte",
           "description": "Geheugenbankselector voor forensische modus (standaard 04 — uitgangskoppelingstabel). Andere waargenomen banken: 00 (modulekop / identiteit), 01 (BP-cell-records)."
+        }
+      }
+    },
+    "send_button_press": {
+      "name": "Knopdruk verzenden",
+      "description": "Simuleert een Nikobus-knopdruk op de bus voor het opgegeven adres — verstuurt hetzelfde telegram als een fysieke druk.",
+      "fields": {
+        "address": {
+          "name": "Adres",
+          "description": "Busadres van de te simuleren knop (bijv. 84DFFC)."
         }
       }
     }
