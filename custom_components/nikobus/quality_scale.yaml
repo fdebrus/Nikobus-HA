@@ -88,11 +88,17 @@ rules:
     status: todo
     comment: |
       py.typed marker is in place and mypy.ini declares strict mode for
-      custom_components.nikobus.*. Code-side: PEP 585/604 forms used
-      throughout, asyncio.Task[None] generics declared, broad except
-      blocks re-raise CancelledError, ad-hoc Any removed in favour of
-      typed Event / NikobusDataCoordinator / CALLBACK_TYPE. The
-      remaining mypy diagnostics involve homeassistant.* generics that
-      mypy can only resolve when an installed HA package provides the
-      stubs; those will be cleared when the integration enters HA
-      core's strict-typing CI.
+      custom_components.nikobus.* (the vendored access_parser is excluded,
+      same as in ruff). Code-side: PEP 585/604 forms used throughout,
+      asyncio.Task[None] generics declared, broad except blocks re-raise
+      CancelledError, ad-hoc Any removed in favour of typed Event /
+      NikobusDataCoordinator / CALLBACK_TYPE.
+
+      `mypy --strict` over our code reports ~151 diagnostics. The majority
+      (~100: subclassing Any HA base classes, the untyped @callback
+      decorator, Any returns/attribute access from HA types) can only be
+      resolved with an installed HA package and clear in HA core's
+      strict-typing CI. The rest (~50: a handful of bare-generic
+      annotations — dict/set/list/frozenset/tuple without parameters —
+      and Mapping-vs-dict argument widening on the entity constructors)
+      are resolvable here and tracked as a follow-up typing pass.
