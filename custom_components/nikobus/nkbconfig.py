@@ -18,7 +18,6 @@ from homeassistant.core import HomeAssistant
 from .exceptions import NikobusDataError
 
 _LOGGER = logging.getLogger(__name__)
-_LOAD_TRANSFORMS: dict[str, str] = {}
 
 
 class NikobusConfig:
@@ -29,14 +28,13 @@ class NikobusConfig:
         self._hass = hass
 
     async def load_json_data(self, file_name: str, data_type: str) -> dict[str, Any]:
-        """Load JSON data from a file and transform it based on the data type."""
+        """Load JSON data from a config file in the HA config directory."""
         file_path = self._hass.config.path(file_name)
         _LOGGER.info("Loading %s data from %s", data_type, file_path)
 
         try:
             async with aio_open(file_path, mode="r") as file:
-                data = json.loads(await file.read())
-            return self._transform_loaded_data(data, data_type)
+                return json.loads(await file.read())
 
         except FileNotFoundError:
             self._handle_file_not_found(file_path, data_type)
@@ -52,13 +50,6 @@ class NikobusConfig:
         except Exception as err:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
-
-    def _transform_loaded_data(self, data: dict[str, Any], data_type: str) -> dict[str, Any]:
-        """Transform the loaded JSON data based on the data type."""
-        transform_name = _LOAD_TRANSFORMS.get(data_type)
-        if not transform_name:
-            return data
-        return getattr(self, transform_name)(data)
 
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:
         """Handle the case where the configuration file is not found."""
