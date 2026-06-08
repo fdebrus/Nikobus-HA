@@ -81,7 +81,7 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         self._attr_device_info = device_info
 
         #: Last ``(available, render_state)`` actually written, for diffing.
-        self._last_render: tuple | None = None
+        self._last_render: tuple[bool, Any] | None = None
 
     def _invalidate_optimistic(self) -> None:
         """Drop optimistic caches before the real state is read (override)."""

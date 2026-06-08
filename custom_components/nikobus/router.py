@@ -145,7 +145,7 @@ def iter_input_module_children(
 
 def iter_operation_points(
     buttons: Mapping[str, Any] | None,
-) -> Iterator[tuple[str, str, Mapping[str, Any], Mapping[str, Any]]]:
+) -> Iterator[tuple[str, str, dict[str, Any], dict[str, Any]]]:
     """Yield ``(physical_addr, key_label, op_point, phys)`` for every
     button operation point carrying a ``bus_address``.
 

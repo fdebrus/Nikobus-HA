@@ -161,7 +161,7 @@ class LegacyUndecodedButtonsRepairFlow(RepairsFlow):
             phys = buttons.get(addr) or {}
             btype = phys.get("type") or "Unknown"
             model = phys.get("model") or "—"
-            reason = cls._REASON_LABELS.get(phys.get("status"), "—")
+            reason = cls._REASON_LABELS.get(phys.get("status") or "", "—")
             description = phys.get("description") or ""
             # Strip the auto-suffix and any pipe chars that would break
             # the table layout.

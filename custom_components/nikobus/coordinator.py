@@ -105,7 +105,7 @@ _PROBE_OUTER_DELAY_S = 3.0
 _REGISTRY_SOURCES = frozenset({"pc_link_registry", "pc_logic_registry"})
 
 
-def _member_set_from_outputs(outputs) -> frozenset:
+def _member_set_from_outputs(outputs: Any) -> frozenset[tuple[str, int, str]]:
     """Frozenset of ``(module_upper, channel, mode_code)`` for an output
     list — the canonical key for matching a scene/CF by its members,
     used identically on ``.nkb`` groups, CF entries and routing-graph
@@ -124,12 +124,12 @@ def _member_set_from_outputs(outputs) -> frozenset:
     return frozenset(out)
 
 
-def _cf_member_set(cf: dict) -> frozenset:
+def _cf_member_set(cf: dict[str, Any]) -> frozenset[tuple[str, int, str]]:
     """Member-set key for a stored ``nikobus_cf`` entry."""
     return _member_set_from_outputs((cf or {}).get("outputs"))
 
 
-def _output_entity_key(unique_id) -> tuple[str, int] | None:
+def _output_entity_key(unique_id: str | None) -> tuple[str, int] | None:
     """``(MODULE_ADDR_UPPER, channel)`` for a per-channel output entity's
     unique_id (``nikobus_{light|switch|cover}_{kind}_{addr}_{ch}``), else
     ``None`` — used to match ``.nkb`` output names to entities."""
@@ -146,7 +146,7 @@ def _output_entity_key(unique_id) -> tuple[str, int] | None:
     return (addr.upper(), int(ch))
 
 
-def _apply_entity_name(ent_reg, ent, name: str, overwrite: bool) -> bool:
+def _apply_entity_name(ent_reg: Any, ent: Any, name: str, overwrite: bool) -> bool:
     """Set an entity's name; return True if changed. Non-overwrite only
     fills a blank (no user name set); overwrite replaces any user name."""
     if overwrite:
@@ -868,8 +868,13 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         if self.nikobus_command:
             self.nikobus_command.set_bytearray_state(address, channel, value)
 
-    def set_bytearray_group_state(self, address: str, group: int, value: str) -> None:
+    def set_bytearray_group_state(
+        self, address: str, group: int | str, value: str
+    ) -> None:
         """Update a group in the state buffer from a hex string.
+
+        ``group`` accepts an int (1/2) or the string forms ("1"/"2") the
+        actuator routes by; it is normalised with ``int(group)`` below.
 
         Out-of-range group writes are silently ignored. Without this
         guard, a slice assignment like ``buf[6:12] = ...`` against a
@@ -1731,7 +1736,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
 
     async def _reconcile_post_discovery(
         self,
-        discovered_devices: dict | None = None,
+        discovered_devices: dict[str, Any] | None = None,
         inventory_query_type: InventoryQueryType | None = None,
     ) -> None:
         """Probe every output module + tag buttons by reachability.
@@ -1946,7 +1951,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
     async def _handle_discovery_finished(
         self,
         *,
-        discovered_devices: dict | None = None,
+        discovered_devices: dict[str, Any] | None = None,
         inventory_query_type: InventoryQueryType | None = None,
     ) -> None:
         """Signal discovery completion; optionally reload the config entry.
@@ -2476,7 +2481,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         scenes_created = 0
         if "scenes" in cats and self.cf_storage is not None:
             scene_by_members = {sc.members: sc.name for sc in data.scenes}
-            matched_scene_members: set = set()
+            matched_scene_members: set[frozenset[tuple[str, int, str]]] = set()
             for cf_addr, cf in self.cf_storage.data.get("nikobus_cf", {}).items():
                 hit = scene_by_members.get(_cf_member_set(cf))
                 if hit:
@@ -2484,7 +2489,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                     matched_scene_members.add(_cf_member_set(cf))
             graph = self._build_routing_graph()
             existing = self.cf_storage.data.setdefault("nikobus_cf", {})
-            new_entries: dict[str, dict] = {}
+            new_entries: dict[str, dict[str, Any]] = {}
             for sc in data.scenes:
                 if sc.members in matched_scene_members or not sc.members:
                     continue
@@ -2514,7 +2519,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         area_reg = ar.async_get(self.hass)
         entry_id = self.config_entry.entry_id
 
-        def _lookup(device) -> tuple[str, str] | None:
+        def _lookup(device: Any) -> tuple[str, str] | None:
             for domain, ident in device.identifiers:
                 if domain != DOMAIN:
                     continue
@@ -2562,7 +2567,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # name, and their channels are named individually below.
         entities_named = 0
         if do_names:
-            by_device: dict[str, list] = {}
+            by_device: dict[str, list[Any]] = {}
             for ent in entities:
                 if ent.device_id:
                     by_device.setdefault(ent.device_id, []).append(ent)
@@ -2613,7 +2618,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             "scenes_created": scenes_created,
         }
 
-    def _build_routing_graph(self) -> dict:
+    def _build_routing_graph(
+        self,
+    ) -> dict[frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]]:
         """Map every op-point's member set → ``(firing addresses, outputs)``.
 
         The routing graph is the full set of ``trigger → linked outputs``
@@ -2625,7 +2632,9 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         (one scene, several triggers) are grouped; the sorted-first is the
         canonical activation address.
         """
-        graph: dict[frozenset, tuple[list[str], list[dict]]] = {}
+        graph: dict[
+            frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]
+        ] = {}
         buttons = (self.dict_button_data or {}).get("nikobus_button", {})
         if not isinstance(buttons, dict):
             return {}
@@ -2638,8 +2647,8 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 addr = op.get("bus_address")
                 if not isinstance(addr, str) or not addr:
                     continue
-                outputs: list[dict] = []
-                seen: set = set()
+                outputs: list[dict[str, Any]] = []
+                seen: set[tuple[str, int, str]] = set()
                 for link in op.get("linked_modules") or []:
                     if not isinstance(link, dict):
                         continue

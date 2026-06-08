@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
@@ -38,7 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
-def input_ab_addresses(phys: dict[str, Any]) -> tuple[str, str] | None:
+def input_ab_addresses(phys: Mapping[str, Any]) -> tuple[str, str] | None:
     """Return ``(addr_1A, addr_1B)`` bus addresses for a synthesized
     PC-Logic / Modular-Interface input, or ``None``.
 
@@ -354,7 +355,7 @@ class NikobusInputLatchSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
             )
 
     @callback
-    def _handle_button_event(self, data: dict) -> None:
+    def _handle_button_event(self, data: dict[str, Any]) -> None:
         """Latch on the 1A signal, clear on the 1B signal."""
         addr = str(data.get("address") or "").upper()
         if addr == self._addr_1a:

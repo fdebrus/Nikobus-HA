@@ -25,9 +25,12 @@ import re
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 _LOGGER = logging.getLogger(__name__)
+
+#: One parsed ``.mdb`` row: column name → value.
+_Row = dict[str, Any]
 
 CANONICAL_NKB_FILENAME = "nikobus.nkb"
 
@@ -174,7 +177,7 @@ def parse_nkb(nkb_path: str | Path) -> NkbData:
 
 
 def _extract_outputs(
-    comp_by_key: dict, objecten: list[dict], objectbase: dict
+    comp_by_key: dict[Any, _Row], objecten: list[_Row], objectbase: dict[Any, _Row]
 ) -> dict[tuple[str, int], str]:
     """``{(MODULE_ADDR, channel): name}`` for output channels with a real
     user name. Channel is the output's ``Prefix`` number (``O02`` → 2);
@@ -197,7 +200,7 @@ def _extract_outputs(
 
 
 def _extract_addresses(
-    components: list[dict], locations: dict
+    components: list[_Row], locations: dict[Any, Any]
 ) -> dict[str, tuple[str, str]]:
     """``{ADDRESS: (name, room)}`` for the physically-addressed components."""
     out: dict[str, tuple[str, str]] = {}
@@ -216,12 +219,12 @@ def _extract_addresses(
 
 
 def _extract_scenes(
-    components: list[dict],
-    comp_by_key: dict,
-    objecten: list[dict],
-    connections: list[dict],
-    linkmodes: dict,
-    objectbase: dict,
+    components: list[_Row],
+    comp_by_key: dict[Any, _Row],
+    objecten: list[_Row],
+    connections: list[_Row],
+    linkmodes: dict[Any, Any],
+    objectbase: dict[Any, _Row],
 ) -> list[SceneDef]:
     """Resolve each named CF group to its ``(module, channel, mode)`` members.
 
@@ -230,19 +233,19 @@ def _extract_scenes(
     carries only the trigger link; the membership lives on the trigger.
     """
     obj_by_key = {o["KeyObject"]: o for o in objecten}
-    objs_by_component: dict[object, set] = {}
+    objs_by_component: dict[Any, set[Any]] = {}
     for o in objecten:
         objs_by_component.setdefault(o.get("KeyComponent"), set()).add(o["KeyObject"])
-    conns_by_in: dict[object, list] = {}
+    conns_by_in: dict[Any, list[_Row]] = {}
     for cn in connections:
         conns_by_in.setdefault(cn["KeyObjectIn"], []).append(cn)
 
-    def module_addr(obj) -> str | None:
+    def module_addr(obj: _Row | None) -> str | None:
         comp = comp_by_key.get((obj or {}).get("KeyComponent"), {})
         pa = comp.get("PhysicalAddress")
         return _fmt_addr(pa) if isinstance(pa, int) and pa > 0 else None
 
-    def channel(obj) -> int | None:
+    def channel(obj: _Row | None) -> int | None:
         # Channel = the output's ``Prefix`` number (``O01`` -> 1), which
         # matches Home Assistant's per-channel numbering for EVERY module
         # type. (``ObjectAddress`` can't be used: roller outputs occupy
@@ -287,7 +290,7 @@ def _extract_scenes(
     return scenes
 
 
-def _rows(db, table: str) -> list[dict]:
+def _rows(db: Any, table: str) -> list[_Row]:
     """Row-dicts for ``table`` (access_parser returns column->list)."""
     parsed = db.parse_table(table)
     cols = list(parsed.keys())

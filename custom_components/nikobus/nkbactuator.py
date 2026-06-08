@@ -340,7 +340,12 @@ class NikobusActuator:
             # ==========================================
             # 3. Delayed State Fetch Task (UI Update Only)
             # ==========================================
-            async def _refresh_task(m_addr=addr, m_group=group, m_press_id=press_id, m_requires_long_press=requires_long_press):
+            async def _refresh_task(
+                m_addr: str = addr,
+                m_group: str = group,
+                m_press_id: str = press_id,
+                m_requires_long_press: bool = requires_long_press,
+            ) -> None:
                 try:
                     # STEP 1: Immediate UI Update (Skip for dimmers)
                     if not m_requires_long_press:
@@ -393,9 +398,9 @@ class NikobusActuator:
             # Schedule the newly requested refresh
             self._module_refresh_tasks[cache_key] = self._hass.async_create_task(_refresh_task())
 
-    def _fire_event(self, event_type: str, state: PressState, **kwargs) -> None:
+    def _fire_event(self, event_type: str, state: PressState, **kwargs: Any) -> None:
         """Helper to fire standardized Nikobus events and log them."""
-        payload = {
+        payload: dict[str, Any] = {
             "address": state.address,
             "module_address": state.module_address,
             "channel": state.channel,
