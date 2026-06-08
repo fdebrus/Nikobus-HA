@@ -1,5 +1,7 @@
 """Constants for the Nikobus integration."""
 
+from __future__ import annotations
+
 from typing import Final
 
 # =============================================================================
@@ -50,6 +52,10 @@ CATEGORY_DEVICES: Final[tuple[tuple[str, str, str], ...]] = (
 # =============================================================================
 EVENT_BUTTON_OPERATION: Final[str] = "nikobus_button_operation"
 EVENT_BUTTON_PRESSED: Final[str] = "nikobus_button_pressed"
+# Fired when a discovered CF/light scene is activated on the bus (its
+# trigger address is seen) — lets automations react to a scene firing,
+# whether triggered physically or from HA.
+EVENT_SCENE_ACTIVATED: Final[str] = "nikobus_scene_activated"
 
 
 def operation_signal(address: str) -> str:
@@ -75,10 +81,7 @@ def press_signal(address: str) -> str:
     filtering itself out. The payload mirrors the bus event's data dict.
     """
     return f"{DOMAIN}_press_{address.upper()}"
-# Fired when a discovered CF/light scene is activated on the bus (its
-# trigger address is seen) — lets automations react to a scene firing,
-# whether triggered physically or from HA.
-EVENT_SCENE_ACTIVATED: Final[str] = "nikobus_scene_activated"
+
 
 # =============================================================================
 # Discovery
