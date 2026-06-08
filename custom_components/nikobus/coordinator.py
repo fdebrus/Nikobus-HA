@@ -316,6 +316,22 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             return "reconnecting"
         return "disconnected"
 
+    @property
+    def last_connected(self) -> datetime | None:
+        """Timestamp of the last successful connect (UTC), or ``None``.
+
+        Surfaced by the connection sensor's attributes and diagnostics.
+        """
+        return self._last_connected
+
+    @property
+    def reconnect_attempts(self) -> int:
+        """Consecutive reconnect attempts since the last successful connect.
+
+        Surfaced by the connection sensor's attributes and diagnostics.
+        """
+        return self._reconnect_attempts
+
     def _get_update_interval(self) -> timedelta | None:
         # No poll timer in push mode. A feedback module pushes state
         # unprompted; older PC-Links (prior_gen3) can't sustain the poll

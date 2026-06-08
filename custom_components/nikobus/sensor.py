@@ -59,10 +59,10 @@ class NikobusConnectionSensor(CoordinatorEntity[NikobusDataCoordinator], SensorE
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return diagnostic attributes."""
-        last = self.coordinator._last_connected
+        last = self.coordinator.last_connected
         return {
             "last_connected": last.isoformat() if last else None,
-            "reconnect_attempts": self.coordinator._reconnect_attempts,
+            "reconnect_attempts": self.coordinator.reconnect_attempts,
             "connection_string": self.coordinator.connection_string,
         }
 
