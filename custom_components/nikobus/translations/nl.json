@@ -43,6 +43,12 @@
           "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
           "prior_gen3": "PC-Link is ouder dan Gen 3",
           "refresh_interval": "Polling-interval (seconden)"
+        },
+        "data_description": {
+          "connection_string": "Pad naar het seriële apparaat of TCP-adres van de PC-Link-brug",
+          "has_feedbackmodule": "Indien ingeschakeld pusht de Feedbackmodule statuswijzigingen automatisch — pollen is niet nodig.",
+          "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor PC-Link-hardware van de eerste en tweede generatie.",
+          "refresh_interval": "Hoe vaak de modulestatussen van de bus worden gelezen (60–3600 s). Lagere waarden betekenen snellere updates maar meer busverkeer."
         }
       }
     },
@@ -138,14 +144,17 @@
       }
     },
     "abort": {
-      "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw."
+      "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw.",
+      "channel_not_found": "Het geselecteerde kanaal is niet gevonden.",
+      "module_not_found": "De geselecteerde module is niet gevonden in de opslag."
     },
     "error": {
       "invalid_nkb": "Dit bestand is geen leesbaar Nikobus .nkb-project (het moet de .nkb-export zijn — een ZIP met de projectdatabase).",
       "upload_failed": "Kon het geüploade bestand niet opslaan. Controleer de Home Assistant-logboeken.",
       "nkb_nothing_selected": "Kies minstens één ding om te importeren.",
       "nkb_not_found": "Geen .nkb-bestand gevonden — upload er eerst een (Configureren → Projectbestand .nkb uploaden).",
-      "nkb_parse_failed": "Kon het .nkb-bestand niet lezen. Zie de Home Assistant-logboeken."
+      "nkb_parse_failed": "Kon het .nkb-bestand niet lezen. Zie de Home Assistant-logboeken.",
+      "invalid_hex_address": "Het LED-adres moet exact 6 hexadecimale tekens bevatten (of leeg zijn)."
     }
   },
   "entity": {
@@ -245,6 +254,18 @@
     },
     "setup_data_error": {
       "message": "Kon de Nikobus-configuratie niet laden: {error}"
+    },
+    "cf_no_address": {
+      "message": "Kan een Nikobus-CF niet activeren zonder busadres."
+    },
+    "forensic_range_incomplete": {
+      "message": "Forensische modus vereist zowel register_start als register_end. Geef beide op of laat beide weg."
+    },
+    "forensic_requires_module_address": {
+      "message": "Forensische registerscan vereist een module_address. Geef er een op (bijv. 940C) — het registerbereik kan niet op alle modules worden toegepast."
+    },
+    "not_connected": {
+      "message": "De Nikobus-bus is niet verbonden — kan geen commando verzenden. Controleer de verbinding en probeer opnieuw."
     }
   },
   "selector": {
@@ -275,6 +296,50 @@
         "switch": "Schakelaar",
         "light": "Lamp",
         "disabled": "Uitgeschakeld (kanaal verbergen)"
+      }
+    }
+  },
+  "services": {
+    "detect_stale_inventory": {
+      "name": "Verouderde inventaris detecteren",
+      "description": "Test elke bekende uitgangsmodule (schakelaar, dimmer, rolluik) op de bus en meldt welke niet reageren. Geeft een overzicht terug met lijsten van gecontroleerde / aanwezige / afwezige modules plus verweesde knopadressen. Wijzigt de configuratie niet; gebruik samen met purge_stale_inventory na het bekijken van de resultaten.",
+      "fields": {
+        "timeout": {
+          "name": "Time-out (seconden)",
+          "description": "Time-out per module. De scantijd in het slechtste geval is ongeveer N modules × time-out."
+        }
+      }
+    },
+    "purge_stale_inventory": {
+      "name": "Verouderde inventaris opschonen",
+      "description": "Verwijdert de opgegeven adressen uit de opgeslagen module- en knopopslag en herlaadt vervolgens de integratie zodat de entiteiten voor de verwijderde adressen verdwijnen. Voer eerst detect_stale_inventory uit om de lijst met veilig te verwijderen adressen te verkrijgen.",
+      "fields": {
+        "addresses": {
+          "name": "Adressen",
+          "description": "Lijst met module- / knopadressen om te verwijderen (hoofdletterongevoelig vergeleken met beide opslagplaatsen)."
+        }
+      }
+    },
+    "query_module_inventory": {
+      "name": "Module-inventaris opvragen",
+      "description": "Start een inventarisscan van Nikobus-modules. Zonder parameters worden alle uitgangsmodules gescand. Met een module_address wordt alleen die module gescand met de op het moduletype afgestemde bereiken. Met register_start + register_end (en optioneel sub_byte) wordt een forensische scan uitgevoerd van precies het gevraagde bereik — handig om de opslagindeling van PC-Logic, interfacemodules of onbekende delen van een module te reverse-engineeren.",
+      "fields": {
+        "module_address": {
+          "name": "Moduleadres",
+          "description": "Optioneel Nikobus-moduleadres (bijv. 940C, F586). Zonder dit wordt elke bekende uitgangsmodule gescand."
+        },
+        "register_start": {
+          "name": "Registerbegin",
+          "description": "Forensische modus — ondergrens van het te scannen registerbereik, als hex-byte (bijv. 0x70 of 70). Vereist register_end en een specifiek module_address. Indien opgegeven doorloopt de scan alleen dit bereik en slaat de extra-pass-logica van de productiescan over."
+        },
+        "register_end": {
+          "name": "Registereinde",
+          "description": "Forensische modus — bovengrens van het te scannen registerbereik, als hex-byte (bijv. 0x83 of 83). Moet ≥ register_start zijn."
+        },
+        "sub_byte": {
+          "name": "Sub-byte",
+          "description": "Geheugenbankselector voor forensische modus (standaard 04 — uitgangskoppelingstabel). Andere waargenomen banken: 00 (modulekop / identiteit), 01 (BP-cell-records)."
+        }
       }
     }
   }
