@@ -375,7 +375,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 button_data=self.dict_button_data,
                 on_button_save=self.button_storage.async_save,
                 module_data=self.module_storage.data,
-                on_module_save=self._async_on_module_save,
+                on_module_save=self.async_on_module_save,
                 on_progress=self._handle_discovery_progress,
             )
             self.nikobus_discovery.on_discovery_finished = self._handle_discovery_finished
@@ -1379,7 +1379,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             input_latch_switch_unique_id,
             iter_input_module_children,
             iter_operation_points,
-            INPUT_MODULE_TYPES,
         )
         known: set[str] = set()
         routing = build_routing(self.dict_module_data)
@@ -1397,37 +1396,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # inputs — same enumerator the switch platform creates from.
         for in_addr, _phys in iter_input_module_children(buttons):
             known.add(input_latch_switch_unique_id(in_addr))
-        # Input-class modules (PC-Logic, Modular Interface) skip ``build_routing``
-        # because they don't drive output relays — emit their input-channel
-        # button unique IDs directly so orphan-cleanup doesn't remove them.
-        # PC-Logic (05-201) and Modular Interface (05-206) are excluded:
-        # their inputs surface through synthesised button-store entries
-        # (one ``LM-INPUT N`` device per input), not per-channel input
-        # entities. Both module types share the same synthesis path.
-        for module_type in INPUT_MODULE_TYPES:
-            if module_type in ("pc_logic", "interface_module"):
-                continue
-            bucket = self.dict_module_data.get(module_type) or {}
-            if not isinstance(bucket, dict):
-                continue
-            for address, module_data in bucket.items():
-                if not isinstance(module_data, dict):
-                    continue
-                channels = module_data.get("channels") or []
-                if not isinstance(channels, list):
-                    continue
-                addr_upper = str(address).upper()
-                for channel_index, channel_info in enumerate(channels, start=1):
-                    if not isinstance(channel_info, dict):
-                        continue
-                    if channel_info.get("entity_type") == "disabled":
-                        continue
-                    desc = channel_info.get("description") or ""
-                    if isinstance(desc, str) and desc.startswith("not_in_use"):
-                        continue
-                    known.add(
-                        f"{DOMAIN}_input_button_{addr_upper}_{channel_index}"
-                    )
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")
@@ -1501,8 +1469,12 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         entry_data = domain_data.get(self.config_entry.entry_id, {})
         entry_data.pop("routing", None)
 
-    async def _async_on_module_save(self) -> None:
-        """Persist the Store after discovery/user edits, then refresh derived views."""
+    async def async_on_module_save(self) -> None:
+        """Persist the Store after discovery/user edits, then refresh derived views.
+
+        Public hook: called by the library (registered as ``on_module_save``)
+        and by the options flow after a module/channel edit.
+        """
         await self.module_storage.async_save()
         self._rebuild_dict_module_data()
         # Clear the cached router spec so newly-discovered modules show up.
