@@ -46,55 +46,28 @@ CF_STORAGE_KEY = "nikobus.cfs"
 CF_STORAGE_VERSION = 1
 
 
-class NikobusButtonStorage:
-    """Wrap a HA ``Store`` for button discovery data."""
+class _NikobusStore:
+    """Shared HA ``Store`` wrapper keyed by a single root mapping.
 
-    def __init__(self, hass: HomeAssistant) -> None:
-        self._store: Store[dict[str, Any]] = Store(
-            hass, BUTTON_STORAGE_VERSION, BUTTON_STORAGE_KEY
-        )
-        self._data: dict[str, Any] = {"nikobus_button": {}}
+    Subclasses set ``_root_key`` (the top-level dict key) and pass their
+    storage key + version. ``async_load`` always reshapes a missing or
+    malformed payload back to ``{_root_key: {}}`` so the live dict the
+    integration and the library share is never ``None`` or wrong-shaped.
+    """
 
-    async def async_load(self) -> dict[str, Any]:
-        """Load persisted data, returning a live mutable dict."""
-        loaded = await self._store.async_load()
-        if isinstance(loaded, dict) and isinstance(loaded.get("nikobus_button"), dict):
-            self._data = loaded
-        else:
-            self._data = {"nikobus_button": {}}
-        return self._data
+    _root_key: str
 
-    async def async_save(self) -> None:
-        """Persist the current in-memory dict to storage."""
-        await self._store.async_save(self._data)
-
-    @property
-    def data(self) -> dict[str, Any]:
-        """Return the mutable in-memory dict."""
-        return self._data
-
-
-class NikobusModuleStorage:
-    """Wrap a HA ``Store`` for module configuration (0.4.0 Option-A shape)."""
-
-    def __init__(self, hass: HomeAssistant) -> None:
-        self._store: Store[dict[str, Any]] = Store(
-            hass, MODULE_STORAGE_VERSION, MODULE_STORAGE_KEY
-        )
-        self._data: dict[str, Any] = {"nikobus_module": {}}
+    def __init__(self, hass: HomeAssistant, key: str, version: int) -> None:
+        self._store: Store[dict[str, Any]] = Store(hass, version, key)
+        self._data: dict[str, Any] = {self._root_key: {}}
 
     async def async_load(self) -> dict[str, Any]:
-        """Load persisted data, returning a live mutable dict.
-
-        The dict is always reshaped to ``{"nikobus_module": {...}}`` so the
-        library's ``setdefault("nikobus_module", {})`` operates on the same
-        mapping the integration sees.
-        """
+        """Load persisted data, returning the live mutable dict."""
         loaded = await self._store.async_load()
-        if isinstance(loaded, dict) and isinstance(loaded.get("nikobus_module"), dict):
+        if isinstance(loaded, dict) and isinstance(loaded.get(self._root_key), dict):
             self._data = loaded
         else:
-            self._data = {"nikobus_module": {}}
+            self._data = {self._root_key: {}}
         return self._data
 
     async def async_save(self) -> None:
@@ -108,11 +81,34 @@ class NikobusModuleStorage:
 
     @property
     def is_empty(self) -> bool:
-        """Return True when no modules are registered yet."""
-        return not bool(self._data.get("nikobus_module"))
+        """Return True when the root mapping has no entries yet."""
+        return not bool(self._data.get(self._root_key))
 
 
-class NikobusCFStorage:
+class NikobusButtonStorage(_NikobusStore):
+    """Wrap a HA ``Store`` for button discovery data."""
+
+    _root_key = "nikobus_button"
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        super().__init__(hass, BUTTON_STORAGE_KEY, BUTTON_STORAGE_VERSION)
+
+
+class NikobusModuleStorage(_NikobusStore):
+    """Wrap a HA ``Store`` for module configuration (0.4.0 Option-A shape).
+
+    The dict is always reshaped to ``{"nikobus_module": {...}}`` so the
+    library's ``setdefault("nikobus_module", {})`` operates on the same
+    mapping the integration sees.
+    """
+
+    _root_key = "nikobus_module"
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        super().__init__(hass, MODULE_STORAGE_KEY, MODULE_STORAGE_VERSION)
+
+
+class NikobusCFStorage(_NikobusStore):
     """Wrap a HA ``Store`` for classified CF (Central Function) broadcasts.
 
     Persists the dict the library populates on ``NikobusDiscovery.
@@ -125,27 +121,7 @@ class NikobusCFStorage:
     Storage shape: ``{"nikobus_cf": {bus_address: {...}}}``.
     """
 
+    _root_key = "nikobus_cf"
+
     def __init__(self, hass: HomeAssistant) -> None:
-        self._store: Store[dict[str, Any]] = Store(
-            hass, CF_STORAGE_VERSION, CF_STORAGE_KEY
-        )
-        self._data: dict[str, Any] = {"nikobus_cf": {}}
-
-    async def async_load(self) -> dict[str, Any]:
-        loaded = await self._store.async_load()
-        if isinstance(loaded, dict) and isinstance(loaded.get("nikobus_cf"), dict):
-            self._data = loaded
-        else:
-            self._data = {"nikobus_cf": {}}
-        return self._data
-
-    async def async_save(self) -> None:
-        await self._store.async_save(self._data)
-
-    @property
-    def data(self) -> dict[str, Any]:
-        return self._data
-
-    @property
-    def is_empty(self) -> bool:
-        return not bool(self._data.get("nikobus_cf"))
+        super().__init__(hass, CF_STORAGE_KEY, CF_STORAGE_VERSION)
