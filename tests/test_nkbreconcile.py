@@ -2,14 +2,100 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from custom_components.nikobus.nkbreconcile import (
     all_outputs_registry_sourced,
     build_controlled_by_index,
     cf_member_set,
+    classify_button_status,
     collect_button_outputs,
+    flatten_cf_broadcasts,
     has_pc_logic_module,
     member_set_from_outputs,
 )
+
+
+def _button(linked: list[tuple[str, int, str | None]], **extra):
+    """Build a minimal button record with one op-point driving ``linked``
+    outputs — each ``(module_address, channel, record_source)``."""
+    outputs = [
+        {"channel": ch, "mode": "M01", "record_source": src}
+        for _mod, ch, src in linked
+    ]
+    # Group outputs under their module address.
+    by_mod: dict[str, list[dict]] = {}
+    for (mod, ch, src), out in zip(linked, outputs):
+        by_mod.setdefault(mod, []).append(out)
+    return {
+        **extra,
+        "operation_points": {
+            "1A": {
+                "bus_address": "004E2C",
+                "linked_modules": [
+                    {"module_address": mod, "outputs": outs}
+                    for mod, outs in by_mod.items()
+                ],
+            }
+        },
+    }
+
+
+def test_classify_button_status_synthesized_input():
+    assert classify_button_status(
+        {"pc_logic_parent_address": "940C"}, set(), False
+    ) == "synthesized_input"
+
+
+def test_classify_button_status_input_only():
+    assert classify_button_status(
+        {"type": "Universal interface, switch mode"}, set(), False
+    ) == "input_only"
+
+
+def test_classify_button_status_legacy_undecoded_when_no_outputs():
+    assert classify_button_status({"operation_points": {}}, set(), False) == (
+        "legacy_undecoded"
+    )
+
+
+def test_classify_button_status_active_when_linked_module_survives():
+    phys = _button([("0E6C", 1, "output_module_table")])
+    assert classify_button_status(phys, {"0E6C"}, False) == "active"
+
+
+def test_classify_button_status_legacy_orphan_when_module_evicted():
+    phys = _button([("0E6C", 1, "output_module_table")])
+    assert classify_button_status(phys, {"C9A5"}, False) == "legacy_orphan"
+
+
+def test_classify_button_status_registry_residue_without_pc_logic():
+    phys = _button([("0E6C", 1, "pc_link_registry")])
+    # No PC-Logic → all-registry-sourced is residue, even if the module
+    # still exists.
+    assert classify_button_status(phys, {"0E6C"}, False) == "legacy_orphan"
+    # With PC-Logic present, defer to reachability (module survives → active).
+    assert classify_button_status(phys, {"0E6C"}, True) == "active"
+
+
+def test_flatten_cf_broadcasts():
+    cf = SimpleNamespace(
+        bus_address="384101",
+        pattern="switch_pair",
+        triggered_by=["384101", "004e2c"],
+        outputs=[SimpleNamespace(module_address="0e6c", channel=2, mode="M02", t1=None, t2=None)],
+    )
+    flat = flatten_cf_broadcasts({"384101": cf})
+    assert flat == {
+        "384101": {
+            "bus_address": "384101".upper(),
+            "pattern": "switch_pair",
+            "outputs": [
+                {"module_address": "0E6C", "channel": 2, "mode": "M02", "t1": None, "t2": None}
+            ],
+            "triggered_by": ["384101", "004E2C"],
+        }
+    }
 
 
 def test_member_set_from_outputs_keys_on_module_channel_modecode():

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .const import INPUT_ONLY_BUTTON_TYPES
+
 # ``_mode_code`` extracts the leading ``M<n>`` from a mode label. It's
 # re-exported by the integration's ``nkbnames`` module (which since
 # nikobus-connect 0.26.0 is a thin shim over ``nikobus_connect.nkb``),
@@ -163,3 +165,77 @@ def build_controlled_by_index(
                         "wall_button_key": key_label,
                     })
     return index
+
+
+def classify_button_status(
+    phys: dict[str, Any],
+    remaining_modules: set[str],
+    has_pc_logic: bool,
+) -> str:
+    """Return the post-discovery reconciliation bucket for one button.
+
+    ``remaining_modules`` is the set of surviving (non-evicted) module
+    addresses (upper-case); ``has_pc_logic`` is the install's topology
+    gate. One of:
+
+      * ``synthesized_input`` — a library-synthesized PC-Logic (05-201) /
+        Modular-Interface (05-206) input child (``pc_logic_parent_address``
+        set). Models a bus-event source the parent listens to internally;
+        empty ``linked_modules`` is its steady state, not residue.
+      * ``input_only`` — a Universal Interface (05-058) and friends
+        (``type`` in ``INPUT_ONLY_BUTTON_TYPES``): emits press telegrams
+        but never writes output-module link tables. Empty links is normal.
+      * ``legacy_undecoded`` — no decoded outputs anywhere (pre-Stage-2
+        default, or an intentionally-unwired HA-trigger button).
+      * ``legacy_orphan`` — has decoded outputs but either every output is
+        registry-sourced with no PC-Logic to justify it (residue from a
+        previous owner), or every decoded-target module was evicted.
+      * ``active`` — at least one linked module survived the scan.
+    """
+    if phys.get("pc_logic_parent_address"):
+        return "synthesized_input"
+    if phys.get("type") in INPUT_ONLY_BUTTON_TYPES:
+        return "input_only"
+    linked = collect_button_linked_modules(phys)
+    outputs = collect_button_outputs(phys)
+    if not outputs:
+        return "legacy_undecoded"
+    if not has_pc_logic and all_outputs_registry_sourced(outputs):
+        return "legacy_orphan"
+    if not (linked & remaining_modules):
+        return "legacy_orphan"
+    return "active"
+
+
+def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Convert the library's ``CFBroadcast`` objects to the JSON-safe
+    ``nikobus_cf`` store shape.
+
+    ``{addr: {bus_address, pattern, outputs, triggered_by}}`` — ``outputs``
+    is a list of ``{module_address, channel, mode, t1, t2}`` dicts, keyed
+    addresses upper-cased.
+    """
+    flat: dict[str, dict[str, Any]] = {}
+    for addr, cf in broadcasts.items():
+        outputs = [
+            {
+                "module_address": str(m.module_address).upper(),
+                "channel": int(m.channel),
+                "mode": str(m.mode),
+                "t1": getattr(m, "t1", None),
+                "t2": getattr(m, "t2", None),
+            }
+            for m in getattr(cf, "outputs", [])
+        ]
+        bus_address = str(getattr(cf, "bus_address", addr)).upper()
+        triggered_by = [
+            str(t).upper()
+            for t in (getattr(cf, "triggered_by", None) or [bus_address])
+        ]
+        flat[str(addr).upper()] = {
+            "bus_address": bus_address,
+            "pattern": str(getattr(cf, "pattern", "unknown")),
+            "outputs": outputs,
+            "triggered_by": triggered_by,
+        }
+    return flat

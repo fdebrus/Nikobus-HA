@@ -55,7 +55,6 @@ from .const import (
     DISCOVERY_WEIGHT_INVENTORY,
     DISCOVERY_WEIGHT_REGISTER_SCAN,
     DOMAIN,
-    INPUT_ONLY_BUTTON_TYPES,
     ISSUE_LEGACY_UNDECODED_BUTTONS,
     ISSUE_NO_BUTTONS_CONFIGURED,
     RECONNECT_DELAY_INITIAL,
@@ -66,11 +65,10 @@ from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 from .nkbmanual import legacy_config_files_present
 from .nkbreconcile import (
-    all_outputs_registry_sourced,
     build_controlled_by_index,
     cf_member_set,
-    collect_button_linked_modules,
-    collect_button_outputs,
+    classify_button_status,
+    flatten_cf_broadcasts,
     has_pc_logic_module,
     member_set_from_outputs,
 )
@@ -1535,30 +1533,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             # that hits an empty bus shouldn't lose the user's scenes.)
             return
 
-        flat: dict[str, dict[str, Any]] = {}
-        for addr, cf in broadcasts.items():
-            outputs = [
-                {
-                    "module_address": str(m.module_address).upper(),
-                    "channel": int(m.channel),
-                    "mode": str(m.mode),
-                    "t1": getattr(m, "t1", None),
-                    "t2": getattr(m, "t2", None),
-                }
-                for m in getattr(cf, "outputs", [])
-            ]
-            bus_address = str(getattr(cf, "bus_address", addr)).upper()
-            triggered_by = [
-                str(t).upper()
-                for t in (getattr(cf, "triggered_by", None) or [bus_address])
-            ]
-            flat[str(addr).upper()] = {
-                "bus_address": bus_address,
-                "pattern": str(getattr(cf, "pattern", "unknown")),
-                "outputs": outputs,
-                # Every address that fires this CF (one CF, many triggers).
-                "triggered_by": triggered_by,
-            }
+        flat = flatten_cf_broadcasts(broadcasts)
 
         # Preserve any .nkb-sourced scenes (added by async_import_nkb_names);
         # discovery never produces them, so a re-scan must not wipe them.
@@ -1716,62 +1691,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             "input_only": 0,
         }
         buttons = self.dict_button_data.setdefault("nikobus_button", {})
-        # Topology gate for the registry-only residue check. With no
-        # PC-Logic in the install, a button whose every output record
-        # is sourced from PC-Link / PC-Logic registry memory has NO
-        # output module recording the link — strong residue signal.
-        # With PC-Logic present, the same shape could be a legitimate
-        # scene trigger; defer to the existing classifier.
+        # Topology gate for the registry-only residue check (see
+        # ``classify_button_status``): with no PC-Logic in the install, a
+        # button whose every output record is registry-sourced has no
+        # output module recording the link — a strong residue signal.
         has_pc_logic = has_pc_logic_module(self.module_storage.data)
         for phys in buttons.values():
             if not isinstance(phys, dict):
                 continue
-            # Library-synthesized PC-Logic (05-201) and Modular Interface
-            # (05-206) input children carry ``pc_logic_parent_address``
-            # set by the synthesizer in nikobus-connect
-            # ``_synthesize_pc_logic_inputs``. They model bus-event
-            # sources that the parent module listens to internally, not
-            # buttons that drive output modules — empty ``linked_modules``
-            # is the steady state, not a residue signal. Bucket them on
-            # their own status so the legacy-undecoded Repairs flow
-            # leaves them alone.
-            if phys.get("pc_logic_parent_address"):
-                phys["status"] = "synthesized_input"
-                bucket_counts["synthesized_input"] += 1
-                continue
-            # Universal Interface (Niko 05-058) in either mode is
-            # input-only — its 4/8 contacts emit press telegrams but
-            # don't write into output-module link tables (they're
-            # designed to feed PC-Logic conditions). Same shape as a
-            # synthesized PC-Logic input from the bucket-decision
-            # perspective: empty ``linked_modules`` is the steady state.
-            # Tag separately so the legacy-undecoded Repairs alert
-            # doesn't false-positive on them.
-            if phys.get("type") in INPUT_ONLY_BUTTON_TYPES:
-                phys["status"] = "input_only"
-                bucket_counts["input_only"] += 1
-                continue
-            linked = collect_button_linked_modules(phys)
-            outputs = collect_button_outputs(phys)
-            if not outputs:
-                # No decoded links anywhere — pre-Stage-2 default OR
-                # intentionally unwired button (HA-trigger pattern).
-                status = "legacy_undecoded"
-            elif (
-                not has_pc_logic
-                and all_outputs_registry_sourced(outputs)
-            ):
-                # nikobus-connect 0.5.22 residue filter: every output
-                # comes from PC-Link / PC-Logic registry, and there's
-                # no PC-Logic module to potentially justify a scene
-                # trigger. Unambiguous residue programming from a
-                # previous owner — surface for purge.
-                status = "legacy_orphan"
-            elif not (linked & remaining):
-                # All decoded-target modules were evicted by the probe.
-                status = "legacy_orphan"
-            else:
-                status = "active"
+            status = classify_button_status(phys, remaining, has_pc_logic)
             phys["status"] = status
             bucket_counts[status] += 1
 
