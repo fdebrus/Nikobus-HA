@@ -32,6 +32,7 @@ from .const import (
     CONF_PRESS_REPEAT,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
+    CONFIG_ENTRY_VERSION,
     DEFAULT_PRESS_REPEAT,
     DOMAIN,
     NKB_IMPORT_CATEGORIES,
@@ -252,7 +253,7 @@ async def _test_connection(hass: HomeAssistant, connection_string: str) -> None:
 class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Multi-step config flow: connection → hardware type → (optional) polling."""
 
-    VERSION = 1
+    VERSION = CONFIG_ENTRY_VERSION
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}

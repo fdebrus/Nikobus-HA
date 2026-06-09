@@ -21,7 +21,7 @@ from homeassistant.components import (
     sensor,
 )
 
-from .const import DOMAIN, HUB_IDENTIFIER
+from .const import CONFIG_ENTRY_VERSION, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import hub_device_info
 from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
@@ -315,6 +315,34 @@ def _loaded_coordinator(hass: HomeAssistant) -> NikobusDataCoordinator | None:
         if entry.state is ConfigEntryState.LOADED:
             return entry.runtime_data
     return None
+
+
+async def async_migrate_entry(
+    hass: HomeAssistant, entry: NikobusConfigEntry
+) -> bool:
+    """Migrate a config entry to the current schema version.
+
+    The schema is at version 1 since the first release, so there is no
+    transformation to perform yet — this handler exists so HA refuses to
+    load entries from a *future* major version (downgrade protection)
+    and so the next schema change only has to add its migration step
+    here instead of wiring the whole mechanism.
+    """
+    if entry.version > CONFIG_ENTRY_VERSION:
+        # Entry was created by a newer release of this integration —
+        # downgrading data is unsupported, refuse to load it.
+        _LOGGER.error(
+            "Cannot migrate Nikobus config entry from version %s.%s "
+            "(created by a newer release than installed %s)",
+            entry.version,
+            entry.minor_version,
+            CONFIG_ENTRY_VERSION,
+        )
+        return False
+    # Future migrations go here, e.g.:
+    # if entry.version == 1:
+    #     hass.config_entries.async_update_entry(entry, data={...}, version=2)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:
