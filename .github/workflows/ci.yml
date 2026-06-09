@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Lints custom_components/nikobus per ruff.toml (vendored code excluded).
+      # Lints custom_components/nikobus per ruff defaults.
       - uses: astral-sh/ruff-action@v3
         with:
           args: "check --output-format=github"
