@@ -198,7 +198,8 @@ def test_handler_resets_counters_on_sub_phase_transition() -> None:
 
 
 def _percent_coord(scope, sub_phase, *, regs_done=0, regs_total=0,
-                   mods_done=0, mods_total=0):
+                   mods_done=0, mods_total=0,
+                   id_responses=0, id_expected=0):
     """Bare coordinator exercising the discovery_progress_percent property."""
     from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
@@ -210,6 +211,8 @@ def _percent_coord(scope, sub_phase, *, regs_done=0, regs_total=0,
     c.discovery_registers_total = regs_total
     c.discovery_modules_done = mods_done
     c.discovery_modules_total = mods_total
+    c.discovery_identity_responses = id_responses
+    c.discovery_identity_expected = id_expected
     return c
 
 
@@ -236,11 +239,22 @@ def test_module_scan_finalizing_near_complete() -> None:
 
 
 def test_inventory_scope_spans_full_bar() -> None:
-    """Load Project Overview (inventory+identity) spans 0→100 on its own."""
+    """Load Project Overview (inventory+identity) spans 0→100 on its own.
+
+    Identity is response-driven: all answers in → raw 30 → /30*100 → 99.9 cap.
+    """
     c = _percent_coord("inventory", "identity",
-                       regs_done=0, regs_total=0, mods_done=1, mods_total=1)
-    # identity done=1/1 → raw 30 → /30*100 = 100 → capped 99.9
+                       id_responses=96, id_expected=96)
     assert c.discovery_progress_percent == 99.9
+
+
+def test_inventory_scope_identity_midpoint_tracks_responses() -> None:
+    """Half the identity answers in → ~midpoint of the identity band,
+    NOT racing to 99% (the queue-ahead bug)."""
+    c = _percent_coord("inventory", "identity",
+                       id_responses=48, id_expected=96)
+    # floor 10 + 0.5*20 = 20 → /30*100 = 66.7
+    assert 60.0 <= c.discovery_progress_percent <= 70.0
 
 
 def test_full_scope_unchanged() -> None:
@@ -309,12 +323,16 @@ def test_frame_counter_only_counts_during_inventory_subphase() -> None:
         NikobusDataCoordinator._discovery_frame_callback.__get__(coord)
     )
 
-    # During identity: counter untouched.
+    # During identity: the INVENTORY counter stays put, but the identity
+    # RESPONSE counter advances (response-driven bar).
     coord.discovery_sub_phase = "identity"
+    coord.discovery_identity_expected = 96
+    coord.discovery_identity_responses = 0
     asyncio.run(coord._discovery_frame_callback("$2E0512"))
     assert coord.discovery_registers_done == 5
+    assert coord.discovery_identity_responses == 1
 
-    # During inventory: counter advances.
+    # During inventory: the inventory counter advances.
     coord.discovery_sub_phase = "inventory"
     asyncio.run(coord._discovery_frame_callback("$2E0512"))
     assert coord.discovery_registers_done == 6
@@ -330,3 +348,29 @@ class _AsyncNoop:
 from nikobus_connect.discovery import InventoryQueryType as _IQT  # noqa: E402
 
 _PCLINK = _IQT.PC_LINK
+
+
+def test_identity_bar_is_response_driven_not_queue_driven() -> None:
+    """Regression (real-log scan): the library queues all N×96 identity
+    reads in <1s and emits progress per QUEUED command, racing the bar
+    to ~99% while the bus scan actually takes ~25s. The handler must NOT
+    advance the bar from those queued emits — it captures the expected
+    total and lets the frame callback advance it per $2E response."""
+    coord, update = _make_coordinator()
+    coord.discovery_identity_responses = 0
+    coord.discovery_identity_expected = 0
+
+    # The 150ms queueing burst: 96 identity emits, registers_sent 1..96.
+    for reg in range(1, 97):
+        asyncio.run(coord._handle_discovery_progress(_FakeProgress(
+            phase="identity", module_index=1, module_total=1,
+            register=0xA0 + reg - 1, register_total=96, registers_sent=reg,
+        )))
+
+    # Expected total captured; the response counter is untouched by the
+    # burst (so the bar is still at the identity floor, not racing ahead).
+    assert coord.discovery_identity_expected == 96
+    assert coord.discovery_identity_responses == 0
+    # And the handler did not write the queued register counters through.
+    last = update.call_args.kwargs
+    assert "registers_done" not in last

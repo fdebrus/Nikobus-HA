@@ -208,6 +208,12 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         self.discovery_register_current: int | None = None
         self.discovery_decoded_records: int = 0
         self.discovery_last_error: str | None = None
+        # Identity phase is RESPONSE-driven (the library queues all
+        # N×96 reads up front and emits progress per QUEUED command, so
+        # its counters race to ~100% in <1s while the bus scan takes
+        # ~25s). These track $2E answers as they actually arrive.
+        self.discovery_identity_responses: int = 0
+        self.discovery_identity_expected: int = 0
         self._discovery_finished_event: asyncio.Event = asyncio.Event()
         self._discovery_finished_event.set()  # idle = already set
         self._pclink_first_response_event: asyncio.Event = asyncio.Event()
@@ -490,6 +496,26 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 self.discovery_registers_total,
                 self.discovery_registers_done + 1,
             )
+        elif (
+            self.discovery_sub_phase == DISCOVERY_SUB_PHASE_IDENTITY
+            and self.discovery_identity_expected
+        ):
+            # Identity bar is driven from RESPONSES, not the library's
+            # queued-command emits (which all fire in <1s). Each $2E
+            # answer here is one completed register read; advancing the
+            # bar as they arrive makes it track the real ~25s scan
+            # instead of racing to 99% and freezing.
+            self.discovery_identity_responses = min(
+                self.discovery_identity_expected,
+                self.discovery_identity_responses + 1,
+            )
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_PC_LINK,
+                message=(
+                    f"Identifying modules — {self.discovery_identity_responses}"
+                    f"/{self.discovery_identity_expected} reads"
+                ),
+            )
         # Only own the status message while we're ACTUALLY in the
         # PC-Link inventory sub-phase. ``parse_inventory_response`` also
         # receives the per-register ``$2E`` frames during the library's
@@ -658,6 +684,25 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 self._update_discovery_state(
                     phase=legacy_phase,
                     message=message,
+                )
+                return
+            if sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
+                # Same problem as inventory, worse: the library queues all
+                # N×96 identity reads up front and emits progress per
+                # QUEUED command, so module_index / registers_sent race to
+                # the end in <1s while the bus scan takes ~25s. Don't let
+                # those counters drive the bar — capture the expected
+                # total (N×96) and let ``_discovery_frame_callback`` advance
+                # it from real $2E answers. Keep modules_total for display.
+                if module_total and register_total:
+                    self.discovery_identity_expected = max(
+                        self.discovery_identity_expected,
+                        module_total * register_total,
+                    )
+                self.discovery_modules_total = module_total
+                self._update_discovery_state(
+                    phase=legacy_phase,
+                    message="Identifying modules…",
                 )
                 return
             # The library's ``register_total`` is now the cumulative

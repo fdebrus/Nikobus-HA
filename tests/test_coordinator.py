@@ -383,6 +383,8 @@ class TestDiscoveryFrameRouting(unittest.IsolatedAsyncioTestCase):
         coord.inventory_query_type = InventoryQueryType.PC_LINK
         coord.discovery_registers_done = 0
         coord.discovery_registers_total = 96
+        coord.discovery_identity_responses = 0
+        coord.discovery_identity_expected = 96
         coord.discovery_sub_phase = DISCOVERY_SUB_PHASE_INVENTORY
         coord._update_discovery_state = MagicMock()
         coord.nikobus_command = MagicMock()
@@ -442,14 +444,15 @@ class TestDiscoveryFrameRouting(unittest.IsolatedAsyncioTestCase):
 
         # Frame still parsed (the library needs every $2E response)…
         coord.nikobus_discovery.parse_inventory_response.assert_awaited_once_with(data)
-        # …but NOT counted: during identity the library's on_progress
-        # emits own the counters (progress-audit follow-up to 2.11.2 —
-        # counting here fought those authoritative values and produced
-        # flickering/incoherent register counts in the UI).
+        # …the INVENTORY register counter must NOT advance during identity…
         self.assertEqual(coord.discovery_registers_done, 0)
-        # And the status message must NOT be touched — keeps whatever
-        # _handle_discovery_progress wrote for the identity phase.
-        coord._update_discovery_state.assert_not_called()
+        # …but the identity RESPONSE counter does: the bar is driven from
+        # $2E answers as they arrive (the library queues all reads up
+        # front, so its own emits race ahead and freeze the bar at 99%).
+        self.assertEqual(coord.discovery_identity_responses, 1)
+        # The status message reflects the response progress, not the
+        # stale "PC Link inventory: X/Y" inventory message.
+        coord._update_discovery_state.assert_called_once()
 
     async def test_frame_dropped_when_discovery_not_running(self):
         coord = self._make_coordinator_stub()

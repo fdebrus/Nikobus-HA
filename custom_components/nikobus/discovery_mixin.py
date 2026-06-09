@@ -565,19 +565,30 @@ class NikobusDiscoveryMixin:
         elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
             floor = DISCOVERY_WEIGHT_INVENTORY
             phase_weight = DISCOVERY_WEIGHT_IDENTITY
-            total = self.discovery_modules_total or 1
-            done = self.discovery_modules_done
-            # 2.11.2: include per-module register progress so the bar
-            # moves smoothly during the ~30 s the library takes to scan
-            # one module's 96 identity registers, instead of jumping
-            # per-module (~0.4 % per step on a 47-module install).
-            per_module = 0.0
-            if self.discovery_registers_total:
-                per_module = min(
+            if self.discovery_identity_expected:
+                # Response-driven: the library queues all N×96 identity
+                # reads up front and emits progress per QUEUED command
+                # (racing to ~100 % in <1 s while the bus scan takes
+                # ~25 s). The frame callback counts the $2E answers as
+                # they actually arrive — that's the real progress.
+                phase_frac = min(
                     1.0,
-                    self.discovery_registers_done / self.discovery_registers_total,
+                    self.discovery_identity_responses
+                    / self.discovery_identity_expected,
                 )
-            phase_frac = min(1.0, (done + per_module) / total)
+            else:
+                # Fallback for older libraries that don't surface the
+                # per-address total: the old module-index estimate.
+                total = self.discovery_modules_total or 1
+                done = self.discovery_modules_done
+                per_module = 0.0
+                if self.discovery_registers_total:
+                    per_module = min(
+                        1.0,
+                        self.discovery_registers_done
+                        / self.discovery_registers_total,
+                    )
+                phase_frac = min(1.0, (done + per_module) / total)
         elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
             floor = DISCOVERY_WEIGHT_INVENTORY + DISCOVERY_WEIGHT_IDENTITY
             phase_weight = DISCOVERY_WEIGHT_REGISTER_SCAN
@@ -720,6 +731,8 @@ class NikobusDiscoveryMixin:
         self._discovery_finished_event.clear()
         self._last_module_scan_was_full = False
         self._discovery_scope = "inventory"
+        self.discovery_identity_responses = 0
+        self.discovery_identity_expected = 0
         self._update_discovery_state(
             phase=DISCOVERY_PHASE_PC_LINK,
             message="Probing for PC-Link…",
