@@ -31,7 +31,14 @@ class NikobusTravelCalculator:
         position rather than the stale pre-move position.
 
         Latency must be non-negative; negative values are clamped to zero.
+
+        Anchors on the *in-flight* position: when called while a travel
+        is already running (re-target in the same direction), the
+        committed ``self.position`` is stale — using it would snap the
+        simulated position back to the pre-move value and make the new
+        run start from the wrong base.
         """
+        self.position = self.current_position()
         self._start_pos = self.position
         self._start_time = time.monotonic() - max(0.0, latency)
         self._direction = 1 if direction == "opening" else -1
