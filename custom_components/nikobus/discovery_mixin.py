@@ -799,6 +799,16 @@ class NikobusDiscoveryMixin:
                 "manual config files.",
                 err,
             )
+            # Same cleanup as the CancelledError path above: the library
+            # sets ``discovery_running`` before the point where
+            # ``start_inventory_discovery`` can raise. Without this, a
+            # probe failure left the flag stuck True — polling suppressed
+            # forever and every new scan rejected as "already running".
+            # (nikobus-connect 0.27.1 also resets its own state on this
+            # path; this is the integration's defence in depth for older
+            # library versions.)
+            self.discovery_running = False
+            self._discovery_finished_event.set()
             return False
 
     async def _apply_manual_inventory_as_fallback(self) -> bool:
