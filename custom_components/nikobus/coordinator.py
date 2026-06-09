@@ -479,11 +479,17 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         self._pclink_first_response_event.set()
         await self.nikobus_discovery.parse_inventory_response(message)
 
-        # Count this frame toward the PC Link progress bar.
-        self.discovery_registers_done = min(
-            self.discovery_registers_total,
-            self.discovery_registers_done + 1,
-        )
+        # Count this frame toward the PC Link progress bar — but ONLY
+        # while we're actually in the inventory sub-phase. The same
+        # ``$2E`` frames keep flowing during the library's identity
+        # phase (96 reads x N modules); counting them here would fight
+        # the authoritative per-module counters the library's
+        # on_progress emits write between frames.
+        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+            self.discovery_registers_done = min(
+                self.discovery_registers_total,
+                self.discovery_registers_done + 1,
+            )
         # Only own the status message while we're ACTUALLY in the
         # PC-Link inventory sub-phase. ``parse_inventory_response`` also
         # receives the per-register ``$2E`` frames during the library's
@@ -560,7 +566,14 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             # 0.19.1 also resets these library-side; this is a
             # defence-in-depth so older lib versions get the same
             # behaviour.
-            if sub_phase != self.discovery_sub_phase:
+            if (
+                sub_phase != self.discovery_sub_phase
+                and sub_phase != DISCOVERY_SUB_PHASE_INVENTORY
+            ):
+                # Entering INVENTORY is excluded: start_pc_link_inventory
+                # seeds registers_total (≈92) for the frame-callback's
+                # per-frame counter, and zeroing the total here would
+                # pin that counter at min(0, …) for the whole phase.
                 self.discovery_registers_done = 0
                 self.discovery_registers_total = 0
 
@@ -633,6 +646,20 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             self.discovery_register_current = (
                 int(register) if register is not None else None
             )
+            if sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
+                # The library emits inventory progress ONCE, as a single
+                # unit of work (register_total=1, registers_sent=1).
+                # Writing that through would clobber the live 0..92
+                # frame counter ``_discovery_frame_callback`` maintains —
+                # the inventory bar then pinned at "1/1" for the whole
+                # phase (and the frame counter froze on min(total=1, ..)).
+                # The frame callback owns the counters for this phase;
+                # only take the phase/message here.
+                self._update_discovery_state(
+                    phase=legacy_phase,
+                    message=message,
+                )
+                return
             # The library's ``register_total`` is now the cumulative
             # per-module target under the vendor plan (48 for output
             # modules + PC-Logic, 93 for PC-Link, 112 with broad_scan).

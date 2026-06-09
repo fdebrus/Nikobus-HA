@@ -342,9 +342,14 @@ class NikobusDiscoveryMixin:
             }
 
         # --- Probe with library-owned outer retry ----------------------
+        # NOTE: no ``phase=`` override here (or below). The coarse phase
+        # must stay whatever the run was (module_scan for a register
+        # scan) — forcing it back to pc_link made the status sensor's
+        # state REGRESS at the end of every module scan, and dropped
+        # the progress bar to the legacy 10% fallback for the 5-15 s
+        # the probe takes.
         self.discovery_sub_phase = DISCOVERY_SUB_PHASE_PROBING
         self._update_discovery_state(
-            phase=DISCOVERY_PHASE_PC_LINK,
             message="Probing modules for residue…",
             registers_done=self.discovery_registers_total,
         )
@@ -363,7 +368,6 @@ class NikobusDiscoveryMixin:
 
         # --- Eviction --------------------------------------------------
         self._update_discovery_state(
-            phase=DISCOVERY_PHASE_PC_LINK,
             message="Reconciling discovered inventory…",
         )
         modules = self.module_storage.data.setdefault("nikobus_module", {})
@@ -375,7 +379,6 @@ class NikobusDiscoveryMixin:
                     evicted.append(str(addr).upper())
         if evicted:
             self._update_discovery_state(
-                phase=DISCOVERY_PHASE_PC_LINK,
                 message=f"Evicted {len(evicted)} stale module(s); finalizing…",
             )
 
@@ -595,6 +598,20 @@ class NikobusDiscoveryMixin:
             )
             phase_weight = DISCOVERY_WEIGHT_FINALIZING
             phase_frac = 0.5
+        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_PROBING:
+            # Post-discovery residue probe + eviction (reconciliation).
+            # Sits AFTER finalizing's midpoint: without this branch the
+            # property fell through to the legacy fallback and the bar
+            # DROPPED from ~97% to 10% for the 5-15 s the probe takes,
+            # then jumped to 100 — the single most visible progress
+            # glitch, present at the end of every discovery run.
+            floor = (
+                DISCOVERY_WEIGHT_INVENTORY
+                + DISCOVERY_WEIGHT_IDENTITY
+                + DISCOVERY_WEIGHT_REGISTER_SCAN
+            )
+            phase_weight = DISCOVERY_WEIGHT_FINALIZING
+            phase_frac = 0.75
         else:
             # Older libraries may still drive the legacy-phase field only.
             if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:

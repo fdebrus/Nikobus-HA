@@ -248,3 +248,85 @@ def test_full_scope_unchanged() -> None:
     c = _percent_coord("full", "register_scan",
                        regs_done=0, regs_total=48, mods_done=0, mods_total=4)
     assert c.discovery_progress_percent == 30.0
+
+
+# ---------------------------------------------------------------------------
+# Progress-pipeline audit regressions (UI: bar jumping back / frozen /
+# incoherent values across stages)
+# ---------------------------------------------------------------------------
+
+def test_probing_subphase_does_not_drop_to_legacy_fallback() -> None:
+    """The bar used to FALL from ~97% to 10% during the 5-15 s residue
+    probe at the end of every run: PROBING wasn't handled by
+    discovery_progress_percent and fell through to the legacy branch."""
+    c = _percent_coord("full", "probing")
+    pct = type(c).discovery_progress_percent.fget(c)
+    assert 95.0 <= pct <= 99.9, pct
+
+
+def test_probing_after_module_scan_scope_stays_high() -> None:
+    c = _percent_coord("module_scan", "probing")
+    pct = type(c).discovery_progress_percent.fget(c)
+    assert 95.0 <= pct <= 99.9, pct
+
+
+def test_inventory_emit_does_not_clobber_frame_counters() -> None:
+    """The library emits inventory progress ONCE as a 1/1 unit; writing
+    that through clobbered the live 0..92 frame counter and pinned the
+    inventory bar at '1/1' for the whole phase."""
+    coord, update = _make_coordinator()
+    # Seeded by start_pc_link_inventory before the library emit arrives.
+    coord.discovery_registers_done = 7
+    coord.discovery_registers_total = 92
+    progress = _FakeProgress(
+        phase="inventory", register_total=1, registers_sent=1
+    )
+    asyncio.run(coord._handle_discovery_progress(progress))
+    kwargs = update.call_args.kwargs
+    assert "registers_done" not in kwargs
+    assert "registers_total" not in kwargs
+    # Sub-phase transition into INVENTORY must not zero the seed either.
+    assert coord.discovery_registers_done == 7
+    assert coord.discovery_registers_total == 92
+
+
+def test_frame_counter_only_counts_during_inventory_subphase() -> None:
+    """$2E frames keep flowing during the identity phase; counting them
+    in the frame callback fought the library's authoritative per-module
+    counters (flicker / incoherent values)."""
+    from custom_components.nikobus.coordinator import NikobusDataCoordinator
+
+    coord = MagicMock(spec=NikobusDataCoordinator)
+    coord.nikobus_discovery = MagicMock()
+    coord.nikobus_discovery.parse_inventory_response = _AsyncNoop()
+    coord.discovery_running = True
+    coord.inventory_query_type = _PCLINK
+    coord._pclink_first_response_event = MagicMock()
+    coord.discovery_registers_done = 5
+    coord.discovery_registers_total = 92
+    coord._update_discovery_state = MagicMock()
+    coord._discovery_frame_callback = (
+        NikobusDataCoordinator._discovery_frame_callback.__get__(coord)
+    )
+
+    # During identity: counter untouched.
+    coord.discovery_sub_phase = "identity"
+    asyncio.run(coord._discovery_frame_callback("$2E0512"))
+    assert coord.discovery_registers_done == 5
+
+    # During inventory: counter advances.
+    coord.discovery_sub_phase = "inventory"
+    asyncio.run(coord._discovery_frame_callback("$2E0512"))
+    assert coord.discovery_registers_done == 6
+
+
+class _AsyncNoop:
+    def __call__(self, *args):  # noqa: D102
+        async def _noop():
+            return None
+        return _noop()
+
+
+from nikobus_connect.discovery import InventoryQueryType as _IQT  # noqa: E402
+
+_PCLINK = _IQT.PC_LINK

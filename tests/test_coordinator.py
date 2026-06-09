@@ -440,11 +440,14 @@ class TestDiscoveryFrameRouting(unittest.IsolatedAsyncioTestCase):
 
         await coord._discovery_frame_callback(data)
 
-        # Frame still counted toward the register progress bar
-        # (parse_inventory_response is the per-frame increment hook).
+        # Frame still parsed (the library needs every $2E response)…
         coord.nikobus_discovery.parse_inventory_response.assert_awaited_once_with(data)
-        self.assertEqual(coord.discovery_registers_done, 1)
-        # But the status message must NOT be touched — keeps whatever
+        # …but NOT counted: during identity the library's on_progress
+        # emits own the counters (progress-audit follow-up to 2.11.2 —
+        # counting here fought those authoritative values and produced
+        # flickering/incoherent register counts in the UI).
+        self.assertEqual(coord.discovery_registers_done, 0)
+        # And the status message must NOT be touched — keeps whatever
         # _handle_discovery_progress wrote for the identity phase.
         coord._update_discovery_state.assert_not_called()
 
