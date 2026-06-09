@@ -186,7 +186,13 @@ class TestOptionsFlow(unittest.TestCase):
         self.assertEqual(result["type"], "menu")
         self.assertEqual(
             result["menu_options"],
-            ["hardware", "configure_modules", "upload_nkb", "import_nkb"],
+            [
+                "hardware",
+                "configure_modules",
+                "manage_scenes",
+                "upload_nkb",
+                "import_nkb",
+            ],
         )
 
     def test_hardware_with_feedback_creates_entry(self):
@@ -211,3 +217,112 @@ class TestOptionsFlow(unittest.TestCase):
         result = _run(flow.async_step_polling({CONF_REFRESH_INTERVAL: 600}))
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"][CONF_REFRESH_INTERVAL], 600)
+
+
+class TestSceneEditor(unittest.TestCase):
+    """Options-flow scene editor: create / add member / save / delete."""
+
+    def _flow_with_store(self, scenes=None):
+        flow = NikobusOptionsFlow()
+        coord = MagicMock()
+        coord.dict_scene_data = {"scene": list(scenes or [])}
+        coord.module_storage.data = {
+            "nikobus_module": {
+                "8110": {
+                    "module_type": "switch_module",
+                    "description": "Relais RDC",
+                    "channels": [{"description": f"ch{i}"} for i in range(1, 5)],
+                },
+                "D1A2": {
+                    "module_type": "dimmer_module",
+                    "description": "Dimmer salon",
+                    "channels": [{"description": "spots"}],
+                },
+                "940C": {"module_type": "pc_logic", "channels": []},  # not scene-able
+            }
+        }
+        coord.nikobus_config.save_json_data = AsyncMock()
+        entry = MagicMock()
+        entry.runtime_data = coord
+        entry.options = {}
+        entry.data = {}
+        flow.config_entry = entry
+        return flow, coord
+
+    def test_manage_scenes_lists_existing_and_create(self):
+        flow, _ = self._flow_with_store(
+            scenes=[{"id": "scene_soiree", "description": "Soirée", "channels": []}]
+        )
+        result = _run(flow.async_step_manage_scenes(None))
+        self.assertEqual(result["step_id"], "manage_scenes")
+
+    def test_create_scene_add_member_and_save(self):
+        flow, coord = self._flow_with_store()
+        # Create → editor
+        result = _run(flow.async_step_manage_scenes({"scene": "__create__"}))
+        self.assertEqual(result["step_id"], "scene_editor")
+        # Name it + add a member
+        result = _run(
+            flow.async_step_scene_editor(
+                {"description": "Tout éteindre", "action": "add_member"}
+            )
+        )
+        self.assertEqual(result["step_id"], "scene_member")
+        result = _run(
+            flow.async_step_scene_member(
+                {"module": "8110", "channel": 2, "state": "off"}
+            )
+        )
+        self.assertEqual(result["step_id"], "scene_editor")
+        # Save
+        result = _run(flow.async_step_scene_editor({"action": "save"}))
+        self.assertEqual(result["type"], "create_entry")
+        coord.nikobus_config.save_json_data.assert_awaited_once()
+        scenes = coord.dict_scene_data["scene"]
+        self.assertEqual(len(scenes), 1)
+        self.assertEqual(scenes[0]["id"], "scene_tout_teindre")
+        self.assertEqual(
+            scenes[0]["channels"],
+            [{"module_id": "8110", "channel": "2", "state": "off"}],
+        )
+
+    def test_member_validation_rejects_bad_state_and_channel(self):
+        flow, _ = self._flow_with_store()
+        _run(flow.async_step_manage_scenes({"scene": "__create__"}))
+        # switch with a dimmer level → invalid state
+        result = _run(
+            flow.async_step_scene_member({"module": "8110", "channel": 1, "state": "128"})
+        )
+        self.assertEqual(result["errors"], {"base": "invalid_scene_state"})
+        # channel out of range (module has 4)
+        result = _run(
+            flow.async_step_scene_member({"module": "8110", "channel": 9, "state": "on"})
+        )
+        self.assertEqual(result["errors"], {"base": "invalid_scene_channel"})
+        # dimmer accepts a numeric level
+        result = _run(
+            flow.async_step_scene_member({"module": "D1A2", "channel": 1, "state": "128"})
+        )
+        self.assertEqual(result["step_id"], "scene_editor")
+
+    def test_delete_scene_removes_and_saves(self):
+        flow, coord = self._flow_with_store(
+            scenes=[{"id": "scene_x", "description": "X", "channels": [
+                {"module_id": "8110", "channel": "1", "state": "on"},
+            ]}]
+        )
+        result = _run(flow.async_step_manage_scenes({"scene": "scene_x"}))
+        self.assertEqual(result["step_id"], "scene_editor")
+        result = _run(flow.async_step_scene_editor({"action": "delete"}))
+        self.assertEqual(result["type"], "create_entry")
+        self.assertEqual(coord.dict_scene_data["scene"], [])
+        coord.nikobus_config.save_json_data.assert_awaited_once()
+
+    def test_unique_id_suffix_on_collision(self):
+        flow, coord = self._flow_with_store(
+            scenes=[{"id": "scene_test", "description": "Test", "channels": []}]
+        )
+        _run(flow.async_step_manage_scenes({"scene": "__create__"}))
+        _run(flow.async_step_scene_editor({"description": "Test", "action": "save"}))
+        ids = [sc["id"] for sc in coord.dict_scene_data["scene"]]
+        self.assertEqual(ids, ["scene_test", "scene_test_2"])
