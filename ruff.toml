@@ -1,3 +1,3 @@
-# Vendored third-party code (Apache-2.0 access_parser) is excluded from
-# linting — it is maintained upstream, not by this project.
-extend-exclude = ["custom_components/nikobus/vendor"]
+# Ruff uses its defaults for this project. (The previous vendored-code
+# exclusion was dropped when the .nkb Access reader moved into the
+# nikobus-connect library in 0.26.0.)
