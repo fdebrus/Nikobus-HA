@@ -127,6 +127,14 @@ DISCOVERY_WEIGHT_IDENTITY: Final[int] = 20
 DISCOVERY_WEIGHT_REGISTER_SCAN: Final[int] = 65
 DISCOVERY_WEIGHT_FINALIZING: Final[int] = 5
 
+#: The selectable ``.nkb`` import categories (all applied by default).
+NKB_IMPORT_CATEGORIES: Final[tuple[str, ...]] = (
+    "device_names",
+    "channel_names",
+    "areas",
+    "scenes",
+)
+
 # =============================================================================
 # Repair issues
 # =============================================================================

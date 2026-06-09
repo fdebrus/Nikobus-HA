@@ -34,9 +34,9 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     DEFAULT_PRESS_REPEAT,
     DOMAIN,
+    NKB_IMPORT_CATEGORIES,
 )
 from .coordinator import (
-    NKB_IMPORT_CATEGORIES,
     NikobusConfigEntry,
     NikobusDataCoordinator,
 )
