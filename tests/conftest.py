@@ -68,14 +68,72 @@ class _ConfigEntry:
         return cls
 
 
-class _ConfigFlow:
+class _AbortFlow(Exception):
+    """Stub of homeassistant.data_entry_flow.AbortFlow."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class _FlowHandlerBase:
+    """Shared flow-result helpers mirroring HA's FlowHandler surface.
+
+    Steps return plain dicts shaped like HA's FlowResult so tests can
+    assert on ``type`` / ``step_id`` / ``errors`` without the real flow
+    framework.
+    """
+
+    hass = None
+
+    def async_show_form(self, *, step_id, data_schema=None, errors=None, **kw):
+        return {
+            "type": "form",
+            "step_id": step_id,
+            "data_schema": data_schema,
+            "errors": errors or {},
+        }
+
+    def async_show_menu(self, *, step_id, menu_options, **kw):
+        return {"type": "menu", "step_id": step_id, "menu_options": menu_options}
+
+    def async_create_entry(self, *, title=None, data=None, **kw):
+        return {"type": "create_entry", "title": title, "data": data}
+
+    def async_abort(self, *, reason):
+        return {"type": "abort", "reason": reason}
+
+
+class _ConfigFlow(_FlowHandlerBase):
     # Allow ``class X(ConfigFlow, domain="nikobus")`` subclassing.
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__()
 
+    #: Test hook — set to a set of unique_ids considered "already configured".
+    _configured_unique_ids: set | None = None
+    _unique_id = None
 
-class _OptionsFlow:
-    pass
+    async def async_set_unique_id(self, unique_id):
+        self._unique_id = unique_id
+
+    def _abort_if_unique_id_configured(self):
+        if self._configured_unique_ids and self._unique_id in self._configured_unique_ids:
+            raise _AbortFlow("already_configured")
+
+    #: Test hook — the entry returned by ``_get_reconfigure_entry``.
+    _reconfigure_entry = None
+
+    def _get_reconfigure_entry(self):
+        return self._reconfigure_entry
+
+    def async_update_reload_and_abort(self, entry, *, data=None, **kw):
+        entry.data = data
+        return {"type": "abort", "reason": "reconfigure_successful"}
+
+
+class _OptionsFlow(_FlowHandlerBase):
+    #: Test hook — assigned directly by tests (HA wires it via handler).
+    config_entry = None
 
 
 class _ConfigEntryState:
@@ -331,7 +389,7 @@ _mod(
     FileSelector=lambda *a, **k: None,
     FileSelectorConfig=lambda *a, **k: None,
 )
-_mod("homeassistant.data_entry_flow", FlowResult=dict)
+_mod("homeassistant.data_entry_flow", FlowResult=dict, AbortFlow=_AbortFlow)
 # homeassistant.components.file_upload — process_uploaded_file is patched
 # per-test; stub the module so config_flow's lazy import resolves.
 _mod("homeassistant.components.file_upload", process_uploaded_file=None)
