@@ -251,7 +251,6 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             model="Software Scene",
             via_device=(DOMAIN, CATEGORY_SCENES),
         )
-        self._scene_id = scene_id
         self._attr_name = description
         self._attr_unique_id = f"nikobus_scene_{scene_id}"
 
