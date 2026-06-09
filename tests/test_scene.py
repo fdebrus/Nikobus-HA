@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+import unittest.mock
 from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.nikobus.scene import (
@@ -290,3 +291,72 @@ class TestCoordinatorSceneHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Regression: _delayed_roller_stop must not replay a stale module snapshot
+# ---------------------------------------------------------------------------
+class TestDelayedRollerStop(unittest.TestCase):
+    """The timed stop fires 30-60 s after activation. It must compose the
+    stop frame from the module's CURRENT state, and only force STOPPED on
+    channels still doing what THIS activation sent — anything redirected
+    during travel (user, wall button, another scene) is not ours."""
+
+    def _scene_with_module_state(self, current: bytearray | None):
+        ent = _scene()
+        ent.coordinator.nikobus_module_states = (
+            {"C9A5": current} if current is not None else {}
+        )
+        ent._apply_module_state = AsyncMock()
+        ent._module_tokens["C9A5"] = "tok"
+        return ent
+
+    def _run_stop(self, ent, sent, indexes, token="tok"):
+        async def scenario():
+            with unittest.mock.patch("asyncio.sleep", new=AsyncMock()):
+                await ent._delayed_roller_stop("C9A5", sent, indexes, 30.0, token)
+        _run(scenario())
+
+    def test_nominal_stop_uses_current_state_basis(self):
+        # Scene sent ch1=OPEN; meanwhile ch2 (untouched by the scene) was
+        # turned to CLOSE by the user. The stop frame must carry the
+        # CURRENT ch2 value, not the activation snapshot's.
+        sent = bytearray(12)
+        sent[0] = 0x01  # ch1 OPEN
+        current = bytearray(12)
+        current[0] = 0x01  # ch1 still ours
+        current[1] = 0x02                               # ch2 changed meanwhile
+        ent = self._scene_with_module_state(current)
+        self._run_stop(ent, sent, {0})
+        ent._apply_module_state.assert_awaited_once()
+        frame = ent._apply_module_state.await_args.args[1]
+        self.assertEqual(frame[0], 0x00)  # our channel stopped
+        self.assertEqual(frame[1], 0x02)  # bystander channel preserved
+
+    def test_redirected_channel_is_left_alone(self):
+        # Scene sent ch1=OPEN; user reversed it to CLOSE during travel.
+        # The timed stop must not touch it (no forced STOPPED, and
+        # certainly no replay of OPEN).
+        sent = bytearray(12)
+        sent[0] = 0x01
+        current = bytearray(12)
+        current[0] = 0x02  # reversed by user
+        ent = self._scene_with_module_state(current)
+        self._run_stop(ent, sent, {0})
+        ent._apply_module_state.assert_not_awaited()    # nothing left to stop
+
+    def test_stale_token_aborts(self):
+        sent = bytearray(12)
+        sent[0] = 0x01
+        ent = self._scene_with_module_state(bytearray(sent))
+        ent._module_tokens["C9A5"] = "newer-token"
+        self._run_stop(ent, sent, {0}, token="old-token")
+        ent._apply_module_state.assert_not_awaited()
+
+    def test_missing_current_state_falls_back_to_sent(self):
+        sent = bytearray(12)
+        sent[0] = 0x01
+        ent = self._scene_with_module_state(None)
+        self._run_stop(ent, sent, {0})
+        frame = ent._apply_module_state.await_args.args[1]
+        self.assertEqual(frame[0], 0x00)

@@ -386,18 +386,40 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         )
 
     async def _delayed_roller_stop(
-        self, module_id: str, state: bytearray, indexes: set[int], delay: float, token: str
+        self, module_id: str, sent_state: bytearray, indexes: set[int], delay: float, token: str
     ) -> None:
-        """Stop roller movement after operation time expires."""
+        """Stop roller movement after operation time expires.
+
+        Composes the stop frame from the module's CURRENT state at
+        timeout, not the snapshot captured at activation: during the
+        30-60 s of travel any channel of this module may have been
+        redirected by the user, a wall button or another scene, and
+        replaying the stale snapshot would silently restart it. Channels
+        this activation commanded are only forced to STOPPED when they
+        are still doing what we sent — a channel someone has since
+        stopped or reversed is no longer ours to touch.
+        """
         await asyncio.sleep(delay)
 
-        # Abort if a newer scene activation has taken control of this module
+        # Abort if a newer activation of this scene has taken control
+        # of this module.
         if self._module_tokens.get(module_id) != token:
             return
 
-        stop_state = bytearray(state)
+        current = self.coordinator.nikobus_module_states.get(module_id)
+        stop_state = bytearray(current) if current else bytearray(sent_state)
+        changed = False
         for idx in indexes:
-            stop_state[idx] = STATE_STOPPED
+            if idx < len(stop_state) and stop_state[idx] == sent_state[idx]:
+                stop_state[idx] = STATE_STOPPED
+                changed = True
+        if not changed:
+            _LOGGER.debug(
+                "Timed stop for module %s skipped — every commanded roller "
+                "channel was redirected during travel",
+                module_id,
+            )
+            return
 
         _LOGGER.debug("Timed stop for rollers on module %s", module_id)
         try:
