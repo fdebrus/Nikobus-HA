@@ -11,6 +11,12 @@ DOMAIN: Final[str] = "nikobus"
 BRAND: Final[str] = "Niko"
 HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 
+# Config-entry schema version (single source for the flow's VERSION and
+# ``async_migrate_entry``). Bump on any breaking change to the entry's
+# ``data`` / ``options`` shape, and add the migration step in
+# ``__init__.async_migrate_entry``.
+CONFIG_ENTRY_VERSION: Final[int] = 1
+
 # =============================================================================
 # Device-registry category groupings
 # =============================================================================

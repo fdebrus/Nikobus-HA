@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -58,12 +62,18 @@ class NikobusConnectionSensor(CoordinatorEntity[NikobusDataCoordinator], SensorE
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return diagnostic attributes."""
+        """Return diagnostic attributes.
+
+        The connection string is deliberately NOT exposed here: state
+        attributes land in the recorder DB and in any state dump, while
+        the diagnostics module redacts ``CONF_CONNECTION_STRING`` as
+        sensitive — exposing it as a live attribute would contradict
+        that policy. It remains visible to the owner in the config entry.
+        """
         last = self.coordinator.last_connected
         return {
             "last_connected": last.isoformat() if last else None,
             "reconnect_attempts": self.coordinator.reconnect_attempts,
-            "connection_string": self.coordinator.connection_string,
         }
 
 
@@ -147,6 +157,7 @@ class NikobusDiscoveryProgressSensor(_DiscoverySignalEntity):
     _attr_has_entity_name = True
     _attr_translation_key = "discovery_progress"
     _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False
     _attr_suggested_display_precision = 1

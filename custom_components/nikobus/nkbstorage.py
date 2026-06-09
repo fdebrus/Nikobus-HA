@@ -31,10 +31,14 @@ the library.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.storage import Store
+
+_LOGGER = logging.getLogger(__name__)
 
 BUTTON_STORAGE_KEY = "nikobus.buttons"
 BUTTON_STORAGE_VERSION = 1
@@ -59,6 +63,7 @@ class _NikobusStore:
 
     def __init__(self, hass: HomeAssistant, key: str, version: int) -> None:
         self._store: Store[dict[str, Any]] = Store(hass, version, key)
+        self._key = key
         self._data: dict[str, Any] = {self._root_key: {}}
 
     async def async_load(self) -> dict[str, Any]:
@@ -71,8 +76,23 @@ class _NikobusStore:
         return self._data
 
     async def async_save(self) -> None:
-        """Persist the current in-memory dict to storage."""
-        await self._store.async_save(self._data)
+        """Persist the current in-memory dict to storage.
+
+        A failed write (disk full, read-only filesystem, …) is logged
+        loudly instead of bubbling up: the in-memory dict stays correct
+        and the next save retries, whereas an exception here would abort
+        the middle of a discovery/reconciliation pass that already
+        mutated state.
+        """
+        try:
+            await self._store.async_save(self._data)
+        except (OSError, HomeAssistantError):
+            _LOGGER.exception(
+                "Failed to persist %s to storage — in-memory data is "
+                "intact and will be saved again on the next change, but "
+                "the on-disk copy is stale until then",
+                self._key,
+            )
 
     @property
     def data(self) -> dict[str, Any]:

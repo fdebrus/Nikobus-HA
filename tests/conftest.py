@@ -59,6 +59,9 @@ _mod(
     Event=type("Event", (), {}),
     CALLBACK_TYPE=object,
     callback=_ha_callback,
+    ServiceCall=type("ServiceCall", (), {}),
+    ServiceResponse=dict,
+    SupportsResponse=type("SupportsResponse", (), {"ONLY": "only", "NONE": "none"}),
 )
 class _ConfigEntry:
     def __class_getitem__(cls, item):
@@ -104,7 +107,12 @@ class _HomeAssistantError(Exception):
 _mod(
     "homeassistant.exceptions",
     HomeAssistantError=_HomeAssistantError,
+    ConfigEntryNotReady=type("ConfigEntryNotReady", (_HomeAssistantError,), {}),
+    ServiceValidationError=type(
+        "ServiceValidationError", (_HomeAssistantError,), {}
+    ),
 )
+_mod("homeassistant.helpers.typing", ConfigType=dict)
 
 # homeassistant.helpers.dispatcher
 _mod("homeassistant.helpers")
@@ -236,10 +244,15 @@ class _SensorDeviceClass:
     ENUM = "enum"
 
 
+class _SensorStateClass:
+    MEASUREMENT = "measurement"
+
+
 _mod(
     "homeassistant.components.sensor",
     SensorEntity=type("SensorEntity", (), {}),
     SensorDeviceClass=_SensorDeviceClass,
+    SensorStateClass=_SensorStateClass,
     DOMAIN="sensor",
 )
 _mod(
@@ -277,7 +290,7 @@ _mod(
     ATTR_BRIGHTNESS="brightness",
     DOMAIN="light",
 )
-_mod("homeassistant.components.scene", Scene=type("Scene", (), {}))
+_mod("homeassistant.components.scene", Scene=type("Scene", (), {}), DOMAIN="scene")
 
 # --- config-flow / repairs import surface -------------------------------
 # voluptuous + the HA flow/selector helpers aren't installed in this env;
@@ -293,11 +306,13 @@ _mod(
     Range=lambda *a, **k: None,
     Coerce=lambda *a, **k: None,
     In=lambda *a, **k: None,
+    Length=lambda *a, **k: None,
 )
 _mod(
     "homeassistant.helpers.config_validation",
     positive_int=int,
     string=str,
+    ensure_list=lambda v: v if isinstance(v, list) else [v],
     config_entry_only_config_schema=lambda *a, **k: None,
 )
 _mod(
@@ -368,3 +383,20 @@ _load("custom_components.nikobus.nkbconfig", COMP / "nkbconfig.py")
 _load("custom_components.nikobus.router", COMP / "router.py")
 _load("custom_components.nikobus.coordinator", COMP / "coordinator.py")
 _load("custom_components.nikobus.sensor", COMP / "sensor.py")
+
+# ---------------------------------------------------------------------------
+# Load the package __init__ itself, last (services, setup, migration live
+# there). The bare skeleton module above existed only so the submodules
+# could be loaded first; replace it with the real package module so
+# ``from custom_components.nikobus import async_migrate_entry`` works.
+# ``submodule_search_locations`` keeps it a proper package (correct
+# ``__path__``/``__package__`` for the relative imports inside it).
+# ---------------------------------------------------------------------------
+_init_spec = importlib.util.spec_from_file_location(
+    "custom_components.nikobus",
+    COMP / "__init__.py",
+    submodule_search_locations=[str(COMP)],
+)
+_init_mod = importlib.util.module_from_spec(_init_spec)
+sys.modules["custom_components.nikobus"] = _init_mod
+_init_spec.loader.exec_module(_init_mod)

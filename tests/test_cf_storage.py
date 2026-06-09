@@ -112,3 +112,20 @@ class TestNikobusCFStorage(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStorageSaveErrorHandling(unittest.TestCase):
+    def test_save_failure_is_logged_not_raised(self):
+        """A failing disk write must not abort the caller (discovery /
+        reconciliation continue on the intact in-memory dict)."""
+        store = NikobusCFStorage(MagicMock())
+        _run(store.async_load())
+        store.data["nikobus_cf"]["3880CA"] = {"pattern": "roller_pair"}
+        store._store.async_save = MagicMock(side_effect=OSError("disk full"))
+        with self.assertLogs(
+            "custom_components.nikobus.nkbstorage", level="ERROR"
+        ) as logs:
+            _run(store.async_save())  # must not raise
+        self.assertTrue(any("Failed to persist" in m for m in logs.output))
+        # In-memory data untouched by the failure.
+        self.assertIn("3880CA", store.data["nikobus_cf"])

@@ -149,9 +149,12 @@ class TestSensorAttributes(unittest.TestCase):
         attrs = self._sensor(reconnect_attempts=7).extra_state_attributes
         self.assertEqual(attrs["reconnect_attempts"], 7)
 
-    def test_connection_string_present(self):
+    def test_connection_string_not_exposed(self):
+        # The connection string is treated as sensitive by the
+        # diagnostics module (TO_REDACT); the live attribute must not
+        # leak it into the recorder DB / state dumps.
         attrs = self._sensor(connection_string="/dev/ttyUSB0").extra_state_attributes
-        self.assertEqual(attrs["connection_string"], "/dev/ttyUSB0")
+        self.assertNotIn("connection_string", attrs)
 
 
 class TestSensorMetadata(unittest.TestCase):
