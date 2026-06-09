@@ -239,3 +239,68 @@ def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any
             "triggered_by": triggered_by,
         }
     return flat
+
+
+def build_routing_graph(
+    button_data: dict[str, Any] | None,
+) -> dict[frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]]:
+    """Map every op-point's member set -> ``(firing addresses, outputs)``.
+
+    The routing graph is the full set of ``trigger -> linked outputs``
+    relations from the button store — the same data discovery decodes.
+    Used to find the on-bus address that fires a named ``.nkb`` scene
+    group (matched by member set), including the shutter / master groups
+    that have no light-scene mode and so never become CF entities on
+    their own. Addresses driving an identical output set (one scene,
+    several triggers) are grouped; the sorted-first is the canonical
+    activation address.
+    """
+    graph: dict[
+        frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]
+    ] = {}
+    buttons = (button_data or {}).get("nikobus_button", {})
+    if not isinstance(buttons, dict):
+        return {}
+    for phys in buttons.values():
+        if not isinstance(phys, dict):
+            continue
+        for op in (phys.get("operation_points") or {}).values():
+            if not isinstance(op, dict):
+                continue
+            addr = op.get("bus_address")
+            if not isinstance(addr, str) or not addr:
+                continue
+            outputs: list[dict[str, Any]] = []
+            seen: set[tuple[str, int, str]] = set()
+            for link in op.get("linked_modules") or []:
+                if not isinstance(link, dict):
+                    continue
+                mod = link.get("module_address")
+                if not isinstance(mod, str):
+                    continue
+                for o in link.get("outputs") or []:
+                    if not isinstance(o, dict):
+                        continue
+                    ch = o.get("channel")
+                    mode = o.get("mode")
+                    if not (isinstance(ch, int) and isinstance(mode, str)):
+                        continue
+                    dedupe = (mod.upper(), ch, mode)
+                    if dedupe in seen:
+                        continue
+                    seen.add(dedupe)
+                    outputs.append(
+                        {
+                            "module_address": mod.upper(),
+                            "channel": ch,
+                            "mode": mode,
+                            "t1": o.get("t1") if isinstance(o.get("t1"), str) else None,
+                            "t2": o.get("t2") if isinstance(o.get("t2"), str) else None,
+                        }
+                    )
+            members = member_set_from_outputs(outputs)
+            if not members:
+                continue
+            entry = graph.setdefault(members, ([], outputs))
+            entry[0].append(addr.upper())
+    return {m: (sorted(set(a)), o) for m, (a, o) in graph.items()}

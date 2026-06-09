@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from custom_components.nikobus.nkbreconcile import (
     all_outputs_registry_sourced,
     build_controlled_by_index,
+    build_routing_graph,
     cf_member_set,
     classify_button_status,
     collect_button_outputs,
@@ -194,3 +195,40 @@ def test_build_controlled_by_index():
 def test_build_controlled_by_index_empty_and_malformed():
     assert build_controlled_by_index(None) == {}
     assert build_controlled_by_index({"nikobus_button": "not-a-dict"}) == {}
+
+
+def test_build_routing_graph_groups_triggers_by_member_set():
+    button_data = {
+        "nikobus_button": {
+            "AAAA": {"operation_points": {
+                "1A": {"bus_address": "004e2c", "linked_modules": [
+                    {"module_address": "0e6c", "outputs": [
+                        {"channel": 1, "mode": "M01"},
+                        {"channel": 1, "mode": "M01"},  # dupe -> deduped
+                    ]},
+                ]},
+            }},
+            # A second trigger driving the *same* member set -> grouped.
+            "BBBB": {"operation_points": {
+                "1A": {"bus_address": "1843B4", "linked_modules": [
+                    {"module_address": "0E6C", "outputs": [{"channel": 1, "mode": "M01"}]},
+                ]},
+            }},
+            # An op-point with no decodable members -> skipped.
+            "CCCC": {"operation_points": {
+                "1A": {"bus_address": "C0FFEE", "linked_modules": []},
+            }},
+        }
+    }
+    graph = build_routing_graph(button_data)
+    key = frozenset({("0E6C", 1, "M01")})
+    assert list(graph.keys()) == [key]
+    addrs, outputs = graph[key]
+    assert addrs == ["004E2C", "1843B4"]  # sorted, both triggers
+    assert outputs == [{"module_address": "0E6C", "channel": 1, "mode": "M01",
+                        "t1": None, "t2": None}]
+
+
+def test_build_routing_graph_empty_and_malformed():
+    assert build_routing_graph(None) == {}
+    assert build_routing_graph({"nikobus_button": "nope"}) == {}
