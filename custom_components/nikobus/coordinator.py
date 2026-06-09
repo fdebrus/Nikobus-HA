@@ -16,7 +16,13 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from nikobus_connect import NikobusAPI, NikobusCommandHandler, NikobusConnect, NikobusEventListener
+from nikobus_connect import (
+    CoordinatorProtocol,
+    NikobusAPI,
+    NikobusCommandHandler,
+    NikobusConnect,
+    NikobusEventListener,
+)
 from nikobus_connect.discovery import (
     NikobusDiscovery,
     InventoryQueryType,
@@ -155,20 +161,16 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         self._module_states: dict[str, bytearray] = {}
 
         self.discovery_running = False
-        # The following are written by nikobus-connect, which holds this
-        # coordinator as ``self._coordinator`` and assigns these attributes
-        # cross-object during discovery. They look unassigned to a grep of
-        # THIS file — the writer is in the library — so do NOT remove them:
-        # the library both writes and READS them (e.g. ``if not
-        # self._coordinator.discovery_module``), and a missing seed here
-        # would raise AttributeError if the library reads before its first
-        # write.
-        #   * ``discovery_module`` / ``discovery_module_address`` — current
-        #     per-module register-scan target; read in the library's frame
-        #     routing.
-        #   * ``inventory_query_type`` — PC_LINK / MODULE phase marker, read
-        #     by ``_inventory_callback`` / ``_discovery_frame_callback`` to
-        #     route $18 / $2E / $1E frames.
+        # ``discovery_module`` / ``discovery_module_address`` /
+        # ``inventory_query_type`` are part of the
+        # ``nikobus_connect.CoordinatorProtocol`` contract: the library
+        # holds this coordinator as ``self._coordinator`` and both writes
+        # and reads them during discovery (per-module register-scan
+        # target + the PC_LINK / MODULE phase marker that routes
+        # $18 / $2E / $1E frames). The ``_implements_coordinator_protocol``
+        # check at the bottom of this module makes mypy verify the full
+        # surface, so a removal here is a type error, not a runtime
+        # AttributeError mid-scan.
         self.discovery_module = None
         self.discovery_module_address: str | None = None
         self.inventory_query_type: InventoryQueryType | None = None
@@ -1190,44 +1192,35 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         )
 
     async def _reconnect_loop(self) -> None:
-        """Exponential back-off reconnect loop."""
-        delay = RECONNECT_DELAY_INITIAL
-        attempt = 0
-        while not self._stopping:
-            attempt += 1
+        """Reconnect via the library's backoff primitive, then restart
+        the subsystems.
+
+        nikobus-connect 0.27.0 owns the transport part (exponential
+        capped backoff, handshake, cancellation) and the per-connection
+        state clearing (``command.reset()`` / ``listener.reset()``) —
+        this loop only orchestrates the HA side: availability updates,
+        subsystem restart, and the first refresh.
+        """
+
+        def _on_attempt(attempt: int, _delay: float) -> None:
             self._reconnect_attempts += 1
-            _LOGGER.info("Nikobus reconnect attempt %d (delay %ds)", attempt, delay)
             self.async_update_listeners()
+
+        while not self._stopping:
             try:
-                await self.nikobus_connection.connect()
+                attempts = await self.nikobus_connection.reconnect_with_backoff(
+                    initial_delay=RECONNECT_DELAY_INITIAL,
+                    max_delay=RECONNECT_DELAY_MAX,
+                    on_attempt=_on_attempt,
+                )
             except asyncio.CancelledError:
-                raise
-            except Exception as err:
-                _LOGGER.warning("Reconnect %d failed: %s — retrying in %ds", attempt, err, delay)
-                try:
-                    await asyncio.sleep(delay)
-                except asyncio.CancelledError:
-                    return
-                delay = min(delay * 2, RECONNECT_DELAY_MAX)
-                continue
+                return  # stop() cancelled the reconnect task
 
             try:
-                # Drain stale queue entries and reset listener state
-                while not self.nikobus_command._command_queue.empty():
-                    try:
-                        self.nikobus_command._command_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
-                self.nikobus_command._queued_get_keys.clear()
-
-                self.nikobus_listener._frame_buffer = ""
-                self.nikobus_listener._last_query_group.clear()
-                while not self.nikobus_listener.response_queue.empty():
-                    try:
-                        self.nikobus_listener.response_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
-
+                # Clear state queued against the dead connection, then
+                # bring the pipeline back up on the new one.
+                self.nikobus_command.reset()
+                self.nikobus_listener.reset()
                 await self.nikobus_command.start()
                 self.nikobus_listener.on_connection_lost = self._handle_connection_lost
                 await self.nikobus_listener.start()
@@ -1235,18 +1228,13 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 self._reconnect_attempts = 0
                 await self._async_update_data()
                 self.async_update_listeners()
-                _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempt)
+                _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempts)
                 return
             except asyncio.CancelledError:
                 raise
             except Exception:
                 _LOGGER.exception("Subsystem restart failed after reconnect — retrying")
                 await self.nikobus_connection.disconnect()
-                try:
-                    await asyncio.sleep(delay)
-                except asyncio.CancelledError:
-                    return
-                delay = min(delay * 2, RECONNECT_DELAY_MAX)
 
     # ------------------------------------------------------------------
     # Stop
@@ -1407,3 +1395,14 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         # Clear the cached router spec so newly-discovered modules show up.
         self._invalidate_routing_cache()
 
+
+
+def _implements_coordinator_protocol(
+    coordinator: NikobusDataCoordinator,
+) -> "CoordinatorProtocol":
+    """mypy-time structural check: the coordinator satisfies the library's
+    ``CoordinatorProtocol`` (nikobus-connect 0.27.0+). Never called at
+    runtime — if a contract member is removed from this class, this
+    function stops type-checking instead of discovery failing with an
+    AttributeError mid-scan."""
+    return coordinator

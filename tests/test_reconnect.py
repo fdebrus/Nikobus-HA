@@ -2,7 +2,7 @@
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
 from custom_components.nikobus.const import RECONNECT_DELAY_INITIAL, RECONNECT_DELAY_MAX
@@ -52,15 +52,19 @@ def _make_coordinator():
     coord.nikobus_connection.is_connected = False
     coord.nikobus_connection.connect = AsyncMock()
     coord.nikobus_connection.disconnect = AsyncMock()
+    # nikobus-connect 0.27.0 backoff primitive — returns the attempt count.
+    coord.nikobus_connection.reconnect_with_backoff = AsyncMock(return_value=1)
 
     coord.nikobus_command = MagicMock()
     coord.nikobus_command.start = AsyncMock()
     coord.nikobus_command.stop = AsyncMock()
+    coord.nikobus_command.reset = MagicMock()
     coord.nikobus_command._command_queue = asyncio.Queue()
 
     coord.nikobus_listener = MagicMock()
     coord.nikobus_listener.start = AsyncMock()
     coord.nikobus_listener.stop = AsyncMock()
+    coord.nikobus_listener.reset = MagicMock()
     coord.nikobus_listener.on_connection_lost = None
 
     coord.async_update_listeners = MagicMock()
@@ -127,95 +131,53 @@ class TestHandleConnectionLost(unittest.IsolatedAsyncioTestCase):
 # ---------------------------------------------------------------------------
 
 class TestReconnectLoop(unittest.IsolatedAsyncioTestCase):
-    async def test_succeeds_on_first_attempt(self):
+    """The transport backoff lives in nikobus-connect 0.27.0
+    (``reconnect_with_backoff``, tested there); these tests cover the
+    HA-side orchestration: delegation parameters, per-connection state
+    reset, subsystem restart, and the retry-on-restart-failure path."""
+
+    async def test_delegates_backoff_to_library(self):
         coord = _make_coordinator()
-        coord.nikobus_connection.connect = AsyncMock()  # succeeds immediately
-
         await coord._reconnect_loop()
+        coord.nikobus_connection.reconnect_with_backoff.assert_awaited_once()
+        kwargs = coord.nikobus_connection.reconnect_with_backoff.await_args.kwargs
+        self.assertEqual(kwargs["initial_delay"], RECONNECT_DELAY_INITIAL)
+        self.assertEqual(kwargs["max_delay"], RECONNECT_DELAY_MAX)
+        self.assertTrue(callable(kwargs["on_attempt"]))
 
-        coord.nikobus_connection.connect.assert_called_once()
+    async def test_on_attempt_updates_availability(self):
+        coord = _make_coordinator()
+        await coord._reconnect_loop()
+        on_attempt = coord.nikobus_connection.reconnect_with_backoff.await_args.kwargs[
+            "on_attempt"
+        ]
+        before = coord.async_update_listeners.call_count
+        on_attempt(3, 8.0)
+        self.assertEqual(coord.async_update_listeners.call_count, before + 1)
+
+    async def test_restarts_subsystems_after_reconnect(self):
+        coord = _make_coordinator()
+        await coord._reconnect_loop()
+        coord.nikobus_command.reset.assert_called_once()
+        coord.nikobus_listener.reset.assert_called_once()
         coord.nikobus_command.start.assert_called_once()
         coord.nikobus_listener.start.assert_called_once()
         coord._async_update_data.assert_called_once()
-        # Called once for "reconnecting" state, once for "connected" state after success.
-        self.assertEqual(coord.async_update_listeners.call_count, 2)
-
-    async def test_retries_after_connection_failure(self):
-        coord = _make_coordinator()
-        # Fail once, succeed on second attempt
-        coord.nikobus_connection.connect = AsyncMock(
-            side_effect=[Exception("refused"), None]
-        )
-
-        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            await coord._reconnect_loop()
-
-        self.assertEqual(coord.nikobus_connection.connect.call_count, 2)
-        mock_sleep.assert_called_once_with(RECONNECT_DELAY_INITIAL)
-
-    async def test_backoff_doubles_each_retry(self):
-        coord = _make_coordinator()
-        # Fail twice, succeed on third
-        coord.nikobus_connection.connect = AsyncMock(
-            side_effect=[Exception("err"), Exception("err"), None]
-        )
-
-        sleep_calls = []
-        async def _fake_sleep(delay):
-            sleep_calls.append(delay)
-
-        with patch("asyncio.sleep", side_effect=_fake_sleep):
-            await coord._reconnect_loop()
-
-        self.assertEqual(sleep_calls[0], RECONNECT_DELAY_INITIAL)
-        self.assertEqual(sleep_calls[1], RECONNECT_DELAY_INITIAL * 2)
-
-    async def test_backoff_capped_at_max(self):
-        coord = _make_coordinator()
-        # Enough failures to hit the cap
-        failures = [Exception("err")] * 10 + [None]
-        coord.nikobus_connection.connect = AsyncMock(side_effect=failures)
-
-        sleep_calls = []
-        async def _fake_sleep(delay):
-            sleep_calls.append(delay)
-
-        with patch("asyncio.sleep", side_effect=_fake_sleep):
-            await coord._reconnect_loop()
-
-        # All delays after the cap should equal RECONNECT_DELAY_MAX
-        self.assertTrue(all(d <= RECONNECT_DELAY_MAX for d in sleep_calls))
-        self.assertIn(RECONNECT_DELAY_MAX, sleep_calls)
+        self.assertEqual(coord._reconnect_attempts, 0)
 
     async def test_exits_immediately_when_stopping(self):
         coord = _make_coordinator()
         coord._stopping = True
         await coord._reconnect_loop()
-        coord.nikobus_connection.connect.assert_not_called()
+        coord.nikobus_connection.reconnect_with_backoff.assert_not_called()
 
-    async def test_exits_if_stopping_set_during_sleep(self):
+    async def test_cancellation_during_backoff_returns_cleanly(self):
         coord = _make_coordinator()
-        coord.nikobus_connection.connect = AsyncMock(side_effect=Exception("err"))
-
-        async def _set_stopping_and_raise(delay):
-            coord._stopping = True
-            # Simulate CancelledError that asyncio.sleep raises when task is cancelled
-            raise asyncio.CancelledError()
-
-        with patch("asyncio.sleep", side_effect=_set_stopping_and_raise):
-            await coord._reconnect_loop()  # should return, not raise
-
-        coord.nikobus_connection.connect.assert_called_once()
-
-    async def test_drains_stale_commands_before_restart(self):
-        coord = _make_coordinator()
-        # Pre-load the queue with stale items
-        coord.nikobus_command._command_queue.put_nowait({"cmd": "stale1"})
-        coord.nikobus_command._command_queue.put_nowait({"cmd": "stale2"})
-
-        await coord._reconnect_loop()
-
-        self.assertTrue(coord.nikobus_command._command_queue.empty())
+        coord.nikobus_connection.reconnect_with_backoff = AsyncMock(
+            side_effect=asyncio.CancelledError()
+        )
+        await coord._reconnect_loop()  # must return, not raise
+        coord.nikobus_command.start.assert_not_called()
 
     async def test_registers_on_connection_lost_callback(self):
         """After reconnect, the callback must be re-armed on the listener."""
@@ -223,23 +185,18 @@ class TestReconnectLoop(unittest.IsolatedAsyncioTestCase):
         await coord._reconnect_loop()
         self.assertEqual(coord.nikobus_listener.on_connection_lost, coord._handle_connection_lost)
 
-    async def test_disconnects_on_subsystem_start_failure(self):
-        """If restarting subsystems fails, the connection is closed and we retry."""
+    async def test_disconnects_and_retries_on_subsystem_start_failure(self):
+        """If restarting subsystems fails, the connection is closed and the
+        loop re-enters the library backoff."""
         coord = _make_coordinator()
         coord.nikobus_command.start = AsyncMock(
             side_effect=[Exception("start failed"), None]
         )
-        coord.nikobus_connection.connect = AsyncMock()
-
-        sleep_calls = []
-        async def _fake_sleep(delay):
-            sleep_calls.append(delay)
-
-        with patch("asyncio.sleep", side_effect=_fake_sleep):
-            await coord._reconnect_loop()
-
+        await coord._reconnect_loop()
         coord.nikobus_connection.disconnect.assert_called_once()
-        self.assertEqual(len(sleep_calls), 1)
+        self.assertEqual(
+            coord.nikobus_connection.reconnect_with_backoff.await_count, 2
+        )
 
 
 # ---------------------------------------------------------------------------
