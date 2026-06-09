@@ -1620,6 +1620,30 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
 
         coord.nikobus_discovery.start_inventory_discovery.assert_awaited_once()
 
+    async def test_pclink_probe_exception_clears_running_flag(self):
+        """Audit regression: the library sets ``discovery_running`` before
+        the point where ``start_inventory_discovery`` can raise. The
+        generic-exception fallback path must clean up like the
+        CancelledError path does — otherwise the flag is stuck True
+        (polling suppressed forever, every new scan rejected)."""
+        coord = self._make_coord()
+
+        async def fail():
+            # Mirrors the library: flag set, then the send raises.
+            coord.discovery_running = True
+            raise OSError("bus gone")
+
+        coord.nikobus_discovery.start_inventory_discovery.side_effect = fail
+
+        with patch(
+            "custom_components.nikobus.nkbmanual.async_apply_manual_config",
+            new_callable=AsyncMock, return_value=True,
+        ):
+            await coord.start_pc_link_inventory(auto_reload=False)
+
+        self.assertFalse(coord.discovery_running)
+        self.assertTrue(coord._discovery_finished_event.is_set())
+
     async def test_pclink_timeout_falls_back_to_manual_files(self):
         coord = self._make_coord()
 
