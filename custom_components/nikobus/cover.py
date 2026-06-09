@@ -150,6 +150,14 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         self._movement_source = "ha"
         self._current_run_limit: float = 0.0
+        # Last direction a motion actually ran in — used for the stop
+        # command when _state has already been committed to STOPPED
+        # (e.g. the 0x03 motor-protection clear, where the old code
+        # always fell through to "closing").
+        self._last_motion_direction = "closing"
+        # One protection-clear write per 0x03 episode; re-armed when the
+        # bus leaves the error state.
+        self._error_clear_sent = False
 
         # Set by _handle_button_pressed when a physical button starts a new move.
         # Used by _handle_coordinator_update to backdate the travel calculator so
@@ -231,6 +239,12 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         """React to state changes reported by the Nikobus bus."""
         new_bus_state = self.coordinator.get_cover_state(self._address, self._channel)
 
+        # Re-arm the one-shot protection clear as soon as the bus has
+        # left 0x03 — before the same-state early return below, which
+        # would otherwise skip it (STOPPED == STOPPED).
+        if new_bus_state != STATE_ERROR:
+            self._error_clear_sent = False
+
         if new_bus_state == self._state:
             super()._handle_coordinator_update()
             return
@@ -243,11 +257,15 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         #               schedule a follow-up refresh to catch the 0x00 transition.
         if new_bus_state == STATE_ERROR:
             if self._movement_source == "ha":
-                _LOGGER.debug(
-                    "Cover %s ch%d motor-protection (0x03) after HA move — writing 0 to clear",
-                    self._address, self._channel,
-                )
-                self.hass.async_create_task(self._stop(send_stop=True, force_api=True))
+                if not self._error_clear_sent:
+                    self._error_clear_sent = True
+                    _LOGGER.debug(
+                        "Cover %s ch%d motor-protection (0x03) after HA move — writing 0 to clear",
+                        self._address, self._channel,
+                    )
+                    self.hass.async_create_task(
+                        self._stop(send_stop=True, force_api=True)
+                    )
             else:
                 _LOGGER.debug(
                     "Cover %s ch%d motor-protection (0x03) after Nikobus move — waiting for auto-clear",
@@ -301,9 +319,15 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         if self._state == STATE_STOPPED:
             # Cover is about to start moving — record now for detection latency.
+            # A None channel (undecoded button link) is acceptable here: the
+            # timestamp is benign (bounded to 10 s, overwritten on use).
             self._last_button_press_monotonic = time.monotonic()
-        else:
-            # Cover is moving — this press is a stop command.
+        elif event_channel is not None:
+            # Cover is moving — this press is a stop command. Require a
+            # RESOLVED channel: with channel=None (undecoded link) every
+            # cover on the module receives this event, and stopping a
+            # moving cover on an unrelated button press would desync the
+            # simulated position from the physical shutter.
             send_stop = (self._movement_source == "ha")
             await self._stop(send_stop=send_stop)
 
@@ -384,6 +408,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._motion_task.cancel()
 
         self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
+        self._last_motion_direction = direction
 
         active_op_time = (
             self._calculator.time_up if direction == "opening" else self._calculator.time_down
@@ -452,9 +477,18 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
     async def _stop(self, send_stop: bool = False, force_api: bool = False) -> None:
         """Stop movement and finalize position."""
-        if self._motion_task:
-            self._motion_task.cancel()
-            self._motion_task = None
+        task = self._motion_task
+        self._motion_task = None
+        if task is not None and task is not asyncio.current_task():
+            # Never cancel the task we are running IN: when the motion
+            # loop itself calls _stop (target reached / end-stop), a
+            # self-cancel would inject CancelledError at the next await
+            # — which is the api.stop_cover() call below — and the bus
+            # STOP frame would silently never be sent (the loop's
+            # ``except CancelledError: pass`` swallows it). The loop
+            # ``break``s right after this returns, so not cancelling it
+            # is correct.
+            task.cancel()
 
         stopped_state = self._state
         self._calculator.stop()
@@ -468,7 +502,15 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self.coordinator.set_bytearray_state(self._address, self._channel, STATE_STOPPED)
 
         if send_stop and (stopped_state != STATE_STOPPED or force_api):
-            dir_cmd = "opening" if stopped_state == STATE_OPENING else "closing"
+            if stopped_state == STATE_OPENING:
+                dir_cmd = "opening"
+            elif stopped_state == STATE_CLOSING:
+                dir_cmd = "closing"
+            else:
+                # Already committed to STOPPED (force_api path, e.g. the
+                # 0x03 protection clear) — use the direction the motion
+                # actually ran in instead of an arbitrary "closing".
+                dir_cmd = self._last_motion_direction
             await self.coordinator.api.stop_cover(self._address, self._channel, dir_cmd)
 
         self.async_write_ha_state()

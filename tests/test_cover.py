@@ -398,3 +398,115 @@ class TestRequestMove(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Regressions from the cover.py correctness audit
+# ---------------------------------------------------------------------------
+class TestStopFromMotionLoopSendsBusStop(unittest.TestCase):
+    def test_self_cancel_does_not_swallow_stop_command(self):
+        """BUG 1: _stop() called FROM the motion task must still deliver
+        the bus STOP. The old code cancelled its own task; CancelledError
+        was injected at the next await — the api.stop_cover call itself —
+        and swallowed by the loop, so the physical shutter kept moving.
+        AsyncMock has no suspension point and masked this; this stub
+        suspends for real."""
+
+        async def scenario():
+            ent, coord = _make_cover()
+            sent = []
+
+            async def real_stop(*args):
+                await asyncio.sleep(0)  # genuine suspension point
+                sent.append(args)
+
+            coord.api.stop_cover = real_stop
+            ent._state = STATE_CLOSING
+
+            async def fake_motion_loop():
+                # Mirrors _motion_loop's structure: stop from within the
+                # task registered as _motion_task, CancelledError swallowed.
+                try:
+                    await ent._stop(send_stop=True)
+                except asyncio.CancelledError:
+                    pass
+
+            task = asyncio.get_event_loop().create_task(fake_motion_loop())
+            ent._motion_task = task
+            await asyncio.sleep(0.05)
+            return sent, task
+
+        sent, task = _run(scenario())
+        self.assertEqual(len(sent), 1, "bus STOP was swallowed by self-cancel")
+        self.assertTrue(task.done() and not task.cancelled())
+
+
+class TestRetargetSameDirection(unittest.TestCase):
+    def test_start_travel_anchors_on_in_flight_position(self):
+        """BUG 2: re-targeting mid-travel in the same direction must not
+        snap the simulated position back to the stale committed value."""
+        c = NikobusTravelCalculator(10, 10)
+        c.set_position(100)
+        clock = {"t": 1000.0}
+        with patch(_MONO, lambda: clock["t"]):
+            c.start_travel("closing")
+            clock["t"] = 1005.0  # 5 s of 10 s → position 50
+            self.assertEqual(c.current_position(), 50.0)
+            c.start_travel("closing")  # re-target while moving
+            self.assertEqual(c.current_position(), 50.0)  # not 100
+            clock["t"] = 1007.0  # 2 more seconds → 30
+            self.assertEqual(c.current_position(), 30.0)
+
+
+class TestUnresolvedChannelPress(unittest.TestCase):
+    def test_press_without_channel_does_not_stop_moving_cover(self):
+        """D3: a press payload with channel=None (undecoded button link)
+        reaches every cover on the module — it must not stop one that is
+        moving (that desyncs the simulated position from the shutter)."""
+        ent, coord = _make_cover()
+        ent._state = STATE_CLOSING
+        ent._movement_source = "ha"
+        _run(ent._handle_button_pressed({"address": "9105", "channel": None}))
+        self.assertEqual(ent._state, STATE_CLOSING)  # untouched
+        coord.api.stop_cover and self.assertFalse(
+            getattr(coord.api.stop_cover, "await_count", 0)
+        )
+
+    def test_press_with_matching_channel_still_stops(self):
+        ent, coord = _make_cover()
+        ent._state = STATE_CLOSING
+        ent._movement_source = "ha"
+        _run(ent._handle_button_pressed({"address": "9105", "channel": 1}))
+        self.assertEqual(ent._state, STATE_STOPPED)
+        coord.api.stop_cover.assert_awaited_once()
+
+
+class TestErrorClearEpisode(unittest.TestCase):
+    def _ent_with_bus_states(self, states):
+        ent, coord = _make_cover()
+        coord.get_cover_state = MagicMock(side_effect=states)
+        ent._movement_source = "ha"
+        return ent, coord
+
+    def test_clear_sent_once_per_error_episode(self):
+        """D4: repeated polls while 0x03 persists must not re-send the
+        protection clear; leaving 0x03 re-arms it for the next episode."""
+        ent, _ = self._ent_with_bus_states(
+            [STATE_ERROR, STATE_ERROR, STATE_STOPPED, STATE_ERROR]
+        )
+        ent._handle_coordinator_update()  # episode 1 → clear
+        ent._handle_coordinator_update()  # still 0x03 → suppressed
+        self.assertEqual(ent.hass.async_create_task.call_count, 1)
+        ent._handle_coordinator_update()  # bus left 0x03 → re-arm
+        ent._handle_coordinator_update()  # episode 2 → clear again
+        self.assertEqual(ent.hass.async_create_task.call_count, 2)
+
+    def test_protection_clear_uses_last_motion_direction(self):
+        """D4: the force_api stop fires after _state is already STOPPED —
+        it must use the direction the motion actually ran in, not an
+        arbitrary 'closing'."""
+        ent, coord = _make_cover()
+        ent._state = STATE_STOPPED
+        ent._last_motion_direction = "opening"
+        _run(ent._stop(send_stop=True, force_api=True))
+        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening")
