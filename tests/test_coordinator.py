@@ -674,21 +674,10 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
                 pass
             coord.nikobus_discovery = _OldDiscovery()
 
-        coord._collect_button_linked_modules = staticmethod(
-            NikobusDataCoordinator._collect_button_linked_modules
-        )
-        # Wire the 0.5.22 record_source helpers so the bucketing path
-        # uses real implementations instead of MagicMock returns (which
-        # would be truthy and skew the classifier).
-        coord._collect_button_outputs = staticmethod(
-            NikobusDataCoordinator._collect_button_outputs
-        )
-        coord._all_outputs_registry_sourced = staticmethod(
-            NikobusDataCoordinator._all_outputs_registry_sourced
-        )
-        coord._has_pc_logic_module = (
-            lambda self_=coord: NikobusDataCoordinator._has_pc_logic_module(self_)
-        )
+        # The record_source / linked-module helpers are now pure functions
+        # in nkbreconcile (imported into the coordinator module), so
+        # ``_reconcile_post_discovery`` uses the real implementations
+        # directly — no per-instance wiring needed.
         # Bind ``_reconcile_post_discovery`` to forward the sweep state
         # the way ``_handle_discovery_finished`` does in production:
         # via the kwargs that nikobus-connect 0.5.20 passes through
@@ -1493,7 +1482,9 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_has_pc_logic_module_helper(self):
-        # Direct unit test of the topology gate.
+        # Direct unit test of the topology gate (now a pure helper).
+        from custom_components.nikobus.nkbreconcile import has_pc_logic_module
+
         coord_no_pc_logic = self._make_coordinator_stub(
             modules={"8110": {"module_type": "switch_module"}},
         )
@@ -1504,8 +1495,8 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
             },
         )
 
-        self.assertFalse(coord_no_pc_logic._has_pc_logic_module())
-        self.assertTrue(coord_with_pc_logic._has_pc_logic_module())
+        self.assertFalse(has_pc_logic_module(coord_no_pc_logic.module_storage.data))
+        self.assertTrue(has_pc_logic_module(coord_with_pc_logic.module_storage.data))
 
 
 class TestHandleDiscoveryFinishedFinalizing(unittest.IsolatedAsyncioTestCase):
@@ -2010,7 +2001,9 @@ class TestHandleConnectionLostCoalescing(unittest.IsolatedAsyncioTestCase):
 class TestCollectButtonLinkedModules(unittest.TestCase):
     """Pure-function unit tests for the helper that drives bucket assignment."""
 
-    _collect = staticmethod(NikobusDataCoordinator._collect_button_linked_modules)
+    from custom_components.nikobus.nkbreconcile import collect_button_linked_modules
+
+    _collect = staticmethod(collect_button_linked_modules)
 
     def test_no_op_points_returns_empty_set(self):
         self.assertEqual(self._collect({}), set())

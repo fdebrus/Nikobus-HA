@@ -65,6 +65,15 @@ from .const import (
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 from .nkbmanual import legacy_config_files_present
+from .nkbreconcile import (
+    all_outputs_registry_sourced,
+    build_controlled_by_index,
+    cf_member_set,
+    collect_button_linked_modules,
+    collect_button_outputs,
+    has_pc_logic_module,
+    member_set_from_outputs,
+)
 from .nkbstorage import (
     NikobusButtonStorage,
     NikobusCFStorage,
@@ -101,32 +110,10 @@ _PROBE_OUTER_DELAY_S = 3.0
 # module currently knows about it — strong residue signal on installs
 # without PC-Logic. On installs WITH PC-Logic, a registry-only button
 # could be a legitimate PC-Logic scene trigger; the classifier gates the
-# residue verdict on ``_has_pc_logic_module`` to avoid that FP.
-_REGISTRY_SOURCES = frozenset({"pc_link_registry", "pc_logic_registry"})
-
-
-def _member_set_from_outputs(outputs: Any) -> frozenset[tuple[str, int, str]]:
-    """Frozenset of ``(module_upper, channel, mode_code)`` for an output
-    list — the canonical key for matching a scene/CF by its members,
-    used identically on ``.nkb`` groups, CF entries and routing-graph
-    op-points so the three are directly comparable."""
-    from .nkbnames import _mode_code
-
-    out = set()
-    for o in outputs or []:
-        if not isinstance(o, dict):
-            continue
-        mod = o.get("module_address")
-        ch = o.get("channel")
-        code = _mode_code(o.get("mode"))
-        if isinstance(mod, str) and isinstance(ch, int) and code:
-            out.add((mod.upper(), ch, code))
-    return frozenset(out)
-
-
-def _cf_member_set(cf: dict[str, Any]) -> frozenset[tuple[str, int, str]]:
-    """Member-set key for a stored ``nikobus_cf`` entry."""
-    return _member_set_from_outputs((cf or {}).get("outputs"))
+# residue verdict on ``nkbreconcile.has_pc_logic_module`` to avoid that FP.
+#
+# The member-set / controlled-by / registry-residue compute helpers are
+# pure (HA-free) and live in ``nkbreconcile`` — imported at the top.
 
 
 def _output_entity_key(unique_id: str | None) -> tuple[str, int] | None:
@@ -1048,49 +1035,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 return cf
         return None
 
-    def _build_controlled_by_index(self) -> dict[tuple[str, int], list[dict[str, Any]]]:
-        """Build a (module_address_upper, channel) -> list[button record] index."""
-        index: dict[tuple[str, int], list[dict[str, Any]]] = {}
-        buttons = (self.dict_button_data or {}).get("nikobus_button", {})
-        for physical_addr, phys in buttons.items():
-            if not isinstance(phys, dict):
-                continue
-            op_points = phys.get("operation_points") or {}
-            if not isinstance(op_points, dict):
-                continue
-            for key_label, op_point in op_points.items():
-                if not isinstance(op_point, dict):
-                    continue
-                bus_addr = op_point.get("bus_address") or ""
-                description = op_point.get("description") or f"Button {bus_addr}"
-                for link in op_point.get("linked_modules") or []:
-                    if not isinstance(link, dict):
-                        continue
-                    module_address = link.get("module_address")
-                    if not module_address:
-                        continue
-                    module_key = str(module_address).upper()
-                    for out in link.get("outputs") or []:
-                        if not isinstance(out, dict):
-                            continue
-                        channel = out.get("channel")
-                        if not isinstance(channel, int):
-                            continue
-                        index.setdefault((module_key, channel), []).append({
-                            "bus_address": bus_addr,
-                            "description": description,
-                            "mode": out.get("mode"),
-                            "t1": out.get("t1"),
-                            "t2": out.get("t2"),
-                            "wall_button_address": physical_addr,
-                            "wall_button_key": key_label,
-                        })
-        return index
-
     def get_controlled_by(self, module_address: str, channel: int) -> list[dict[str, Any]]:
         """Return the buttons that trigger a given ``(module_address, channel)``."""
         if self._controlled_by_index is None:
-            self._controlled_by_index = self._build_controlled_by_index()
+            self._controlled_by_index = build_controlled_by_index(self.dict_button_data)
         return self._controlled_by_index.get(
             (str(module_address).upper(), int(channel)), []
         )
@@ -1508,81 +1456,6 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # Clear the cached router spec so newly-discovered modules show up.
         self._invalidate_routing_cache()
 
-    @staticmethod
-    def _collect_button_linked_modules(phys: dict[str, Any]) -> set[str]:
-        """Union of every module address referenced by any of a button's op-points."""
-        linked: set[str] = set()
-        op_points = phys.get("operation_points") or {}
-        if not isinstance(op_points, dict):
-            return linked
-        for op_point in op_points.values():
-            if not isinstance(op_point, dict):
-                continue
-            for link in op_point.get("linked_modules") or []:
-                if not isinstance(link, dict):
-                    continue
-                addr = link.get("module_address")
-                if addr:
-                    linked.add(str(addr).upper())
-        return linked
-
-    @staticmethod
-    def _collect_button_outputs(phys: dict[str, Any]) -> list[dict[str, Any]]:
-        """Flatten every output record under every op-point of a button.
-
-        Returned dicts are the decoder's per-output records (channel,
-        mode, payload, button_address, plus nikobus-connect 0.5.22+'s
-        ``record_source``). Used by the registry-only residue check.
-        """
-        outputs: list[dict[str, Any]] = []
-        op_points = phys.get("operation_points") or {}
-        if not isinstance(op_points, dict):
-            return outputs
-        for op_point in op_points.values():
-            if not isinstance(op_point, dict):
-                continue
-            for link in op_point.get("linked_modules") or []:
-                if not isinstance(link, dict):
-                    continue
-                for out in link.get("outputs") or []:
-                    if isinstance(out, dict):
-                        outputs.append(out)
-        return outputs
-
-    @staticmethod
-    def _all_outputs_registry_sourced(outputs: list[dict[str, Any]]) -> bool:
-        """True iff every output has ``record_source`` in the registry set.
-
-        Returns False if ``outputs`` is empty, or if any output is
-        missing the field. Pre-0.5.22 records (no ``record_source``)
-        are treated as source-unknown and fall through to the existing
-        classifier — backward compat without data migration.
-        """
-        if not outputs:
-            return False
-        return all(
-            out.get("record_source") in _REGISTRY_SOURCES
-            for out in outputs
-        )
-
-    def _has_pc_logic_module(self) -> bool:
-        """True if the install has at least one PC-Logic module in the store.
-
-        Gates the registry-only residue verdict: with PC-Logic absent,
-        a button whose every output is registry-sourced is unambiguous
-        residue (no real button-to-output link exists anywhere). With
-        PC-Logic present, the same shape could be a legitimate
-        PC-Logic-only scene trigger — fall through to the existing
-        classifier and let the user adjudicate.
-        """
-        modules = self.module_storage.data.get("nikobus_module", {})
-        if not isinstance(modules, dict):
-            return False
-        return any(
-            isinstance(m, dict) and m.get("module_type") == "pc_logic"
-            for m in modules.values()
-        )
-
     def _surface_legacy_undecoded_buttons(
         self, buttons: dict[str, Any]
     ) -> None:
@@ -1849,7 +1722,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
         # output module recording the link — strong residue signal.
         # With PC-Logic present, the same shape could be a legitimate
         # scene trigger; defer to the existing classifier.
-        has_pc_logic = self._has_pc_logic_module()
+        has_pc_logic = has_pc_logic_module(self.module_storage.data)
         for phys in buttons.values():
             if not isinstance(phys, dict):
                 continue
@@ -1878,15 +1751,15 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                 phys["status"] = "input_only"
                 bucket_counts["input_only"] += 1
                 continue
-            linked = self._collect_button_linked_modules(phys)
-            outputs = self._collect_button_outputs(phys)
+            linked = collect_button_linked_modules(phys)
+            outputs = collect_button_outputs(phys)
             if not outputs:
                 # No decoded links anywhere — pre-Stage-2 default OR
                 # intentionally unwired button (HA-trigger pattern).
                 status = "legacy_undecoded"
             elif (
                 not has_pc_logic
-                and self._all_outputs_registry_sourced(outputs)
+                and all_outputs_registry_sourced(outputs)
             ):
                 # nikobus-connect 0.5.22 residue filter: every output
                 # comes from PC-Link / PC-Logic registry, and there's
@@ -2483,10 +2356,10 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
             scene_by_members = {sc.members: sc.name for sc in data.scenes}
             matched_scene_members: set[frozenset[tuple[str, int, str]]] = set()
             for cf_addr, cf in self.cf_storage.data.get("nikobus_cf", {}).items():
-                hit = scene_by_members.get(_cf_member_set(cf))
+                hit = scene_by_members.get(cf_member_set(cf))
                 if hit:
                     cf_name_by_addr[str(cf_addr).upper()] = hit
-                    matched_scene_members.add(_cf_member_set(cf))
+                    matched_scene_members.add(cf_member_set(cf))
             graph = self._build_routing_graph()
             existing = self.cf_storage.data.setdefault("nikobus_cf", {})
             new_entries: dict[str, dict[str, Any]] = {}
@@ -2675,7 +2548,7 @@ class NikobusDataCoordinator(DataUpdateCoordinator[None]):
                                 "t2": o.get("t2") if isinstance(o.get("t2"), str) else None,
                             }
                         )
-                members = _member_set_from_outputs(outputs)
+                members = member_set_from_outputs(outputs)
                 if not members:
                     continue
                 entry = graph.setdefault(members, ([], outputs))
