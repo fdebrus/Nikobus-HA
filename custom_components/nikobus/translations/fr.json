@@ -69,7 +69,8 @@
           "hardware": "Modifier la configuration matérielle",
           "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)",
           "upload_nkb": "Téléverser le fichier projet .nkb",
-          "import_nkb": "Importer depuis .nkb (choisir)"
+          "import_nkb": "Importer depuis .nkb (choisir)",
+          "manage_scenes": "Gérer les scènes (créer / modifier / supprimer)"
         }
       },
       "hardware": {
@@ -141,12 +142,43 @@
           "scenes": "Scènes (lumière + volets/maître)",
           "overwrite": "Écraser les noms/zones que j'ai déjà définis"
         }
+      },
+      "manage_scenes": {
+        "title": "Scènes",
+        "description": "Choisissez une scène à modifier, ou créez-en une nouvelle. Les scènes sont stockées dans nikobus_scene_config.json.",
+        "data": {
+          "scene": "Scène"
+        }
+      },
+      "scene_editor": {
+        "title": "Modifier la scène",
+        "description": "Canaux actuels : {members}",
+        "data": {
+          "description": "Nom de la scène",
+          "action": "Action"
+        }
+      },
+      "scene_member": {
+        "title": "Ajouter un canal",
+        "description": "État : 'on'/'off' pour les relais, 'open'/'close'/'stop' pour les volets, 0-255 pour les variateurs.",
+        "data": {
+          "module": "Module",
+          "channel": "Canal",
+          "state": "État"
+        }
+      },
+      "scene_remove_member": {
+        "title": "Retirer un canal",
+        "data": {
+          "member": "Canal à retirer"
+        }
       }
     },
     "abort": {
       "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer.",
       "channel_not_found": "Le canal sélectionné est introuvable.",
-      "module_not_found": "Le module sélectionné est introuvable dans le stockage."
+      "module_not_found": "Le module sélectionné est introuvable dans le stockage.",
+      "scene_not_found": "Scène introuvable — elle a peut-être été supprimée."
     },
     "error": {
       "invalid_nkb": "Ce fichier n'est pas un projet Nikobus .nkb lisible (il doit s'agir de l'export .nkb — une archive ZIP contenant la base de données du projet).",
@@ -154,7 +186,9 @@
       "nkb_nothing_selected": "Choisissez au moins un élément à importer.",
       "nkb_not_found": "Aucun fichier .nkb trouvé — téléversez-en un d'abord (Configurer → Téléverser le fichier projet .nkb).",
       "nkb_parse_failed": "Impossible de lire le fichier .nkb. Consultez les journaux Home Assistant.",
-      "invalid_hex_address": "L'adresse de la LED doit comporter exactement 6 caractères hexadécimaux (ou être vide)."
+      "invalid_hex_address": "L'adresse de la LED doit comporter exactement 6 caractères hexadécimaux (ou être vide).",
+      "invalid_scene_state": "État invalide pour ce type de module ('on'/'off', 'open'/'close'/'stop', ou 0-255 pour un variateur).",
+      "invalid_scene_channel": "Numéro de canal hors limites pour ce module."
     }
   },
   "entity": {
@@ -296,6 +330,14 @@
         "switch": "Interrupteur",
         "light": "Lumière",
         "disabled": "Désactivé (masquer le canal)"
+      }
+    },
+    "scene_action": {
+      "options": {
+        "add_member": "Ajouter un canal",
+        "remove_member": "Retirer un canal",
+        "save": "Enregistrer la scène",
+        "delete": "Supprimer la scène"
       }
     }
   },

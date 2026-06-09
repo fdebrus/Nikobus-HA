@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 from typing import Any
@@ -224,6 +225,49 @@ def _polling_schema(defaults: dict[str, Any]) -> vol.Schema:
     })
 
 
+# Valid scene-member states per output module type. Dimmer accepts a
+# 0-255 brightness level instead of a keyword (the README's documented
+# scene format).
+_SCENE_STATES_BY_TYPE: dict[str, tuple[str, ...]] = {
+    "switch_module": ("on", "off"),
+    "roller_module": ("open", "close", "stop"),
+    "dimmer_module": (),  # numeric 0-255
+}
+
+
+def _validate_scene_member(
+    module_type: str | None, module_entry: dict[str, Any], channel: int, state: str
+) -> tuple[bool, int]:
+    """Validate a scene member's state against its module type.
+
+    Returns ``(state_is_valid, channel_count)`` — the caller range-checks
+    the channel against the count separately for a distinct error message.
+    """
+    channels = module_entry.get("channels")
+    channel_count = len(channels) if isinstance(channels, list) and channels else 12
+    keywords = _SCENE_STATES_BY_TYPE.get(module_type or "")
+    if keywords is None:
+        return False, channel_count
+    if keywords:
+        return state in keywords, channel_count
+    # Dimmer: numeric brightness 0-255.
+    try:
+        return 0 <= int(state) <= 255, channel_count
+    except ValueError:
+        return False, channel_count
+
+
+def _unique_scene_id(description: str, existing_ids: set[Any]) -> str:
+    """Derive a stable, unique scene id from the user's description."""
+    slug = re.sub(r"[^a-z0-9]+", "_", description.lower()).strip("_") or "scene"
+    candidate = f"scene_{slug}"
+    suffix = 2
+    while candidate in existing_ids:
+        candidate = f"scene_{slug}_{suffix}"
+        suffix += 1
+    return candidate
+
+
 def _needs_polling(user_input: dict[str, Any]) -> bool:
     """Return True when the selected hardware requires a polling interval."""
     return not (
@@ -409,6 +453,9 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         self._options: dict[str, Any] = {}
         self._edit_module_address: str | None = None
         self._edit_channel_index: int | None = None
+        # Scene-editor working copy (mutated across steps, persisted on save).
+        self._scene_work: dict[str, Any] | None = None
+        self._scene_is_new: bool = False
 
     def _current(self) -> dict[str, Any]:
         """Merge entry data + options so defaults reflect the live settings."""
@@ -436,7 +483,13 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         the declarative source of truth. Users on manual-config should
         edit the JSON files directly to make customisations stick.
         """
-        menu_options = ["hardware", "configure_modules", "upload_nkb", "import_nkb"]
+        menu_options = [
+            "hardware",
+            "configure_modules",
+            "manage_scenes",
+            "upload_nkb",
+            "import_nkb",
+        ]
         return self.async_show_menu(
             step_id="init",
             menu_options=menu_options,
@@ -859,3 +912,242 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             errors=errors,
         )
 
+
+    # --- Scene editor -------------------------------------------------------
+    #
+    # CRUD over the user-authored scenes in ``nikobus_scene_config.json``
+    # (previously hand-edited JSON — see README "User-authored scenes").
+    # The flow works on a deep copy (``self._scene_work``) and only writes
+    # the file on the explicit save/delete actions; closing the flow midway
+    # changes nothing. Saving ends the flow via ``async_create_entry`` so
+    # the entry's update listener reloads the scene platform.
+
+    async def async_step_manage_scenes(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Pick a scene to edit, or create a new one."""
+        coordinator = self._coordinator()
+        if coordinator is None:
+            return self.async_abort(reason="not_loaded")
+
+        scenes = coordinator.dict_scene_data.get("scene", []) or []
+
+        if user_input is not None:
+            selected = user_input["scene"]
+            if selected == "__create__":
+                self._scene_work = {"id": "", "description": "", "channels": []}
+                self._scene_is_new = True
+            else:
+                hit = next(
+                    (sc for sc in scenes if isinstance(sc, dict) and sc.get("id") == selected),
+                    None,
+                )
+                if hit is None:
+                    return self.async_abort(reason="scene_not_found")
+                self._scene_work = copy.deepcopy(hit)
+                self._scene_is_new = False
+            return await self.async_step_scene_editor()
+
+        options = [{"value": "__create__", "label": "+ Create a new scene"}]
+        options += [
+            {
+                "value": str(sc.get("id")),
+                "label": (
+                    f"{sc.get('description') or sc.get('id')} "
+                    f"({len(sc.get('channels') or [])} channel(s))"
+                ),
+            }
+            for sc in scenes
+            if isinstance(sc, dict) and sc.get("id")
+        ]
+        return self.async_show_form(
+            step_id="manage_scenes",
+            data_schema=vol.Schema({
+                vol.Required("scene", default="__create__"): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.LIST)
+                ),
+            }),
+        )
+
+    async def async_step_scene_editor(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Edit the working scene: name + next action."""
+        coordinator = self._coordinator()
+        if coordinator is None or self._scene_work is None:
+            return self.async_abort(reason="not_loaded")
+        work = self._scene_work
+
+        if user_input is not None:
+            desc = (user_input.get("description") or "").strip()
+            if desc:
+                work["description"] = desc
+            action = user_input["action"]
+            if action == "add_member":
+                return await self.async_step_scene_member()
+            if action == "remove_member":
+                return await self.async_step_scene_remove_member()
+            if action == "delete":
+                return await self._delete_scene()
+            return await self._save_scene()
+
+        members = work.get("channels") or []
+        summary = ", ".join(
+            f"{m.get('module_id')}/{m.get('channel')}={m.get('state')}"
+            for m in members
+            if isinstance(m, dict)
+        ) or "none"
+        actions = ["add_member"]
+        if members:
+            actions.append("remove_member")
+        actions.append("save")
+        if not self._scene_is_new:
+            actions.append("delete")
+        return self.async_show_form(
+            step_id="scene_editor",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    "description", default=work.get("description") or ""
+                ): TextSelector(TextSelectorConfig()),
+                vol.Required("action", default="save"): SelectSelector(
+                    SelectSelectorConfig(
+                        options=actions,
+                        mode=SelectSelectorMode.LIST,
+                        translation_key="scene_action",
+                    )
+                ),
+            }),
+            description_placeholders={"members": summary},
+        )
+
+    async def async_step_scene_member(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Add one (module, channel, state) member to the working scene."""
+        coordinator = self._coordinator()
+        if coordinator is None or self._scene_work is None:
+            return self.async_abort(reason="not_loaded")
+        modules = coordinator.module_storage.data.get("nikobus_module") or {}
+        # Scenes drive output channels only.
+        output_modules = {
+            addr: entry
+            for addr, entry in modules.items()
+            if isinstance(entry, dict)
+            and entry.get("module_type") in _SCENE_STATES_BY_TYPE
+        }
+        if not output_modules:
+            return self.async_abort(reason="no_modules")
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            address = str(user_input["module"]).upper()
+            channel = int(user_input["channel"])
+            state = str(user_input.get("state") or "").strip().lower()
+            module_type = (output_modules.get(address) or {}).get("module_type")
+            valid, channel_count = _validate_scene_member(
+                module_type, output_modules.get(address) or {}, channel, state
+            )
+            if not (1 <= channel <= channel_count):
+                errors["base"] = "invalid_scene_channel"
+            elif not valid:
+                errors["base"] = "invalid_scene_state"
+            else:
+                self._scene_work.setdefault("channels", []).append({
+                    "module_id": address,
+                    "channel": str(channel),
+                    "state": state,
+                })
+                return await self.async_step_scene_editor()
+
+        options = [
+            {"value": addr, "label": _module_label(addr, entry)}
+            for addr, entry in sorted(
+                output_modules.items(),
+                key=lambda kv: (_module_type_order(kv[1].get("module_type")), kv[0]),
+            )
+        ]
+        return self.async_show_form(
+            step_id="scene_member",
+            data_schema=vol.Schema({
+                vol.Required("module"): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Required("channel", default=1): NumberSelector(
+                    NumberSelectorConfig(min=1, max=12, step=1, mode=NumberSelectorMode.BOX)
+                ),
+                vol.Required("state", default="on"): TextSelector(TextSelectorConfig()),
+            }),
+            errors=errors,
+        )
+
+    async def async_step_scene_remove_member(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Remove one member from the working scene."""
+        if self._scene_work is None:
+            return self.async_abort(reason="not_loaded")
+        members = self._scene_work.get("channels") or []
+
+        if user_input is not None:
+            idx = int(user_input["member"])
+            if 0 <= idx < len(members):
+                members.pop(idx)
+            return await self.async_step_scene_editor()
+
+        options = [
+            {
+                "value": str(idx),
+                "label": f"{m.get('module_id')} channel {m.get('channel')} -> {m.get('state')}",
+            }
+            for idx, m in enumerate(members)
+            if isinstance(m, dict)
+        ]
+        return self.async_show_form(
+            step_id="scene_remove_member",
+            data_schema=vol.Schema({
+                vol.Required("member"): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.LIST)
+                ),
+            }),
+        )
+
+    async def _save_scene(self) -> config_entries.FlowResult:
+        """Persist the working scene to the store + JSON file and finish."""
+        coordinator = self._coordinator()
+        assert coordinator is not None and self._scene_work is not None
+        work = self._scene_work
+        scenes: list[dict[str, Any]] = coordinator.dict_scene_data.setdefault("scene", [])
+
+        if self._scene_is_new:
+            existing_ids = {sc.get("id") for sc in scenes if isinstance(sc, dict)}
+            work["id"] = _unique_scene_id(work.get("description") or "scene", existing_ids)
+            scenes.append(work)
+        else:
+            for pos, sc in enumerate(scenes):
+                if isinstance(sc, dict) and sc.get("id") == work.get("id"):
+                    scenes[pos] = work
+                    break
+
+        await coordinator.nikobus_config.save_json_data(
+            "nikobus_scene_config.json", "scene", coordinator.dict_scene_data
+        )
+        # Close the flow; the entry update listener reloads the scene platform.
+        return self.async_create_entry(
+            data={**self.config_entry.options, **self._options}
+        )
+
+    async def _delete_scene(self) -> config_entries.FlowResult:
+        """Remove the working scene from the store + JSON file and finish."""
+        coordinator = self._coordinator()
+        assert coordinator is not None and self._scene_work is not None
+        scene_id = self._scene_work.get("id")
+        scenes = coordinator.dict_scene_data.get("scene", [])
+        coordinator.dict_scene_data["scene"] = [
+            sc for sc in scenes if not (isinstance(sc, dict) and sc.get("id") == scene_id)
+        ]
+        await coordinator.nikobus_config.save_json_data(
+            "nikobus_scene_config.json", "scene", coordinator.dict_scene_data
+        )
+        return self.async_create_entry(
+            data={**self.config_entry.options, **self._options}
+        )

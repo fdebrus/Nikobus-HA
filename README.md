@@ -402,7 +402,9 @@ Selecting **Scenes** during a [`.nkb` import](#importing-from-your-nkb-project) 
 
 ### User-authored scenes (`nikobus_scene_config.json`)
 
-For HA-side per-channel groupings that **don't** exist as a CF on the bus. Loaded from `/config` at startup; a missing/empty file is fine. Dimmers/shutters use 0–255, switches `"on"`/`"off"`, shutters `"open"`/`"close"`.
+For HA-side per-channel groupings that **don't** exist as a CF on the bus. **Create, edit and delete them from the UI**: *Settings → Devices & Services → Nikobus → Configure → Manage scenes* — pick the module, channel and state per member; the integration writes the file and reloads the scene entities for you.
+
+The file lives in `/config` and is loaded at startup; a missing/empty file is fine, and you can still edit it by hand if you prefer. Dimmers use 0–255, switches `"on"`/`"off"`, shutters `"open"`/`"close"`/`"stop"`.
 
 ```json
 {
