@@ -69,7 +69,8 @@
           "hardware": "Hardware-instellingen wijzigen",
           "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)",
           "upload_nkb": "Projectbestand .nkb uploaden",
-          "import_nkb": "Importeren uit .nkb (kiezen)"
+          "import_nkb": "Importeren uit .nkb (kiezen)",
+          "manage_scenes": "Scènes beheren (aanmaken / bewerken / verwijderen)"
         }
       },
       "hardware": {
@@ -141,12 +142,43 @@
           "scenes": "Scènes (licht + rolluik/master)",
           "overwrite": "Namen/gebieden die ik al heb ingesteld overschrijven"
         }
+      },
+      "manage_scenes": {
+        "title": "Scènes",
+        "description": "Kies een scène om te bewerken, of maak een nieuwe aan. Scènes worden opgeslagen in nikobus_scene_config.json.",
+        "data": {
+          "scene": "Scène"
+        }
+      },
+      "scene_editor": {
+        "title": "Scène bewerken",
+        "description": "Huidige kanalen: {members}",
+        "data": {
+          "description": "Naam van de scène",
+          "action": "Actie"
+        }
+      },
+      "scene_member": {
+        "title": "Kanaal toevoegen",
+        "description": "Status: 'on'/'off' voor relais, 'open'/'close'/'stop' voor rolluiken, 0-255 voor dimmers.",
+        "data": {
+          "module": "Module",
+          "channel": "Kanaal",
+          "state": "Status"
+        }
+      },
+      "scene_remove_member": {
+        "title": "Kanaal verwijderen",
+        "data": {
+          "member": "Te verwijderen kanaal"
+        }
       }
     },
     "abort": {
       "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw.",
       "channel_not_found": "Het geselecteerde kanaal is niet gevonden.",
-      "module_not_found": "De geselecteerde module is niet gevonden in de opslag."
+      "module_not_found": "De geselecteerde module is niet gevonden in de opslag.",
+      "scene_not_found": "Scène niet gevonden — mogelijk verwijderd."
     },
     "error": {
       "invalid_nkb": "Dit bestand is geen leesbaar Nikobus .nkb-project (het moet de .nkb-export zijn — een ZIP met de projectdatabase).",
@@ -154,7 +186,9 @@
       "nkb_nothing_selected": "Kies minstens één ding om te importeren.",
       "nkb_not_found": "Geen .nkb-bestand gevonden — upload er eerst een (Configureren → Projectbestand .nkb uploaden).",
       "nkb_parse_failed": "Kon het .nkb-bestand niet lezen. Zie de Home Assistant-logboeken.",
-      "invalid_hex_address": "Het LED-adres moet exact 6 hexadecimale tekens bevatten (of leeg zijn)."
+      "invalid_hex_address": "Het LED-adres moet exact 6 hexadecimale tekens bevatten (of leeg zijn).",
+      "invalid_scene_state": "Ongeldige status voor dit moduletype ('on'/'off', 'open'/'close'/'stop', of 0-255 voor dimmers).",
+      "invalid_scene_channel": "Kanaalnummer valt buiten het bereik van deze module."
     }
   },
   "entity": {
@@ -296,6 +330,14 @@
         "switch": "Schakelaar",
         "light": "Lamp",
         "disabled": "Uitgeschakeld (kanaal verbergen)"
+      }
+    },
+    "scene_action": {
+      "options": {
+        "add_member": "Kanaal toevoegen",
+        "remove_member": "Kanaal verwijderen",
+        "save": "Scène opslaan",
+        "delete": "Scène verwijderen"
       }
     }
   },

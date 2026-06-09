@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Any
 
 from aiofiles import open as aio_open
@@ -50,6 +51,26 @@ class NikobusConfig:
         except Exception as err:
             _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
+
+    async def save_json_data(
+        self, file_name: str, data_type: str, data: dict[str, Any]
+    ) -> None:
+        """Persist JSON data to a config file in the HA config directory.
+
+        Write-then-rename so a crash mid-write can't truncate the
+        existing file (the scene editor writes user-authored data the
+        user has no other copy of).
+        """
+        file_path = self._hass.config.path(file_name)
+        tmp_path = f"{file_path}.tmp"
+        _LOGGER.info("Saving %s data to %s", data_type, file_path)
+        try:
+            async with aio_open(tmp_path, mode="w") as file:
+                await file.write(json.dumps(data, indent=4, ensure_ascii=False))
+            await asyncio.to_thread(os.replace, tmp_path, file_path)
+        except OSError as err:
+            _LOGGER.error("Failed to save %s data: %s", data_type, err, exc_info=True)
+            raise NikobusDataError(f"Failed to save {data_type} data: {err}") from err
 
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:
         """Handle the case where the configuration file is not found."""

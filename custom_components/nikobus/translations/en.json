@@ -175,7 +175,8 @@
     "abort": {
       "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
       "module_not_found": "The selected module was not found in storage.",
-      "channel_not_found": "The selected channel was not found."
+      "channel_not_found": "The selected channel was not found.",
+      "scene_not_found": "Scene not found — it may have been removed."
     },
     "error": {
       "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty).",
@@ -183,7 +184,9 @@
       "upload_failed": "Could not save the uploaded file. Check the Home Assistant logs.",
       "nkb_nothing_selected": "Pick at least one thing to import.",
       "nkb_not_found": "No .nkb file found — upload one first (Configure → Upload .nkb project file).",
-      "nkb_parse_failed": "Could not read the .nkb file. See the Home Assistant logs."
+      "nkb_parse_failed": "Could not read the .nkb file. See the Home Assistant logs.",
+      "invalid_scene_state": "Invalid state for this module type ('on'/'off', 'open'/'close'/'stop', or 0-255 for dimmers).",
+      "invalid_scene_channel": "Channel number is out of range for this module."
     },
     "step": {
       "hardware": {
@@ -206,7 +209,8 @@
           "configure_modules": "Customize a module (description, entity type, LED triggers, travel time)",
           "hardware": "Change hardware settings",
           "upload_nkb": "Upload .nkb project file",
-          "import_nkb": "Import from .nkb (choose what)"
+          "import_nkb": "Import from .nkb (choose what)",
+          "manage_scenes": "Manage scenes (create / edit / delete)"
         },
         "title": "Nikobus"
       },
@@ -264,6 +268,36 @@
           "areas": "Areas (from rooms)",
           "scenes": "Scenes (light + shutter/master)",
           "overwrite": "Overwrite names/Areas I've already set"
+        }
+      },
+      "manage_scenes": {
+        "title": "Scenes",
+        "description": "Pick a scene to edit, or create a new one. Scenes are stored in nikobus_scene_config.json.",
+        "data": {
+          "scene": "Scene"
+        }
+      },
+      "scene_editor": {
+        "title": "Edit scene",
+        "description": "Current channels: {members}",
+        "data": {
+          "description": "Scene name",
+          "action": "Action"
+        }
+      },
+      "scene_member": {
+        "title": "Add a channel",
+        "description": "State: 'on'/'off' for switches, 'open'/'close'/'stop' for shutters, 0-255 for dimmers.",
+        "data": {
+          "module": "Module",
+          "channel": "Channel",
+          "state": "State"
+        }
+      },
+      "scene_remove_member": {
+        "title": "Remove a channel",
+        "data": {
+          "member": "Channel to remove"
         }
       }
     }
@@ -354,6 +388,14 @@
         "switch": "Switch",
         "light": "Light",
         "disabled": "Disabled (hide channel)"
+      }
+    },
+    "scene_action": {
+      "options": {
+        "add_member": "Add a channel",
+        "remove_member": "Remove a channel",
+        "save": "Save scene",
+        "delete": "Delete scene"
       }
     }
   }
