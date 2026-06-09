@@ -100,13 +100,13 @@ def _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
                    return_value=data), \
              patch("homeassistant.helpers.area_registry.async_get",
                    return_value=area_reg, create=True), \
-             patch("custom_components.nikobus.coordinator.dr.async_get",
+             patch("custom_components.nikobus.discovery_mixin.dr.async_get",
                    return_value=dev_reg), \
-             patch("custom_components.nikobus.coordinator.er.async_get",
+             patch("custom_components.nikobus.discovery_mixin.er.async_get",
                    return_value=ent_reg), \
-             patch("custom_components.nikobus.coordinator.dr.async_entries_for_config_entry",
+             patch("custom_components.nikobus.discovery_mixin.dr.async_entries_for_config_entry",
                    return_value=devices, create=True), \
-             patch("custom_components.nikobus.coordinator.er.async_entries_for_config_entry",
+             patch("custom_components.nikobus.discovery_mixin.er.async_entries_for_config_entry",
                    return_value=entities, create=True):
             yield
     return ctx()
