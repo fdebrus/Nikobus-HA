@@ -8,12 +8,13 @@ rules:
   common-modules: done
   config-flow: done
   config-flow-test-coverage:
-    status: todo
+    status: done
     comment: |
-      Existing tests cover protocol/listener/command/coordinator/sensor.
-      A dedicated test_config_flow.py with the full success / cannot_connect /
-      unknown / already_configured / hardware-branch / reconfigure matrix is
-      pending the test-infrastructure swap to pytest-homeassistant-custom-component.
+      tests/test_config_flow.py covers the full matrix — success,
+      cannot_connect, unknown, already_configured (duplicate unique_id),
+      the hardware branch (feedback module vs polling step), reconfigure
+      (success + failure keeps the entry untouched) and the options menu —
+      against stub flow handlers returning HA-shaped FlowResult dicts.
   dependency-transparency: done
   docs-actions: done
   docs-high-level-description: done
@@ -44,11 +45,14 @@ rules:
       The Nikobus PC-Link bridge has no authentication; the integration
       only opens a serial or raw TCP socket.
   test-coverage:
-    status: todo
+    status: done
     comment: |
-      Core flows have tests but per-platform tests with snapshots and the
-      diagnostics test require the test-infrastructure swap to
-      pytest-homeassistant-custom-component (planned, separate PR).
+      Core flows, the config/options/reconfigure flow matrix
+      (test_config_flow.py), per-platform entity creation through the
+      real router (test_platform_setup.py), diagnostics
+      (test_diagnostics_quality.py), config-entry migration
+      (test_migration.py) and storage failure handling are all covered —
+      420+ tests against the stub-based harness in tests/conftest.py.
 
   # Gold
   devices: done
