@@ -2111,3 +2111,59 @@ class TestRefreshModuleTypeDispatch(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSurfaceCorruptModules(unittest.TestCase):
+    """``_surface_corrupt_modules`` — the user-facing Repairs message for
+    modules the library flagged as having a corrupt link table."""
+
+    def _coord(self, corrupt):
+        coord = MagicMock()
+        coord.hass = MagicMock()
+        coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_test"
+        coord.nikobus_discovery = MagicMock()
+        coord.nikobus_discovery.corrupt_link_tables = set(corrupt)
+        return coord
+
+    @patch("custom_components.nikobus.discovery_mixin.ir.async_create_issue")
+    @patch("custom_components.nikobus.discovery_mixin.ir.async_delete_issue")
+    def test_creates_informational_issue_when_modules_corrupt(
+        self, mock_delete, mock_create
+    ):
+        coord = self._coord({"4707", "0e6c"})
+        NikobusDataCoordinator._surface_corrupt_modules(coord)
+
+        mock_delete.assert_not_called()
+        mock_create.assert_called_once()
+        kw = mock_create.call_args.kwargs
+        # Not HA-fixable: the cure is reprogramming in the Nikobus PC software.
+        self.assertFalse(kw["is_fixable"])
+        self.assertEqual(kw["translation_key"], "corrupt_modules")
+        self.assertEqual(kw["translation_placeholders"]["count"], "2")
+        # Sorted, upper-cased module list in the message.
+        self.assertEqual(
+            kw["translation_placeholders"]["modules"], "0E6C, 4707"
+        )
+
+    @patch("custom_components.nikobus.discovery_mixin.ir.async_create_issue")
+    @patch("custom_components.nikobus.discovery_mixin.ir.async_delete_issue")
+    def test_clears_issue_when_none_corrupt(self, mock_delete, mock_create):
+        coord = self._coord(set())
+        NikobusDataCoordinator._surface_corrupt_modules(coord)
+
+        mock_create.assert_not_called()
+        mock_delete.assert_called_once()
+
+    @patch("custom_components.nikobus.discovery_mixin.ir.async_create_issue")
+    @patch("custom_components.nikobus.discovery_mixin.ir.async_delete_issue")
+    def test_handles_missing_library_attribute(self, mock_delete, mock_create):
+        # Older library without corrupt_link_tables → treated as none.
+        coord = MagicMock()
+        coord.hass = MagicMock()
+        coord.config_entry = MagicMock()
+        coord.config_entry.entry_id = "entry_test"
+        coord.nikobus_discovery = MagicMock(spec=[])  # no corrupt_link_tables
+        NikobusDataCoordinator._surface_corrupt_modules(coord)
+        mock_create.assert_not_called()
+        mock_delete.assert_called_once()

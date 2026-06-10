@@ -151,6 +151,11 @@ ISSUE_NO_BUTTONS_CONFIGURED: Final[str] = "no_buttons_configured"
 # previous owner" — both look identical from the bus signal. Push the
 # decision to the user via a Repairs flow.
 ISSUE_LEGACY_UNDECODED_BUTTONS: Final[str] = "legacy_undecoded_buttons"
+# A module whose link table the library could not align with the scanned
+# register window — genuine flash corruption (the Nikobus PC software
+# reports the same and asks for reprogramming). Informational only; the
+# fix is reprogramming the module, not anything HA can do.
+ISSUE_CORRUPT_MODULES: Final[str] = "corrupt_modules"
 
 # Physical button types that are INPUT-ONLY by design — they generate
 # bus press telegrams when their contacts change state but they don't

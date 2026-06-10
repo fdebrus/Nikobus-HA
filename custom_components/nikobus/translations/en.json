@@ -125,6 +125,10 @@
           "no_candidates": "No legacy buttons remain — nothing to do."
         }
       }
+    },
+    "corrupt_modules": {
+      "title": "Nikobus module needs reprogramming",
+      "description": "{count} Nikobus module(s) reported a corrupt link table and were skipped during discovery (their button links could not be read): **{modules}**.\n\nThis is a module-side issue — the Nikobus PC software reports the same and asks for reprogramming. Open the Nikobus PC software, reprogram the listed module(s), then run **Load Existing Installation** again. This warning clears automatically once the module reads cleanly."
     }
   },
   "exceptions": {

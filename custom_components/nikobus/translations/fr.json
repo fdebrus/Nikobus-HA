@@ -256,6 +256,10 @@
           "no_candidates": "Aucun bouton hérité ne reste — rien à faire."
         }
       }
+    },
+    "corrupt_modules": {
+      "title": "Un module Nikobus doit être reprogrammé",
+      "description": "{count} module(s) Nikobus ont signalé une table de liens corrompue et ont été ignorés pendant la découverte (leurs liens boutons n'ont pas pu être lus) : **{modules}**.\n\nC'est un problème côté module — le logiciel Nikobus signale la même chose et demande une reprogrammation. Ouvrez le logiciel Nikobus, reprogrammez le(s) module(s) listé(s), puis relancez **Charger l'installation existante**. Cet avertissement disparaît automatiquement dès que le module se lit correctement."
     }
   },
   "exceptions": {
