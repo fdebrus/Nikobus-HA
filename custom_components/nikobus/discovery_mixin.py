@@ -46,6 +46,7 @@ from .const import (
     DISCOVERY_WEIGHT_INVENTORY,
     DISCOVERY_WEIGHT_REGISTER_SCAN,
     DOMAIN,
+    ISSUE_CORRUPT_MODULES,
     ISSUE_LEGACY_UNDECODED_BUTTONS,
     NKB_IMPORT_CATEGORIES,
     SIGNAL_DISCOVERY_STATE,
@@ -201,6 +202,46 @@ class NikobusDiscoveryMixin:
             data={
                 "entry_id": self.config_entry.entry_id,
                 "addresses": legacy_addrs,
+            },
+        )
+
+    def _surface_corrupt_modules(self) -> None:
+        """Create or clear the ``corrupt_modules`` Repairs issue.
+
+        The library (nikobus-connect 0.27.2+) flags any module whose
+        link table doesn't align with the scanned register window —
+        genuine flash corruption, the same thing the Nikobus PC software
+        reports as "reprogram this module". Their link decode was
+        skipped (no phantom buttons), so the only action is to tell the
+        user to reprogram. The issue is informational (not HA-fixable);
+        it auto-clears on the next module scan once the module reads
+        cleanly again.
+        """
+        corrupt = sorted(
+            str(a).upper()
+            for a in getattr(self.nikobus_discovery, "corrupt_link_tables", None)
+            or ()
+        )
+        issue_id = f"{ISSUE_CORRUPT_MODULES}_{self.config_entry.entry_id}"
+        if not corrupt:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        _LOGGER.warning(
+            "Discovery: %d module(s) have a corrupt link table and were "
+            "skipped — reprogram them in the Nikobus PC software: %s",
+            len(corrupt),
+            corrupt,
+        )
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_CORRUPT_MODULES,
+            translation_placeholders={
+                "count": str(len(corrupt)),
+                "modules": ", ".join(corrupt),
             },
         )
 
@@ -415,6 +456,14 @@ class NikobusDiscoveryMixin:
             and self._last_module_scan_was_full
         ):
             self._surface_legacy_undecoded_buttons(buttons)
+
+        # Surface modules the library flagged as having a corrupt link
+        # table (decode skipped — see nikobus-connect 0.27.2). Only when
+        # a register scan actually ran (a module scan, not a pure
+        # PC-Link inventory), so a later inventory-only run doesn't clear
+        # a still-valid corruption warning.
+        if inventory_query_type != InventoryQueryType.PC_LINK:
+            self._surface_corrupt_modules()
 
         # Ingest the library's classified CF activation broadcasts (the
         # ``38 41 XX`` / ``38 80 XX`` addresses surfaced by

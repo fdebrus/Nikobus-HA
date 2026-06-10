@@ -256,6 +256,10 @@
           "no_candidates": "Geen verouderde knoppen meer — niets te doen."
         }
       }
+    },
+    "corrupt_modules": {
+      "title": "Nikobus-module moet opnieuw geprogrammeerd worden",
+      "description": "{count} Nikobus-module(s) meldden een beschadigde koppelingstabel en werden overgeslagen tijdens detectie (hun knopkoppelingen konden niet gelezen worden): **{modules}**.\n\nDit is een probleem aan de modulezijde — de Nikobus PC-software meldt hetzelfde en vraagt om herprogrammeren. Open de Nikobus PC-software, herprogrammeer de vermelde module(s) en voer daarna opnieuw **Bestaande installatie laden** uit. Deze waarschuwing verdwijnt automatisch zodra de module weer correct gelezen wordt."
     }
   },
   "exceptions": {
