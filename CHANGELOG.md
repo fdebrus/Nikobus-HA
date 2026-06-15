@@ -2,17 +2,22 @@
 
 ## 3.8.4
 
-- **2-button roller central functions are now controllable from HA.** An
-  imported roller "2-button" central function (a *roller_pair* CF — the
-  open/stop + close/stop pair behind a physical wall control) used to
-  appear as a one-shot *scene* that couldn't actually move anything: a
-  single broadcast carries both the open and close links for its channels,
-  so there was no "direction" to trigger. These CFs now surface as a proper
-  **grouped cover** with open / close / stop instead. Activating it drives
-  the member channels through the same atomic, per-module bus commit the
-  scene engine uses, so all the shutters on a module move **in one frame**
-  (all-at-once, like the native Nikobus scene) rather than channel-by-channel.
-  The old, non-actionable scene entity is replaced automatically.
+- **Roller central functions are now actionable from HA.** An imported
+  roller central function (a *roller_pair* CF) used to appear as a one-shot
+  scene that couldn't move anything: a single broadcast carries both the
+  open and close links for its channels, so there was no "direction" to
+  trigger. These now surface as **member-driving scenes** that fire the
+  shutters directly through the atomic, per-module bus commit — every
+  member channel on a module moves **in one frame** (all-at-once, like the
+  native Nikobus scene), with a timed stop from the channels' run times:
+  - a **2-button** (open+close) function becomes **two scenes** — one
+    "… Open" and one "… Close";
+  - a **single-direction** function (close-only / open-only) becomes one
+    scene for that direction.
+
+  1-button "open-stop-close" (M01) toggles and the other CF patterns
+  (light scenes, switch pairs) keep their existing single-broadcast
+  activation.
 
 ## 3.8.2
 

@@ -54,11 +54,11 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         known = coord.get_known_entity_unique_ids()
         self.assertIn("nikobus_cf_ab1234", known)
 
-    def test_bidirectional_roller_pair_registers_cover_id_not_scene_id(self):
-        """A bidirectional roller_pair CF (M02+M03) surfaces as a grouped
-        cover (``nikobus_cf_cover_<addr>``), not a scene — the known-id set
-        must match, else orphan cleanup evicts the new cover (and the old
-        scene id must NOT be present, since no scene is created)."""
+    def test_bidirectional_roller_pair_registers_directional_scene_ids(self):
+        """A bidirectional roller_pair CF (M02+M03) surfaces as two
+        directional roller scenes (``nikobus_cf_<addr>_open`` /
+        ``..._close``), not a single broadcast scene — the known-id set must
+        match, else orphan cleanup evicts them right after creation."""
         coord = _coord_with_cfs([])
         coord.cf_storage.data = {"nikobus_cf": {
             "3880CD": {"pattern": "roller_pair", "outputs": [
@@ -67,14 +67,26 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
             ]},
         }}
         known = coord.get_known_entity_unique_ids()
-        self.assertIn("nikobus_cf_cover_3880cd", known)
+        self.assertIn("nikobus_cf_3880cd_open", known)
+        self.assertIn("nikobus_cf_3880cd_close", known)
         self.assertNotIn("nikobus_cf_3880cd", known)
 
-    def test_m01_roller_pair_stays_a_scene_id(self):
-        """A 1-button (M01 toggle) roller_pair has no open+close pair to
-        drive as a cover, so it stays a scene — register the scene id, not
-        a cover id (regression: M01/single-direction roller CFs must not be
-        stranded between platforms)."""
+    def test_single_direction_roller_pair_registers_one_directional_id(self):
+        """A close-only roller CF → one ``..._close`` directional scene id."""
+        coord = _coord_with_cfs([])
+        coord.cf_storage.data = {"nikobus_cf": {
+            "3880CE": {"pattern": "roller_pair", "outputs": [
+                {"module_address": "8CF5", "channel": 1, "mode": "M03 (Close)", "t1": "40 s"},
+            ]},
+        }}
+        known = coord.get_known_entity_unique_ids()
+        self.assertIn("nikobus_cf_3880ce_close", known)
+        self.assertNotIn("nikobus_cf_3880ce_open", known)
+        self.assertNotIn("nikobus_cf_3880ce", known)
+
+    def test_m01_roller_pair_stays_a_broadcast_scene_id(self):
+        """A 1-button (M01 toggle) roller_pair has no direction to drive, so
+        it stays a broadcast CF scene — register the plain scene id."""
         coord = _coord_with_cfs([])
         coord.cf_storage.data = {"nikobus_cf": {
             "3880C8": {"pattern": "roller_pair", "outputs": [
@@ -83,7 +95,8 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         }}
         known = coord.get_known_entity_unique_ids()
         self.assertIn("nikobus_cf_3880c8", known)
-        self.assertNotIn("nikobus_cf_cover_3880c8", known)
+        self.assertNotIn("nikobus_cf_3880c8_open", known)
+        self.assertNotIn("nikobus_cf_3880c8_close", known)
 
     def test_no_cfs_is_safe(self):
         coord = _coord_with_cfs([])

@@ -241,30 +241,25 @@ def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any
     return flat
 
 
-def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
-    """Collapse a *bidirectional* ``roller_pair`` CF into distinct cover members.
+def cf_roller_directions(cf: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Split a roller CF's outputs into its per-direction member channels.
 
-    A true 2-button roller central function bundles the open (``M02``) and
-    close (``M03``) link records for the same channels, so each channel
-    appears twice in ``outputs``. Returns one entry per distinct
-    ``(module_address, channel)`` — preserving first-sighting order — with
-    the open / close timing strings (``t1``) pulled from the matching mode::
+    A roller central function carries open (``M02``) and/or close (``M03``)
+    link records. Returns ``{"open": [...], "close": [...]}`` where each
+    value is the list of ``{module_address, channel, time}`` members for
+    that direction (``time`` is the record's ``t1``), preserving
+    first-sighting order and de-duplicating ``(module, channel)`` within a
+    direction. Directions with no members are omitted::
 
-        [{"module_address", "channel", "open_time", "close_time"}, ...]
+        2-button (open+close) -> {"open": [...], "close": [...]}
+        single-direction      -> {"close": [...]}  (or {"open": [...]})
+        1-button M01 toggle   -> {}   (no M02/M03 -> not direction-drivable)
 
-    Returns ``[]`` (i.e. "not a cover") unless the CF carries **both** an
-    ``M02`` and an ``M03`` record. Single-direction CFs (only-close /
-    only-open) and 1-button ``M01`` ("open-stop-close" toggle) functions
-    have no open+close pair to drive as a cover — a single broadcast is
-    unambiguous for them — so they stay scenes. This keeps the cover path
-    to genuine 2-button controls and avoids stranding M01/single-direction
-    roller CFs (which would otherwise be filtered from the scene platform
-    yet produce no cover).
+    An empty dict means the CF isn't direction-drivable as scenes (e.g. an
+    ``M01`` "open-stop-close" toggle); the caller keeps it a broadcast scene.
     """
-    members: dict[tuple[str, int], dict[str, Any]] = {}
-    order: list[tuple[str, int]] = []
-    seen_open = False
-    seen_close = False
+    dirs: dict[str, list[dict[str, Any]]] = {"open": [], "close": []}
+    seen: dict[str, set[tuple[str, int]]] = {"open": set(), "close": set()}
     for o in (cf or {}).get("outputs") or []:
         if not isinstance(o, dict):
             continue
@@ -273,29 +268,20 @@ def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
         if not (isinstance(mod, str) and isinstance(ch, int)):
             continue
         code = mode_code(o.get("mode"))
-        if code not in ("M02", "M03"):
+        if code == "M02":
+            direction = "open"
+        elif code == "M03":
+            direction = "close"
+        else:
             continue
         key = (mod.upper(), ch)
-        if key not in members:
-            members[key] = {
-                "module_address": mod.upper(),
-                "channel": ch,
-                "open_time": None,
-                "close_time": None,
-            }
-            order.append(key)
-        t1 = o.get("t1")
-        if code == "M02":
-            seen_open = True
-            if members[key]["open_time"] is None:
-                members[key]["open_time"] = t1
-        else:  # M03
-            seen_close = True
-            if members[key]["close_time"] is None:
-                members[key]["close_time"] = t1
-    if not (seen_open and seen_close):
-        return []
-    return [members[k] for k in order]
+        if key in seen[direction]:
+            continue
+        seen[direction].add(key)
+        dirs[direction].append(
+            {"module_address": mod.upper(), "channel": ch, "time": o.get("t1")}
+        )
+    return {direction: members for direction, members in dirs.items() if members}
 
 
 def build_routing_graph(
