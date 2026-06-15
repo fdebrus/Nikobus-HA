@@ -1388,17 +1388,24 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 known.add(f"{DOMAIN}_scene_{sid}")
         # CF entities classified by the library during discovery. Most
         # patterns surface as ``NikobusCFSceneEntity`` (unique_id
-        # ``nikobus_cf_<addr>``); ``roller_pair`` (2-button roller) CFs
-        # instead surface as grouped ``NikobusCFCoverEntity`` covers
-        # (unique_id ``nikobus_cf_cover_<addr>``). Without the matching id
-        # here, ``_async_cleanup_orphan_entities`` evicts them immediately
-        # after their platform creates them.
+        # ``nikobus_cf_<addr>``); a *bidirectional* ``roller_pair`` (true
+        # 2-button open+close) CF instead surfaces as a grouped
+        # ``NikobusCFCoverEntity`` (unique_id ``nikobus_cf_cover_<addr>``).
+        # The cover/scene split must match what those platforms create
+        # (``cf_cover_members`` is the single source of truth), else
+        # ``_async_cleanup_orphan_entities`` evicts the entity right after
+        # its platform creates it.
         if self.cf_storage is not None:
             cf_entries = self.cf_storage.data.get("nikobus_cf", {})
             if isinstance(cf_entries, dict):
+                from .nkbreconcile import cf_cover_members
                 for cf_addr, cf in cf_entries.items():
                     addr_lower = str(cf_addr).lower()
-                    if isinstance(cf, dict) and cf.get("pattern") == "roller_pair":
+                    if (
+                        isinstance(cf, dict)
+                        and cf.get("pattern") == "roller_pair"
+                        and cf_cover_members(cf)
+                    ):
                         known.add(f"nikobus_cf_cover_{addr_lower}")
                     else:
                         known.add(f"nikobus_cf_{addr_lower}")

@@ -242,9 +242,9 @@ def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any
 
 
 def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
-    """Collapse a ``roller_pair`` CF's outputs into distinct cover members.
+    """Collapse a *bidirectional* ``roller_pair`` CF into distinct cover members.
 
-    A 2-button roller central function bundles the open (``M02``) and
+    A true 2-button roller central function bundles the open (``M02``) and
     close (``M03``) link records for the same channels, so each channel
     appears twice in ``outputs``. Returns one entry per distinct
     ``(module_address, channel)`` — preserving first-sighting order — with
@@ -252,11 +252,19 @@ def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
 
         [{"module_address", "channel", "open_time", "close_time"}, ...]
 
-    Channels with neither an ``M02`` nor an ``M03`` record are skipped:
-    without a decoded direction there is nothing for a cover to drive.
+    Returns ``[]`` (i.e. "not a cover") unless the CF carries **both** an
+    ``M02`` and an ``M03`` record. Single-direction CFs (only-close /
+    only-open) and 1-button ``M01`` ("open-stop-close" toggle) functions
+    have no open+close pair to drive as a cover — a single broadcast is
+    unambiguous for them — so they stay scenes. This keeps the cover path
+    to genuine 2-button controls and avoids stranding M01/single-direction
+    roller CFs (which would otherwise be filtered from the scene platform
+    yet produce no cover).
     """
     members: dict[tuple[str, int], dict[str, Any]] = {}
     order: list[tuple[str, int]] = []
+    seen_open = False
+    seen_close = False
     for o in (cf or {}).get("outputs") or []:
         if not isinstance(o, dict):
             continue
@@ -277,10 +285,16 @@ def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
             }
             order.append(key)
         t1 = o.get("t1")
-        if code == "M02" and members[key]["open_time"] is None:
-            members[key]["open_time"] = t1
-        elif code == "M03" and members[key]["close_time"] is None:
-            members[key]["close_time"] = t1
+        if code == "M02":
+            seen_open = True
+            if members[key]["open_time"] is None:
+                members[key]["open_time"] = t1
+        else:  # M03
+            seen_close = True
+            if members[key]["close_time"] is None:
+                members[key]["close_time"] = t1
+    if not (seen_open and seen_close):
+        return []
     return [members[k] for k in order]
 
 

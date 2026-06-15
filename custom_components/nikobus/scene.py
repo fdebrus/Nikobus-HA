@@ -21,6 +21,7 @@ from .const import (
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, command_error
+from .nkbreconcile import cf_cover_members
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -85,12 +86,14 @@ async def async_setup_entry(
     for bus_address, cf in cf_data.items():
         if not isinstance(cf, dict):
             continue
-        # roller_pair CFs (2-button roller central functions) carry both
-        # the open and close links for their channels, so a single
-        # broadcast can't drive a direction — surfacing them as a one-shot
-        # scene is non-actionable. The cover platform instead materialises
-        # them as proper grouped covers (open/close/stop). Skip here.
-        if cf.get("pattern") == "roller_pair":
+        # A *bidirectional* roller_pair CF (a true 2-button open+close
+        # control) carries both the open and close links for its channels,
+        # so a single broadcast can't drive a direction — surfacing it as a
+        # one-shot scene is non-actionable. The cover platform materialises
+        # those as grouped covers (open/close/stop), so skip them here.
+        # Single-direction / M01-toggle roller CFs (cf_cover_members == [])
+        # are unambiguous as a broadcast and stay scenes.
+        if cf.get("pattern") == "roller_pair" and cf_cover_members(cf):
             continue
         entities.append(
             NikobusCFSceneEntity(

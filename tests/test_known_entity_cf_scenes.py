@@ -54,20 +54,36 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         known = coord.get_known_entity_unique_ids()
         self.assertIn("nikobus_cf_ab1234", known)
 
-    def test_roller_pair_cf_registers_cover_id_not_scene_id(self):
-        """roller_pair CFs surface as grouped covers
-        (``nikobus_cf_cover_<addr>``), not scenes — the known-id set must
-        match, otherwise the orphan cleanup evicts the new cover (and the
-        old scene id must NOT be present, since no scene is created)."""
+    def test_bidirectional_roller_pair_registers_cover_id_not_scene_id(self):
+        """A bidirectional roller_pair CF (M02+M03) surfaces as a grouped
+        cover (``nikobus_cf_cover_<addr>``), not a scene — the known-id set
+        must match, else orphan cleanup evicts the new cover (and the old
+        scene id must NOT be present, since no scene is created)."""
         coord = _coord_with_cfs([])
         coord.cf_storage.data = {"nikobus_cf": {
             "3880CD": {"pattern": "roller_pair", "outputs": [
                 {"module_address": "8CF5", "channel": 1, "mode": "M02", "t1": "40 s"},
+                {"module_address": "8CF5", "channel": 1, "mode": "M03", "t1": "40 s"},
             ]},
         }}
         known = coord.get_known_entity_unique_ids()
         self.assertIn("nikobus_cf_cover_3880cd", known)
         self.assertNotIn("nikobus_cf_3880cd", known)
+
+    def test_m01_roller_pair_stays_a_scene_id(self):
+        """A 1-button (M01 toggle) roller_pair has no open+close pair to
+        drive as a cover, so it stays a scene — register the scene id, not
+        a cover id (regression: M01/single-direction roller CFs must not be
+        stranded between platforms)."""
+        coord = _coord_with_cfs([])
+        coord.cf_storage.data = {"nikobus_cf": {
+            "3880C8": {"pattern": "roller_pair", "outputs": [
+                {"module_address": "C7C1", "channel": 1, "mode": "M01 (Open-stop-close)"},
+            ]},
+        }}
+        known = coord.get_known_entity_unique_ids()
+        self.assertIn("nikobus_cf_3880c8", known)
+        self.assertNotIn("nikobus_cf_cover_3880c8", known)
 
     def test_no_cfs_is_safe(self):
         coord = _coord_with_cfs([])
