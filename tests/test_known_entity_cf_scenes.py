@@ -54,6 +54,21 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         known = coord.get_known_entity_unique_ids()
         self.assertIn("nikobus_cf_ab1234", known)
 
+    def test_roller_pair_cf_registers_cover_id_not_scene_id(self):
+        """roller_pair CFs surface as grouped covers
+        (``nikobus_cf_cover_<addr>``), not scenes — the known-id set must
+        match, otherwise the orphan cleanup evicts the new cover (and the
+        old scene id must NOT be present, since no scene is created)."""
+        coord = _coord_with_cfs([])
+        coord.cf_storage.data = {"nikobus_cf": {
+            "3880CD": {"pattern": "roller_pair", "outputs": [
+                {"module_address": "8CF5", "channel": 1, "mode": "M02", "t1": "40 s"},
+            ]},
+        }}
+        known = coord.get_known_entity_unique_ids()
+        self.assertIn("nikobus_cf_cover_3880cd", known)
+        self.assertNotIn("nikobus_cf_3880cd", known)
+
     def test_no_cfs_is_safe(self):
         coord = _coord_with_cfs([])
         known = coord.get_known_entity_unique_ids()

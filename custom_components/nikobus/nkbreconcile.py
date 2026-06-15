@@ -241,6 +241,49 @@ def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any
     return flat
 
 
+def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collapse a ``roller_pair`` CF's outputs into distinct cover members.
+
+    A 2-button roller central function bundles the open (``M02``) and
+    close (``M03``) link records for the same channels, so each channel
+    appears twice in ``outputs``. Returns one entry per distinct
+    ``(module_address, channel)`` — preserving first-sighting order — with
+    the open / close timing strings (``t1``) pulled from the matching mode::
+
+        [{"module_address", "channel", "open_time", "close_time"}, ...]
+
+    Channels with neither an ``M02`` nor an ``M03`` record are skipped:
+    without a decoded direction there is nothing for a cover to drive.
+    """
+    members: dict[tuple[str, int], dict[str, Any]] = {}
+    order: list[tuple[str, int]] = []
+    for o in (cf or {}).get("outputs") or []:
+        if not isinstance(o, dict):
+            continue
+        mod = o.get("module_address")
+        ch = o.get("channel")
+        if not (isinstance(mod, str) and isinstance(ch, int)):
+            continue
+        code = mode_code(o.get("mode"))
+        if code not in ("M02", "M03"):
+            continue
+        key = (mod.upper(), ch)
+        if key not in members:
+            members[key] = {
+                "module_address": mod.upper(),
+                "channel": ch,
+                "open_time": None,
+                "close_time": None,
+            }
+            order.append(key)
+        t1 = o.get("t1")
+        if code == "M02" and members[key]["open_time"] is None:
+            members[key]["open_time"] = t1
+        elif code == "M03" and members[key]["close_time"] is None:
+            members[key]["close_time"] = t1
+    return [members[k] for k in order]
+
+
 def build_routing_graph(
     button_data: dict[str, Any] | None,
 ) -> dict[frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]]:

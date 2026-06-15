@@ -55,6 +55,12 @@ async def async_setup_entry(
        :class:`NikobusCFSceneEntity` per entry — activation = single
        bus-frame broadcast, output modules fire atomically via their
        existing link records.
+
+    ``roller_pair`` CFs (2-button roller central functions) are the one
+    exception: they carry both the open and close links for their
+    channels, so a single broadcast can't drive a direction. The cover
+    platform materialises them as grouped covers (open/close/stop)
+    instead, so they're skipped here.
     """
     coordinator: NikobusDataCoordinator = entry.runtime_data
     entities: list[Scene] = []
@@ -78,6 +84,13 @@ async def async_setup_entry(
     cf_data = coordinator.cf_storage.data.get("nikobus_cf", {}) if coordinator.cf_storage else {}
     for bus_address, cf in cf_data.items():
         if not isinstance(cf, dict):
+            continue
+        # roller_pair CFs (2-button roller central functions) carry both
+        # the open and close links for their channels, so a single
+        # broadcast can't drive a direction — surfacing them as a one-shot
+        # scene is non-actionable. The cover platform instead materialises
+        # them as proper grouped covers (open/close/stop). Skip here.
+        if cf.get("pattern") == "roller_pair":
             continue
         entities.append(
             NikobusCFSceneEntity(

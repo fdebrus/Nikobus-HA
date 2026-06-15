@@ -1386,14 +1386,22 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")
-        # CF / light-scene entities classified by the library during
-        # discovery and surfaced by the scene platform as
-        # ``NikobusCFSceneEntity`` (unique_id ``nikobus_cf_<addr>``).
-        # Without these, ``_async_cleanup_orphan_entities`` evicts them
-        # immediately after the scene platform creates them.
+        # CF entities classified by the library during discovery. Most
+        # patterns surface as ``NikobusCFSceneEntity`` (unique_id
+        # ``nikobus_cf_<addr>``); ``roller_pair`` (2-button roller) CFs
+        # instead surface as grouped ``NikobusCFCoverEntity`` covers
+        # (unique_id ``nikobus_cf_cover_<addr>``). Without the matching id
+        # here, ``_async_cleanup_orphan_entities`` evicts them immediately
+        # after their platform creates them.
         if self.cf_storage is not None:
-            for cf_addr in self.cf_storage.data.get("nikobus_cf", {}):
-                known.add(f"nikobus_cf_{str(cf_addr).lower()}")
+            cf_entries = self.cf_storage.data.get("nikobus_cf", {})
+            if isinstance(cf_entries, dict):
+                for cf_addr, cf in cf_entries.items():
+                    addr_lower = str(cf_addr).lower()
+                    if isinstance(cf, dict) and cf.get("pattern") == "roller_pair":
+                        known.add(f"nikobus_cf_cover_{addr_lower}")
+                    else:
+                        known.add(f"nikobus_cf_{addr_lower}")
         known.add(f"{DOMAIN}_connection_status")
         known.add(f"{DOMAIN}_discovery_status")
         known.add(f"{DOMAIN}_discovery_progress")

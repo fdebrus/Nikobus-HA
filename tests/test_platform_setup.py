@@ -119,6 +119,39 @@ class TestOutputPlatformSetup(unittest.TestCase):
         self.assertEqual(len(covers), 1)
         self.assertEqual(covers[0]._channel, 1)
 
+    def test_roller_pair_cf_becomes_grouped_cover(self):
+        """A roller_pair CF surfaces as a grouped NikobusCFCoverEntity in the
+        cover platform (not a dead scene)."""
+        hass, entry, coord = _entry_and_coord()
+        coord.cf_storage.data = {
+            "nikobus_cf": {
+                "3880CD": {
+                    "pattern": "roller_pair",
+                    "outputs": [
+                        {"module_address": "8CF5", "channel": 1, "mode": "M02", "t1": "40 s"},
+                        {"module_address": "8CF5", "channel": 1, "mode": "M03", "t1": "40 s"},
+                    ],
+                },
+                # A light_scene CF must NOT become a cover.
+                "0D1C9E": {"pattern": "light_scene", "outputs": []},
+            }
+        }
+        added: list = []
+        with patch.object(
+            cover_platform, "register_output_module_devices", MagicMock()
+        ):
+            _run(
+                cover_platform.async_setup_entry(
+                    hass, entry, lambda ents, **kw: added.extend(ents)
+                )
+            )
+        cf_covers = [
+            e for e in added if isinstance(e, cover_platform.NikobusCFCoverEntity)
+        ]
+        self.assertEqual(len(cf_covers), 1)
+        self.assertEqual(cf_covers[0]._bus_address, "3880CD")
+        self.assertEqual(cf_covers[0]._attr_unique_id, "nikobus_cf_cover_3880cd")
+
     def test_routing_is_cached_per_entry(self):
         hass, entry, coord = _entry_and_coord()
         added: list = []
@@ -153,6 +186,15 @@ class TestScenePlatformSetup(unittest.TestCase):
                     ],
                     "triggered_by": ["3841AA"],
                 },
+                # roller_pair CFs are handled by the cover platform now —
+                # the scene platform must NOT surface them.
+                "3880CD": {
+                    "pattern": "roller_pair",
+                    "outputs": [
+                        {"module_address": "8CF5", "channel": 1, "mode": "M02", "t1": "40 s"},
+                        {"module_address": "8CF5", "channel": 1, "mode": "M03", "t1": "40 s"},
+                    ],
+                },
                 "garbage": "not-a-dict",  # ignored
             }
         }
@@ -171,5 +213,6 @@ class TestScenePlatformSetup(unittest.TestCase):
             e for e in added if isinstance(e, scene_platform.NikobusCFSceneEntity)
         ]
         self.assertEqual(len(user_scenes), 1)
-        self.assertEqual(len(cf_scenes), 1)
+        self.assertEqual(len(cf_scenes), 1)  # switch_pair only; roller_pair skipped
         self.assertEqual(cf_scenes[0]._bus_address, "3841AA")
+        self.assertNotIn("3880CD", [e._bus_address for e in cf_scenes])

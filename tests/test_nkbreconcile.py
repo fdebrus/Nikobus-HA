@@ -8,6 +8,7 @@ from custom_components.nikobus.nkbreconcile import (
     all_outputs_registry_sourced,
     build_controlled_by_index,
     build_routing_graph,
+    cf_cover_members,
     cf_member_set,
     classify_button_status,
     collect_button_outputs,
@@ -232,3 +233,58 @@ def test_build_routing_graph_groups_triggers_by_member_set():
 def test_build_routing_graph_empty_and_malformed():
     assert build_routing_graph(None) == {}
     assert build_routing_graph({"nikobus_button": "nope"}) == {}
+
+
+# ---------------------------------------------------------------------------
+# cf_cover_members — collapse a roller_pair CF's M02/M03 duplicates
+# ---------------------------------------------------------------------------
+def test_cf_cover_members_collapses_open_close_duplicates():
+    """A 2-button roller CF lists each channel twice (M02 open + M03 close);
+    cf_cover_members returns one entry per channel with both timings."""
+    cf = {
+        "pattern": "roller_pair",
+        "outputs": [
+            {"module_address": "8cf5", "channel": 1, "mode": "M02 (Open)", "t1": "40 s"},
+            {"module_address": "8cf5", "channel": 2, "mode": "M02 (Open)", "t1": "30 s"},
+            {"module_address": "8cf5", "channel": 1, "mode": "M03 (Close)", "t1": "40 s"},
+            {"module_address": "8cf5", "channel": 2, "mode": "M03 (Close)", "t1": "30 s"},
+        ],
+    }
+    members = cf_cover_members(cf)
+    assert members == [
+        {"module_address": "8CF5", "channel": 1, "open_time": "40 s", "close_time": "40 s"},
+        {"module_address": "8CF5", "channel": 2, "open_time": "30 s", "close_time": "30 s"},
+    ]
+
+
+def test_cf_cover_members_preserves_first_sighting_order():
+    cf = {
+        "outputs": [
+            {"module_address": "B", "channel": 3, "mode": "M02", "t1": None},
+            {"module_address": "A", "channel": 1, "mode": "M03", "t1": None},
+            {"module_address": "B", "channel": 3, "mode": "M03", "t1": None},
+        ],
+    }
+    keys = [(m["module_address"], m["channel"]) for m in cf_cover_members(cf)]
+    assert keys == [("B", 3), ("A", 1)]
+
+
+def test_cf_cover_members_skips_non_direction_modes_and_malformed():
+    cf = {
+        "outputs": [
+            {"module_address": "8CF5", "channel": 1, "mode": "M01 (toggle)", "t1": None},
+            {"module_address": "8CF5", "channel": 2, "mode": "M02", "t1": "20 s"},
+            "garbage",
+            {"channel": 9, "mode": "M02"},  # no module
+            {"module_address": "8CF5", "mode": "M03"},  # no channel
+        ],
+    }
+    members = cf_cover_members(cf)
+    assert members == [
+        {"module_address": "8CF5", "channel": 2, "open_time": "20 s", "close_time": None},
+    ]
+
+
+def test_cf_cover_members_empty():
+    assert cf_cover_members({}) == []
+    assert cf_cover_members({"outputs": None}) == []

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import uuid
 from typing import Any
 
 from homeassistant.components.cover import (
@@ -20,13 +21,16 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    CATEGORY_SCENES,
     DEFAULT_COVER_DEBOUNCE_DELAY,
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
+    DOMAIN,
     press_signal,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, command_error
+from .nkbreconcile import cf_cover_members
 from .nkbtravelcalculator import NikobusTravelCalculator
 from .router import build_unique_id, get_routing, register_output_module_devices
 
@@ -64,6 +68,28 @@ STATE_STOPPED = 0x00
 STATE_OPENING = 0x01
 STATE_CLOSING = 0x02
 STATE_ERROR = 0x03  # Catches logic engine conflicts
+
+
+def _parse_cf_time(value: Any) -> float | None:
+    """Parse a CF member timing string (e.g. ``"30 s"`` / ``"2 m"``) to seconds.
+
+    Returns ``None`` when the value is missing or unparseable, so the caller
+    can fall back to the module's configured operation time.
+    """
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    minutes = text.endswith("m") and not text.endswith("ms")
+    number = text.rstrip("ms ").strip()
+    try:
+        seconds = float(number)
+    except ValueError:
+        return None
+    if seconds <= 0:
+        return None
+    return seconds * 60.0 if minutes else seconds
 
 
 async def async_setup_entry(
@@ -104,6 +130,24 @@ async def async_setup_entry(
                 op_time_down,
             )
         )
+
+    # 2-button roller central functions (roller_pair CFs) become
+    # actionable grouped covers. The CF bundles the open (M02) and close
+    # (M03) links for its channels, so broadcasting its address can't
+    # express a direction; instead the grouped cover drives the member
+    # channels through the atomic per-module commit path (like a scene).
+    cf_storage = getattr(coordinator, "cf_storage", None)
+    cf_data = cf_storage.data.get("nikobus_cf", {}) if cf_storage is not None else {}
+    if isinstance(cf_data, dict):
+        for bus_address, cf in cf_data.items():
+            if not isinstance(cf, dict) or cf.get("pattern") != "roller_pair":
+                continue
+            members = cf_cover_members(cf)
+            if not members:
+                continue
+            entities.append(
+                NikobusCFCoverEntity(coordinator, str(bus_address), cf, members)
+            )
 
     async_add_entities(entities)
 
@@ -514,3 +558,359 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             await self.coordinator.api.stop_cover(self._address, self._channel, dir_cmd)
 
         self.async_write_ha_state()
+
+
+class NikobusCFCoverEntity(NikobusEntity, CoverEntity):
+    """A 2-button roller central function (``roller_pair`` CF) as a grouped cover.
+
+    A ``roller_pair`` CF bundles the open (``M02``) and close (``M03``) link
+    records for several roller channels — the two keys of a physical
+    "2-button" wall control. Broadcasting the CF address can't express a
+    single direction (it carries both open and close), so this entity drives
+    the member channels directly through the **atomic per-module commit path**
+    (``set_output_states_for_module``): every channel of one module moves in a
+    single bus frame, with a timed stop scheduled from the channels' operation
+    times — the same engine :class:`NikobusSceneEntity` uses for roller scenes.
+    The result behaves like the native Nikobus scene (all-at-once), while
+    giving HA proper open / close / stop.
+
+    Position is modelled at the group level by one travel calculator (seeded
+    with the slowest member's run time) so "fully open/closed" reflects the
+    last shutter to finish. The motion loop only advances the displayed
+    position; the real bus stop is sent by the per-module timed-stop tasks,
+    so the loop never cancels itself mid-command.
+    """
+
+    _attr_device_class = CoverDeviceClass.SHUTTER
+    _attr_supported_features = (
+        CoverEntityFeature.OPEN
+        | CoverEntityFeature.CLOSE
+        | CoverEntityFeature.STOP
+    )
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        bus_address: str,
+        cf_config: dict[str, Any],
+        members: list[dict[str, Any]],
+    ) -> None:
+        """Initialize the grouped CF cover from its resolved members."""
+        addr = str(bus_address).upper()
+        pattern = str(cf_config.get("pattern") or "roller_pair")
+
+        imported = cf_config.get("name")
+        if isinstance(imported, str) and imported.strip():
+            name = imported.strip()
+        else:
+            name = f"Nikobus roller CF {addr} ({len(members)} ch)"
+
+        super().__init__(
+            coordinator=coordinator,
+            address=addr,
+            name=name,
+            model=f"CF Cover ({pattern})",
+            via_device=(DOMAIN, CATEGORY_SCENES),
+        )
+        self._bus_address = addr
+        self._pattern = pattern
+        self._attr_name = name
+        self._attr_unique_id = f"nikobus_cf_cover_{addr.lower()}"
+
+        # Resolve per-member run times: the CF's own t1 wins, else the
+        # module's configured operation time for that channel/direction.
+        self._members: list[dict[str, Any]] = []
+        max_open = 0.0
+        max_close = 0.0
+        for member in members:
+            module = member["module_address"]
+            channel = member["channel"]
+            open_t = _parse_cf_time(member.get("open_time")) or (
+                coordinator.get_cover_operation_time(module, channel, "up")
+            )
+            close_t = _parse_cf_time(member.get("close_time")) or (
+                coordinator.get_cover_operation_time(module, channel, "down")
+            )
+            self._members.append(
+                {
+                    "module_address": module,
+                    "channel": channel,
+                    "open_time": open_t,
+                    "close_time": close_t,
+                }
+            )
+            max_open = max(max_open, open_t)
+            max_close = max(max_close, close_t)
+
+        self._calculator = NikobusTravelCalculator(
+            max_open or DEFAULT_COVER_OPERATION_TIME,
+            max_close or DEFAULT_COVER_OPERATION_TIME,
+        )
+        self._position: float = 100.0
+        self._state = STATE_STOPPED
+        self._run_limit: float = 0.0
+        self._motion_task: asyncio.Task[None] | None = None
+        # One stop token per module, re-minted on every move so a stale
+        # timed stop from a previous activation can't fire on a fresh move.
+        self._module_tokens: dict[str, str] = {}
+        self._stop_tasks: list[asyncio.Task[None]] = []
+
+    @property
+    def current_cover_position(self) -> int:
+        """Return the current group position (0-100)."""
+        return int(round(self._position))
+
+    @property
+    def is_opening(self) -> bool:
+        return self._state == STATE_OPENING and self._position < 100
+
+    @property
+    def is_closing(self) -> bool:
+        return self._state == STATE_CLOSING and self._position > 0
+
+    @property
+    def is_closed(self) -> bool:
+        return self.current_cover_position == 0
+
+    @property
+    def is_open(self) -> bool:
+        return self.current_cover_position == 100
+
+    def _render_state(self) -> Any:
+        """Group cover has no single bus channel to poll — opt out of diffing."""
+        return (self._state, self.current_cover_position)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        parent = super().extra_state_attributes or {}
+        return {
+            **parent,
+            "bus_address": self._bus_address,
+            "pattern": self._pattern,
+            "member_count": len(self._members),
+            "members": [
+                {
+                    "module": self.coordinator.address_label(m["module_address"]),
+                    "channel": m["channel"],
+                    "open_time": m["open_time"],
+                    "close_time": m["close_time"],
+                }
+                for m in self._members
+            ],
+        }
+
+    async def async_added_to_hass(self) -> None:
+        """Cancel any pending motion / timed-stop tasks on removal."""
+        await super().async_added_to_hass()
+
+        def _cancel_tasks() -> None:
+            self._module_tokens.clear()
+            if self._motion_task:
+                self._motion_task.cancel()
+                self._motion_task = None
+            for task in self._stop_tasks:
+                task.cancel()
+            self._stop_tasks.clear()
+
+        self.async_on_remove(_cancel_tasks)
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        """Open every member shutter."""
+        try:
+            await self._move("opening")
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            raise command_error(err) from err
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        """Close every member shutter."""
+        try:
+            await self._move("closing")
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            raise command_error(err) from err
+
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        """Stop every member shutter."""
+        try:
+            await self._stop()
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            raise command_error(err) from err
+
+    def _members_by_module(self) -> dict[str, list[dict[str, Any]]]:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for member in self._members:
+            grouped.setdefault(member["module_address"], []).append(member)
+        return grouped
+
+    async def _move(self, direction: str) -> None:
+        """Drive all members in ``direction`` via per-module atomic commits."""
+        byte_val = STATE_OPENING if direction == "opening" else STATE_CLOSING
+        time_key = "open_time" if direction == "opening" else "close_time"
+
+        # Cancel any in-flight motion / pending stops from a previous move.
+        self._cancel_motion()
+        self._cancel_stops()
+
+        # Longest member run time decides the shared stop deadline, mirroring
+        # the scene path: the most generous buffer absorbs bus contention so a
+        # slow shutter still reaches its end-stop before the stop frame fires.
+        delay = 0.0
+        commanded: dict[str, set[int]] = {}
+        sent_states: dict[str, bytearray] = {}
+
+        for module_id, members in self._members_by_module().items():
+            current = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
+            state = bytearray(current)
+            for member in members:
+                idx = member["channel"] - 1
+                if 0 <= idx < len(state):
+                    state[idx] = byte_val
+                    commanded.setdefault(module_id, set()).add(idx)
+                op_time = float(member[time_key] or 0.0)
+                if op_time > 0:
+                    delay = max(delay, op_time + DEFAULT_COVER_MOVEMENT_BUFFER)
+            sent_states[module_id] = state
+            await self._commit_module(module_id, state)
+
+        # Schedule the timed stop per module once all are moving.
+        for module_id, indexes in commanded.items():
+            token = uuid.uuid4().hex
+            self._module_tokens[module_id] = token
+            task = self.hass.async_create_task(
+                self._delayed_stop(module_id, sent_states[module_id], indexes, delay, token)
+            )
+            self._stop_tasks.append(task)
+            task.add_done_callback(
+                lambda t: self._stop_tasks.remove(t) if t in self._stop_tasks else None
+            )
+
+        self._start_motion(direction)
+
+    async def _commit_module(self, module_id: str, state: bytearray) -> None:
+        """Stage and push a whole module's state in one bus commit (per group)."""
+        num_chans = self.coordinator.get_module_channel_count(module_id)
+        self.coordinator.set_bytearray_group_state(module_id, 1, state[:6].hex())
+        if num_chans > 6:
+            self.coordinator.set_bytearray_group_state(module_id, 2, state[6:12].hex())
+        await self.coordinator.api.set_output_states_for_module(address=module_id)
+        await self.coordinator.async_event_handler(
+            "nikobus_refreshed", {"impacted_module_address": module_id}
+        )
+
+    async def _delayed_stop(
+        self,
+        module_id: str,
+        sent_state: bytearray,
+        indexes: set[int],
+        delay: float,
+        token: str,
+    ) -> None:
+        """Send the bus stop once travel time elapses.
+
+        Composes the stop frame from the module's CURRENT state at timeout,
+        not the activation snapshot: a channel redirected during travel (by a
+        wall button, another scene, or a direct cover) is left alone — only
+        channels still doing what we commanded are forced to STOPPED.
+        """
+        await asyncio.sleep(delay)
+        if self._module_tokens.get(module_id) != token:
+            return
+
+        current = self.coordinator.nikobus_module_states.get(module_id)
+        stop_state = bytearray(current) if current else bytearray(sent_state)
+        changed = False
+        for idx in indexes:
+            if idx < len(stop_state) and stop_state[idx] == sent_state[idx]:
+                stop_state[idx] = STATE_STOPPED
+                changed = True
+        if not changed:
+            return
+
+        try:
+            await self._commit_module(module_id, stop_state)
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            _LOGGER.error("CF cover %s: timed stop failed for %s: %s", self._bus_address, module_id, err)
+
+    async def _stop(self) -> None:
+        """Stop all members now: cancel timers, commit STOPPED per module."""
+        self._cancel_motion()
+        self._cancel_stops()
+
+        self._calculator.stop()
+        self._position = self._calculator.current_position()
+        self._state = STATE_STOPPED
+
+        for module_id, members in self._members_by_module().items():
+            current = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
+            state = bytearray(current)
+            for member in members:
+                idx = member["channel"] - 1
+                if 0 <= idx < len(state):
+                    state[idx] = STATE_STOPPED
+            await self._commit_module(module_id, state)
+
+        self.async_write_ha_state()
+
+    def _start_motion(self, direction: str) -> None:
+        """Start the group-level position model for the UI."""
+        self._cancel_motion()
+        self._state = STATE_OPENING if direction == "opening" else STATE_CLOSING
+        active = (
+            self._calculator.time_up if direction == "opening" else self._calculator.time_down
+        )
+        self._calculator.start_travel(direction)
+        self._position = self._calculator.current_position()
+        self._run_limit = max(DEFAULT_COVER_MOVEMENT_BUFFER, active)
+        self._motion_task = self.hass.async_create_task(self._motion_loop())
+        self.async_write_ha_state()
+
+    async def _motion_loop(self) -> None:
+        """Advance the displayed position until travel completes.
+
+        Does not send bus frames — the hardware stop is the job of the
+        per-module timed-stop tasks — so this loop can be cancelled freely
+        without ever swallowing a STOP command.
+        """
+        try:
+            start = time.monotonic()
+            while self._state in (STATE_OPENING, STATE_CLOSING):
+                elapsed = time.monotonic() - start
+                self._position = self._calculator.current_position()
+                if elapsed >= self._run_limit:
+                    self._position = 100.0 if self._state == STATE_OPENING else 0.0
+                    self._calculator.set_position(self._position)
+                    self._state = STATE_STOPPED
+                    self.async_write_ha_state()
+                    break
+                self.async_write_ha_state()
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            pass
+
+    def _cancel_motion(self) -> None:
+        task = self._motion_task
+        self._motion_task = None
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
+
+    def _cancel_stops(self) -> None:
+        self._module_tokens.clear()
+        for task in self._stop_tasks:
+            task.cancel()
+        self._stop_tasks.clear()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Group cover has no single bus channel — ignore poll updates.
+
+        Its state is driven entirely by HA actions and the local motion
+        model; reading a per-channel byte back would be ambiguous across
+        members, so we deliberately don't react to coordinator refreshes.
+        """
