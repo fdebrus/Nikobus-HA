@@ -62,8 +62,19 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         name: str,
         model: str,
         via_device: tuple[str, str] | None = None,
+        device_identifier: str | None = None,
     ) -> None:
-        """Initialize the entity with shared device information."""
+        """Initialize the entity with shared device information.
+
+        ``address`` is the bus address used for state-refresh signal
+        routing and the module-address attribute. ``device_identifier``
+        overrides the HA *device* this entity belongs to; it defaults to
+        ``address`` (one device per module). Pass a distinct value to
+        give an entity its own device even though it shares a bus address
+        with another — e.g. a Central Function scene whose ``address`` is
+        also a physical button, so the scene gets its own device named by
+        the CF rather than being merged into the button's device.
+        """
         super().__init__(coordinator)
         self._address = address
         self._device_name = name
@@ -71,7 +82,7 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
 
         # Group every channel of a module under one physical device.
         device_info = dr.DeviceInfo(
-            identifiers={(DOMAIN, self._address)},
+            identifiers={(DOMAIN, device_identifier or self._address)},
             name=self._device_name,
             manufacturer=BRAND,
             model=self._device_model,

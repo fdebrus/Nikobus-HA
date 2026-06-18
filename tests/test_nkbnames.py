@@ -152,6 +152,11 @@ def test_import_names_areas_and_scene_match():
     # (no room) keep their bare name.
     assert names == {"d1": "Dimcontroller (Centrale)", "d2": "Entree (Living)",
                      "d3": "Scene - Test"}
+    # The matched name is persisted onto the CF record too — the scene
+    # entity lives on its own ``cf_<addr>`` device (not merged into the
+    # trigger button), which the address-keyed device rename can't reach,
+    # so the name has to travel with the CF.
+    assert coord.cf_storage.data["nikobus_cf"]["DE4E2C"]["name"] == "Scene - Test"
     # areas assigned for the two room-bearing devices (not the scene)
     area_calls = [c for c in dev_reg.async_update_device.call_args_list
                   if "area_id" in c.kwargs]
