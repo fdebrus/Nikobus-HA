@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.8.6
+
+- **`.nkb` name import now renames the scene's own device.** 3.8.5 moved
+  CF scenes onto their own ``cf_<address>`` device, but HA never repaints
+  a device's name once it exists — so a scene whose name was matched on a
+  *later* import (e.g. *Scene - TV* / *Dinner* / *CosiDinner*) kept its
+  generic ``Nikobus scene <addr>`` device name even though the name was
+  correctly stored on the CF. The import's device-rename pass now
+  recognises the ``cf_<addr>`` scene devices and force-applies the CF /
+  scene name (taking the scene name, never the trigger button's). Re-run
+  **Import Names from .nkb** once and the matched scenes pick up their
+  real names. (CFs created directly from the ``.nkb``, like
+  *CloseHouse - Leave*, were already correct because their device is
+  created with the name in place.)
+
 ## 3.8.5
 
 - **Central Function scenes now get their own device, named after the
