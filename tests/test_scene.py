@@ -13,6 +13,7 @@ import unittest
 import unittest.mock
 from unittest.mock import AsyncMock, MagicMock
 
+from custom_components.nikobus.const import DOMAIN
 from custom_components.nikobus.scene import (
     NikobusCFRollerSceneEntity,
     NikobusCFSceneEntity,
@@ -130,6 +131,28 @@ class TestCFSceneActivation(unittest.TestCase):
         _run(e.async_activate())
         coord.async_activate_cf_broadcast.assert_awaited_once_with("DE4E2C")
 
+    def test_scene_gets_own_device_named_by_cf(self):
+        """A CF scene whose address is also a physical button must not be
+        merged into that button's device — it gets its own ``cf_<addr>``
+        device named by the CF, with no entity-name part (so its friendly
+        name is just the CF name, not doubled)."""
+        e = NikobusCFSceneEntity(
+            MagicMock(),
+            bus_address="C177CE",
+            cf_config={
+                "pattern": "nkb_scene",
+                "name": "CloseHouse - Leave",
+                "outputs": [],
+                "triggered_by": ["C177CE"],
+            },
+        )
+        self.assertEqual(
+            e._attr_device_info["identifiers"], {(DOMAIN, "cf_c177ce")}
+        )
+        self.assertEqual(e._device_name, "CloseHouse - Leave")
+        self.assertIsNone(e._attr_name)
+        self.assertEqual(e._attr_unique_id, "nikobus_cf_c177ce")
+
 
 class TestParseCfTime(unittest.TestCase):
     def test_seconds_minutes_and_invalid(self):
@@ -188,7 +211,15 @@ class TestCFRollerScene(unittest.TestCase):
             [{"module_address": "8CF5", "channel": 1, "time": "40 s"}],
             "close",
         )
-        self.assertEqual(e._attr_name, "Gordijnen keuken Close")
+        # The CF name is the device name; the direction is the entity-name
+        # part, so HA composes "Gordijnen keuken Close".
+        self.assertEqual(e._device_name, "Gordijnen keuken")
+        self.assertEqual(e._attr_name, "Close")
+        # Own device, keyed off the CF (not the bare bus address) and
+        # shared by both directions.
+        self.assertEqual(
+            e._attr_device_info["identifiers"], {(DOMAIN, "cf_3880cd")}
+        )
 
     def test_close_drives_members_atomically_once_per_module(self):
         e, coord = _make_roller_scene("close")

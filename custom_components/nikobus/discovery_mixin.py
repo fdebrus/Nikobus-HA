@@ -1070,11 +1070,20 @@ class NikobusDiscoveryMixin:
         if "scenes" in cats and self.cf_storage is not None:
             scene_by_members = {sc.members: sc.name for sc in data.scenes}
             matched_scene_members: set[frozenset[tuple[str, int, str]]] = set()
+            names_persisted = False
             for cf_addr, cf in self.cf_storage.data.get("nikobus_cf", {}).items():
                 hit = scene_by_members.get(cf_member_set(cf))
                 if hit:
                     cf_name_by_addr[str(cf_addr).upper()] = hit
                     matched_scene_members.add(cf_member_set(cf))
+                    # Persist the name onto the CF itself. The scene entity
+                    # lives on its own ``cf_<addr>`` device (so it isn't
+                    # merged into the trigger button's device), which the
+                    # address-keyed registry rename below doesn't reach —
+                    # so the name has to travel with the CF record.
+                    if cf.get("name") != hit:
+                        cf["name"] = hit
+                        names_persisted = True
             graph = build_routing_graph(self.dict_button_data)
             existing = self.cf_storage.data.setdefault("nikobus_cf", {})
             new_entries: dict[str, dict[str, Any]] = {}
@@ -1099,8 +1108,9 @@ class NikobusDiscoveryMixin:
                 cf_name_by_addr[canonical] = sc.name
             if new_entries:
                 existing.update(new_entries)
-                await self.cf_storage.async_save()
                 scenes_created = len(new_entries)
+            if new_entries or names_persisted:
+                await self.cf_storage.async_save()
 
         dev_reg = dr.async_get(self.hass)
         ent_reg = er.async_get(self.hass)

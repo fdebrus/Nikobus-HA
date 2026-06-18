@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.8.5
+
+- **Central Function scenes now get their own device, named after the
+  scene.** A CF scene whose bus address is also a physical button (e.g.
+  *CloseHouse - Leave*, triggered by a *Corridor Master DOWN* wall button)
+  was being merged into that button's HA device and shown under the
+  button's name — the scene was buried as a sub-entity. CF scenes now
+  register a distinct ``cf_<address>`` device under the Scenes hub, named
+  by the CF (the directional roller Open/Close scenes share one device per
+  CF). The physical button keeps its own device. Entity IDs are unchanged,
+  so dashboards and history referencing the scene survive. The matched
+  ``.nkb`` scene name is also persisted onto the CF record so the scene
+  device keeps the right name on its own device.
+
 ## 3.8.4
 
 - **Roller central functions are now actionable from HA.** An imported

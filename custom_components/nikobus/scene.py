@@ -195,6 +195,10 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             name=name,
             model=f"CF Broadcast ({pattern})",
             via_device=(DOMAIN, CATEGORY_SCENES),
+            # Own device, keyed off the CF (not the bare bus address), so a
+            # scene whose address is also a physical button isn't merged
+            # into — and renamed after — that button's device.
+            device_identifier=f"cf_{addr.lower()}",
         )
         self._bus_address = addr
         self._pattern = pattern
@@ -206,7 +210,10 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             self._triggered_by = [str(t).upper() for t in triggers]
         else:
             self._triggered_by = [addr]
-        self._attr_name = name
+        # The scene is the device's primary feature, so it carries no
+        # entity-name part — its friendly name is just the device name
+        # (the CF name), not "<CF name> <CF name>".
+        self._attr_name = None
         self._attr_unique_id = f"nikobus_cf_{addr.lower()}"
 
     @property
@@ -325,19 +332,24 @@ class NikobusCFRollerSceneEntity(NikobusEntity, Scene):
         else:
             base = f"Nikobus roller CF {addr}"
         suffix = "Open" if direction == "open" else "Close"
-        name = f"{base} {suffix}"
 
         super().__init__(
             coordinator=coordinator,
             address=addr,
-            name=name,
+            # Device name is the CF base; both directions share one device.
+            name=base,
             model=f"CF Scene ({pattern})",
             via_device=(DOMAIN, CATEGORY_SCENES),
+            # Own device per CF (shared by the Open/Close entities), keyed
+            # off the CF rather than the bus address so it isn't merged
+            # into a physical button's device.
+            device_identifier=f"cf_{addr.lower()}",
         )
         self._bus_address = addr
         self._pattern = pattern
         self._members = members  # [{module_address, channel, time}, ...]
-        self._attr_name = name
+        # Direction is the entity-name part → "<base> Open" / "<base> Close".
+        self._attr_name = suffix
         self._attr_unique_id = f"nikobus_cf_{addr.lower()}_{direction}"
 
         # Guard against overlapping roller release tasks (per module token).
