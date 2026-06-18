@@ -1122,6 +1122,17 @@ class NikobusDiscoveryMixin:
                 if domain != DOMAIN:
                     continue
                 key = ident.upper()
+                # A CF scene lives on its own ``cf_<addr>`` device (split
+                # out from the trigger button so it carries the scene's
+                # name). HA doesn't repaint a device name once created, so
+                # a scene matched on a *later* import would otherwise keep
+                # its generic name — force it from the CF/scene name here,
+                # never the trigger button's ``name_map`` entry.
+                if key.startswith("CF_"):
+                    cf_name = cf_name_by_addr.get(key[3:])
+                    if cf_name:
+                        return (cf_name, "")
+                    continue
                 if key in name_map:
                     return name_map[key]
                 if key in cf_name_by_addr:

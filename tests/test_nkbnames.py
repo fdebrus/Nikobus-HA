@@ -127,7 +127,9 @@ def test_import_names_areas_and_scene_match():
 
     dev_dim = _device("d1", "0E6C")               # module, 3 entities
     dev_btn = _device("d2", "1843B4")             # button, 1 entity
-    dev_cf = _device("d3", "DE4E2C", name="Nikobus scene DE4E2C")
+    # The scene lives on its own ``cf_<addr>`` device (split from any
+    # trigger button), so the rename must reach the ``cf_`` identifier.
+    dev_cf = _device("d3", "cf_de4e2c", name="Nikobus scene DE4E2C")
     devices = [dev_dim, dev_btn, dev_cf]
     entities = [
         _entity("light.a", "d1"), _entity("light.b", "d1"),
