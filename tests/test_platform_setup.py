@@ -153,6 +153,22 @@ class TestScenePlatformSetup(unittest.TestCase):
                     ],
                     "triggered_by": ["3841AA"],
                 },
+                # A bidirectional roller_pair CF → two directional roller
+                # scenes (Open + Close), NOT a broadcast CF scene.
+                "3880CD": {
+                    "pattern": "roller_pair",
+                    "outputs": [
+                        {"module_address": "8CF5", "channel": 1, "mode": "M02", "t1": "40 s"},
+                        {"module_address": "8CF5", "channel": 1, "mode": "M03", "t1": "40 s"},
+                    ],
+                },
+                # An M01-toggle roller_pair has no direction → broadcast scene.
+                "3880C8": {
+                    "pattern": "roller_pair",
+                    "outputs": [
+                        {"module_address": "C7C1", "channel": 1, "mode": "M01 (Open-stop-close)"},
+                    ],
+                },
                 "garbage": "not-a-dict",  # ignored
             }
         }
@@ -170,6 +186,14 @@ class TestScenePlatformSetup(unittest.TestCase):
         cf_scenes = [
             e for e in added if isinstance(e, scene_platform.NikobusCFSceneEntity)
         ]
+        roller_scenes = [
+            e for e in added if isinstance(e, scene_platform.NikobusCFRollerSceneEntity)
+        ]
         self.assertEqual(len(user_scenes), 1)
-        self.assertEqual(len(cf_scenes), 1)
-        self.assertEqual(cf_scenes[0]._bus_address, "3841AA")
+        # switch_pair + M01 roller stay broadcast CF scenes.
+        self.assertEqual(sorted(e._bus_address for e in cf_scenes), ["3841AA", "3880C8"])
+        # bidirectional roller → two directional roller scenes (open + close).
+        self.assertEqual(
+            sorted(e._attr_unique_id for e in roller_scenes),
+            ["nikobus_cf_3880cd_close", "nikobus_cf_3880cd_open"],
+        )

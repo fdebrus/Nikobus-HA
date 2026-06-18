@@ -1386,14 +1386,31 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")
-        # CF / light-scene entities classified by the library during
-        # discovery and surfaced by the scene platform as
-        # ``NikobusCFSceneEntity`` (unique_id ``nikobus_cf_<addr>``).
-        # Without these, ``_async_cleanup_orphan_entities`` evicts them
-        # immediately after the scene platform creates them.
+        # CF entities classified by the library during discovery. Most
+        # surface as a single ``NikobusCFSceneEntity`` (unique_id
+        # ``nikobus_cf_<addr>``). A roller CF with decoded open/close
+        # members instead surfaces as one ``NikobusCFRollerSceneEntity``
+        # per direction (unique_id ``nikobus_cf_<addr>_<open|close>``). The
+        # split must match what the scene platform creates
+        # (``cf_roller_directions`` is the single source of truth), else
+        # ``_async_cleanup_orphan_entities`` evicts the entity right after
+        # its platform creates it.
         if self.cf_storage is not None:
-            for cf_addr in self.cf_storage.data.get("nikobus_cf", {}):
-                known.add(f"nikobus_cf_{str(cf_addr).lower()}")
+            cf_entries = self.cf_storage.data.get("nikobus_cf", {})
+            if isinstance(cf_entries, dict):
+                from .nkbreconcile import cf_roller_directions
+                for cf_addr, cf in cf_entries.items():
+                    addr_lower = str(cf_addr).lower()
+                    directions = (
+                        cf_roller_directions(cf)
+                        if isinstance(cf, dict) and cf.get("pattern") == "roller_pair"
+                        else {}
+                    )
+                    if directions:
+                        for direction in directions:
+                            known.add(f"nikobus_cf_{addr_lower}_{direction}")
+                    else:
+                        known.add(f"nikobus_cf_{addr_lower}")
         known.add(f"{DOMAIN}_connection_status")
         known.add(f"{DOMAIN}_discovery_status")
         known.add(f"{DOMAIN}_discovery_progress")

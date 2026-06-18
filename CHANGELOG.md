@@ -1,5 +1,24 @@
 # Changelog
 
+## 3.8.4
+
+- **Roller central functions are now actionable from HA.** An imported
+  roller central function (a *roller_pair* CF) used to appear as a one-shot
+  scene that couldn't move anything: a single broadcast carries both the
+  open and close links for its channels, so there was no "direction" to
+  trigger. These now surface as **member-driving scenes** that fire the
+  shutters directly through the atomic, per-module bus commit — every
+  member channel on a module moves **in one frame** (all-at-once, like the
+  native Nikobus scene), with a timed stop from the channels' run times:
+  - a **2-button** (open+close) function becomes **two scenes** — one
+    "… Open" and one "… Close";
+  - a **single-direction** function (close-only / open-only) becomes one
+    scene for that direction.
+
+  1-button "open-stop-close" (M01) toggles and the other CF patterns
+  (light scenes, switch pairs) keep their existing single-broadcast
+  activation.
+
 ## 3.8.2
 
 Robustness, i18n & cleanup pass — a few user-facing fixes, otherwise internal.

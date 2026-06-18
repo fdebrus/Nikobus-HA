@@ -241,6 +241,49 @@ def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any
     return flat
 
 
+def cf_roller_directions(cf: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Split a roller CF's outputs into its per-direction member channels.
+
+    A roller central function carries open (``M02``) and/or close (``M03``)
+    link records. Returns ``{"open": [...], "close": [...]}`` where each
+    value is the list of ``{module_address, channel, time}`` members for
+    that direction (``time`` is the record's ``t1``), preserving
+    first-sighting order and de-duplicating ``(module, channel)`` within a
+    direction. Directions with no members are omitted::
+
+        2-button (open+close) -> {"open": [...], "close": [...]}
+        single-direction      -> {"close": [...]}  (or {"open": [...]})
+        1-button M01 toggle   -> {}   (no M02/M03 -> not direction-drivable)
+
+    An empty dict means the CF isn't direction-drivable as scenes (e.g. an
+    ``M01`` "open-stop-close" toggle); the caller keeps it a broadcast scene.
+    """
+    dirs: dict[str, list[dict[str, Any]]] = {"open": [], "close": []}
+    seen: dict[str, set[tuple[str, int]]] = {"open": set(), "close": set()}
+    for o in (cf or {}).get("outputs") or []:
+        if not isinstance(o, dict):
+            continue
+        mod = o.get("module_address")
+        ch = o.get("channel")
+        if not (isinstance(mod, str) and isinstance(ch, int)):
+            continue
+        code = mode_code(o.get("mode"))
+        if code == "M02":
+            direction = "open"
+        elif code == "M03":
+            direction = "close"
+        else:
+            continue
+        key = (mod.upper(), ch)
+        if key in seen[direction]:
+            continue
+        seen[direction].add(key)
+        dirs[direction].append(
+            {"module_address": mod.upper(), "channel": ch, "time": o.get("t1")}
+        )
+    return {direction: members for direction, members in dirs.items() if members}
+
+
 def build_routing_graph(
     button_data: dict[str, Any] | None,
 ) -> dict[frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]]:
