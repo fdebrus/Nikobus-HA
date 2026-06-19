@@ -248,13 +248,27 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
 
     def _human_outputs(self) -> list[dict[str, Any]]:
         """Members with module names + level; address kept for reference."""
+        # ``(MODULE, channel) -> output name`` so each member shows its
+        # real channel name (e.g. "Appliques Salon") instead of a bare
+        # number; built once for the whole member list.
+        channel_names = self.coordinator.channel_label_map()
         out_list: list[dict[str, Any]] = []
         for member in self._outputs:
             if not isinstance(member, dict):
                 continue
+            channel = member.get("channel")
+            module_addr = str(member.get("module_address") or "").upper()
+            # Show the channel as "Name (N)" when the output has an
+            # imported / user name (mirrors ``address_label``), else the
+            # bare number.
+            channel_label: Any = channel
+            if isinstance(channel, int):
+                name = channel_names.get((module_addr, channel))
+                if name:
+                    channel_label = f"{name} ({channel})"
             entry: dict[str, Any] = {
                 "module": self.coordinator.address_label(member.get("module_address")),
-                "channel": member.get("channel"),
+                "channel": channel_label,
                 "action": member.get("mode"),
             }
             level = member.get("t1")

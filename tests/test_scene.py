@@ -286,10 +286,11 @@ class TestCFRollerScene(unittest.TestCase):
 
 
 class TestCFSceneAttributes(unittest.TestCase):
-    def _make(self, outputs):
+    def _make(self, outputs, channel_names=None):
         coord = MagicMock()
         coord.address_label = lambda a: f"mod_{a} ({a})" if a else ""
         coord.get_button_context = MagicMock(return_value=None)
+        coord.channel_label_map = MagicMock(return_value=channel_names or {})
         e = NikobusCFSceneEntity(
             coord,
             bus_address="DE4E2C",
@@ -314,6 +315,25 @@ class TestCFSceneAttributes(unittest.TestCase):
             outs[1],
             {"module": "mod_8394 (8394)", "channel": 1, "action": "M02 (Open)"},
         )
+
+    def test_human_outputs_include_channel_name(self):
+        """When the output channel has an imported/user name, the channel
+        field is shown as "Name (N)"; otherwise it's the bare number."""
+        e, _ = self._make(
+            [
+                {"module_address": "0E6C", "channel": 8,
+                 "mode": "M12 (Preset on)", "t1": "5%"},
+                {"module_address": "4707", "channel": 6,
+                 "mode": "M03 (Off + Operating time)", "t1": "0s"},
+            ],
+            channel_names={
+                ("0E6C", 8): "Boudoir - Plafonnier",
+                # 4707 ch6 has no name -> bare number
+            },
+        )
+        outs = e._human_outputs()
+        self.assertEqual(outs[0]["channel"], "Boudoir - Plafonnier (8)")
+        self.assertEqual(outs[1]["channel"], 6)
 
     def test_triggered_by_falls_back_to_address(self):
         e, coord = self._make([])
