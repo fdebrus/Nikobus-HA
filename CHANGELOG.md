@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.8.8
+
+- **Scene `outputs` attribute now shows channel names.** Each member of a
+  CF scene's `outputs` attribute shows its channel as `Name (N)` — the
+  output channel's imported / user name with the channel number in
+  parentheses, e.g. `Boudoir - Plafonnier (8)` — so you can read what a
+  scene drives without mapping channel numbers by hand. The name reflects
+  the `.nkb` channel-name import and any manual rename; channels with no
+  name keep the bare number.
+
 ## 3.8.7
 
 - **Fix: `nikobus_scene_activated` event carried `name: null`.** Since

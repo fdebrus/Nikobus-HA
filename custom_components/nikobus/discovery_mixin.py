@@ -153,6 +153,30 @@ class NikobusDiscoveryMixin:
         def invalidate_controlled_by_index(self) -> None: ...
         async def async_send_button_press(self, address: str) -> None: ...
 
+    def channel_label_map(self) -> dict[tuple[str, int], str]:
+        """Map ``(MODULE_ADDR_UPPER, channel) -> output channel name``.
+
+        Reads the per-channel output entities from the registry, so the
+        names reflect the ``.nkb`` channel-name import *and* any manual
+        rename — e.g. ``("0E6C", 8) -> "Boudoir - Plafonnier"``. Lets CF
+        scene attributes show human channel names instead of bare numbers.
+        Channels with no name are omitted.
+        """
+        out: dict[tuple[str, int], str] = {}
+        if self.hass is None:
+            return out
+        ent_reg = er.async_get(self.hass)
+        for ent in er.async_entries_for_config_entry(
+            ent_reg, self.config_entry.entry_id
+        ):
+            key = _output_entity_key(ent.unique_id)
+            if key is None:
+                continue
+            name = ent.name or ent.original_name
+            if name:
+                out[key] = name
+        return out
+
     def _surface_legacy_undecoded_buttons(
         self, buttons: dict[str, Any]
     ) -> None:
