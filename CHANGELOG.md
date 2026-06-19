@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.8.7
+
+- **Fix: `nikobus_scene_activated` event carried `name: null`.** Since
+  3.8.5 the scene's name lives on its device (the entity name is `None`
+  to avoid a doubled friendly name), so the event payload now reads the
+  scene name from the device — automations matching on the scene name
+  work again.
+
 ## 3.8.6
 
 - **`.nkb` name import now renames the scene's own device.** 3.8.5 moved
