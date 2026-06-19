@@ -373,6 +373,11 @@ class TestCFSceneAttributes(unittest.TestCase):
         self.assertEqual(name, "nikobus_scene_activated")
         self.assertEqual(payload["address"], "DE4E2C")
         self.assertEqual(payload["member_count"], 1)
+        # The event must carry the scene's name (the CF name on the
+        # device), not None — the entity name is now None to avoid a
+        # doubled friendly name, so the payload reads the device name.
+        self.assertIsNotNone(payload["name"])
+        self.assertEqual(payload["name"], e._device_name)
 
     def test_subscribes_to_each_trigger_signal(self):
         from unittest.mock import patch

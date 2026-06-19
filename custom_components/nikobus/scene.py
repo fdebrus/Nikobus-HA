@@ -285,7 +285,10 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             EVENT_SCENE_ACTIVATED,
             {
                 "address": fired,
-                "name": self._attr_name,
+                # The scene's name now lives on the device (entity name is
+                # None so the friendly name isn't doubled), so the event
+                # payload reads it from there rather than ``_attr_name``.
+                "name": self._device_name,
                 "entity_id": self.entity_id,
                 "member_count": len(self._outputs),
             },
