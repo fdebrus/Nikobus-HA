@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.9.0
+
+- **Roller central functions are now grouped covers, not scenes.** A
+  Nikobus Central Function whose members are *all* roller (shutter)
+  channels — including `M01` "open-stop-close" toggle groups — is now
+  surfaced as a single member-driving **cover** (open / close / stop)
+  instead of a broadcast or directional scene. The cover drives every
+  member channel atomically through the per-module commit path (one bus
+  frame per module) with a timed stop from the channels' operation times,
+  so it is deterministic even for `M01` toggle groups, which a broadcast
+  could not be. These covers live under a new **"Central functions"**
+  device category. Mixed (light + roller) and light-only CFs are
+  unchanged — they stay scenes/broadcasts.
+
 ## 3.8.8
 
 - **Scene `outputs` attribute now shows channel names.** Each member of a

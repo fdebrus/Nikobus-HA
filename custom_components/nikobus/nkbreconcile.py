@@ -241,25 +241,68 @@ def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any
     return flat
 
 
-def cf_roller_directions(cf: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
-    """Split a roller CF's outputs into its per-direction member channels.
+def _is_roller_member(mode: Any) -> bool:
+    """True if an output's *mode wording* makes it a roller (shutter) member.
 
-    A roller central function carries open (``M02``) and/or close (``M03``)
-    link records. Returns ``{"open": [...], "close": [...]}`` where each
-    value is the list of ``{module_address, channel, time}`` members for
-    that direction (``time`` is the record's ``t1``), preserving
-    first-sighting order and de-duplicating ``(module, channel)`` within a
-    direction. Directions with no members are omitted::
-
-        2-button (open+close) -> {"open": [...], "close": [...]}
-        single-direction      -> {"close": [...]}  (or {"open": [...]})
-        1-button M01 toggle   -> {}   (no M02/M03 -> not direction-drivable)
-
-    An empty dict means the CF isn't direction-drivable as scenes (e.g. an
-    ``M01`` "open-stop-close" toggle); the caller keeps it a broadcast scene.
+    Detection is by WORDING, not mode code: a roller member's mode label
+    contains ``open``, ``close`` or ``stop`` (case-insensitive) — e.g.
+    ``"M01 (Open - stop - close)"``, ``"M02 (Open)"``, ``"M03 (Close)"``.
+    The ``M02`` / ``M03`` *codes* are shared with switch modules
+    (``"M02 (On + Operating time)"``, ``"M03 (Off + Operating time)"``),
+    so keying off the code would misclassify a switch member as a roller.
+    Dimmer / switch modes like ``"M12 (Preset on)"`` or
+    ``"M04 (Light scene on)"`` carry none of those words and so are not
+    roller members.
     """
-    dirs: dict[str, list[dict[str, Any]]] = {"open": [], "close": []}
-    seen: dict[str, set[tuple[str, int]]] = {"open": set(), "close": set()}
+    if not isinstance(mode, str):
+        return False
+    text = mode.lower()
+    return ("open" in text) or ("close" in text) or ("stop" in text)
+
+
+def is_pure_roller_cf(cf: dict[str, Any]) -> bool:
+    """True iff a CF has at least one member and *every* member is a roller.
+
+    A pure-roller CF (all shutter members, by mode wording) becomes a
+    member-driving grouped cover (open/close/stop). A CF with a non-roller
+    member — a light scene, preset or switch action, e.g. one carrying an
+    ``"M04 (Light scene on)"`` member — is mixed (or a light CF) and stays
+    a scene/broadcast.
+    """
+    outputs = (cf or {}).get("outputs")
+    if not isinstance(outputs, list):
+        return False
+    members = [o for o in outputs if isinstance(o, dict)]
+    if not members:
+        return False
+    return all(_is_roller_member(o.get("mode")) for o in members)
+
+
+def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collapse a roller CF's outputs into distinct grouped-cover members.
+
+    A roller central function bundles the roller link records for its
+    channels; a ``(module, channel)`` may appear more than once (e.g. a
+    2-button CF carrying both an open ``M02`` and a close ``M03`` record).
+    Returns one entry per distinct ``(module_address, channel)`` —
+    preserving first-sighting order — with the open / close timing strings
+    (``t1``) pulled from the matching mode::
+
+        [{"module_address", "channel", "open_time", "close_time"}, ...]
+
+    Direction comes from mode wording (not code, which is shared with
+    switch modules):
+
+    * ``M01`` ("Open - stop - close"): contains both *open* and
+      *close*/*stop* → both ``open_time`` and ``close_time`` get its ``t1``.
+    * *open*-only (``M02`` / ``M06`` with control time): ``open_time = t1``.
+    * *close*-only (``M03`` / ``M07`` with control time): ``close_time = t1``.
+
+    Non-roller members (no open/close/stop wording) are skipped: without a
+    decoded direction there is nothing for a cover to drive.
+    """
+    members: dict[tuple[str, int], dict[str, Any]] = {}
+    order: list[tuple[str, int]] = []
     for o in (cf or {}).get("outputs") or []:
         if not isinstance(o, dict):
             continue
@@ -267,21 +310,35 @@ def cf_roller_directions(cf: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
         ch = o.get("channel")
         if not (isinstance(mod, str) and isinstance(ch, int)):
             continue
-        code = mode_code(o.get("mode"))
-        if code == "M02":
-            direction = "open"
-        elif code == "M03":
-            direction = "close"
-        else:
+        mode = o.get("mode")
+        if not _is_roller_member(mode):
             continue
+        text = str(mode).lower()
+        has_open = "open" in text
+        has_close = ("close" in text) or ("stop" in text)
         key = (mod.upper(), ch)
-        if key in seen[direction]:
-            continue
-        seen[direction].add(key)
-        dirs[direction].append(
-            {"module_address": mod.upper(), "channel": ch, "time": o.get("t1")}
-        )
-    return {direction: members for direction, members in dirs.items() if members}
+        if key not in members:
+            members[key] = {
+                "module_address": mod.upper(),
+                "channel": ch,
+                "open_time": None,
+                "close_time": None,
+            }
+            order.append(key)
+        t1 = o.get("t1")
+        if has_open and has_close:
+            # M01 "open - stop - close": one time for both directions.
+            if members[key]["open_time"] is None:
+                members[key]["open_time"] = t1
+            if members[key]["close_time"] is None:
+                members[key]["close_time"] = t1
+        elif has_open:
+            if members[key]["open_time"] is None:
+                members[key]["open_time"] = t1
+        elif has_close:
+            if members[key]["close_time"] is None:
+                members[key]["close_time"] = t1
+    return [members[k] for k in order]
 
 
 def build_routing_graph(
