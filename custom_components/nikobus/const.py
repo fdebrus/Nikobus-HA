@@ -35,6 +35,7 @@ CATEGORY_WALL_BUTTONS: Final[str] = "category_wall_buttons"
 CATEGORY_REMOTES: Final[str] = "category_remotes"
 CATEGORY_INTERFACES: Final[str] = "category_interfaces"
 CATEGORY_SCENES: Final[str] = "category_scenes"
+CATEGORY_CENTRAL_FUNCTIONS: Final[str] = "category_central_functions"
 
 # Display metadata for each category device (identifier → (name, model)).
 # Order is the order they get registered in; HA preserves it in the device
@@ -51,6 +52,7 @@ CATEGORY_DEVICES: Final[tuple[tuple[str, str, str], ...]] = (
     (CATEGORY_INTERFACES, "Interfaces",
      "Push-button / switch / universal interfaces"),
     (CATEGORY_SCENES, "Scenes", "Software scenes"),
+    (CATEGORY_CENTRAL_FUNCTIONS, "Central functions", "Roller / shutter groups"),
 )
 
 # =============================================================================

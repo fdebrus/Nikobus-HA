@@ -21,7 +21,7 @@ from .const import (
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, command_error
-from .nkbreconcile import cf_roller_directions
+from .nkbreconcile import is_pure_roller_cf
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,37 +34,11 @@ STATE_CLOSE = 0x02
 STATE_ON = 0xFF
 STATE_OFF = 0x00
 
-# Buffer added to a roller's run time before the timed stop fires — the
-# scene path's convention (absorbs bus contention so a slow shutter still
-# reaches its end-stop before the stop frame).
-_ROLLER_STOP_BUFFER = 3.0
-
 _STATE_MAPPING = {
     "switch_module": {"on": STATE_ON, "off": STATE_OFF, "true": STATE_ON, "false": STATE_OFF},
     "roller_module": {"open": STATE_OPEN, "close": STATE_CLOSE, "stop": STATE_STOPPED}
 }
 
-
-def _parse_cf_time(value: Any) -> float | None:
-    """Parse a CF member timing string (e.g. ``"30 s"`` / ``"2 m"``) to seconds.
-
-    Returns ``None`` when the value is missing or unparseable, so the caller
-    can fall back to the module's configured operation time.
-    """
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if not text:
-        return None
-    minutes = text.endswith("m") and not text.endswith("ms")
-    number = text.rstrip("ms ").strip()
-    try:
-        seconds = float(number)
-    except ValueError:
-        return None
-    if seconds <= 0:
-        return None
-    return seconds * 60.0 if minutes else seconds
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -83,18 +57,12 @@ async def async_setup_entry(
        single :class:`NikobusCFSceneEntity` whose activation broadcasts the
        CF address; the output modules fire atomically via their link records.
 
-    Roller CFs are handled specially. A single broadcast can't express a
-    *direction*, so a roller CF with decoded open (``M02``) / close
-    (``M03``) members is materialised as one
-    :class:`NikobusCFRollerSceneEntity` **per direction**, each driving its
-    member channels directly through the atomic per-module commit:
-
-    * a 2-button (open+close) CF → two scenes ("… Open" + "… Close");
-    * a single-direction CF → one scene for that direction.
-
-    A roller CF with no M02/M03 members (an ``M01`` "open-stop-close"
-    toggle) has no direction to drive and stays a broadcast
-    :class:`NikobusCFSceneEntity`.
+    Pure-roller CFs (every member a shutter channel, incl. ``M01``
+    open-stop-close toggle groups) are **not** scenes — they become
+    member-driving grouped covers (open/close/stop) on the cover platform.
+    They are skipped here so they aren't also surfaced as broadcasts. Mixed
+    (light + roller) and light CFs stay :class:`NikobusCFSceneEntity`
+    broadcasts.
     """
     coordinator: NikobusDataCoordinator = entry.runtime_data
     entities: list[Scene] = []
@@ -119,22 +87,9 @@ async def async_setup_entry(
     for bus_address, cf in cf_data.items():
         if not isinstance(cf, dict):
             continue
-        directions = (
-            cf_roller_directions(cf) if cf.get("pattern") == "roller_pair" else {}
-        )
-        if directions:
-            # A direction-drivable roller CF → one member-driving scene per
-            # direction (Open / Close), instead of a non-actionable broadcast.
-            for direction, members in directions.items():
-                entities.append(
-                    NikobusCFRollerSceneEntity(
-                        coordinator=coordinator,
-                        bus_address=bus_address,
-                        cf_config=cf,
-                        members=members,
-                        direction=direction,
-                    )
-                )
+        # A pure-roller CF becomes a grouped cover (cover platform), not a
+        # scene/broadcast — skip it here.
+        if is_pure_roller_cf(cf):
             continue
         entities.append(
             NikobusCFSceneEntity(
@@ -311,204 +266,6 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
     async def async_activate(self, **kwargs: Any) -> None:
         """Send the CF activation broadcast on the bus."""
         await self.coordinator.async_activate_cf_broadcast(self._bus_address)
-
-
-class NikobusCFRollerSceneEntity(NikobusEntity, Scene):
-    """One direction of a roller central function, as a member-driving scene.
-
-    A roller CF can't be activated by a single broadcast — the broadcast
-    address carries both the open and close links, so it can't express a
-    direction. This entity instead drives the CF's member channels for a
-    single direction (``open`` → ``M02``, ``close`` → ``M03``) through the
-    atomic per-module commit (``set_output_states_for_module``): every
-    member channel of a module moves in one bus frame, with a timed stop
-    scheduled from the channels' run times — the same engine
-    :class:`NikobusSceneEntity` uses for roller scenes.
-
-    A bidirectional 2-button CF yields two of these (one ``open``, one
-    ``close``); a single-direction CF yields one. Activation is a one-shot
-    scene fire (all-at-once), matching the native Nikobus scene behaviour.
-    """
-
-    def __init__(
-        self,
-        coordinator: NikobusDataCoordinator,
-        bus_address: str,
-        cf_config: dict[str, Any],
-        members: list[dict[str, Any]],
-        direction: str,
-    ) -> None:
-        addr = str(bus_address).upper()
-        pattern = str(cf_config.get("pattern") or "roller_pair")
-        self._direction = direction  # "open" | "close"
-        self._byte = STATE_OPEN if direction == "open" else STATE_CLOSE
-
-        imported = cf_config.get("name")
-        if isinstance(imported, str) and imported.strip():
-            base = imported.strip()
-        else:
-            base = f"Nikobus roller CF {addr}"
-        suffix = "Open" if direction == "open" else "Close"
-
-        super().__init__(
-            coordinator=coordinator,
-            address=addr,
-            # Device name is the CF base; both directions share one device.
-            name=base,
-            model=f"CF Scene ({pattern})",
-            via_device=(DOMAIN, CATEGORY_SCENES),
-            # Own device per CF (shared by the Open/Close entities), keyed
-            # off the CF rather than the bus address so it isn't merged
-            # into a physical button's device.
-            device_identifier=f"cf_{addr.lower()}",
-        )
-        self._bus_address = addr
-        self._pattern = pattern
-        self._members = members  # [{module_address, channel, time}, ...]
-        # Direction is the entity-name part → "<base> Open" / "<base> Close".
-        self._attr_name = suffix
-        self._attr_unique_id = f"nikobus_cf_{addr.lower()}_{direction}"
-
-        # Guard against overlapping roller release tasks (per module token).
-        self._module_tokens: dict[str, str] = {}
-        self._roller_stop_tasks: list[asyncio.Task[None]] = []
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        parent = super().extra_state_attributes or {}
-        return {
-            **parent,
-            "bus_address": self._bus_address,
-            "pattern": self._pattern,
-            "direction": self._direction,
-            "member_count": len(self._members),
-            "members": [
-                {
-                    "module": self.coordinator.address_label(m["module_address"]),
-                    "channel": m["channel"],
-                    "time": m.get("time"),
-                }
-                for m in self._members
-            ],
-        }
-
-    async def async_added_to_hass(self) -> None:
-        """Register cleanup of pending roller-stop tasks on removal."""
-        await super().async_added_to_hass()
-
-        def _cancel_roller_tasks() -> None:
-            self._module_tokens.clear()
-            for task in self._roller_stop_tasks:
-                task.cancel()
-            self._roller_stop_tasks.clear()
-
-        self.async_on_remove(_cancel_roller_tasks)
-
-    async def async_activate(self, **kwargs: Any) -> None:
-        """Drive all member channels in this scene's direction."""
-        try:
-            await self._drive()
-        except asyncio.CancelledError:
-            raise
-        except Exception as err:
-            raise command_error(err) from err
-
-    async def _drive(self) -> None:
-        """Commit the direction per module (one frame each) + schedule stops."""
-        _LOGGER.info("Activating Nikobus roller CF scene: %s", self._attr_name)
-        op_dir = "up" if self._direction == "open" else "down"
-
-        by_module: dict[str, list[dict[str, Any]]] = {}
-        for member in self._members:
-            by_module.setdefault(member["module_address"], []).append(member)
-
-        delay = 0.0
-        commanded: dict[str, set[int]] = {}
-        sent_states: dict[str, bytearray] = {}
-
-        for module_id, members in by_module.items():
-            current = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
-            state = bytearray(current)
-            for member in members:
-                idx = member["channel"] - 1
-                if 0 <= idx < len(state):
-                    state[idx] = self._byte
-                    commanded.setdefault(module_id, set()).add(idx)
-                op_time = _parse_cf_time(member.get("time")) or (
-                    self.coordinator.get_cover_operation_time(
-                        module_id, member["channel"], op_dir
-                    )
-                )
-                if op_time > 0:
-                    delay = max(delay, op_time + _ROLLER_STOP_BUFFER)
-            sent_states[module_id] = state
-            await self._apply_module_state(module_id, state)
-
-        for module_id, indexes in commanded.items():
-            token = uuid.uuid4().hex
-            self._module_tokens[module_id] = token
-            task = self.hass.async_create_task(
-                self._delayed_roller_stop(
-                    module_id, sent_states[module_id], indexes, delay, token
-                )
-            )
-            self._roller_stop_tasks.append(task)
-            task.add_done_callback(
-                lambda t: self._roller_stop_tasks.remove(t)
-                if t in self._roller_stop_tasks
-                else None
-            )
-
-    async def _apply_module_state(self, module_id: str, state: bytearray) -> None:
-        """Push a whole module's state in one bus commit (per group)."""
-        num_chans = self.coordinator.get_module_channel_count(module_id)
-        self.coordinator.set_bytearray_group_state(module_id, 1, state[:6].hex())
-        if num_chans > 6:
-            self.coordinator.set_bytearray_group_state(module_id, 2, state[6:12].hex())
-        await self.coordinator.api.set_output_states_for_module(address=module_id)
-        await self.coordinator.async_event_handler(
-            "nikobus_refreshed", {"impacted_module_address": module_id}
-        )
-
-    async def _delayed_roller_stop(
-        self,
-        module_id: str,
-        sent_state: bytearray,
-        indexes: set[int],
-        delay: float,
-        token: str,
-    ) -> None:
-        """Send the bus stop once travel time elapses.
-
-        Composes the stop frame from the module's CURRENT state at timeout,
-        not the activation snapshot: a channel redirected during travel (by
-        a wall button, another scene, or a direct cover) is left alone —
-        only channels still doing what we commanded are forced to STOPPED.
-        """
-        await asyncio.sleep(delay)
-        if self._module_tokens.get(module_id) != token:
-            return
-
-        current = self.coordinator.nikobus_module_states.get(module_id)
-        stop_state = bytearray(current) if current else bytearray(sent_state)
-        changed = False
-        for idx in indexes:
-            if idx < len(stop_state) and stop_state[idx] == sent_state[idx]:
-                stop_state[idx] = STATE_STOPPED
-                changed = True
-        if not changed:
-            return
-
-        try:
-            await self._apply_module_state(module_id, stop_state)
-        except asyncio.CancelledError:
-            raise
-        except Exception as err:
-            _LOGGER.error("Failed to send timed stop for module %s: %s", module_id, err)
-
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        """Stateless scene: ignore general coordinator updates."""
 
 
 class NikobusSceneEntity(NikobusEntity, Scene):

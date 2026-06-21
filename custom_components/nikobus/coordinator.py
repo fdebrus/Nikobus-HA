@@ -1388,27 +1388,21 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 known.add(f"{DOMAIN}_scene_{sid}")
         # CF entities classified by the library during discovery. Most
         # surface as a single ``NikobusCFSceneEntity`` (unique_id
-        # ``nikobus_cf_<addr>``). A roller CF with decoded open/close
-        # members instead surfaces as one ``NikobusCFRollerSceneEntity``
-        # per direction (unique_id ``nikobus_cf_<addr>_<open|close>``). The
-        # split must match what the scene platform creates
-        # (``cf_roller_directions`` is the single source of truth), else
-        # ``_async_cleanup_orphan_entities`` evicts the entity right after
-        # its platform creates it.
+        # ``nikobus_cf_<addr>``). A pure-roller CF (every member a shutter
+        # channel, incl. ``M01`` toggle groups) instead surfaces as a
+        # grouped ``NikobusCFCoverEntity`` (unique_id
+        # ``nikobus_cf_cover_<addr>``). The split must match what the cover /
+        # scene platforms create (``is_pure_roller_cf`` is the single source
+        # of truth), else ``_async_cleanup_orphan_entities`` evicts the
+        # entity right after its platform creates it.
         if self.cf_storage is not None:
             cf_entries = self.cf_storage.data.get("nikobus_cf", {})
             if isinstance(cf_entries, dict):
-                from .nkbreconcile import cf_roller_directions
+                from .nkbreconcile import is_pure_roller_cf
                 for cf_addr, cf in cf_entries.items():
                     addr_lower = str(cf_addr).lower()
-                    directions = (
-                        cf_roller_directions(cf)
-                        if isinstance(cf, dict) and cf.get("pattern") == "roller_pair"
-                        else {}
-                    )
-                    if directions:
-                        for direction in directions:
-                            known.add(f"nikobus_cf_{addr_lower}_{direction}")
+                    if isinstance(cf, dict) and is_pure_roller_cf(cf):
+                        known.add(f"nikobus_cf_cover_{addr_lower}")
                     else:
                         known.add(f"nikobus_cf_{addr_lower}")
         known.add(f"{DOMAIN}_connection_status")

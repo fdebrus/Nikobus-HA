@@ -8,12 +8,13 @@ from custom_components.nikobus.nkbreconcile import (
     all_outputs_registry_sourced,
     build_controlled_by_index,
     build_routing_graph,
+    cf_cover_members,
     cf_member_set,
-    cf_roller_directions,
     classify_button_status,
     collect_button_outputs,
     flatten_cf_broadcasts,
     has_pc_logic_module,
+    is_pure_roller_cf,
     member_set_from_outputs,
 )
 
@@ -235,79 +236,130 @@ def test_build_routing_graph_empty_and_malformed():
     assert build_routing_graph({"nikobus_button": "nope"}) == {}
 
 
+
+
 # ---------------------------------------------------------------------------
-# cf_roller_directions — split a roller CF's outputs into open/close members
+# is_pure_roller_cf — every member a roller (shutter) channel, by mode wording
 # ---------------------------------------------------------------------------
-def test_cf_roller_directions_bidirectional_splits_open_and_close():
-    """A 2-button roller CF lists each channel as M02 (open) + M03 (close);
-    cf_roller_directions returns both directions with their members."""
-    cf = {
-        "pattern": "roller_pair",
-        "outputs": [
-            {"module_address": "8cf5", "channel": 1, "mode": "M02 (Open)", "t1": "40 s"},
-            {"module_address": "8cf5", "channel": 2, "mode": "M02 (Open)", "t1": "30 s"},
-            {"module_address": "8cf5", "channel": 1, "mode": "M03 (Close)", "t1": "40 s"},
-            {"module_address": "8cf5", "channel": 2, "mode": "M03 (Close)", "t1": "30 s"},
-        ],
-    }
-    dirs = cf_roller_directions(cf)
-    assert set(dirs) == {"open", "close"}
-    assert dirs["open"] == [
-        {"module_address": "8CF5", "channel": 1, "time": "40 s"},
-        {"module_address": "8CF5", "channel": 2, "time": "30 s"},
-    ]
-    assert dirs["close"] == [
-        {"module_address": "8CF5", "channel": 1, "time": "40 s"},
-        {"module_address": "8CF5", "channel": 2, "time": "30 s"},
-    ]
-
-
-def test_cf_roller_directions_preserves_first_sighting_order_per_direction():
-    cf = {
-        "outputs": [
-            {"module_address": "B", "channel": 3, "mode": "M02", "t1": None},
-            {"module_address": "A", "channel": 1, "mode": "M02", "t1": None},
-            {"module_address": "B", "channel": 3, "mode": "M02", "t1": None},  # dupe
-        ],
-    }
-    dirs = cf_roller_directions(cf)
-    assert list(dirs) == ["open"]
-    assert [(m["module_address"], m["channel"]) for m in dirs["open"]] == [
-        ("B", 3), ("A", 1)
-    ]
-
-
-def test_cf_roller_directions_single_direction():
-    """Close-only / open-only CFs yield just that one direction."""
-    close_only = {"outputs": [
-        {"module_address": "8CF5", "channel": 1, "mode": "M03 (Close)", "t1": "40 s"},
-        {"module_address": "8CF5", "channel": 2, "mode": "M03 (Close)", "t1": "30 s"},
-    ]}
-    dirs = cf_roller_directions(close_only)
-    assert list(dirs) == ["close"]
-    assert len(dirs["close"]) == 2
-
-
-def test_cf_roller_directions_m01_toggle_is_not_directional():
-    """1-button M01 (open-stop-close) roller CFs have no M02/M03 → {}."""
+def test_is_pure_roller_cf_all_roller_members_true():
+    """A CF whose every member is a roller mode (open/close/stop wording)
+    is a pure-roller CF → grouped cover."""
     cf = {"outputs": [
-        {"module_address": "C7C1", "channel": 1, "mode": "M01 (Open-stop-close)"},
+        {"module_address": "8CF5", "channel": 1, "mode": "M01 (Open - stop - close)"},
+        {"module_address": "8CF5", "channel": 2, "mode": "M02 (Open)"},
+        {"module_address": "8CF5", "channel": 3, "mode": "M03 (Close)"},
     ]}
-    assert cf_roller_directions(cf) == {}
+    assert is_pure_roller_cf(cf) is True
 
 
-def test_cf_roller_directions_drops_malformed():
+def test_is_pure_roller_cf_mixed_light_and_roller_false():
+    """A mixed CF with a light-scene member (no open/close/stop wording) is
+    not pure-roller → stays a scene."""
     cf = {"outputs": [
-        {"module_address": "8CF5", "channel": 2, "mode": "M02", "t1": "20 s"},
+        {"module_address": "0E6C", "channel": 1, "mode": "M04 (Light scene on)"},
+        {"module_address": "8CF5", "channel": 2, "mode": "M02 (Open)"},
+    ]}
+    assert is_pure_roller_cf(cf) is False
+
+
+def test_is_pure_roller_cf_switch_modes_are_not_roller():
+    """Switch modes share the M02/M03 codes but carry no roller wording —
+    a CF of switch members is not pure-roller (e.g. a CloseHouse broadcast)."""
+    cf = {"outputs": [
+        {"module_address": "C1C7", "channel": 1, "mode": "M03 (Off + Operating time)"},
+        {"module_address": "C1C7", "channel": 2, "mode": "M02 (On + Operating time)"},
+    ]}
+    assert is_pure_roller_cf(cf) is False
+
+
+def test_is_pure_roller_cf_mixed_switch_close_and_roller_close_false():
+    """CloseHouse-Leave style: a switch M03 (Off + Operating time) member +
+    a roller M03 (Close) member is MIXED, not pure-roller."""
+    cf = {"outputs": [
+        {"module_address": "C1C7", "channel": 1, "mode": "M03 (Off + Operating time)"},
+        {"module_address": "8CF5", "channel": 2, "mode": "M03 (Close)"},
+    ]}
+    assert is_pure_roller_cf(cf) is False
+
+
+def test_is_pure_roller_cf_empty_or_malformed_false():
+    assert is_pure_roller_cf({}) is False
+    assert is_pure_roller_cf({"outputs": []}) is False
+    assert is_pure_roller_cf({"outputs": None}) is False
+    # outputs with only non-dict entries → no members → False
+    assert is_pure_roller_cf({"outputs": ["garbage"]}) is False
+
+
+# ---------------------------------------------------------------------------
+# cf_cover_members — collapse a roller CF's outputs into cover members
+# ---------------------------------------------------------------------------
+def test_cf_cover_members_m01_sets_both_open_and_close_to_t1():
+    """An M01 'Open - stop - close' member is bidirectional: both open_time
+    and close_time take its t1."""
+    cf = {"outputs": [
+        {"module_address": "9105", "channel": 2,
+         "mode": "M01 (Open - stop - close)", "t1": "30 s"},
+    ]}
+    members = cf_cover_members(cf)
+    assert members == [
+        {"module_address": "9105", "channel": 2,
+         "open_time": "30 s", "close_time": "30 s"},
+    ]
+
+
+def test_cf_cover_members_collapses_open_close_pair():
+    """A 2-button CF lists each channel as M02 (open) + M03 (close); they
+    collapse into one member with both timings."""
+    cf = {"outputs": [
+        {"module_address": "8cf5", "channel": 1, "mode": "M02 (Open)", "t1": "40 s"},
+        {"module_address": "8cf5", "channel": 1, "mode": "M03 (Close)", "t1": "35 s"},
+    ]}
+    members = cf_cover_members(cf)
+    assert members == [
+        {"module_address": "8CF5", "channel": 1,
+         "open_time": "40 s", "close_time": "35 s"},
+    ]
+
+
+def test_cf_cover_members_open_only_and_close_only():
+    """Open-only (M02/M06) sets only open_time; close-only (M03/M07) sets
+    only close_time."""
+    cf = {"outputs": [
+        {"module_address": "8CF5", "channel": 1, "mode": "M06 (Open with control time)", "t1": "40 s"},
+        {"module_address": "8CF5", "channel": 2, "mode": "M07 (Close with control time)", "t1": "30 s"},
+    ]}
+    members = cf_cover_members(cf)
+    assert members == [
+        {"module_address": "8CF5", "channel": 1, "open_time": "40 s", "close_time": None},
+        {"module_address": "8CF5", "channel": 2, "open_time": None, "close_time": "30 s"},
+    ]
+
+
+def test_cf_cover_members_detects_roller_by_wording_not_code():
+    """A switch M02/M03 (no open/close wording) is not a roller member and
+    is skipped; only the roller-worded member survives."""
+    cf = {"outputs": [
+        {"module_address": "C1C7", "channel": 1, "mode": "M02 (On + Operating time)", "t1": "0s"},
+        {"module_address": "8CF5", "channel": 2, "mode": "M02 (Open)", "t1": "40 s"},
+    ]}
+    members = cf_cover_members(cf)
+    assert members == [
+        {"module_address": "8CF5", "channel": 2, "open_time": "40 s", "close_time": None},
+    ]
+
+
+def test_cf_cover_members_preserves_order_and_drops_malformed():
+    cf = {"outputs": [
+        {"module_address": "B", "channel": 3, "mode": "M02 (Open)", "t1": None},
+        {"module_address": "A", "channel": 1, "mode": "M02 (Open)", "t1": None},
         "garbage",
-        {"channel": 9, "mode": "M02"},          # no module
-        {"module_address": "8CF5", "mode": "M03"},  # no channel
+        {"channel": 9, "mode": "M02 (Open)"},          # no module
+        {"module_address": "B", "mode": "M03 (Close)"},  # no channel
     ]}
-    assert cf_roller_directions(cf) == {
-        "open": [{"module_address": "8CF5", "channel": 2, "time": "20 s"}]
-    }
+    members = cf_cover_members(cf)
+    assert [(m["module_address"], m["channel"]) for m in members] == [("B", 3), ("A", 1)]
 
 
-def test_cf_roller_directions_empty():
-    assert cf_roller_directions({}) == {}
-    assert cf_roller_directions({"outputs": None}) == {}
+def test_cf_cover_members_empty():
+    assert cf_cover_members({}) == []
+    assert cf_cover_members({"outputs": None}) == []

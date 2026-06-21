@@ -54,49 +54,48 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         known = coord.get_known_entity_unique_ids()
         self.assertIn("nikobus_cf_ab1234", known)
 
-    def test_bidirectional_roller_pair_registers_directional_scene_ids(self):
-        """A bidirectional roller_pair CF (M02+M03) surfaces as two
-        directional roller scenes (``nikobus_cf_<addr>_open`` /
-        ``..._close``), not a single broadcast scene — the known-id set must
-        match, else orphan cleanup evicts them right after creation."""
+    def test_pure_roller_cf_registers_cover_id(self):
+        """A pure-roller CF (all shutter members, by mode wording) surfaces
+        as a grouped cover (``nikobus_cf_cover_<addr>``), not a broadcast
+        scene — the known-id set must match, else orphan cleanup evicts the
+        cover right after creation."""
         coord = _coord_with_cfs([])
         coord.cf_storage.data = {"nikobus_cf": {
             "3880CD": {"pattern": "roller_pair", "outputs": [
-                {"module_address": "8CF5", "channel": 1, "mode": "M02", "t1": "40 s"},
-                {"module_address": "8CF5", "channel": 1, "mode": "M03", "t1": "40 s"},
-            ]},
-        }}
-        known = coord.get_known_entity_unique_ids()
-        self.assertIn("nikobus_cf_3880cd_open", known)
-        self.assertIn("nikobus_cf_3880cd_close", known)
-        self.assertNotIn("nikobus_cf_3880cd", known)
-
-    def test_single_direction_roller_pair_registers_one_directional_id(self):
-        """A close-only roller CF → one ``..._close`` directional scene id."""
-        coord = _coord_with_cfs([])
-        coord.cf_storage.data = {"nikobus_cf": {
-            "3880CE": {"pattern": "roller_pair", "outputs": [
+                {"module_address": "8CF5", "channel": 1, "mode": "M02 (Open)", "t1": "40 s"},
                 {"module_address": "8CF5", "channel": 1, "mode": "M03 (Close)", "t1": "40 s"},
             ]},
         }}
         known = coord.get_known_entity_unique_ids()
-        self.assertIn("nikobus_cf_3880ce_close", known)
-        self.assertNotIn("nikobus_cf_3880ce_open", known)
-        self.assertNotIn("nikobus_cf_3880ce", known)
+        self.assertIn("nikobus_cf_cover_3880cd", known)
+        self.assertNotIn("nikobus_cf_3880cd", known)
 
-    def test_m01_roller_pair_stays_a_broadcast_scene_id(self):
-        """A 1-button (M01 toggle) roller_pair has no direction to drive, so
-        it stays a broadcast CF scene — register the plain scene id."""
+    def test_m01_pure_roller_cf_registers_cover_id(self):
+        """A 1-button (M01 toggle) pure-roller CF also becomes a grouped
+        cover — register the cover id, not the broadcast scene id."""
         coord = _coord_with_cfs([])
         coord.cf_storage.data = {"nikobus_cf": {
             "3880C8": {"pattern": "roller_pair", "outputs": [
-                {"module_address": "C7C1", "channel": 1, "mode": "M01 (Open-stop-close)"},
+                {"module_address": "C7C1", "channel": 1, "mode": "M01 (Open - stop - close)"},
             ]},
         }}
         known = coord.get_known_entity_unique_ids()
-        self.assertIn("nikobus_cf_3880c8", known)
-        self.assertNotIn("nikobus_cf_3880c8_open", known)
-        self.assertNotIn("nikobus_cf_3880c8_close", known)
+        self.assertIn("nikobus_cf_cover_3880c8", known)
+        self.assertNotIn("nikobus_cf_3880c8", known)
+
+    def test_mixed_cf_stays_a_broadcast_scene_id(self):
+        """A mixed (switch + roller) CF is not pure-roller, so it stays a
+        broadcast CF scene — register the plain scene id, not a cover id."""
+        coord = _coord_with_cfs([])
+        coord.cf_storage.data = {"nikobus_cf": {
+            "3880C9": {"pattern": "nkb_scene", "outputs": [
+                {"module_address": "C1C7", "channel": 1, "mode": "M03 (Off + Operating time)"},
+                {"module_address": "8CF5", "channel": 2, "mode": "M03 (Close)"},
+            ]},
+        }}
+        known = coord.get_known_entity_unique_ids()
+        self.assertIn("nikobus_cf_3880c9", known)
+        self.assertNotIn("nikobus_cf_cover_3880c9", known)
 
     def test_no_cfs_is_safe(self):
         coord = _coord_with_cfs([])

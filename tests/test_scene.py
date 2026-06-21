@@ -15,13 +15,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.nikobus.const import DOMAIN
 from custom_components.nikobus.scene import (
-    NikobusCFRollerSceneEntity,
     NikobusCFSceneEntity,
     NikobusSceneEntity,
-    STATE_CLOSE,
-    STATE_OPEN,
-    STATE_STOPPED,
-    _parse_cf_time,
 )
 
 
@@ -152,137 +147,6 @@ class TestCFSceneActivation(unittest.TestCase):
         self.assertEqual(e._device_name, "CloseHouse - Leave")
         self.assertIsNone(e._attr_name)
         self.assertEqual(e._attr_unique_id, "nikobus_cf_c177ce")
-
-
-class TestParseCfTime(unittest.TestCase):
-    def test_seconds_minutes_and_invalid(self):
-        self.assertEqual(_parse_cf_time("40 s"), 40.0)
-        self.assertEqual(_parse_cf_time("30s"), 30.0)
-        self.assertEqual(_parse_cf_time("2 m"), 120.0)
-        self.assertIsNone(_parse_cf_time(None))
-        self.assertIsNone(_parse_cf_time(""))
-        self.assertIsNone(_parse_cf_time("abc"))
-        self.assertIsNone(_parse_cf_time("0 s"))
-
-
-def _make_roller_scene(direction, members=None):
-    if members is None:
-        members = [
-            {"module_address": "8CF5", "channel": 1, "time": "40 s"},
-            {"module_address": "8CF5", "channel": 2, "time": "30 s"},
-            {"module_address": "8CF5", "channel": 3, "time": "30 s"},
-        ]
-    coord = MagicMock()
-    coord.get_cover_operation_time = MagicMock(return_value=30.0)
-    coord.get_module_channel_count = MagicMock(return_value=6)
-    coord.nikobus_module_states = {}
-    coord.set_bytearray_group_state = MagicMock()
-    coord.api.set_output_states_for_module = AsyncMock()
-    coord.async_event_handler = AsyncMock()
-    coord.address_label = MagicMock(side_effect=lambda a: f"name({a})")
-    e = NikobusCFRollerSceneEntity(
-        coord, "3880cd", {"pattern": "roller_pair"}, members, direction
-    )
-    e.hass = MagicMock()
-
-    def _fake_create_task(arg):
-        if asyncio.iscoroutine(arg):
-            arg.close()
-        return MagicMock()
-
-    e.hass.async_create_task = MagicMock(side_effect=_fake_create_task)
-    return e, coord
-
-
-class TestCFRollerScene(unittest.TestCase):
-    def test_naming_and_unique_id(self):
-        e_open, _ = _make_roller_scene("open")
-        e_close, _ = _make_roller_scene("close")
-        self.assertEqual(e_open._attr_unique_id, "nikobus_cf_3880cd_open")
-        self.assertEqual(e_close._attr_unique_id, "nikobus_cf_3880cd_close")
-        self.assertTrue(e_open._attr_name.endswith("Open"))
-        self.assertTrue(e_close._attr_name.endswith("Close"))
-
-    def test_name_from_nkb_import(self):
-        coord = MagicMock()
-        e = NikobusCFRollerSceneEntity(
-            coord, "3880cd",
-            {"pattern": "roller_pair", "name": "Gordijnen keuken"},
-            [{"module_address": "8CF5", "channel": 1, "time": "40 s"}],
-            "close",
-        )
-        # The CF name is the device name; the direction is the entity-name
-        # part, so HA composes "Gordijnen keuken Close".
-        self.assertEqual(e._device_name, "Gordijnen keuken")
-        self.assertEqual(e._attr_name, "Close")
-        # Own device, keyed off the CF (not the bare bus address) and
-        # shared by both directions.
-        self.assertEqual(
-            e._attr_device_info["identifiers"], {(DOMAIN, "cf_3880cd")}
-        )
-
-    def test_close_drives_members_atomically_once_per_module(self):
-        e, coord = _make_roller_scene("close")
-        _run(e._drive())
-        coord.api.set_output_states_for_module.assert_awaited_once_with(address="8CF5")
-        group1_hex = coord.set_bytearray_group_state.call_args_list[0].args[2]
-        self.assertEqual(group1_hex[:6], "020202")  # 0x02 = close, channels 1-3
-        self.assertEqual(len(e._module_tokens), 1)
-
-    def test_open_drives_opening_byte(self):
-        e, coord = _make_roller_scene("open")
-        _run(e._drive())
-        group1_hex = coord.set_bytearray_group_state.call_args_list[0].args[2]
-        self.assertEqual(group1_hex[:6], "010101")  # 0x01 = open
-
-    def test_cross_module_commits_once_per_module(self):
-        members = [
-            {"module_address": "8B9C", "channel": 1, "time": "40 s"},
-            {"module_address": "9418", "channel": 2, "time": "30 s"},
-        ]
-        e, coord = _make_roller_scene("close", members=members)
-        _run(e._drive())
-        self.assertEqual(coord.api.set_output_states_for_module.await_count, 2)
-        addrs = {c.kwargs["address"] for c in coord.api.set_output_states_for_module.await_args_list}
-        self.assertEqual(addrs, {"8B9C", "9418"})
-
-    def test_activate_translates_bus_error(self):
-        from homeassistant.exceptions import HomeAssistantError
-
-        e, coord = _make_roller_scene("close")
-        coord.api.set_output_states_for_module = AsyncMock(
-            side_effect=RuntimeError("bus down")
-        )
-        with self.assertRaises(HomeAssistantError) as cm:
-            _run(e.async_activate())
-        self.assertEqual(cm.exception.translation_key, "communication_error")
-
-    def test_delayed_stop_only_touches_unchanged_channels(self):
-        e, coord = _make_roller_scene("close")
-        sent = bytearray(12)
-        sent[0] = STATE_CLOSE
-        sent[1] = STATE_CLOSE
-        current = bytearray(12)
-        current[0] = STATE_CLOSE   # ch1 still ours
-        current[1] = STATE_OPEN    # ch2 redirected
-        coord.nikobus_module_states = {"8CF5": current}
-        e._module_tokens = {"8CF5": "tok"}
-        with unittest.mock.patch(
-            "custom_components.nikobus.scene.asyncio.sleep", new=AsyncMock()
-        ):
-            _run(e._delayed_roller_stop("8CF5", sent, {0, 1}, 0.0, "tok"))
-        group1_hex = coord.set_bytearray_group_state.call_args_list[-1].args[2]
-        self.assertEqual(group1_hex[:4], "0001")  # ch1 stopped, ch2 left opening
-        _ = STATE_STOPPED  # referenced for clarity
-
-    def test_delayed_stop_aborted_when_token_superseded(self):
-        e, coord = _make_roller_scene("close")
-        e._module_tokens = {"8CF5": "newtok"}
-        with unittest.mock.patch(
-            "custom_components.nikobus.scene.asyncio.sleep", new=AsyncMock()
-        ):
-            _run(e._delayed_roller_stop("8CF5", bytearray(12), {0}, 0.0, "oldtok"))
-        coord.api.set_output_states_for_module.assert_not_awaited()
 
 
 class TestCFSceneAttributes(unittest.TestCase):
