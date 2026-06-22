@@ -126,10 +126,10 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
         outputs = cf_config.get("outputs") or []
         member_count = len(outputs) if isinstance(outputs, list) else 0
 
-        # A name imported from the .nkb (nkb-sourced scenes — shutter /
-        # master groups that carry their real project name) wins outright.
-        # Otherwise build a default from what we know on the bus; the user
-        # can still rename via the standard HA flow.
+        # A name applied from the .nkb (the import names discovered CF
+        # broadcasts with their real project name) wins outright. Otherwise
+        # build a default from what we know on the bus; the user can still
+        # rename via the standard HA flow.
         imported = cf_config.get("name")
         if isinstance(imported, str) and imported.strip():
             name = imported.strip()
