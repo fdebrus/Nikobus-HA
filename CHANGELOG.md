@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.9.1
+
+- **`.nkb` import no longer surfaces an existing button as a scene.** A
+  named Central Function group in the `.nkb` is realised through its
+  trigger input, so a group that isn't already a discovered CF broadcast
+  is fired by a real button on the bus. The import used to create a
+  separate `nkb_scene` for those groups, duplicating a button you already
+  have. Now the import only **names** scenes that already exist as
+  discovered CF broadcasts (the `3880xx` / `3841xx` PC-Logic addresses)
+  from the `.nkb`; button-triggered groups are left as the buttons they
+  are, and groups with no on-bus trigger at all (nothing to activate) are
+  not fabricated. Any button-duplicating scenes a previous import created
+  are removed on the next import or re-discovery.
+
 ## 3.9.0
 
 - **Roller central functions are now grouped covers, not scenes.** A

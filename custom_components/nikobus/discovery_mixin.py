@@ -52,7 +52,6 @@ from .const import (
     SIGNAL_DISCOVERY_STATE,
 )
 from .nkbreconcile import (
-    build_routing_graph,
     cf_member_set,
     classify_button_status,
     flatten_cf_broadcasts,
@@ -298,20 +297,16 @@ class NikobusDiscoveryMixin:
 
         flat = flatten_cf_broadcasts(broadcasts)
 
-        # Preserve any .nkb-sourced scenes (added by async_import_nkb_names);
-        # discovery never produces them, so a re-scan must not wipe them.
-        preserved = {
-            addr: entry
-            for addr, entry in (self.cf_storage.data.get("nikobus_cf") or {}).items()
-            if isinstance(entry, dict) and entry.get("source") == "nkb"
-        }
-        self.cf_storage.data["nikobus_cf"] = {**preserved, **flat}
+        # Drop any stale ``.nkb``-sourced scenes a previous import created.
+        # Those were per-button duplicates (a named group fired by a real
+        # button surfaced as its own scene); we no longer create them, so a
+        # re-scan clears them out rather than carrying them forward.
+        self.cf_storage.data["nikobus_cf"] = flat
         await self.cf_storage.async_save()
         _LOGGER.info(
-            "CF broadcasts persisted: %d discovered + %d nkb-sourced (%s)",
+            "CF broadcasts persisted: %d discovered (%s)",
             len(flat),
-            len(preserved),
-            sorted({**preserved, **flat}.keys()),
+            sorted(flat.keys()),
         )
 
     async def async_activate_cf_broadcast(self, bus_address: str) -> None:
@@ -1056,7 +1051,8 @@ class NikobusDiscoveryMixin:
           light / cover / switch the user actually toggles, e.g.
           ``Appliques Salon``, ``Terrasse``).
         * ``"areas"`` — each device into a Home Assistant Area = its room.
-        * ``"scenes"`` — match / create the Central Function scene entities.
+        * ``"scenes"`` — name already-discovered Central Function scenes
+          from the ``.nkb`` (never creates a scene from a button trigger).
 
         ``overwrite`` forces a name/Area even where the user has set their
         own; default off (suggested, never clobbers a manual rename).
@@ -1086,20 +1082,43 @@ class NikobusDiscoveryMixin:
 
         name_map = data.addresses  # {ADDR: (name, room)}
 
-        # Scenes: match named groups to existing CFs (light scenes) and
-        # create entities for the rest (shutter / master groups) — only if
-        # the "scenes" category is selected.
+        # Scenes: match each named ``.nkb`` group to an already-discovered
+        # Central Function by member set and apply its real name. We only
+        # ever NAME an existing CF scene here — we never CREATE one.
+        #
+        # A named group's membership lives on its trigger input (the parser
+        # resolves group → trigger → that input's output links → members),
+        # so a group that isn't already a discovered CF broadcast is fired
+        # by a real button on the bus. Surfacing it as a scene would just
+        # duplicate a button the user already has, so we leave the button
+        # untouched. A group with no on-bus trigger at all has no address to
+        # activate, so there is nothing faithful to create for it either.
+        # Only runs when the "scenes" category is selected.
         cf_name_by_addr: dict[str, str] = {}
-        scenes_created = 0
+        purged_nkb_scenes = False
         if "scenes" in cats and self.cf_storage is not None:
+            cf_store = self.cf_storage.data.get("nikobus_cf", {})
+            # Migration: drop any button-duplicating scenes a previous
+            # import created (``source == "nkb"``). Earlier versions turned
+            # every named group fired by a real button into its own
+            # ``nkb_scene`` CF, surfacing that button a second time as a
+            # scene. We no longer create those, so clear out the stale ones
+            # too — re-importing makes the duplication go away.
+            stale = [
+                addr
+                for addr, cf in cf_store.items()
+                if isinstance(cf, dict) and cf.get("source") == "nkb"
+            ]
+            for addr in stale:
+                del cf_store[addr]
+            purged_nkb_scenes = bool(stale)
+
             scene_by_members = {sc.members: sc.name for sc in data.scenes}
-            matched_scene_members: set[frozenset[tuple[str, int, str]]] = set()
             names_persisted = False
-            for cf_addr, cf in self.cf_storage.data.get("nikobus_cf", {}).items():
+            for cf_addr, cf in cf_store.items():
                 hit = scene_by_members.get(cf_member_set(cf))
                 if hit:
                     cf_name_by_addr[str(cf_addr).upper()] = hit
-                    matched_scene_members.add(cf_member_set(cf))
                     # Persist the name onto the CF itself. The scene entity
                     # lives on its own ``cf_<addr>`` device (so it isn't
                     # merged into the trigger button's device), which the
@@ -1108,32 +1127,7 @@ class NikobusDiscoveryMixin:
                     if cf.get("name") != hit:
                         cf["name"] = hit
                         names_persisted = True
-            graph = build_routing_graph(self.dict_button_data)
-            existing = self.cf_storage.data.setdefault("nikobus_cf", {})
-            new_entries: dict[str, dict[str, Any]] = {}
-            for sc in data.scenes:
-                if sc.members in matched_scene_members or not sc.members:
-                    continue
-                hit = graph.get(sc.members)
-                if hit is None:
-                    continue
-                addrs, outputs = hit
-                canonical = addrs[0]
-                if canonical in existing or canonical in new_entries:
-                    continue
-                new_entries[canonical] = {
-                    "bus_address": canonical,
-                    "pattern": "nkb_scene",
-                    "outputs": outputs,
-                    "triggered_by": addrs,
-                    "source": "nkb",
-                    "name": sc.name,
-                }
-                cf_name_by_addr[canonical] = sc.name
-            if new_entries:
-                existing.update(new_entries)
-                scenes_created = len(new_entries)
-            if new_entries or names_persisted:
+            if names_persisted or purged_nkb_scenes:
                 await self.cf_storage.async_save()
 
         dev_reg = dr.async_get(self.hass)
@@ -1224,8 +1218,7 @@ class NikobusDiscoveryMixin:
 
         _LOGGER.info(
             "Imported .nkb from %s (overwrite=%s, categories=%s): %d devices, "
-            "%d device-entities, %d channels, %d areas, %d scenes named, "
-            "%d scenes created",
+            "%d device-entities, %d channels, %d areas, %d scenes named",
             path.name,
             overwrite,
             sorted(cats),
@@ -1233,11 +1226,12 @@ class NikobusDiscoveryMixin:
             entities_named,
             channels_named,
             areas_set,
-            len(cf_name_by_addr) - scenes_created,
-            scenes_created,
+            len(cf_name_by_addr),
         )
 
-        if scenes_created:
+        # Removing stale button-duplicating scenes changes the entity set —
+        # reload so the now-deleted scene entities are torn down.
+        if purged_nkb_scenes:
             self.hass.async_create_task(
                 self.hass.config_entries.async_reload(self.config_entry.entry_id)
             )
@@ -1247,7 +1241,6 @@ class NikobusDiscoveryMixin:
             "entities": entities_named,
             "channels": channels_named,
             "areas": areas_set,
-            "scenes": len(cf_name_by_addr) - scenes_created,
-            "scenes_created": scenes_created,
+            "scenes": len(cf_name_by_addr),
         }
 
