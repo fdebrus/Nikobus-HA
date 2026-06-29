@@ -2,17 +2,17 @@
 
 ## 3.9.1
 
-- **`.nkb` import no longer surfaces an existing button as a scene.** A
-  named Central Function group in the `.nkb` is realised through its
-  trigger input, so a group that isn't already a discovered CF broadcast
-  is fired by a real button on the bus. The import used to create a
-  separate `nkb_scene` for those groups, duplicating a button you already
-  have. Now the import only **names** scenes that already exist as
-  discovered CF broadcasts (the `3880xx` / `3841xx` PC-Logic addresses)
-  from the `.nkb`; button-triggered groups are left as the buttons they
-  are, and groups with no on-bus trigger at all (nothing to activate) are
-  not fabricated. Any button-duplicating scenes a previous import created
-  are removed on the next import or re-discovery.
+- **Fix: output state stuck after a physical button press (issue #469).**
+  An output toggled from Home Assistant and then changed at the physical
+  wall button could stay frozen on the Home-Assistant value — the module
+  was read correctly (e.g. `000000000000`), but the entity never updated,
+  on the button-driven refresh *or* the poll. The write-diff cache that
+  skips redundant re-renders only tracked coordinator-driven writes, so an
+  optimistic write (turn on/off, button-operation) left it stale; a later
+  update that rendered the same value as the stale cache was wrongly
+  suppressed. The cache now refreshes on every state write regardless of
+  source, so the corrected state always lands. Most visible on serial /
+  PC-Link installs without a feedback module (polling mode).
 
 ## 3.9.0
 
