@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.9.1
+
+- **Fix: output state stuck after a physical button press (issue #469).**
+  An output toggled from Home Assistant and then changed at the physical
+  wall button could stay frozen on the Home-Assistant value — the module
+  was read correctly (e.g. `000000000000`), but the entity never updated,
+  on the button-driven refresh *or* the poll. The write-diff cache that
+  skips redundant re-renders only tracked coordinator-driven writes, so an
+  optimistic write (turn on/off, button-operation) left it stale; a later
+  update that rendered the same value as the stale cache was wrongly
+  suppressed. The cache now refreshes on every state write regardless of
+  source, so the corrected state always lands. Most visible on serial /
+  PC-Link installs without a feedback module (polling mode).
+
 ## 3.9.0
 
 - **Roller central functions are now grouped covers, not scenes.** A

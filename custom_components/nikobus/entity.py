@@ -126,6 +126,30 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
             self._last_render = signature
         super()._handle_coordinator_update()
 
+    @callback
+    def async_write_ha_state(self) -> None:
+        """Write state to HA and keep the write-diff cache in sync.
+
+        ``_last_render`` gates ``_handle_coordinator_update`` so a poll
+        that re-reads an unchanged byte doesn't re-render. But the
+        displayed state is *also* moved by optimistic writes
+        (``async_turn_on`` / ``async_turn_off``) and the button-operation
+        handler, which call this method directly. Those paths previously
+        left ``_last_render`` untouched, so it tracked "last
+        coordinator-rendered value" rather than "what's actually on
+        screen". When a later coordinator update happened to render the
+        same value as that stale cache — e.g. the real OFF state after an
+        optimistic ON — the write was suppressed and the entity stayed
+        stuck on the optimistic value (issue #469).
+
+        Refreshing the cache on every write, whatever its source, keeps
+        the diff honest while preserving the redundant-poll optimization.
+        """
+        state = self._render_state()
+        if state is not _NO_DIFF:
+            self._last_render = (self.available, state)
+        super().async_write_ha_state()
+
     @property
     def available(self) -> bool:
         """Return True only when the coordinator is healthy and the connection is live."""
