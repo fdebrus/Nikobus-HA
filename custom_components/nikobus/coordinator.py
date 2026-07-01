@@ -1398,12 +1398,18 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         if self.cf_storage is not None:
             cf_entries = self.cf_storage.data.get("nikobus_cf", {})
             if isinstance(cf_entries, dict):
-                from .nkbreconcile import is_pure_roller_cf
+                from .nkbreconcile import is_pure_roller_cf, is_surfaced_cf_scene
                 for cf_addr, cf in cf_entries.items():
+                    if not isinstance(cf, dict):
+                        continue
                     addr_lower = str(cf_addr).lower()
-                    if isinstance(cf, dict) and is_pure_roller_cf(cf):
+                    if is_pure_roller_cf(cf):
                         known.add(f"nikobus_cf_cover_{addr_lower}")
-                    else:
+                    elif is_surfaced_cf_scene(cf):
+                        # An unnamed button-backed light-scene is not
+                        # surfaced (see is_surfaced_cf_scene); leaving its
+                        # id out of the known set lets orphan cleanup evict
+                        # any entity a prior version created for it.
                         known.add(f"nikobus_cf_{addr_lower}")
         known.add(f"{DOMAIN}_connection_status")
         known.add(f"{DOMAIN}_discovery_status")
