@@ -172,6 +172,58 @@ class TestIngestCFBroadcasts(unittest.TestCase):
         self.assertEqual(coord.cf_storage.data["nikobus_cf"], existing)
         coord.cf_storage.async_save.assert_not_called()
 
+    def test_nkb_name_carried_over_across_rescan_by_address(self):
+        """A plain module re-scan overwrites storage with freshly discovered
+        broadcasts, which carry no name. The ``.nkb`` name a prior import
+        applied must be re-applied to the matching fresh CF (by address),
+        else an unnamed button-backed light-scene is dropped from the
+        surfaced scene list on every re-scan (regression: 'lost all
+        scenes')."""
+        coord = _make_coord_with_cf_storage(
+            {
+                "0D1C9E": _stub_cf_broadcast(
+                    "0D1C9E", "light_scene",
+                    [_stub_cf_member("0E6C", 1, "M04 (Light scene on)")],
+                )
+            }
+        )
+        coord.cf_storage.data = {"nikobus_cf": {
+            "0D1C9E": {"bus_address": "0D1C9E", "pattern": "light_scene",
+                       "name": "Scene - TV",
+                       "outputs": [{"module_address": "0E6C", "channel": 1,
+                                    "mode": "M04 (Light scene on)"}]},
+        }}
+
+        _run(coord._ingest_cf_broadcasts())
+
+        self.assertEqual(
+            coord.cf_storage.data["nikobus_cf"]["0D1C9E"]["name"], "Scene - TV")
+
+    def test_nkb_name_carried_over_across_rescan_by_member_set(self):
+        """The canonical trigger address can shift between scans; the name is
+        still recovered by matching the ``(module, channel, mode)`` member
+        set, so a name isn't lost just because the key changed."""
+        coord = _make_coord_with_cf_storage(
+            {
+                "BBBBBB": _stub_cf_broadcast(
+                    "BBBBBB", "light_scene",
+                    [_stub_cf_member("0E6C", 1, "M04 (Light scene on)")],
+                )
+            }
+        )
+        coord.cf_storage.data = {"nikobus_cf": {
+            "AAAAAA": {"bus_address": "AAAAAA", "pattern": "light_scene",
+                       "name": "Dinner",
+                       "outputs": [{"module_address": "0E6C", "channel": 1,
+                                    "mode": "M04 (Light scene on)"}]},
+        }}
+
+        _run(coord._ingest_cf_broadcasts())
+
+        stored = coord.cf_storage.data["nikobus_cf"]
+        self.assertNotIn("AAAAAA", stored)  # old key replaced by fresh scan
+        self.assertEqual(stored["BBBBBB"]["name"], "Dinner")
+
     def test_no_discovery_object_is_safe(self):
         coord = MagicMock(spec=NikobusDataCoordinator)
         coord.nikobus_discovery = None

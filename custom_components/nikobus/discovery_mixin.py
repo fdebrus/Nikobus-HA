@@ -297,15 +297,46 @@ class NikobusDiscoveryMixin:
 
         flat = flatten_cf_broadcasts(broadcasts)
 
-        # Drop any stale ``.nkb``-sourced scenes a previous import created.
-        # Those were per-button duplicates (a named group fired by a real
-        # button surfaced as its own scene); we no longer create them, so a
-        # re-scan clears them out rather than carrying them forward.
+        # Carry ``.nkb`` names across a re-scan. Discovery never produces
+        # names — they are applied by the ``.nkb`` import afterward and
+        # persisted onto the CF record. Freshly discovered broadcasts have
+        # none, so overwriting storage with ``flat`` would wipe every name.
+        # That matters now that an *unnamed* button-backed light-scene is no
+        # longer surfaced (see ``is_surfaced_cf_scene``): losing the name
+        # would silently drop the user's named scenes on a plain re-scan.
+        # Re-apply each prior name to the matching fresh CF — by canonical
+        # address first, then by member set (stable even if the canonical
+        # trigger address shifts between scans).
+        old = self.cf_storage.data.get("nikobus_cf") or {}
+        name_by_addr: dict[str, str] = {}
+        name_by_members: dict[frozenset[tuple[str, int, str]], str] = {}
+        for prev_addr, prev in old.items():
+            if not isinstance(prev, dict):
+                continue
+            nm = prev.get("name")
+            if isinstance(nm, str) and nm.strip():
+                name_by_addr[str(prev_addr).upper()] = nm.strip()
+                name_by_members.setdefault(cf_member_set(prev), nm.strip())
+        carried = 0
+        for addr, cf in flat.items():
+            if not isinstance(cf, dict):
+                continue
+            existing = cf.get("name")
+            if isinstance(existing, str) and existing.strip():
+                continue
+            name = name_by_addr.get(str(addr).upper()) or name_by_members.get(
+                cf_member_set(cf)
+            )
+            if name:
+                cf["name"] = name
+                carried += 1
+
         self.cf_storage.data["nikobus_cf"] = flat
         await self.cf_storage.async_save()
         _LOGGER.info(
-            "CF broadcasts persisted: %d discovered (%s)",
+            "CF broadcasts persisted: %d discovered, %d names carried over (%s)",
             len(flat),
+            carried,
             sorted(flat.keys()),
         )
 
@@ -1096,6 +1127,7 @@ class NikobusDiscoveryMixin:
         # Only runs when the "scenes" category is selected.
         cf_name_by_addr: dict[str, str] = {}
         purged_nkb_scenes = False
+        names_persisted = False
         if "scenes" in cats and self.cf_storage is not None:
             cf_store = self.cf_storage.data.get("nikobus_cf", {})
             # Migration: drop any button-duplicating scenes a previous
@@ -1114,7 +1146,6 @@ class NikobusDiscoveryMixin:
             purged_nkb_scenes = bool(stale)
 
             scene_by_members = {sc.members: sc.name for sc in data.scenes}
-            names_persisted = False
             for cf_addr, cf in cf_store.items():
                 hit = scene_by_members.get(cf_member_set(cf))
                 if hit:
@@ -1229,9 +1260,10 @@ class NikobusDiscoveryMixin:
             len(cf_name_by_addr),
         )
 
-        # Removing stale button-duplicating scenes changes the entity set —
-        # reload so the now-deleted scene entities are torn down.
-        if purged_nkb_scenes:
+        # The surfaced-scene set changed — reload so entities are rebuilt:
+        # names just applied surface previously-hidden (unnamed) button-backed
+        # light-scenes, and purging stale duplicates tears theirs down.
+        if purged_nkb_scenes or names_persisted:
             self.hass.async_create_task(
                 self.hass.config_entries.async_reload(self.config_entry.entry_id)
             )

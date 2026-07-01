@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.9.3
+
+- **Fix: named scenes disappeared after a module re-scan (regression in
+  3.9.2).** A plain module re-scan overwrites the stored Central Functions
+  with the freshly discovered ones, which carry no name — the `.nkb` names
+  live only on the stored records. Since 3.9.2 stopped surfacing *unnamed*
+  button-driven scenes, that name wipe silently dropped every named scene on
+  the next re-scan. Re-scan now **carries the `.nkb` names over** to the
+  matching CF (by address, then by member set), so named scenes survive a
+  re-scan. Re-importing the `.nkb` also now reloads immediately, so scenes
+  reappear without a restart. **If your scenes vanished: re-import the
+  `.nkb` once to restore the names.**
+
 ## 3.9.2
 
 - **Unnamed "phantom" scenes are no longer surfaced.** A button-driven
