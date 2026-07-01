@@ -278,6 +278,47 @@ def is_pure_roller_cf(cf: dict[str, Any]) -> bool:
     return all(_is_roller_member(o.get("mode")) for o in members)
 
 
+# CF patterns whose activation address is a real wall button / IR input,
+# as opposed to the bare ``38xx`` PC-Logic central-function broadcasts.
+# The library emits these for op-points it read out of the button store,
+# so there is always a physical control behind them.
+_BUTTON_BACKED_SCENE_PATTERNS: tuple[str, ...] = ("light_scene", "nkb_scene")
+
+
+def is_button_backed_cf(cf: dict[str, Any]) -> bool:
+    """True if this CF is a light-scene fired by a real button / IR input.
+
+    These carry a bus trigger address (a wall button or IR code); the
+    bare ``38xx`` central functions (``switch_pair`` / ``roller_pair`` /
+    ``cf_other``) do not. In Nikobus such a button is an ordinary control
+    that happens to drive several outputs — not a distinct "scene" object.
+    """
+    return str((cf or {}).get("pattern") or "") in _BUTTON_BACKED_SCENE_PATTERNS
+
+
+def is_surfaced_cf_scene(cf: dict[str, Any]) -> bool:
+    """True if a CF should be surfaced as an HA *scene* entity.
+
+    Single source of truth shared by the scene platform (what it creates)
+    and the coordinator's known-id set (what orphan cleanup keeps), so the
+    two can't drift.
+
+    A button-backed light-scene is only surfaced once it has been **named**
+    by a matching named group in the ``.nkb`` project file. An unnamed one
+    is just a button the user already has on the bus — surfacing it as a
+    scene would duplicate that button (issue: unnamed phantom scenes such
+    as ``829201`` after a plain module scan). The bare ``38xx`` central
+    functions always surface (named or not).
+
+    Pure-roller CFs are handled separately — they become grouped covers,
+    not scenes — so callers must apply :func:`is_pure_roller_cf` first.
+    """
+    if is_button_backed_cf(cf):
+        name = (cf or {}).get("name")
+        return isinstance(name, str) and bool(name.strip())
+    return True
+
+
 def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
     """Collapse a roller CF's outputs into distinct grouped-cover members.
 

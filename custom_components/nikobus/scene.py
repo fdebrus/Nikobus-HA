@@ -21,7 +21,7 @@ from .const import (
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, command_error
-from .nkbreconcile import is_pure_roller_cf
+from .nkbreconcile import is_pure_roller_cf, is_surfaced_cf_scene
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -90,6 +90,12 @@ async def async_setup_entry(
         # A pure-roller CF becomes a grouped cover (cover platform), not a
         # scene/broadcast — skip it here.
         if is_pure_roller_cf(cf):
+            continue
+        # A button-backed light-scene (fired by a real wall button / IR)
+        # is only a scene once the .nkb import has named it; an unnamed one
+        # is just a button the user already has and is not surfaced as a
+        # (phantom, unnamed) scene. The bare 38xx CFs always surface.
+        if not is_surfaced_cf_scene(cf):
             continue
         entities.append(
             NikobusCFSceneEntity(

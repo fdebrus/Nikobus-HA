@@ -24,8 +24,13 @@ def _coord_with_cfs(cf_addrs):
     coord.dict_button_data = {}
     coord.dict_scene_data = {}
     coord.cf_storage = MagicMock()
+    # Named light-scenes (matched to a .nkb group) are surfaced scenes; an
+    # unnamed button-backed light-scene is not (see the dedicated test).
     coord.cf_storage.data = {
-        "nikobus_cf": {addr: {"pattern": "light_scene", "outputs": []} for addr in cf_addrs}
+        "nikobus_cf": {
+            addr: {"pattern": "light_scene", "outputs": [], "name": f"Scene {addr}"}
+            for addr in cf_addrs
+        }
     }
     return coord
 
@@ -39,6 +44,21 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         # Must match scene.py: f"nikobus_cf_{addr.lower()}"
         self.assertIn("nikobus_cf_0d1c9e", known)
         self.assertIn("nikobus_cf_0ffec8", known)
+
+    def test_unnamed_button_backed_light_scene_is_not_known(self):
+        """A button-backed light-scene with no .nkb name is not surfaced as
+        a scene (it duplicates a button the user already has), so its id must
+        be absent from the known set — that lets orphan cleanup evict any
+        phantom scene entity a prior version created (e.g. ``829201``)."""
+        coord = _coord_with_cfs([])
+        coord.cf_storage.data = {"nikobus_cf": {
+            "829201": {"pattern": "light_scene", "outputs": [
+                {"module_address": "9105", "channel": 3, "mode": "M04 (Light scene on)"},
+            ]},
+        }}
+        known = coord.get_known_entity_unique_ids()
+        self.assertNotIn("nikobus_cf_829201", known)
+        self.assertNotIn("nikobus_cf_cover_829201", known)
 
     def test_nkb_sourced_scene_unique_ids_are_known(self):
         """.nkb-sourced (source='nkb') scenes live in cf_storage too, so the
@@ -84,11 +104,13 @@ class TestKnownEntityIdsIncludeCFScenes(unittest.TestCase):
         self.assertNotIn("nikobus_cf_3880c8", known)
 
     def test_mixed_cf_stays_a_broadcast_scene_id(self):
-        """A mixed (switch + roller) CF is not pure-roller, so it stays a
-        broadcast CF scene — register the plain scene id, not a cover id."""
+        """A mixed (switch + roller) 38xx CF is not pure-roller, so it stays a
+        broadcast CF scene — register the plain scene id, not a cover id. As a
+        bare 38xx central function (not button-backed) it surfaces even
+        without a .nkb name."""
         coord = _coord_with_cfs([])
         coord.cf_storage.data = {"nikobus_cf": {
-            "3880C9": {"pattern": "nkb_scene", "outputs": [
+            "3880C9": {"pattern": "cf_other", "outputs": [
                 {"module_address": "C1C7", "channel": 1, "mode": "M03 (Off + Operating time)"},
                 {"module_address": "8CF5", "channel": 2, "mode": "M03 (Close)"},
             ]},

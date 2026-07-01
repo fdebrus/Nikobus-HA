@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.9.2
+
+- **Unnamed "phantom" scenes are no longer surfaced.** A button-driven
+  light-scene (fired by a real wall button or IR input, e.g. addresses such
+  as `829201` / `AA2481` / `84DFFC`) is only surfaced as a Home Assistant
+  scene once the `.nkb` import has matched and **named** it. An unnamed one
+  is just a button you already have on the bus — surfacing it as a nameless
+  scene only duplicated that button. Named scenes from your Nikobus project
+  (e.g. *Scene - TV*, *CloseHouse - Leave*) are unaffected and still appear,
+  and the bare `38xx` central functions always appear. Any phantom scene
+  entities a previous version created are cleaned up on the next
+  scan / restart. A plain module re-scan is enough to apply this.
+
 ## 3.9.1
 
 - **Fix: output state stuck after a physical button press (issue #469).**

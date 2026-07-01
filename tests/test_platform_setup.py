@@ -136,7 +136,7 @@ class TestOutputPlatformSetup(unittest.TestCase):
                 },
                 # mixed (switch + roller) → NOT a CF cover
                 "3880C9": {
-                    "pattern": "nkb_scene",
+                    "pattern": "cf_other",
                     "outputs": [
                         {"module_address": "C1C7", "channel": 1, "mode": "M03 (Off + Operating time)"},
                         {"module_address": "8CF5", "channel": 2, "mode": "M03 (Close)"},
@@ -209,12 +209,30 @@ class TestScenePlatformSetup(unittest.TestCase):
                         {"module_address": "C7C1", "channel": 1, "mode": "M01 (Open - stop - close)"},
                     ],
                 },
-                # Mixed (switch + roller) CF stays a broadcast CF scene.
+                # Mixed (switch + roller) 38xx CF stays a broadcast CF scene
+                # (bare central function — surfaces even without a .nkb name).
                 "3880C9": {
-                    "pattern": "nkb_scene",
+                    "pattern": "cf_other",
                     "outputs": [
                         {"module_address": "C1C7", "channel": 1, "mode": "M03 (Off + Operating time)"},
                         {"module_address": "8CF5", "channel": 2, "mode": "M03 (Close)"},
+                    ],
+                },
+                # A button-backed light-scene with no .nkb name is NOT
+                # surfaced — it duplicates a button the user already has.
+                "829201": {
+                    "pattern": "light_scene",
+                    "outputs": [
+                        {"module_address": "9105", "channel": 3, "mode": "M04 (Light scene on)"},
+                    ],
+                },
+                # ...but a NAMED button-backed light-scene (matched to a .nkb
+                # group, e.g. "Scene - TV") IS surfaced.
+                "9E4E2C": {
+                    "pattern": "light_scene",
+                    "name": "Scene - TV",
+                    "outputs": [
+                        {"module_address": "9105", "channel": 4, "mode": "M04 (Light scene on)"},
                     ],
                 },
                 "garbage": "not-a-dict",  # ignored
@@ -235,6 +253,11 @@ class TestScenePlatformSetup(unittest.TestCase):
             e for e in added if isinstance(e, scene_platform.NikobusCFSceneEntity)
         ]
         self.assertEqual(len(user_scenes), 1)
-        # switch_pair + mixed CF stay broadcast CF scenes; the two pure-roller
-        # CFs (incl. the M01 toggle) are skipped (they become covers).
-        self.assertEqual(sorted(e._bus_address for e in cf_scenes), ["3841AA", "3880C9"])
+        # switch_pair + mixed 38xx CF stay broadcast CF scenes; the two
+        # pure-roller CFs (incl. the M01 toggle) are skipped (they become
+        # covers); the NAMED button-backed light-scene (9E4E2C "Scene - TV")
+        # surfaces; the UNNAMED button-backed light-scene (829201) is dropped.
+        self.assertEqual(
+            sorted(e._bus_address for e in cf_scenes),
+            ["3841AA", "3880C9", "9E4E2C"],
+        )
