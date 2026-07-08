@@ -1294,5 +1294,114 @@ class TestLegacyConfigFilesPresent(unittest.TestCase):
         )
 
 
+class TestNkbBootstrap(unittest.TestCase):
+    """Third fallback: with no PC-Link and no manual files, generate them
+    from a ``.nkb`` in the config dir and write them as a backup."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.config_dir = self._tmp.name
+        self.hass = _FakeHass(self.config_dir)
+
+        # Inject a fake ``nikobus_connect.nkb`` exposing the two functions
+        # ``_generate_manual_files_from_nkb`` imports (the real library isn't
+        # a test dependency here).
+        from types import ModuleType, SimpleNamespace
+
+        self._nkb_path = Path(self.config_dir) / "nikobus.nkb"
+
+        def _find_nkb_file(config_dir):
+            return self._nkb_path if self._nkb_path.exists() else None
+
+        def _build_config_from_nkb(_path):
+            return SimpleNamespace(
+                module_config={
+                    "switch_module": [{
+                        "description": "Switch S1", "model": "05-000-02",
+                        "address": "C966",
+                        "channels": [{"description": "Hal"}],
+                    }],
+                    "dimmer_module": [],
+                    "roller_module": [],
+                },
+                button_config={"nikobus_button": [
+                    {"address": "1CB502", "description": "4BP - Kitchen"},
+                ]},
+            )
+
+        self._saved = {
+            k: sys.modules.get(k)
+            for k in ("nikobus_connect", "nikobus_connect.nkb")
+        }
+        parent = ModuleType("nikobus_connect")
+        child = ModuleType("nikobus_connect.nkb")
+        child.find_nkb_file = _find_nkb_file
+        child.build_config_from_nkb = _build_config_from_nkb
+        parent.nkb = child
+        sys.modules["nikobus_connect"] = parent
+        sys.modules["nikobus_connect.nkb"] = child
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                sys.modules.pop(k, None)
+            else:
+                sys.modules[k] = v
+        self._tmp.cleanup()
+
+    def _exists(self, name):
+        return os.path.exists(os.path.join(self.config_dir, name))
+
+    def test_generates_files_when_nkb_present_and_none_exist(self):
+        self._nkb_path.write_bytes(b"dummy")
+
+        created = _run(nkbmanual._generate_manual_files_from_nkb(self.hass))
+
+        self.assertTrue(created)
+        self.assertTrue(self._exists("nikobus_module_config.json"))
+        self.assertTrue(self._exists("nikobus_button_config.json"))
+        with open(os.path.join(self.config_dir, "nikobus_module_config.json")) as fh:
+            mc = json.load(fh)
+        self.assertEqual(mc["switch_module"][0]["address"], "C966")
+        with open(os.path.join(self.config_dir, "nikobus_button_config.json")) as fh:
+            bc = json.load(fh)
+        self.assertEqual(bc["nikobus_button"][0]["address"], "1CB502")
+
+    def test_no_nkb_returns_false(self):
+        # no .nkb file created
+        created = _run(nkbmanual._generate_manual_files_from_nkb(self.hass))
+        self.assertFalse(created)
+        self.assertFalse(self._exists("nikobus_module_config.json"))
+
+    def test_does_not_overwrite_existing_files(self):
+        self._nkb_path.write_bytes(b"dummy")
+        existing = os.path.join(self.config_dir, "nikobus_module_config.json")
+        with open(existing, "w") as fh:
+            json.dump({"switch_module": [{"address": "USER"}]}, fh)
+
+        created = _run(nkbmanual._generate_manual_files_from_nkb(self.hass))
+
+        self.assertFalse(created)
+        with open(existing) as fh:
+            self.assertEqual(json.load(fh)["switch_module"][0]["address"], "USER")
+        # button file not fabricated alongside the user's module file
+        self.assertFalse(self._exists("nikobus_button_config.json"))
+
+    def test_apply_manual_config_uses_nkb_bootstrap(self):
+        """End-to-end: async_apply_manual_config bootstraps from the .nkb,
+        then loads the generated files (returns True, store populated)."""
+        self._nkb_path.write_bytes(b"dummy")
+        store = _InMemoryModuleStore()
+        button_data = {"nikobus_button": {}}
+
+        changed = _run(
+            nkbmanual.async_apply_manual_config(self.hass, store, button_data)
+        )
+
+        self.assertTrue(changed)
+        self.assertTrue(self._exists("nikobus_module_config.json"))
+        self.assertIn("C966", store.data["nikobus_module"])
+
+
 if __name__ == "__main__":
     unittest.main()

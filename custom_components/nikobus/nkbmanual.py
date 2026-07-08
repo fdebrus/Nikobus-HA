@@ -43,6 +43,65 @@ from .nkbstorage import NikobusModuleStorage
 _LOGGER = logging.getLogger(__name__)
 
 
+async def _generate_manual_files_from_nkb(hass: HomeAssistant) -> bool:
+    """Create the manual config files from a ``.nkb`` when none exist yet.
+
+    Third inventory fallback (after "probe PC-Link" and "read manual files"):
+    an install with no PC-Link and no hand-written config files can still be
+    bootstrapped from its Nikobus PC-software project export. We write the
+    generated files to ``/config`` as a durable backup and let the normal
+    manual-config loader pick them up.
+
+    Never overwrites existing files — if either config file is already
+    present, the user's own copy wins and we do nothing. Returns ``True``
+    only when files were freshly generated.
+    """
+    from nikobus_connect.nkb import build_config_from_nkb, find_nkb_file
+
+    module_path = hass.config.path(MANUAL_MODULE_CONFIG_FILENAME)
+    button_path = hass.config.path(MANUAL_BUTTON_CONFIG_FILENAME)
+    if await hass.async_add_executor_job(os.path.exists, module_path) or (
+        await hass.async_add_executor_job(os.path.exists, button_path)
+    ):
+        return False
+
+    nkb = await hass.async_add_executor_job(
+        find_nkb_file, hass.config.path("")
+    )
+    if nkb is None:
+        return False
+
+    try:
+        config = await hass.async_add_executor_job(build_config_from_nkb, str(nkb))
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception(
+            "Could not build config from %s — leaving it for a PC-Link scan",
+            nkb.name,
+        )
+        return False
+
+    async def _write(path: str, payload: dict[str, Any]) -> None:
+        async with aio_open(path, mode="w") as fh:
+            await fh.write(json.dumps(payload, indent=2, ensure_ascii=False))
+
+    await _write(module_path, config.module_config)
+    await _write(button_path, config.button_config)
+
+    module_count = sum(len(v) for v in config.module_config.values())
+    button_count = len(config.button_config.get("nikobus_button", []))
+    _LOGGER.info(
+        "No PC-Link and no manual config files — generated %s (%d modules) and "
+        "%s (%d buttons) from %s. Edit these to adjust names / roller times; "
+        "run 'Scan all modules' to fill in the button→output links.",
+        MANUAL_MODULE_CONFIG_FILENAME,
+        module_count,
+        MANUAL_BUTTON_CONFIG_FILENAME,
+        button_count,
+        nkb.name,
+    )
+    return True
+
+
 async def legacy_config_files_present(hass: HomeAssistant) -> list[str]:
     """Return which legacy manual-config filenames exist in the config dir.
 
@@ -670,7 +729,18 @@ async def async_apply_manual_config(
     parseable (so the coordinator should persist the result). Errors
     on either file are logged and swallowed so the integration still
     comes up.
+
+    When neither config file exists, a ``.nkb`` project export in the
+    config dir is used to generate them first (no-PC-Link bootstrap) —
+    the files are written to disk as a backup, then loaded normally.
     """
+    try:
+        await _generate_manual_files_from_nkb(hass)
+    except asyncio.CancelledError:
+        raise
+    except Exception:  # noqa: BLE001
+        _LOGGER.exception("Manual config: .nkb bootstrap failed")
+
     try:
         modules_loaded, module_path = await _apply_module_config(hass, module_store)
     except asyncio.CancelledError:
