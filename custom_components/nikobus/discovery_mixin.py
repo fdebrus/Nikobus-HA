@@ -853,9 +853,9 @@ class NikobusDiscoveryMixin:
                 self._update_discovery_state(
                     phase=DISCOVERY_PHASE_ERROR,
                     message=(
-                        "No PC-Link detected and no manual config files "
-                        "found. Install a PC-Link or create "
-                        "nikobus_module_config.json in your config dir."
+                        "No PC-Link detected and no inventory source found. "
+                        "Install a PC-Link, drop your Nikobus .nkb export in "
+                        "the config dir, or create nikobus_module_config.json."
                     ),
                     error="no_inventory_source",
                 )

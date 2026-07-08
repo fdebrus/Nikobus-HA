@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.10.0
+
+- **Bootstrap from a `.nkb` when there's no PC-Link (and no config files).**
+  Discovery now has a third inventory fallback: after (1) probing for a
+  PC-Link and (2) reading `nikobus_module_config.json` /
+  `nikobus_button_config.json`, it will (3) generate those two files from a
+  Nikobus **`.nkb`** project export dropped in your config dir. Every module
+  (address, model, channel names) and every button (address, name) is read
+  straight from the `.nkb` and written to disk **as a backup**, then loaded
+  normally. Existing config files are never overwritten. Roller run-times
+  default to `40` (the `.nkb` doesn't store the per-shutter value) and
+  button→output links still come from **"Scan all modules"**. Requires
+  `nikobus-connect >= 0.29.0`.
+
 ## 3.9.3
 
 - **Fix: named scenes disappeared after a module re-scan (regression in
