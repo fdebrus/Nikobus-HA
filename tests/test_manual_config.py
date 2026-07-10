@@ -1260,6 +1260,90 @@ class TestConsolidationEndToEnd(unittest.TestCase):
         )
 
 
+class TestMultiKeyNkbButtons(unittest.TestCase):
+    """The library builder emits multi-key wall plates; the loader must turn
+    them into one physical button with an op-point per key (else the scan
+    collapses every plate onto ``1A`` — the bug this covers)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.config_dir = self._tmp.name
+        self.hass = _FakeHass(self.config_dir)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_builder_multikey_loads_into_op_points(self):
+        try:
+            from nikobus_connect.nkb import build_config
+        except Exception as exc:  # pragma: no cover - lib not on path
+            self.skipTest(f"nikobus_connect not importable: {exc}")
+
+        # A 4-button plate (faces A/B/C/D) + a 2-button plate (A/B).
+        components = [
+            {"KeyComponent": 1, "KeyProductBase": 4, "PhysicalAddress": 0x1CB502,
+             "StrUserName": "4BP - Kitchen"},
+            {"KeyComponent": 2, "KeyProductBase": 5, "PhysicalAddress": 0x1CB68C,
+             "StrUserName": "2BP - Room"},
+        ]
+        productbase = [{"KeyProductBase": 4, "NikoRefNr": "05-064"},
+                       {"KeyProductBase": 5, "NikoRefNr": "05-060"}]
+        objecten = [
+            {"KeyComponent": 1, "KeyObjectBase": 10},
+            {"KeyComponent": 1, "KeyObjectBase": 11},
+            {"KeyComponent": 1, "KeyObjectBase": 12},
+            {"KeyComponent": 1, "KeyObjectBase": 13},
+            {"KeyComponent": 2, "KeyObjectBase": 20},
+            {"KeyComponent": 2, "KeyObjectBase": 21},
+        ]
+        objectbase = {
+            10: {"Prefix": "A"}, 11: {"Prefix": "B"},
+            12: {"Prefix": "C"}, 13: {"Prefix": "D"},
+            20: {"Prefix": "A"}, 21: {"Prefix": "B"},
+        }
+        cfg = build_config(components, productbase, objecten, objectbase)
+
+        path = os.path.join(self.config_dir, "nikobus_button_config.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(cfg.button_config, fh)
+
+        button_data = {"nikobus_button": {}}
+        _run(nkbmanual._apply_button_config(self.hass, button_data))
+        store = button_data["nikobus_button"]
+
+        # Both plates are single physical buttons with per-key op-points.
+        self.assertEqual(store["1CB502"]["channels"], 4)
+        self.assertEqual(set(store["1CB502"]["operation_points"]),
+                         {"1A", "1B", "1C", "1D"})
+        self.assertEqual(store["1CB68C"]["channels"], 2)
+        self.assertEqual(set(store["1CB68C"]["operation_points"]),
+                         {"1A", "1B"})
+
+    def test_builder_eight_button_loads_all_faces(self):
+        try:
+            from nikobus_connect.nkb import build_config
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"nikobus_connect not importable: {exc}")
+
+        faces = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"]
+        components = [{"KeyComponent": 1, "KeyProductBase": 18,
+                       "PhysicalAddress": 0x1CB174, "StrUserName": "8BP"}]
+        productbase = [{"KeyProductBase": 18, "NikoRefNr": "4*-078"}]
+        objecten = [{"KeyComponent": 1, "KeyObjectBase": i} for i in range(8)]
+        objectbase = {i: {"Prefix": faces[i]} for i in range(8)}
+        cfg = build_config(components, productbase, objecten, objectbase)
+
+        path = os.path.join(self.config_dir, "nikobus_button_config.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(cfg.button_config, fh)
+        button_data = {"nikobus_button": {}}
+        _run(nkbmanual._apply_button_config(self.hass, button_data))
+
+        entry = button_data["nikobus_button"]["1CB174"]
+        self.assertEqual(entry["channels"], 8)
+        self.assertEqual(set(entry["operation_points"]), set(faces))
+
+
 class TestLegacyConfigFilesPresent(unittest.TestCase):
     """3.0.0: the friendly-name overlay is gone; the helper that warns
     when the legacy config files still linger on disk."""
