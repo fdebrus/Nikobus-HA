@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.10.1
+
+- **`.nkb` bootstrap: multi-key wall plates are expanded to all their keys.**
+  A 2/4/8-button plate now becomes a single button with an op-point per key
+  (`1A`/`1B`/`1C`/`1D`…) instead of collapsing to `1A`. Without this the
+  module scan dropped every non-`A` key (a 4-button kept only one key's
+  links; many 2-button plates came back empty). Requires
+  `nikobus-connect >= 0.30.0`.
+
 ## 3.10.0
 
 - **Bootstrap from a `.nkb` when there's no PC-Link (and no config files).**
