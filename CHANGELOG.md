@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.10.2
+
+- **Fix: wrong bus addresses on `.nkb`-bootstrapped multi-key buttons.** The
+  per-key addresses generated in 3.10.1 didn't match what the bus actually
+  emits on a press, so the keys appeared but automations/press-events never
+  fired. They're now derived exactly as a PC-Link inventory would
+  (`convert_nikobus_address` + key offset). Requires
+  `nikobus-connect >= 0.30.1`. Re-run **"Bestaande installatie laden"** after
+  updating to regenerate the button file with the correct addresses.
+
 ## 3.10.1
 
 - **`.nkb` bootstrap: multi-key wall plates are expanded to all their keys.**
