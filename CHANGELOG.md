@@ -1,5 +1,28 @@
 # Changelog
 
+## 3.10.3
+
+- **Fix: spurious "Unknown device detected" warnings from corrupted discovery
+  frames.** Discovery/inventory frames (`$18`/`$2E`/`$1E`) were forwarded to
+  the device classifier without a CRC check, unlike every other frame class
+  the library handles. A bit error on the wire — cable, connector, USB-serial
+  adapter noise — could sail through and be logged as a new "unknown device
+  type" (sometimes seeding a phantom module/button), even though the bus
+  data itself was fine. Requires `nikobus-connect >= 0.30.2`.
+- **Fix: `.nkb` import can now enable output channels the bus scan left
+  hidden, not just rename ones that already have an entity.** The register
+  scan reads link records, never channel names — Nikobus modules don't store
+  per-channel text on the bus — so every output channel starts as the
+  internal `"not_in_use output_N"` placeholder, and no entity is created for
+  it. Previously the `.nkb` import could only **rename an entity that
+  already existed**, so a channel with none stayed hidden forever with no
+  way out except manually using **"Customize a module."** The import now
+  writes the `.nkb`'s real output name straight into the channel (when no
+  entity exists for it yet) and reloads, so the entity is created directly.
+  A user's own "Customize a module" changes (including explicitly disabled
+  channels) are never touched. The import button's log line now reports how
+  many outputs were newly enabled.
+
 ## 3.10.2
 
 - **Fix: wrong bus addresses on `.nkb`-bootstrapped multi-key buttons.** The

@@ -1247,23 +1247,66 @@ class NikobusDiscoveryMixin:
                 if nm and _apply_entity_name(ent_reg, ent, nm, overwrite):
                     channels_named += 1
 
+        # Enable outputs the bus scan left hidden. The register scan reads
+        # link records, never per-channel text — Nikobus modules don't
+        # store channel names on the bus at all — so every channel starts
+        # as the ``"not_in_use output_N"`` placeholder router.py uses to
+        # skip entity creation. The rename loop above can only rename an
+        # entity that already exists, so a channel with no entity yet had
+        # no way to ever leave that state short of the manual "Customize a
+        # module" flow — the .nkb already carries the real name here
+        # (``data.outputs``), so use it to unlock the channel directly
+        # rather than only relabelling something already visible.
+        outputs_enabled = 0
+        module_storage_changed = False
+        if "channel_names" in cats and data.outputs and self.module_storage is not None:
+            modules = self.module_storage.data.get("nikobus_module")
+            if isinstance(modules, dict):
+                for (addr, ch), nm in data.outputs.items():
+                    if not nm:
+                        continue
+                    module = modules.get(addr)
+                    if not isinstance(module, dict):
+                        continue
+                    channels = module.get("channels")
+                    if not isinstance(channels, list) or not (1 <= ch <= len(channels)):
+                        continue
+                    channel_info = channels[ch - 1]
+                    if not isinstance(channel_info, dict):
+                        continue
+                    if channel_info.get("entity_type") == "disabled":
+                        continue  # user explicitly hid this channel — leave it
+                    if not str(channel_info.get("description", "")).startswith(
+                        "not_in_use"
+                    ):
+                        continue  # already enabled — the rename loop above covers it
+                    channel_info["description"] = nm
+                    outputs_enabled += 1
+                    module_storage_changed = True
+            if module_storage_changed:
+                await self.module_storage.async_save()
+                self._rebuild_dict_module_data()
+
         _LOGGER.info(
             "Imported .nkb from %s (overwrite=%s, categories=%s): %d devices, "
-            "%d device-entities, %d channels, %d areas, %d scenes named",
+            "%d device-entities, %d channels, %d outputs enabled, %d areas, "
+            "%d scenes named",
             path.name,
             overwrite,
             sorted(cats),
             devices_named,
             entities_named,
             channels_named,
+            outputs_enabled,
             areas_set,
             len(cf_name_by_addr),
         )
 
-        # The surfaced-scene set changed — reload so entities are rebuilt:
+        # The surfaced entity set changed — reload so platforms rebuild:
         # names just applied surface previously-hidden (unnamed) button-backed
-        # light-scenes, and purging stale duplicates tears theirs down.
-        if purged_nkb_scenes or names_persisted:
+        # light-scenes, purging stale duplicates tears theirs down, and newly
+        # enabled outputs need their entities created for the first time.
+        if purged_nkb_scenes or names_persisted or module_storage_changed:
             self.hass.async_create_task(
                 self.hass.config_entries.async_reload(self.config_entry.entry_id)
             )
@@ -1272,6 +1315,7 @@ class NikobusDiscoveryMixin:
             "devices": devices_named,
             "entities": entities_named,
             "channels": channels_named,
+            "outputs_enabled": outputs_enabled,
             "areas": areas_set,
             "scenes": len(cf_name_by_addr),
         }

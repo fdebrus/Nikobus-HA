@@ -529,10 +529,11 @@ class NikobusImportNkbNamesButton(ButtonEntity):
         result = await self._coordinator.async_import_nkb_names()
         _LOGGER.info(
             "Nikobus .nkb import done: %s devices, %s entities, %s channels, "
-            "%s areas, %s scenes named",
+            "%s outputs enabled, %s areas, %s scenes named",
             result["devices"],
             result["entities"],
             result.get("channels", 0),
+            result.get("outputs_enabled", 0),
             result["areas"],
             result["scenes"],
         )
