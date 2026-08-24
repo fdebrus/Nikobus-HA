@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -19,7 +19,7 @@ from custom_components.nikobus.nkbnames import NkbData, SceneDef
 # --------------------------------------------------------------------------- #
 # coordinator.async_import_nkb_names — names, areas, scene match
 # --------------------------------------------------------------------------- #
-def _coord(cf=None, button_data=None):
+def _coord(cf=None, button_data=None, modules=None):
     from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
     c = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
@@ -33,6 +33,7 @@ def _coord(cf=None, button_data=None):
     c.config_entry = MagicMock()
     c.config_entry.entry_id = "E1"
     c.dict_button_data = button_data or {}
+    c.dict_module_data = {}
     c.cf_storage = None
     if cf is not None:
         c.cf_storage = MagicMock()
@@ -42,6 +43,12 @@ def _coord(cf=None, button_data=None):
             return None
 
         c.cf_storage.async_save = _save
+
+    c.module_storage = None
+    if modules is not None:
+        c.module_storage = MagicMock()
+        c.module_storage.data = {"nikobus_module": modules}
+        c.module_storage.async_save = AsyncMock()
     return c
 
 
@@ -145,8 +152,8 @@ def test_import_names_areas_and_scene_match():
     with _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
         result = _run(coord.async_import_nkb_names())
 
-    assert result == {"devices": 3, "entities": 2, "channels": 0, "areas": 2,
-                      "scenes": 1}
+    assert result == {"devices": 3, "entities": 2, "channels": 0,
+                      "outputs_enabled": 0, "areas": 2, "scenes": 1}
     names = {c.args[0]: c.kwargs.get("name")
              for c in dev_reg.async_update_device.call_args_list
              if "name" in c.kwargs}
@@ -377,3 +384,118 @@ def test_import_no_overwrite_keeps_user_set_channel_name():
 
     assert result["channels"] == 0
     ent_reg.async_update_entity.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# async_import_nkb_names — enabling previously-hidden output channels
+#
+# The register scan never learns channel *names* (Nikobus modules don't
+# store per-channel text on the bus), so every channel starts as the
+# "not_in_use output_N" placeholder router.py checks to skip entity
+# creation. Before this fix, the .nkb import could only rename an entity
+# that already existed — a channel with none stayed hidden forever, with
+# no way out short of the manual "Customize a module" flow. These pin the
+# fix: the import now writes the .nkb's real output name straight into
+# module storage so router.py creates the entity on the next reload.
+# --------------------------------------------------------------------------- #
+def test_import_enables_previously_hidden_output_channel():
+    data = NkbData(
+        addresses={}, scenes=[], outputs={("0E6C", 4): "Appliques Salon"},
+    )
+    modules = {"0E6C": {
+        "module_type": "switch_module",
+        "description": "Switch S1",
+        "channels": [
+            {"description": "not_in_use output_1"},
+            {"description": "not_in_use output_2"},
+            {"description": "not_in_use output_3"},
+            {"description": "not_in_use output_4"},
+        ],
+    }}
+    coord = _coord(modules=modules)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"channel_names"}))
+
+    assert result["outputs_enabled"] == 1
+    assert modules["0E6C"]["channels"][3]["description"] == "Appliques Salon"
+    # untouched siblings stay hidden
+    assert modules["0E6C"]["channels"][0]["description"] == "not_in_use output_1"
+    coord.module_storage.async_save.assert_awaited_once()
+    # the entity set changed -> a reload is scheduled so it's created
+    coord.hass.async_create_task.assert_called_once()
+
+
+def test_import_does_not_touch_already_enabled_channel():
+    """A channel that already has a real description (an entity already
+    exists for it) is left to the rename loop — this path only unlocks
+    channels that are still ``not_in_use``."""
+    data = NkbData(
+        addresses={}, scenes=[], outputs={("0E6C", 1): "Appliques Salon"},
+    )
+    modules = {"0E6C": {
+        "module_type": "switch_module",
+        "channels": [{"description": "Already Named"}],
+    }}
+    coord = _coord(modules=modules)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"channel_names"}))
+
+    assert result["outputs_enabled"] == 0
+    assert modules["0E6C"]["channels"][0]["description"] == "Already Named"
+    coord.module_storage.async_save.assert_not_awaited()
+    coord.hass.async_create_task.assert_not_called()
+
+
+def test_import_does_not_enable_explicitly_disabled_channel():
+    """A channel the user hid via "Customize a module" (entity_type =
+    'disabled') must stay hidden even though the .nkb has a name for it."""
+    data = NkbData(
+        addresses={}, scenes=[], outputs={("0E6C", 1): "Appliques Salon"},
+    )
+    modules = {"0E6C": {
+        "module_type": "switch_module",
+        "channels": [{"description": "not_in_use output_1",
+                      "entity_type": "disabled"}],
+    }}
+    coord = _coord(modules=modules)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"channel_names"}))
+
+    assert result["outputs_enabled"] == 0
+    assert modules["0E6C"]["channels"][0]["description"] == "not_in_use output_1"
+    coord.module_storage.async_save.assert_not_awaited()
+
+
+def test_import_enable_skipped_when_channel_names_category_excluded():
+    data = NkbData(
+        addresses={}, scenes=[], outputs={("0E6C", 1): "Appliques Salon"},
+    )
+    modules = {"0E6C": {
+        "module_type": "switch_module",
+        "channels": [{"description": "not_in_use output_1"}],
+    }}
+    coord = _coord(modules=modules)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    assert result["outputs_enabled"] == 0
+    assert modules["0E6C"]["channels"][0]["description"] == "not_in_use output_1"
+
+
+def test_import_no_module_storage_is_safe():
+    """No module_storage configured (shouldn't happen in practice, but the
+    coordinator's cf_storage sibling is defensively None-checked the same
+    way) — the import must not crash."""
+    data = NkbData(
+        addresses={}, scenes=[], outputs={("0E6C", 1): "Appliques Salon"},
+    )
+    coord = _coord()  # module_storage stays None
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"channel_names"}))
+
+    assert result["outputs_enabled"] == 0
