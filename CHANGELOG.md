@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.11.0
+
+- **`.nkb` import: button plates now carry the same index as the Nikobus
+  application.** The Niko PC software labels each plate `BP7: Porte
+  buanderie`; the import now applies the index too (`7: Porte buanderie
+  (Room)` — the locale-specific `BP` prefix is dropped, the number is the
+  data), so the HA device list cross-references one-to-one with the Nikobus
+  application. Modules keep their plain names.
+- **`.nkb` import: unnamed plates fall back to their room.** A plate the
+  installer never named (empty label in the Nikobus software) previously
+  kept its generic bus-address name; it now gets its room name so the
+  device stays identifiable.
+- **`.nkb` import: per-key devices renamed from the plate.** Each key of a
+  wall plate is its own HA device, previously stuck with the generated
+  `Push button 1A #N9A43A2` label. Once the parent plate is matched to its
+  `.nkb` name, its keys become `Porte buanderie Key 1A` etc. (the raw bus
+  address stays available in the entity attributes). IR op-points,
+  PC-Logic input keys and your own renames are never touched.
+- As always, import names are **suggested defaults** — any name you set
+  yourself wins, unless you explicitly run the import in overwrite mode.
+  Requires `nikobus-connect >= 0.31.0`.
+
 ## 3.10.3
 
 - **Fix: spurious "Unknown device detected" warnings from corrupted discovery

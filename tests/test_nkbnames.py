@@ -69,12 +69,13 @@ def _opbtn(bus_address, *outputs):
     }
 
 
-def _device(dev_id, addr, name="old", area_id=None):
+def _device(dev_id, addr, name="old", area_id=None, via_device_id=None):
     d = MagicMock()
     d.id = dev_id
     d.identifiers = {("nikobus", addr)}
     d.name = name
     d.area_id = area_id
+    d.via_device_id = via_device_id
     return d
 
 
@@ -152,7 +153,7 @@ def test_import_names_areas_and_scene_match():
     with _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
         result = _run(coord.async_import_nkb_names())
 
-    assert result == {"devices": 3, "entities": 2, "channels": 0,
+    assert result == {"devices": 3, "keys": 0, "entities": 2, "channels": 0,
                       "outputs_enabled": 0, "areas": 2, "scenes": 1}
     names = {c.args[0]: c.kwargs.get("name")
              for c in dev_reg.async_update_device.call_args_list
@@ -499,3 +500,140 @@ def test_import_no_module_storage_is_safe():
         result = _run(coord.async_import_nkb_names(categories={"channel_names"}))
 
     assert result["outputs_enabled"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# async_import_nkb_names — Niko-app index prefix, room fallback, key devices
+#
+# Feature request from a user who reverse-engineered their .nkb: the plate
+# label shown in the Nikobus PC software is "BP<Number>: <StrUserName>", so
+# import the index (locale-neutral, no BP prefix), fall back to the room for
+# installer-unnamed plates, and give per-key child devices a "<plate> Key
+# <label>" name instead of the generated "Push button 1A #N<addr>".
+# --------------------------------------------------------------------------- #
+def test_import_button_plate_gets_number_prefix():
+    data = NkbData(
+        addresses={"39D7F6": ("Porte buanderie", "Buanderie")},
+        scenes=[],
+        numbers={"39D7F6": 7},
+    )
+    coord = _coord()
+    dev = _device("d1", "39D7F6")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [dev], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    dev_reg.async_update_device.assert_called_once_with(
+        "d1", name="7: Porte buanderie (Buanderie)"
+    )
+
+
+def test_import_module_does_not_get_number_prefix():
+    """Modules (4-hex addresses) keep their plain name — the app-style
+    index is only applied to button plates (6-hex)."""
+    data = NkbData(
+        addresses={"0E6C": ("Dimcontroller", "Centrale")},
+        scenes=[],
+        numbers={"0E6C": 1},
+    )
+    coord = _coord()
+    dev = _device("d1", "0E6C")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [dev], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    dev_reg.async_update_device.assert_called_once_with(
+        "d1", name="Dimcontroller (Centrale)"
+    )
+
+
+def test_import_unnamed_plate_falls_back_to_room():
+    """An installer-unnamed plate (name "" in the .nkb) is labelled with
+    its room — shown bare, not the redundant 'Room (Room)'."""
+    data = NkbData(
+        addresses={"3C1A57": ("", "Chambre 2")},
+        scenes=[],
+        numbers={"3C1A57": 9},
+    )
+    coord = _coord()
+    dev = _device("d1", "3C1A57")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [dev], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    dev_reg.async_update_device.assert_any_call("d1", name="9: Chambre 2")
+
+
+def test_import_renames_key_child_devices():
+    """A per-key child device with the generated 'Push button 1A #N…'
+    name is renamed '<plate> Key 1A' once its parent plate is matched.
+    A child whose name doesn't match the generated pattern (IR /
+    PC-Logic input keys, user-meaningful names) is left alone."""
+    data = NkbData(
+        addresses={"39D7F6": ("Porte buanderie", "")},
+        scenes=[],
+    )
+    coord = _coord()
+    plate = _device("d1", "39D7F6")
+    key_a = _device("d2", "9A43A2", name="Push button 1A #N9A43A2",
+                    via_device_id="d1")
+    key_b = _device("d3", "DA43A2", name="Push button 1B #NDA43A2",
+                    via_device_id="d1")
+    ir_key = _device("d4", "30A111", name="IR 30A on 0D1C80",
+                     via_device_id="d1")
+    orphan = _device("d5", "111111", name="Push button 1A #N111111",
+                     via_device_id="other")  # parent not matched
+    devices = [plate, key_a, key_b, ir_key, orphan]
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, devices, [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    assert result["keys"] == 2
+    dev_reg.async_update_device.assert_any_call(
+        "d2", name="Porte buanderie Key 1A"
+    )
+    dev_reg.async_update_device.assert_any_call(
+        "d3", name="Porte buanderie Key 1B"
+    )
+    renamed = {c.args[0] for c in dev_reg.async_update_device.call_args_list}
+    assert "d4" not in renamed  # IR key untouched
+    assert "d5" not in renamed  # unmatched parent untouched
+
+
+def test_import_key_rename_uses_plain_plate_name():
+    """The key label uses the bare plate name — no index prefix, no room
+    suffix — to keep 'Porte buanderie Key 1A' readable."""
+    data = NkbData(
+        addresses={"39D7F6": ("Porte buanderie", "Buanderie")},
+        scenes=[],
+        numbers={"39D7F6": 7},
+    )
+    coord = _coord()
+    plate = _device("d1", "39D7F6")
+    key_a = _device("d2", "9A43A2", name="Push button 2C #N9A43A2",
+                    via_device_id="d1")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [plate, key_a], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    dev_reg.async_update_device.assert_any_call(
+        "d2", name="Porte buanderie Key 2C"
+    )
+
+
+def test_import_key_rename_overwrite_sets_name_by_user():
+    data = NkbData(addresses={"39D7F6": ("Porte buanderie", "")}, scenes=[])
+    coord = _coord()
+    plate = _device("d1", "39D7F6")
+    plate.name_by_user = None
+    key_a = _device("d2", "9A43A2", name="Push button 1A #N9A43A2",
+                    via_device_id="d1")
+    key_a.name_by_user = None
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [plate, key_a], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(
+            categories={"device_names"}, overwrite=True))
+
+    dev_reg.async_update_device.assert_any_call(
+        "d2", name_by_user="Porte buanderie Key 1A"
+    )
