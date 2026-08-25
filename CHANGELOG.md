@@ -2,6 +2,21 @@
 
 ## 3.11.0
 
+- **Discovery: 05-061 button plates (2 buttons with feedback LEDs) are now
+  recognised.** PC-Link registry device type `0x05` sat unidentified for
+  years, so these plates were silently dropped from every inventory. A full
+  discovery log plus the matching `.nkb` pinned the type to the 05-061 —
+  three registry records matched the install's 05-061 components on both
+  bus address and plate index.
+- **Discovery: no more phantom buttons or "Unknown device type 14/24/34"
+  warnings from PC-Link filler pages.** The PC-Link's registry starts with
+  a header page (a diagnostic byte-ramp ending in a magic marker plus the
+  record count), and reads past the last record wrap back into ramp pages.
+  The scan now reads the header's record count to bound the sweep and
+  skips ramp filler outright — previously a ramp page decoded as a phantom
+  05-060 button at a nonsense address and later ramps fired spurious
+  unknown-device warnings. Units that don't expose the header page behave
+  exactly as before.
 - **`.nkb` import: button plates now carry the same index as the Nikobus
   application.** The Niko PC software labels each plate `BP7: Porte
   buanderie`; the import now applies the index too (`7: Porte buanderie
@@ -20,7 +35,7 @@
   PC-Logic input keys and your own renames are never touched.
 - As always, import names are **suggested defaults** — any name you set
   yourself wins, unless you explicitly run the import in overwrite mode.
-  Requires `nikobus-connect >= 0.31.0`.
+  Requires `nikobus-connect >= 0.32.0`.
 
 ## 3.10.3
 
