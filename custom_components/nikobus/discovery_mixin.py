@@ -78,6 +78,12 @@ _LOGGER = logging.getLogger(__name__)
 _PROBE_OUTER_ATTEMPTS = 2
 _PROBE_OUTER_DELAY_S = 3.0
 
+#: The library's auto-generated per-key device name ("Push button 1A
+#: #N9A43A2"). Only names matching this are rewritten by the .nkb
+#: import's key pass — IR / PC-Logic input keys and user-set names
+#: never match and are left alone.
+_PUSH_BUTTON_NAME_RE = re.compile(r"^Push button (\S+) #N[0-9A-Fa-f]{6}$")
+
 
 def _output_entity_key(unique_id: str | None) -> tuple[str, int] | None:
     """``(MODULE_ADDR_UPPER, channel)`` for a per-channel output entity's
@@ -1111,7 +1117,11 @@ class NikobusDiscoveryMixin:
                 translation_placeholders={"error": str(err)},
             ) from err
 
-        name_map = data.addresses  # {ADDR: (name, room)}
+        name_map = data.addresses  # {ADDR: (name, room)} — name may be ""
+        # {ADDR: Component.Number} — the index the Niko software shows as
+        # "BP7" / "S1" (prefix is locale UI text, the number is the data).
+        # getattr for older library versions without the field.
+        numbers = getattr(data, "numbers", None) or {}
 
         # Scenes: match each named ``.nkb`` group to an already-discovered
         # Central Function by member set and apply its real name. We only
@@ -1166,7 +1176,29 @@ class NikobusDiscoveryMixin:
         area_reg = ar.async_get(self.hass)
         entry_id = self.config_entry.entry_id
 
-        def _lookup(device: Any) -> tuple[str, str] | None:
+        def _display_for(key: str) -> tuple[str, str, str] | None:
+            """``(display, plain, room)`` for a ``name_map`` address.
+
+            * ``display`` — the suggested device name: ``Name (Room)``,
+              prefixed with the Niko-software index (``7: …``) for
+              button plates (6-hex addresses) so the HA device list
+              stays cross-referenceable with the Nikobus application.
+            * A plate the installer left unnamed falls back to its room
+              (shown bare — no redundant ``Room (Room)``).
+            * ``plain`` — the bare name (no index, no room), used to
+              label the plate's per-key child devices.
+            """
+            name, room = name_map[key]
+            base = name or room
+            if not base:
+                return None
+            display = f"{base} ({room})" if name and room else base
+            number = numbers.get(key)
+            if number and len(key) == 6:
+                display = f"{number}: {display}"
+            return (display, base, room)
+
+        def _lookup(device: Any) -> tuple[str, str, str] | None:
             for domain, ident in device.identifiers:
                 if domain != DOMAIN:
                     continue
@@ -1180,25 +1212,27 @@ class NikobusDiscoveryMixin:
                 if key.startswith("CF_"):
                     cf_name = cf_name_by_addr.get(key[3:])
                     if cf_name:
-                        return (cf_name, "")
+                        return (cf_name, cf_name, "")
                     continue
                 if key in name_map:
-                    return name_map[key]
+                    return _display_for(key)
                 if key in cf_name_by_addr:
-                    return (cf_name_by_addr[key], "")
+                    name = cf_name_by_addr[key]
+                    return (name, name, "")
             return None
 
         do_names = "device_names" in cats
         do_areas = "areas" in cats
         matched: dict[str, str] = {}  # device_id -> display name
+        matched_plain: dict[str, str] = {}  # device_id -> bare name (keys pass)
         devices_named = areas_set = 0
         for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
             hit = _lookup(device)
             if hit is None:
                 continue
-            name, room = hit
-            display = f"{name} ({room})" if room else name
+            display, plain, room = hit
             matched[device.id] = display
+            matched_plain[device.id] = plain
             if do_names:
                 # Non-overwrite sets the integration default (``name``), so a
                 # manual rename (``name_by_user``) still wins; overwrite sets
@@ -1217,6 +1251,35 @@ class NikobusDiscoveryMixin:
                 if device.area_id != area.id:
                     dev_reg.async_update_device(device.id, area_id=area.id)
                     areas_set += 1
+
+        # Per-key child devices. Each op-point of a wall plate is its own
+        # HA device (identifier = the key's bus address) named by the
+        # library's generated "Push button 1A #N9A43A2" pattern — the raw
+        # bus address is essential for identification while the plate is
+        # anonymous, but reads as noise once the parent plate carries its
+        # real .nkb name. Rename those to "<plate> Key <label>" (the
+        # address stays available in the entity attributes for debugging).
+        # The pattern gate means IR op-points, PC-Logic input keys and any
+        # user-set names never match and are left untouched.
+        keys_named = 0
+        if do_names:
+            for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
+                plate = matched_plain.get(device.via_device_id)
+                if not plate or device.id in matched:
+                    continue
+                m = _PUSH_BUTTON_NAME_RE.match(device.name or "")
+                if m is None:
+                    continue
+                key_name = f"{plate} Key {m.group(1)}"
+                if overwrite:
+                    if device.name_by_user != key_name:
+                        dev_reg.async_update_device(
+                            device.id, name_by_user=key_name
+                        )
+                        keys_named += 1
+                elif device.name != key_name:
+                    dev_reg.async_update_device(device.id, name=key_name)
+                    keys_named += 1
 
         entities = list(er.async_entries_for_config_entry(ent_reg, entry_id))
 
@@ -1289,12 +1352,13 @@ class NikobusDiscoveryMixin:
 
         _LOGGER.info(
             "Imported .nkb from %s (overwrite=%s, categories=%s): %d devices, "
-            "%d device-entities, %d channels, %d outputs enabled, %d areas, "
-            "%d scenes named",
+            "%d key devices, %d device-entities, %d channels, %d outputs "
+            "enabled, %d areas, %d scenes named",
             path.name,
             overwrite,
             sorted(cats),
             devices_named,
+            keys_named,
             entities_named,
             channels_named,
             outputs_enabled,
@@ -1313,6 +1377,7 @@ class NikobusDiscoveryMixin:
 
         return {
             "devices": devices_named,
+            "keys": keys_named,
             "entities": entities_named,
             "channels": channels_named,
             "outputs_enabled": outputs_enabled,
