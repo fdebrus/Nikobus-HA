@@ -20,7 +20,10 @@ from .const import (
     CATEGORY_REMOTES,
     CATEGORY_SYSTEM_MODULES,
     CATEGORY_WALL_BUTTONS,
+    CONF_NKB_IMPORT_CATEGORIES,
+    CONF_NKB_IMPORT_OVERWRITE,
     DOMAIN,
+    NKB_IMPORT_CATEGORIES,
     SIGNAL_DISCOVERY_STATE,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
@@ -205,11 +208,15 @@ def register_wall_button_devices(
         type_str = str(phys.get("type") or phys.get("model") or "Wall Button")
         model = str(phys.get("model") or phys.get("type") or "Wall Button")
         category = _category_for_button_type(type_str)
+        # Prefer the persisted .nkb-import name ("7: Porte buanderie
+        # (Cuisine)") over the generated default — the registry's
+        # ``name`` field is re-asserted from here on every restart, so
+        # this is what makes a non-overwrite import stick.
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, physical_addr)},
             manufacturer=BRAND,
-            name=f"{type_str} ({physical_addr})",
+            name=str(phys.get("nkb_name") or f"{type_str} ({physical_addr})"),
             model=model,
             via_device=(DOMAIN, category),
         )
@@ -402,21 +409,61 @@ def op_point_display_name(
         ):
             prefix = input_label_prefix(parent_phys)
             return f"Key {key_label[1].upper()} on {prefix}-INPUT {slot}"
-    return op_point.get("description") or f"Push button {key_label}"
+    # ``nkb_name`` is the persisted .nkb-import name ("<plate> Key 1A") —
+    # written by async_import_nkb_names so the imported name survives
+    # restarts (DeviceInfo re-asserts whatever this function returns).
+    return (
+        op_point.get("nkb_name")
+        or op_point.get("description")
+        or f"Push button {key_label}"
+    )
 
 
-class NikobusPcLinkInventoryButton(ButtonEntity):
-    """Bridge button that starts a PC Link inventory discovery."""
+class _NikobusBridgeButton(ButtonEntity):
+    """Base for the bridge action buttons.
+
+    Shared: hub device placement, CONFIG category, and availability
+    gating — every bridge button greys out while a discovery scan is
+    running (3.11.0 field report: the buttons stayed enabled with no
+    visual feedback, inviting double-triggers). ``SIGNAL_DISCOVERY_STATE``
+    fires on every discovery state change, including the
+    ``discovery_running`` flips, so availability repaints live.
+    """
 
     _attr_has_entity_name = True
-    _attr_translation_key = "discover_modules_buttons"
     _attr_should_poll = False
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         self._coordinator = coordinator
-        self._attr_unique_id = f"{DOMAIN}_pc_link_inventory_button"
         self._attr_device_info = hub_device_info()
+
+    @property
+    def available(self) -> bool:
+        return not self._coordinator.discovery_running
+
+    async def async_added_to_hass(self) -> None:
+        """Re-render availability whenever discovery state changes."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass, SIGNAL_DISCOVERY_STATE, self._handle_discovery_update
+            )
+        )
+
+    @callback
+    def _handle_discovery_update(self) -> None:
+        self.async_write_ha_state()
+
+
+class NikobusPcLinkInventoryButton(_NikobusBridgeButton):
+    """Bridge button that starts a PC Link inventory discovery."""
+
+    _attr_translation_key = "discover_modules_buttons"
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_pc_link_inventory_button"
 
     async def async_press(self) -> None:
         """Start PC Link inventory discovery.
@@ -441,41 +488,28 @@ class NikobusPcLinkInventoryButton(ButtonEntity):
         )
 
 
-class NikobusModuleScanButton(ButtonEntity):
+class NikobusModuleScanButton(_NikobusBridgeButton):
     """Bridge button that starts a full module scan for button links.
 
     Greyed out in the UI until at least one output-capable module is
     known — the scan walks the list of known modules, so it has nothing
     to do before a PC Link inventory (or legacy-file migration) has
-    populated storage.
+    populated storage. Also greyed (via the base class) while any
+    discovery scan is running.
     """
 
-    _attr_has_entity_name = True
     _attr_translation_key = "scan_all_module_links"
-    _attr_should_poll = False
-    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_module_scan_button"
-        self._attr_device_info = hub_device_info()
 
     @property
     def available(self) -> bool:
-        return self._coordinator.has_known_output_modules
-
-    async def async_added_to_hass(self) -> None:
-        """Re-render availability whenever discovery state changes."""
-        await super().async_added_to_hass()
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass, SIGNAL_DISCOVERY_STATE, self._handle_discovery_update
-            )
+        return (
+            self._coordinator.has_known_output_modules
+            and not self._coordinator.discovery_running
         )
-
-    @callback
-    def _handle_discovery_update(self) -> None:
-        self.async_write_ha_state()
 
     async def async_press(self) -> None:
         """Scan all output modules for button links.
@@ -497,24 +531,22 @@ class NikobusModuleScanButton(ButtonEntity):
         )
 
 
-class NikobusImportNkbNamesButton(ButtonEntity):
+class NikobusImportNkbNamesButton(_NikobusBridgeButton):
     """Bridge button that imports device/entity names from a ``.nkb`` file.
 
     Reads the Nikobus PC-software project export (a ``.nkb`` placed in the
     HA config dir) and applies its module / button / IR-receiver names as
-    suggested device and entity names. Non-destructive — manual renames
-    are preserved.
+    suggested device and entity names. Replays the last-used settings
+    from the options flow's "Import from .nkb" step; before that step
+    has ever run it imports everything, non-destructively (manual
+    renames preserved).
     """
 
-    _attr_has_entity_name = True
     _attr_translation_key = "import_nkb_names"
-    _attr_should_poll = False
-    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_import_nkb_names_button"
-        self._attr_device_info = hub_device_info()
 
     async def async_press(self) -> None:
         """Import names from the ``.nkb`` in the config dir.
@@ -524,9 +556,26 @@ class NikobusImportNkbNamesButton(ButtonEntity):
         quickly while still surfacing not-found / parse errors to the
         user as the button action result.
         """
-        _LOGGER.info("Importing Nikobus names from .nkb via UI button")
-        # The button is the quick path: import everything, non-destructive.
-        result = await self._coordinator.async_import_nkb_names()
+        # Replay the last-used import settings (persisted by the options
+        # flow's "Import from .nkb" step) so the two import paths behave
+        # identically. First-ever use: everything, non-destructive.
+        options = self._coordinator.config_entry.options
+        stored_cats = options.get(CONF_NKB_IMPORT_CATEGORIES)
+        categories = (
+            {c for c in NKB_IMPORT_CATEGORIES if c in stored_cats}
+            if isinstance(stored_cats, (list, tuple, set)) and stored_cats
+            else None
+        )
+        overwrite = bool(options.get(CONF_NKB_IMPORT_OVERWRITE, False))
+        _LOGGER.info(
+            "Importing Nikobus names from .nkb via UI button "
+            "(categories=%s, overwrite=%s)",
+            sorted(categories) if categories else "all",
+            overwrite,
+        )
+        result = await self._coordinator.async_import_nkb_names(
+            categories=categories, overwrite=overwrite
+        )
         _LOGGER.info(
             "Nikobus .nkb import done: %s devices, %s entities, %s channels, "
             "%s outputs enabled, %s areas, %s scenes named",

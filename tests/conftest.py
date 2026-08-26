@@ -354,12 +354,27 @@ _mod("homeassistant.components.scene", Scene=type("Scene", (), {}), DOMAIN="scen
 # voluptuous + the HA flow/selector helpers aren't installed in this env;
 # stub just enough to import config_flow.py / repairs.py and exercise
 # their pure helpers (schema builders themselves are not invoked).
+class _VolMarker(str):
+    """Stub for vol.Optional / vol.Required.
+
+    A ``str`` subclass so schema dicts keyed by markers behave exactly
+    like plain-string keys, while preserving ``.schema`` and
+    ``.default`` so tests can inspect a form's field defaults (real
+    voluptuous exposes both; ``default`` is always a callable)."""
+
+    def __new__(cls, key=None, default=None, **_k):
+        obj = str.__new__(cls, key if key is not None else "")
+        obj.schema = key
+        obj.default = default if callable(default) else (lambda: default)
+        return obj
+
+
 _mod(
     "voluptuous",
     Invalid=type("Invalid", (Exception,), {}),
     Schema=lambda *a, **k: (a[0] if a else None),
-    Optional=lambda *a, **k: (a[0] if a else None),
-    Required=lambda *a, **k: (a[0] if a else None),
+    Optional=_VolMarker,
+    Required=_VolMarker,
     All=lambda *a, **k: a,
     Range=lambda *a, **k: None,
     Coerce=lambda *a, **k: None,

@@ -1,5 +1,29 @@
 # Changelog
 
+## 3.12.0
+
+- **Fix: `.nkb` name import now survives restarts without Overwrite.** The
+  default (non-destructive) import wrote names into the device registry's
+  integration-owned field, which every restart overwrote with the generated
+  defaults — the imported names silently disappeared unless the buried
+  Overwrite toggle was used. Imported names are now persisted in the
+  integration's own storage and re-asserted on every start, so the
+  prominent "3. Import Names from .nkb" bridge button finally sticks. This
+  also puts the imported name on the device page ("Device info" card), not
+  just on entities. Overwrite is back to meaning only "also replace names
+  I set myself".
+- **Bridge buttons grey out while a scan is running.** All three bridge
+  action buttons (inventory discovery, module scan, `.nkb` import) now
+  show as unavailable for the duration of a discovery scan — no more
+  wondering whether the press registered, no more accidental
+  double-triggers (the double-press race window is also closed
+  coordinator-side).
+- **The two import paths now behave identically.** The
+  Configure → "Import from .nkb" form remembers your last-applied
+  choices (categories + Overwrite) and pre-fills them on the next visit,
+  and the bridge button replays those same settings instead of always
+  running its own defaults.
+
 ## 3.11.0
 
 - **Discovery: 05-061 button plates (2 buttons with feedback LEDs) are now

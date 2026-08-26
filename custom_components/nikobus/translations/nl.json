@@ -134,7 +134,7 @@
       },
       "import_nkb": {
         "title": "Importeren uit .nkb",
-        "description": "Kies wat je wilt importeren uit je nikobus.nkb. Standaard wordt niets aangeraakt wat je handmatig hebt hernoemd — vink **Overschrijven** aan om je bestaande namen/gebieden te vervangen door die uit de .nkb.",
+        "description": "Kies wat je wilt importeren uit je nikobus.nkb. Standaard wordt niets aangeraakt wat je handmatig hebt hernoemd — vink **Overschrijven** aan om je bestaande namen/Ruimtes te vervangen door die uit het .nkb-bestand. Je keuzes worden onthouden: de knop “3. Import Names from .nkb” op de Nikobus Bridge voert de import opnieuw uit met dezelfde instellingen.",
         "data": {
           "device_names": "Apparaatnamen (modules, knoppen, IR-ontvangers)",
           "channel_names": "Kanaalnamen (lichten, rolluiken, schakelaars)",

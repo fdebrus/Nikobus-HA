@@ -265,7 +265,7 @@
       },
       "import_nkb": {
         "title": "Import from .nkb",
-        "description": "Choose what to import from your nikobus.nkb. By default nothing you've renamed by hand is touched — tick **Overwrite** to replace your existing names/Areas with the .nkb ones.",
+        "description": "Choose what to import from your nikobus.nkb. By default nothing you've renamed by hand is touched — tick **Overwrite** to replace your existing names/Areas with the .nkb ones. Your choices are remembered: the “3. Import Names from .nkb” button on the Nikobus Bridge re-runs the import with these same settings.",
         "data": {
           "device_names": "Device names (modules, buttons, IR receivers)",
           "channel_names": "Channel names (lights, covers, switches)",

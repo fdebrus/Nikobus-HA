@@ -143,6 +143,13 @@ NKB_IMPORT_CATEGORIES: Final[tuple[str, ...]] = (
     "scenes",
 )
 
+#: Config-entry options remembering the last-used ``.nkb`` import
+#: choices. The options flow pre-fills its form from these and the
+#: bridge button replays them, so the two import paths stay in step
+#: instead of the button silently using different settings.
+CONF_NKB_IMPORT_CATEGORIES: Final[str] = "nkb_import_categories"
+CONF_NKB_IMPORT_OVERWRITE: Final[str] = "nkb_import_overwrite"
+
 # =============================================================================
 # Repair issues
 # =============================================================================

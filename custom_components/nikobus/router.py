@@ -265,7 +265,12 @@ def build_routing(
         modules_map = _modules_to_address_map(modules)
 
         for address, module_data in modules_map.items():
-            module_desc = module_data.get("description", f"Module {address}")
+            # ``nkb_name`` is the persisted .nkb-import name — preferred
+            # so the imported module name survives restarts (DeviceInfo
+            # re-asserts this value on every setup).
+            module_desc = module_data.get("nkb_name") or module_data.get(
+                "description", f"Module {address}"
+            )
             module_model = module_data.get("model", "Unknown")
 
             for channel_index, channel_info in enumerate(

@@ -134,7 +134,7 @@
       },
       "import_nkb": {
         "title": "Importer depuis .nkb",
-        "description": "Choisissez ce qu'il faut importer depuis votre nikobus.nkb. Par défaut, rien de ce que vous avez renommé manuellement n'est touché — cochez **Écraser** pour remplacer vos noms/zones existants par ceux du .nkb.",
+        "description": "Choisissez ce qu'il faut importer depuis votre nikobus.nkb. Par défaut, rien de ce que vous avez renommé manuellement n'est touché — cochez **Écraser** pour remplacer vos noms/Pièces existants par ceux du .nkb. Vos choix sont mémorisés : le bouton « 3. Import Names from .nkb » du Nikobus Bridge relance l'import avec ces mêmes réglages.",
         "data": {
           "device_names": "Noms des appareils (modules, boutons, récepteurs IR)",
           "channel_names": "Noms des canaux (lumières, volets, interrupteurs)",
