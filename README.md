@@ -17,7 +17,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - 🔌 **Automatic discovery** — modules and physical buttons are enumerated straight from the PC-Link; no manual address tables.
 - 💡 **Native entities** — switches, dimmers (with brightness), and shutters (with simulated position) per channel.
 - 🎛️ **Buttons as triggers** — every keypad key, IR code, and input becomes an event source (and a press-simulation button) for automations.
-- 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names, **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply.
+- 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names (numbered like in the Nikobus software), **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply. Imported names persist across restarts and re-discovery.
 - 🎬 **Scenes that fire atomically** — Central Function scenes are activated on the bus the same way a physical scene key would, with no per-channel fan-out.
 - ⚡ **Real-time or polled** — instant pushed state with a Feedback Module, or a configurable poll without one.
 
@@ -92,7 +92,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 
 One HA **device** is created per physical button, with one button-entity + binary-sensor per key (see [the entity model](#buttons-inputs--the-entity-model)).
 
-- **Bus push buttons** — 2-, 4-, and 8-control-point variants across the supported series (`4*-072` / `4*-074` / `4*-078`, the `05-06x` graphite/feedback-LED variants, and the `4*-082` / `4*-084` / `4*-088` series).
+- **Bus push buttons** — 2-, 4-, and 8-control-point variants across the supported series (`4*-072` / `4*-074` / `4*-078`, the classic `05-060` / `05-064` and the feedback-LED `05-061` (recognised since 3.11.0), and the `4*-082` / `4*-084` / `4*-088` series).
 - **Push-button & switch interfaces** (`05-056`, `05-057`, `05-058`).
 - **IR receivers** — each learned IR code becomes its own op-point.
 - **Motion detectors** with Nikobus interface (`05-7*5`).
@@ -112,7 +112,7 @@ One HA **device** is created per physical button, with one button-entity + binar
 4. Enter the serial path or `IP:port`. The connection is tested immediately.
 5. On **Hardware Configuration**, enable a toggle if it applies:
    - **Feedback Module (05-207) installed** — real-time pushed state, no polling.
-   - **PC-Link older than Gen 3** — compatibility tweaks for 1st/2nd-gen PC-Link hardware.
+   - **PC-Link older than Gen 3** — disables state polling (early PC-Links don't answer module state queries reliably), leaving push-only updates. **Leave this off on a Gen-3 PC-Link** — ticking it by mistake just makes state updates slower; it has no effect on discovery.
 6. If neither toggle is set, choose a **polling interval** (60–3600 s, default 120).
 7. Finish, then run [discovery](#discovery-workflow).
 
@@ -123,6 +123,8 @@ Module and button data live in Home Assistant's own storage (`.storage/nikobus.m
 ## Discovery workflow
 
 Everything is driven from the **Nikobus Bridge** device page. The three buttons are meant to be pressed **in order**, top to bottom.
+
+> While a scan is running, all three bridge buttons **grey out** and re-enable when it finishes — follow the live progress on the **Discovery status** / **Discovery progress** sensors.
 
 ### 1. Load Project Overview
 
@@ -138,7 +140,7 @@ Press **2. Load Existing Installation**. This reads each output module's link ta
 
 ### 3. Import Names from .nkb *(optional)*
 
-Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scenes from your project file in one shot. This is the quick, **non-destructive** path — see [Importing from your `.nkb` project](#importing-from-your-nkb-project) for the file upload step and for the *choose-what-to-import* form with an overwrite option.
+Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scenes from your project file in one shot. The button **replays whatever you last applied** through the *choose-what-to-import* form; before that form has ever been used, it imports **everything, non-destructively**. See [Importing from your `.nkb` project](#importing-from-your-nkb-project) for the file upload step, the form, and what the imported names look like.
 
 ### Customize a module *(optional)*
 
@@ -174,9 +176,9 @@ The bus tells the integration *what* is installed and *how it's wired* — but n
 
 You have two ways to apply it:
 
-**Quick path — the button.** Press **3. Import Names from .nkb** on the Bridge device. It imports **everything, non-destructively**: it fills in names/Areas where you haven't set your own, and never clobbers a manual rename.
+**Quick path — the button.** Press **3. Import Names from .nkb** on the Bridge device. It **replays the settings you last applied** through the form below, so the two paths always behave the same. If you've never used the form, it imports **everything, non-destructively**: it fills in names/Areas where you haven't set your own, and never clobbers a manual rename.
 
-**Choose what to import.** *Configure → Import from .nkb (choose what)* opens a form where you tick exactly which categories to apply, with an optional **overwrite** toggle:
+**Choose what to import.** *Configure → Import from .nkb (choose what)* opens a form where you tick exactly which categories to apply, with an optional **overwrite** toggle. The form **remembers your last-applied choices** and pre-fills them on the next visit:
 
 | Category | What it sets |
 |---|---|
@@ -189,6 +191,20 @@ You have two ways to apply it:
 So you can, for example, refresh just the **channel names** without disturbing the Areas you've already organised, or re-run with **overwrite** after a project change to push the latest names through.
 
 > Re-running is safe and idempotent — unchanged entries are skipped, and (without overwrite) anything you've personalised is left alone.
+
+### What the imported names look like
+
+Device names mirror the Nikobus PC software so the two stay cross-referenceable:
+
+| Device | Imported name | Notes |
+|---|---|---|
+| Button plate | `7: Porte buanderie (Buanderie)` | The number is the same index the Niko software shows as `BP7`; the room disambiguates repeated names. |
+| Unnamed plate | `9: Chambre 2` | A plate the installer never named falls back to its **room**. |
+| Plate key (child device) | `Porte buanderie Key 1A` | Each key of a plate is its own HA device; it's named from its parent plate. IR op-points, PC-Logic input keys, and your own renames are never touched. |
+| Module | `Dimcontroller (Centrale)` | Modules keep their plain `Name (Room)` — no index prefix. |
+| CF scene | `Scene - Soirée` | Matched Central-Function scenes take their real project name. |
+
+**Imported names persist.** They're stored by the integration and re-applied on every start, so they survive restarts, reloads, and re-discovery — without needing Overwrite. A name you set by hand in the HA UI still always wins (unless you explicitly run with Overwrite), and re-importing after the project changed refreshes the imported names.
 
 ---
 
@@ -250,10 +266,10 @@ Conversely, every light / switch / cover exposes a **`controlled_by`** attribute
 
 Discovered devices get generic names like `Bus push button, 4 control buttons (1843B4)`. You have two ways to give them friendly names:
 
-- **In bulk, from your project** — [import them from the `.nkb`](#importing-from-your-nkb-project). This is the fastest way to name a whole install at once, rooms and all.
+- **In bulk, from your project** — [import them from the `.nkb`](#importing-from-your-nkb-project). This is the fastest way to name a whole install at once, rooms and all — plates get the same numbering as the Nikobus software (`7: Porte buanderie (Buanderie)`), their keys become `Porte buanderie Key 1A`, and the names **persist across restarts and re-discovery**.
 - **By hand** — rename in the HA UI (*device → ⋮ → Rename*). HA stores this as `name_by_user` and **preserves it across reloads, restarts, and re-discovery** (names are keyed by the entity's stable `unique_id`).
 
-The two coexist: a non-overwrite `.nkb` import only *suggests* names, so anything you've renamed by hand is left untouched.
+The two coexist: a non-overwrite `.nkb` import only supplies the *default* name, so anything you've renamed by hand is left untouched — and a manual rename you later remove falls back to the imported name, not the generic one.
 
 ### IR codes across multiple receivers
 
@@ -549,7 +565,12 @@ Run **1. Load Project Overview** followed by **2. Load Existing Installation** w
 - Make sure the file is uploaded: *Configure → Upload .nkb project file* (it's saved as `nikobus.nkb`), or place it in `/config` yourself as `nikobus.nkb`.
 - If several `*.nkb` files are in `/config` and none is named `nikobus.nkb`, the integration won't guess — rename the one to import to `nikobus.nkb`.
 - Names/Areas you'd already set by hand are **left alone** unless you tick **Overwrite** in *Import from .nkb (choose what)*. If a non-overwrite run "did nothing", it likely had nothing new to fill in.
+- Remember the **3. Import Names from .nkb** button replays the *last-applied* form settings — if you previously imported only, say, Areas, the button repeats that selection until you change it in the form.
 - A file that won't parse (corrupt / not a real export) is reported as an error and nothing is changed.
+
+### Imported names disappeared after a restart
+
+Fixed in **3.12.0**. Up to 3.11.0 a non-overwrite import wrote names into a registry field that Home Assistant resets from the integration's defaults on every start, so the imported names silently reverted (only the Overwrite path survived). Since 3.12.0 imported names are stored by the integration itself and re-applied on every start. If you're on an older version: upgrade, then re-run the import once.
 
 ### Entities show as `Manual button`, or some entities are missing after an upgrade
 
@@ -566,7 +587,7 @@ The store rebuilds cleanly with proper device types and no duplicates. Names you
 
 ### Custom channel/button names didn't carry over
 
-Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`), not in the integration's store — so a clean re-discovery preserves them as long as the bus addresses are unchanged. (Removed in **3.0.0**: names are no longer imported from a legacy `nikobus_button_config.json`; set them in HA, or [import them from your `.nkb`](#importing-from-your-nkb-project), and they persist.)
+Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`) — a clean re-discovery preserves them as long as the bus addresses are unchanged. Names applied by a `.nkb` import are stored by the integration (since **3.12.0**) and re-applied automatically. (Removed in **3.0.0**: names are no longer imported from a legacy `nikobus_button_config.json`; set them in HA, or [import them from your `.nkb`](#importing-from-your-nkb-project), and they persist.)
 
 ### State is slow to update
 
@@ -600,7 +621,7 @@ The code is split into two packages.
 - `NikobusEventListener` — parses CR-terminated ASCII frames; dispatches presses and feedback.
 - `NikobusCommandHandler` — queued, retrying command processor that throttles bursts.
 - `NikobusAPI` — high-level operations (read/set output state, cover start/stop).
-- `NikobusDiscovery` — PC-Link inventory + module register scan; reverse-engineers button→output mappings and classifies CF broadcasts.
+- `NikobusDiscovery` — PC-Link inventory + module register scan; reads the PC-Link's registry header to bound the sweep and filter its diagnostic filler pages, reverse-engineers button→output mappings, and classifies CF broadcasts.
 
 **This integration (`custom_components/nikobus/`)** — the Home Assistant glue:
 
