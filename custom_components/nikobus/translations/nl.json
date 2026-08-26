@@ -140,7 +140,8 @@
           "channel_names": "Kanaalnamen (lichten, rolluiken, schakelaars)",
           "areas": "Gebieden (uit kamers)",
           "scenes": "Scènes (licht + rolluik/master)",
-          "overwrite": "Namen/gebieden die ik al heb ingesteld overschrijven"
+          "overwrite": "Namen/gebieden die ik al heb ingesteld overschrijven",
+          "labels": "Labels (Nikobus: uitgangen / knoppen / scènes)"
         }
       },
       "manage_scenes": {

@@ -136,11 +136,16 @@ DISCOVERY_WEIGHT_REGISTER_SCAN: Final[int] = 65
 DISCOVERY_WEIGHT_FINALIZING: Final[int] = 5
 
 #: The selectable ``.nkb`` import categories (all applied by default).
+#: ``labels`` isn't .nkb data — it applies the integration's own
+#: entity-class labels (Nikobus Output / Button / Scene) — but the
+#: import flow is the one "organise my install" entry point, so it
+#: lives here alongside the other organisational passes.
 NKB_IMPORT_CATEGORIES: Final[tuple[str, ...]] = (
     "device_names",
     "channel_names",
     "areas",
     "scenes",
+    "labels",
 )
 
 #: Config-entry options remembering the last-used ``.nkb`` import

@@ -140,7 +140,8 @@
           "channel_names": "Noms des canaux (lumières, volets, interrupteurs)",
           "areas": "Zones (depuis les pièces)",
           "scenes": "Scènes (lumière + volets/maître)",
-          "overwrite": "Écraser les noms/zones que j'ai déjà définis"
+          "overwrite": "Écraser les noms/zones que j'ai déjà définis",
+          "labels": "Étiquettes (Nikobus : sorties / boutons / scènes)"
         }
       },
       "manage_scenes": {

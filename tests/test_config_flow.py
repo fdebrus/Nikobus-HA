@@ -249,6 +249,7 @@ class TestOptionsFlow(unittest.TestCase):
                 "channel_names": False,
                 "areas": True,
                 "scenes": False,
+                "labels": False,
                 "overwrite": True,
             },
         )
@@ -262,6 +263,7 @@ class TestOptionsFlow(unittest.TestCase):
                 "channel_names": True,
                 "areas": True,
                 "scenes": True,
+                "labels": True,
                 "overwrite": False,
             },
         )

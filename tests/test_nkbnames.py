@@ -88,6 +88,7 @@ def _entity(eid, device_id, name=None, original_name=None, unique_id=None):
     e.name = name
     e.original_name = original_name
     e.unique_id = unique_id
+    e.labels = []
     return e
 
 
@@ -104,12 +105,19 @@ def _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
 
     @contextlib.contextmanager
     def ctx():
+        label_reg = MagicMock()
+        label_reg.async_get_label_by_name.side_effect = lambda n: None
+        label_reg.async_create.side_effect = (
+            lambda n: MagicMock(label_id=f"label_{n.lower().replace(' ', '_')}")
+        )
         with patch("custom_components.nikobus.nkbnames.find_nkb_file",
                    return_value=Path("/cfg/nikobus.nkb")), \
              patch("custom_components.nikobus.nkbnames.parse_nkb",
                    return_value=data), \
              patch("homeassistant.helpers.area_registry.async_get",
                    return_value=area_reg, create=True), \
+             patch("homeassistant.helpers.label_registry.async_get",
+                   return_value=label_reg, create=True), \
              patch("custom_components.nikobus.discovery_mixin.dr.async_get",
                    return_value=dev_reg), \
              patch("custom_components.nikobus.discovery_mixin.er.async_get",
@@ -155,8 +163,11 @@ def test_import_names_areas_and_scene_match():
     with _patches(data, devices, entities, dev_reg, ent_reg, area_reg):
         result = _run(coord.async_import_nkb_names())
 
+    # labels: light.a + light.b (Output), binary_sensor.btn (Button),
+    # scene.de4e2c (Scene) = 4 labelled entities.
     assert result == {"devices": 3, "keys": 0, "entities": 2, "channels": 0,
-                      "outputs_enabled": 0, "areas": 2, "scenes": 1}
+                      "outputs_enabled": 0, "areas": 2, "scenes": 1,
+                      "labels": 4}
     names = {c.args[0]: c.kwargs.get("name")
              for c in dev_reg.async_update_device.call_args_list
              if "name" in c.kwargs}
@@ -811,3 +822,126 @@ def test_reimport_key_heal_leaves_foreign_registry_names_alone():
         if "name" in c.kwargs
     }
     assert "d2" not in renamed
+
+
+# --------------------------------------------------------------------------- #
+# Child-device Area inheritance + entity-class labels (3.12.0)
+#
+# Live audit of a 215-device install: plates and modules got Areas from
+# the import, but all ~150 key / IR child devices had none — invisible
+# to Area views and the auto-dashboard. Children now inherit their
+# plate's Area (name-agnostic, so IR op-points and renamed keys
+# qualify). The new "labels" category applies Nikobus Output / Button /
+# Scene labels, additively.
+# --------------------------------------------------------------------------- #
+def test_children_inherit_plate_area():
+    data = NkbData(
+        addresses={"39D7F6": ("Porte buanderie", "Buanderie")},
+        scenes=[],
+    )
+    coord = _coord()
+    plate = _device("d1", "39D7F6")
+    key = _device("d2", "9A43A2", name="Push button 1A #N9A43A2",
+                  via_device_id="d1")
+    ir = _device("d3", "30A111", name="IR 30A on 39D7F6",
+                 via_device_id="d1")
+    orphan = _device("d4", "111111", name="Push button 1A #N111111",
+                     via_device_id="other")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    area = MagicMock()
+    area.id = "area_buanderie"
+    area_reg.async_get_area_by_name.return_value = area
+    with _patches(data, [plate, key, ir, orphan], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"areas"}))
+
+    area_calls = {c.args[0]: c.kwargs["area_id"]
+                  for c in dev_reg.async_update_device.call_args_list
+                  if "area_id" in c.kwargs}
+    # Plate + BOTH children (key and IR — name-agnostic); orphan's
+    # parent is unmatched, so it stays untouched.
+    assert area_calls == {"d1": "area_buanderie", "d2": "area_buanderie",
+                          "d3": "area_buanderie"}
+    assert result["areas"] == 3
+
+
+def test_child_area_not_overwritten_without_overwrite():
+    data = NkbData(
+        addresses={"39D7F6": ("Porte buanderie", "Buanderie")}, scenes=[]
+    )
+    coord = _coord()
+    plate = _device("d1", "39D7F6")
+    key = _device("d2", "9A43A2", name="Push button 1A #N9A43A2",
+                  via_device_id="d1", area_id="area_custom")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    area = MagicMock()
+    area.id = "area_buanderie"
+    area_reg.async_get_area_by_name.return_value = area
+    with _patches(data, [plate, key], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"areas"}))
+
+    moved = {c.args[0] for c in dev_reg.async_update_device.call_args_list
+             if "area_id" in c.kwargs}
+    assert "d2" not in moved  # user-chosen Area preserved
+
+    dev_reg.async_update_device.reset_mock()
+    with _patches(data, [plate, key], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(
+            categories={"areas"}, overwrite=True))
+    moved = {c.args[0] for c in dev_reg.async_update_device.call_args_list
+             if "area_id" in c.kwargs}
+    assert "d2" in moved  # overwrite forces the plate's room
+
+
+def test_labels_classify_by_entity_class():
+    data = NkbData(addresses={}, scenes=[])
+    coord = _coord()
+    ents = [
+        _entity("light.salon", "d1", unique_id="nikobus_light_dimmer_0E6C_1"),
+        _entity("cover.volet", "d1", unique_id="nikobus_cover_roller_9105_2"),
+        _entity("switch.prise", "d1", unique_id="nikobus_switch_relay_switch_C9A5_3"),
+        _entity("switch.latch", "d2", unique_id="nikobus_input_switch_64a061"),
+        _entity("button.key_1a", "d3", unique_id="nikobus_push_button_9A43A2"),
+        _entity("binary_sensor.key_1a", "d3", unique_id="nikobus_bs_9A43A2"),
+        _entity("scene.tv", "d4", unique_id="nikobus_scene_de4e2c"),
+        _entity("sensor.bridge_status", "d5", unique_id="nikobus_discovery_status"),
+        _entity("button.bridge", "d5", unique_id="nikobus_import_nkb_names_button"),
+    ]
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], ents, dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"labels"}))
+
+    labelled = {c.args[0]: c.kwargs["labels"]
+                for c in ent_reg.async_update_entity.call_args_list
+                if "labels" in c.kwargs}
+    assert labelled["light.salon"] == {"label_nikobus_output"}
+    assert labelled["cover.volet"] == {"label_nikobus_output"}
+    assert labelled["switch.prise"] == {"label_nikobus_output"}
+    assert labelled["button.key_1a"] == {"label_nikobus_button"}
+    assert labelled["binary_sensor.key_1a"] == {"label_nikobus_button"}
+    assert labelled["scene.tv"] == {"label_nikobus_scene"}
+    # Latch switches and bridge entities fit none of the classes.
+    assert "switch.latch" not in labelled
+    assert "sensor.bridge_status" not in labelled
+    assert "button.bridge" not in labelled
+    assert result["labels"] == 6
+
+
+def test_labels_are_additive_and_idempotent():
+    data = NkbData(addresses={}, scenes=[])
+    coord = _coord()
+    mine = _entity("light.salon", "d1", unique_id="nikobus_light_dimmer_0E6C_1")
+    mine.labels = ["user_label"]
+    done = _entity("cover.volet", "d1", unique_id="nikobus_cover_roller_9105_2")
+    done.labels = ["label_nikobus_output"]
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [mine, done], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names(categories={"labels"}))
+
+    labelled = {c.args[0]: c.kwargs["labels"]
+                for c in ent_reg.async_update_entity.call_args_list
+                if "labels" in c.kwargs}
+    # User label kept, ours added alongside.
+    assert labelled["light.salon"] == {"user_label", "label_nikobus_output"}
+    # Already labelled — untouched.
+    assert "cover.volet" not in labelled
+    assert result["labels"] == 1

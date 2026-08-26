@@ -1107,9 +1107,14 @@ class NikobusDiscoveryMixin:
         * ``"channel_names"`` — the per-output **entity** names (the
           light / cover / switch the user actually toggles, e.g.
           ``Appliques Salon``, ``Terrasse``).
-        * ``"areas"`` — each device into a Home Assistant Area = its room.
+        * ``"areas"`` — each device into a Home Assistant Area = its
+          room; per-key / IR child devices inherit their plate's Area.
         * ``"scenes"`` — name already-discovered Central Function scenes
           from the ``.nkb`` (never creates a scene from a button trigger).
+        * ``"labels"`` — apply the integration's entity-class labels
+          (``Nikobus Output`` / ``Nikobus Button`` / ``Nikobus Scene``)
+          for one-click filtering. Additive only — user labels are
+          never removed.
 
         ``overwrite`` forces a name/Area even where the user has set their
         own; default off (suggested, never clobbers a manual rename).
@@ -1245,6 +1250,7 @@ class NikobusDiscoveryMixin:
         do_areas = "areas" in cats
         matched: dict[str, str] = {}  # device_id -> display name
         matched_plain: dict[str, str] = {}  # device_id -> bare name (keys pass)
+        matched_room: dict[str, str] = {}  # device_id -> room (child Areas)
         devices_named = areas_set = 0
         for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
             hit = _lookup(device)
@@ -1253,6 +1259,7 @@ class NikobusDiscoveryMixin:
             display, plain, room = hit
             matched[device.id] = display
             matched_plain[device.id] = plain
+            matched_room[device.id] = room
             if do_names:
                 # Non-overwrite sets the integration default (``name``), so a
                 # manual rename (``name_by_user``) still wins; overwrite sets
@@ -1271,6 +1278,27 @@ class NikobusDiscoveryMixin:
                 if device.area_id != area.id:
                     dev_reg.async_update_device(device.id, area_id=area.id)
                     areas_set += 1
+
+        # Child devices inherit the parent plate's Area. Every key / IR
+        # op-point of a plate is its own HA device, and none of them got
+        # an Area from the pass above (their identifiers aren't in the
+        # .nkb) — on a real install that left ~150 of ~215 Nikobus
+        # devices outside the Area system entirely, invisible to Area
+        # views and the auto-generated dashboard. A key lives where its
+        # plate lives, so propagate the plate's room to all its children
+        # (name-agnostic: IR op-points and renamed keys inherit too).
+        if do_areas:
+            for device in dr.async_entries_for_config_entry(dev_reg, entry_id):
+                room = matched_room.get(device.via_device_id)
+                if not room or device.id in matched:
+                    continue
+                if overwrite or device.area_id is None:
+                    area = area_reg.async_get_area_by_name(
+                        room
+                    ) or area_reg.async_create(room)
+                    if device.area_id != area.id:
+                        dev_reg.async_update_device(device.id, area_id=area.id)
+                        areas_set += 1
 
         # Per-key child devices. Each op-point of a wall plate is its own
         # HA device (identifier = the key's bus address) named by the
@@ -1470,6 +1498,51 @@ class NikobusDiscoveryMixin:
                 await self.module_storage.async_save()
                 self._rebuild_dict_module_data()
 
+        # Labels — one-click filtering by entity class in every HA table
+        # and target picker. Purely additive: a label is only ever added
+        # (never removed), so user-applied labels are untouched and
+        # removing one of ours by hand sticks until the next labels
+        # import. Latch switches and the bridge's own entities are
+        # deliberately unlabelled — they fit none of the three classes.
+        labels_set = 0
+        if "labels" in cats:
+            from homeassistant.helpers import label_registry as lr
+
+            label_reg = lr.async_get(self.hass)
+            label_ids: dict[str, str] = {}
+
+            def _label_id(label_name: str) -> str:
+                cached = label_ids.get(label_name)
+                if cached is None:
+                    entry = label_reg.async_get_label_by_name(
+                        label_name
+                    ) or label_reg.async_create(label_name)
+                    cached = entry.label_id
+                    label_ids[label_name] = cached
+                return cached
+
+            for ent in entities:
+                domain = ent.entity_id.split(".", 1)[0]
+                uid = str(ent.unique_id or "")
+                if uid.startswith("nikobus_push_button_") or domain == "binary_sensor":
+                    label_name = "Nikobus Button"
+                elif domain == "scene":
+                    label_name = "Nikobus Scene"
+                elif domain in ("light", "cover") or (
+                    domain == "switch"
+                    and not uid.startswith("nikobus_input_switch_")
+                ):
+                    label_name = "Nikobus Output"
+                else:
+                    continue
+                label_id = _label_id(label_name)
+                current = set(ent.labels or ())
+                if label_id not in current:
+                    ent_reg.async_update_entity(
+                        ent.entity_id, labels=current | {label_id}
+                    )
+                    labels_set += 1
+
         _LOGGER.info(
             "Imported .nkb from %s (overwrite=%s, categories=%s): %d devices, "
             "%d key devices, %d device-entities, %d channels, %d outputs "
@@ -1503,5 +1576,6 @@ class NikobusDiscoveryMixin:
             "outputs_enabled": outputs_enabled,
             "areas": areas_set,
             "scenes": len(cf_name_by_addr),
+            "labels": labels_set,
         }
 

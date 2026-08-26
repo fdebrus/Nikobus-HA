@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -51,9 +52,16 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
 
     One entity per ``(physical_address, key_label)`` pair; grouped under the
     physical-button device in the registry.
+
+    Categorised DIAGNOSTIC (3.13.0), like the press-simulation buttons:
+    press pulses are automation signals, not room controls — keeping
+    them out of the Controls sections and auto-dashboards leaves the
+    real outputs as the visible surface. Automations targeting these
+    sensors are unaffected.
     """
 
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,
