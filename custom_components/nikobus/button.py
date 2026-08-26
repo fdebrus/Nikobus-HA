@@ -208,15 +208,25 @@ def register_wall_button_devices(
         type_str = str(phys.get("type") or phys.get("model") or "Wall Button")
         model = str(phys.get("model") or phys.get("type") or "Wall Button")
         category = _category_for_button_type(type_str)
-        # Prefer the persisted .nkb-import name ("7: Porte buanderie
-        # (Cuisine)") over the generated default — the registry's
+        # Generated default carries the Niko software's index when the
+        # PC-Link registry provided one (``component_number``, library
+        # 0.33.0) — "7: Bus push button, ... (1843B4)" — so the HA
+        # device list cross-references with the Nikobus application
+        # even on installs without an .nkb project file. The persisted
+        # .nkb-import name still wins over the default — the registry's
         # ``name`` field is re-asserted from here on every restart, so
         # this is what makes a non-overwrite import stick.
+        number = phys.get("component_number")
+        default_name = (
+            f"{number}: {type_str} ({physical_addr})"
+            if number
+            else f"{type_str} ({physical_addr})"
+        )
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, physical_addr)},
             manufacturer=BRAND,
-            name=str(phys.get("nkb_name") or f"{type_str} ({physical_addr})"),
+            name=str(phys.get("nkb_name") or default_name),
             model=model,
             via_device=(DOMAIN, category),
         )

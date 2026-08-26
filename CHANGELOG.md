@@ -2,6 +2,15 @@
 
 ## 3.12.0
 
+- **Button plates get the Nikobus application's numbering straight from
+  the bus.** The PC-Link registry records carry the same component index
+  the Niko software shows (`BP7`), and discovery now reads it (requires
+  `nikobus-connect >= 0.33.0`). Plates without an imported name are
+  labelled `7: Bus push button, … (1843B4)` instead of the bare generic
+  name, so the HA device list cross-references with the Nikobus
+  application even on installs without an `.nkb` project file. An
+  imported `.nkb` name still takes precedence, and PC-Links that don't
+  expose the registry header keep the plain names.
 - **Fix: `.nkb` name import now survives restarts without Overwrite.** The
   default (non-destructive) import wrote names into the device registry's
   integration-owned field, which every restart overwrote with the generated
