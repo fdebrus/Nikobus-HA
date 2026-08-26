@@ -34,6 +34,8 @@ def _coord(cf=None, button_data=None, modules=None):
     c.config_entry.entry_id = "E1"
     c.dict_button_data = button_data or {}
     c.dict_module_data = {}
+    c.button_storage = MagicMock()
+    c.button_storage.async_save = AsyncMock()
     c.cf_storage = None
     if cf is not None:
         c.cf_storage = MagicMock()
@@ -637,3 +639,175 @@ def test_import_key_rename_overwrite_sets_name_by_user():
     dev_reg.async_update_device.assert_any_call(
         "d2", name_by_user="Porte buanderie Key 1A"
     )
+
+
+# --------------------------------------------------------------------------- #
+# async_import_nkb_names — persistence into the integration's own stores
+#
+# 3.11.0 field report: a non-overwrite import wrote names only into the
+# device registry's integration-owned ``name`` field, which every restart
+# overwrote again from ``DeviceInfo(name=<generated>)`` — the imported
+# names silently reverted. The import now also persists ``nkb_name`` on
+# the stored button / op-point / module entries; the registration paths
+# prefer it, so the import survives restarts by construction.
+# --------------------------------------------------------------------------- #
+def _plate_store_entry():
+    return {
+        "type": "Bus push button, 4 control buttons",
+        "model": "05-064",
+        "channels": 4,
+        "description": "Bus push button, 4 control buttons #N39D7F6",
+        "operation_points": {
+            "1A": {
+                "bus_address": "9A43A2",
+                "description": "Push button 1A #N9A43A2",
+            },
+            "1B": {
+                "bus_address": "DA43A2",
+                "description": "Push button 1B #NDA43A2",
+            },
+            "IR:30A": {
+                "bus_address": "30A111",
+                "description": "IR code 30A #I30A",
+            },
+        },
+    }
+
+
+def test_import_persists_plate_and_key_names_into_button_store():
+    data = NkbData(
+        addresses={"39D7F6": ("Porte buanderie", "Buanderie")},
+        scenes=[],
+        numbers={"39D7F6": 7},
+    )
+    store = {"nikobus_button": {"39D7F6": _plate_store_entry()}}
+    coord = _coord(button_data=store)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    phys = store["nikobus_button"]["39D7F6"]
+    assert phys["nkb_name"] == "7: Porte buanderie (Buanderie)"
+    # Wall keys get "<plain plate name> Key <label>" — no index, no room.
+    assert phys["operation_points"]["1A"]["nkb_name"] == "Porte buanderie Key 1A"
+    assert phys["operation_points"]["1B"]["nkb_name"] == "Porte buanderie Key 1B"
+    # IR op-points never match the generated-name gate — left alone.
+    assert "nkb_name" not in phys["operation_points"]["IR:30A"]
+    coord.button_storage.async_save.assert_awaited()
+
+
+def test_import_persists_module_name_into_module_store():
+    data = NkbData(
+        addresses={"0E6C": ("Dimcontroller", "Centrale")},
+        scenes=[],
+        numbers={"0E6C": 1},
+    )
+    modules = {"0E6C": {"description": "Dimmer module", "module_type": "dimmer_module"}}
+    coord = _coord(modules=modules)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    # Modules take the plain "Name (Room)" display — no index prefix.
+    assert modules["0E6C"]["nkb_name"] == "Dimcontroller (Centrale)"
+    coord.module_storage.async_save.assert_awaited()
+    # The derived grouped view is refreshed so the live routing data
+    # carries the imported name too.
+    assert (
+        coord.dict_module_data["dimmer_module"]["0E6C"]["nkb_name"]
+        == "Dimcontroller (Centrale)"
+    )
+
+
+def test_import_persists_in_overwrite_mode_too():
+    """Overwrite mode survives restarts via ``name_by_user`` alone, but
+    the stored default should still track the import so a later
+    "reset to default name" in the HA UI lands on the .nkb name."""
+    data = NkbData(addresses={"39D7F6": ("Porte buanderie", "")}, scenes=[])
+    store = {"nikobus_button": {"39D7F6": _plate_store_entry()}}
+    coord = _coord(button_data=store)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(
+            categories={"device_names"}, overwrite=True))
+
+    assert store["nikobus_button"]["39D7F6"]["nkb_name"] == "Porte buanderie"
+
+
+def test_import_persistence_skipped_without_device_names_category():
+    data = NkbData(addresses={"39D7F6": ("Porte buanderie", "")}, scenes=[])
+    store = {"nikobus_button": {"39D7F6": _plate_store_entry()}}
+    coord = _coord(button_data=store)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"areas"}))
+
+    assert "nkb_name" not in store["nikobus_button"]["39D7F6"]
+    coord.button_storage.async_save.assert_not_awaited()
+
+
+def test_import_persistence_no_save_when_names_unchanged():
+    """Re-running the same import must not rewrite storage."""
+    data = NkbData(
+        addresses={"39D7F6": ("Porte buanderie", "Buanderie")},
+        scenes=[],
+        numbers={"39D7F6": 7},
+    )
+    store = {"nikobus_button": {"39D7F6": _plate_store_entry()}}
+    coord = _coord(button_data=store)
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+        coord.button_storage.async_save.reset_mock()
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    coord.button_storage.async_save.assert_not_awaited()
+
+
+def test_reimport_with_changed_plate_name_refreshes_key_devices():
+    """A key device renamed by a PREVIOUS import no longer matches the
+    'Push button …' gate in the registry pass — the persistence pass
+    self-heals it when the plate's .nkb name changes, using the stored
+    previous import name as proof the field is ours to update."""
+    store = {"nikobus_button": {"39D7F6": _plate_store_entry()}}
+    store["nikobus_button"]["39D7F6"]["operation_points"]["1A"][
+        "nkb_name"
+    ] = "Ancien nom Key 1A"
+    data = NkbData(addresses={"39D7F6": ("Nouveau nom", "")}, scenes=[])
+    coord = _coord(button_data=store)
+    key_dev = _device("d2", "9A43A2", name="Ancien nom Key 1A")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    dev_reg.async_get_device.return_value = key_dev
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    ops = store["nikobus_button"]["39D7F6"]["operation_points"]
+    assert ops["1A"]["nkb_name"] == "Nouveau nom Key 1A"
+    dev_reg.async_update_device.assert_any_call("d2", name="Nouveau nom Key 1A")
+
+
+def test_reimport_key_heal_leaves_foreign_registry_names_alone():
+    """If the registry name is neither the generated pattern nor the
+    previous import's name, the self-heal must not touch it."""
+    store = {"nikobus_button": {"39D7F6": _plate_store_entry()}}
+    store["nikobus_button"]["39D7F6"]["operation_points"]["1A"][
+        "nkb_name"
+    ] = "Ancien nom Key 1A"
+    data = NkbData(addresses={"39D7F6": ("Nouveau nom", "")}, scenes=[])
+    coord = _coord(button_data=store)
+    key_dev = _device("d2", "9A43A2", name="Something else entirely")
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    dev_reg.async_get_device.return_value = key_dev
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        _run(coord.async_import_nkb_names(categories={"device_names"}))
+
+    # Storage still tracks the new name (restart applies it as default)…
+    ops = store["nikobus_button"]["39D7F6"]["operation_points"]
+    assert ops["1A"]["nkb_name"] == "Nouveau nom Key 1A"
+    # …but the mismatched registry name is not rewritten.
+    renamed = {
+        c.args[0]
+        for c in dev_reg.async_update_device.call_args_list
+        if "name" in c.kwargs
+    }
+    assert "d2" not in renamed

@@ -832,6 +832,14 @@ class NikobusDiscoveryMixin:
                 translation_domain=DOMAIN,
                 translation_key="discovery_already_running",
             )
+        # Claim the running flag NOW, not when the library flips it a
+        # beat later inside ``start_inventory_discovery`` — that gap is
+        # a double-press race (two UI presses both passing the check
+        # above), and the flag drives the bridge buttons' availability
+        # so the UI should grey out on the same dispatch that announces
+        # the probe. Every exit path below (probe error/cancel,
+        # fallback failure, library finish callback) already resets it.
+        self.discovery_running = True
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
         self._last_module_scan_was_full = False
@@ -856,6 +864,9 @@ class NikobusDiscoveryMixin:
         if not used_pclink:
             applied = await self._apply_manual_inventory_as_fallback()
             if not applied:
+                # Flag first: the state update's dispatch should
+                # re-enable the bridge buttons in the same repaint.
+                self.discovery_running = False
                 self._update_discovery_state(
                     phase=DISCOVERY_PHASE_ERROR,
                     message=(
@@ -865,7 +876,6 @@ class NikobusDiscoveryMixin:
                     ),
                     error="no_inventory_source",
                 )
-                self.discovery_running = False
                 self._discovery_finished_event.set()
                 raise HomeAssistantError(
                     translation_domain=DOMAIN,
@@ -927,6 +937,9 @@ class NikobusDiscoveryMixin:
         except asyncio.CancelledError:
             self.discovery_running = False
             self._discovery_finished_event.set()
+            # No state update fires on this path — nudge the bridge
+            # buttons' availability directly so they don't stay greyed.
+            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
             raise
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning(
@@ -944,6 +957,7 @@ class NikobusDiscoveryMixin:
             # library versions.)
             self.discovery_running = False
             self._discovery_finished_event.set()
+            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
             return False
 
     async def _apply_manual_inventory_as_fallback(self) -> bool:
@@ -1040,6 +1054,9 @@ class NikobusDiscoveryMixin:
                 )
             message = f"Scanning {total} modules…"
 
+        # Same eager claim as ``start_pc_link_inventory`` — close the
+        # double-press race and grey the bridge buttons immediately.
+        self.discovery_running = True
         self._discovery_auto_reload = auto_reload
         self._discovery_finished_event.clear()
         self.discovery_decoded_records = 0
@@ -1062,14 +1079,17 @@ class NikobusDiscoveryMixin:
         except asyncio.CancelledError:
             self.discovery_running = False
             self._discovery_finished_event.set()
+            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
             raise
         except Exception as err:
+            # Reset the flag BEFORE the state update so the dispatch it
+            # fires re-enables the bridge buttons in the same repaint.
+            self.discovery_running = False
             self._update_discovery_state(
                 phase=DISCOVERY_PHASE_ERROR,
                 message=f"Module scan failed: {err}",
                 error=str(err),
             )
-            self.discovery_running = False
             self._discovery_finished_event.set()
             raise
 
@@ -1280,6 +1300,106 @@ class NikobusDiscoveryMixin:
                 elif device.name != key_name:
                     dev_reg.async_update_device(device.id, name=key_name)
                     keys_named += 1
+
+        # Persist the imported device names into the integration's own
+        # stores (``nkb_name`` on button / op-point / module entries).
+        # The registry writes above give the immediate effect, but the
+        # device registry's ``name`` field is integration-owned: every
+        # restart re-registers each device with
+        # ``DeviceInfo(name=<generated>)`` and HA overwrites the field
+        # with it — which silently reverted every non-overwrite import
+        # on the next restart (3.11.0 field report). With ``nkb_name``
+        # stored, the registration paths (register_wall_button_devices,
+        # op_point_display_name, router.build_routing) re-assert the
+        # imported name themselves, so the import survives restarts by
+        # construction and ``name_by_user`` stays reserved for genuine
+        # manual renames. The library's discovery merge upserts stored
+        # entries field-by-field, so the extra key also survives
+        # re-discovery.
+        if do_names:
+            store_changed = False
+            buttons_store = (self.dict_button_data or {}).get("nikobus_button")
+            if isinstance(buttons_store, dict):
+                for addr, phys in buttons_store.items():
+                    if not isinstance(phys, dict):
+                        continue
+                    key = str(addr).upper()
+                    if key not in name_map:
+                        continue
+                    hit = _display_for(key)
+                    if hit is None:
+                        continue
+                    display, plain, _room = hit
+                    if phys.get("nkb_name") != display:
+                        phys["nkb_name"] = display
+                        store_changed = True
+                    op_points = phys.get("operation_points")
+                    if not isinstance(op_points, dict):
+                        continue
+                    for op in op_points.values():
+                        if not isinstance(op, dict):
+                            continue
+                        # Same gate as the registry pass above: only
+                        # library-generated wall-key names are eligible;
+                        # IR op-points and PC-Logic input keys never
+                        # match the pattern.
+                        m = _PUSH_BUTTON_NAME_RE.match(
+                            str(op.get("description") or "")
+                        )
+                        if m is None:
+                            continue
+                        key_name = f"{plain} Key {m.group(1)}"
+                        prev = op.get("nkb_name")
+                        if prev == key_name:
+                            continue
+                        op["nkb_name"] = key_name
+                        store_changed = True
+                        # Re-import with a changed plate name: the
+                        # registry key pass above only matches devices
+                        # still carrying the generated "Push button …"
+                        # name, so a key already renamed by a previous
+                        # import stays stale there. The integration-owned
+                        # ``name`` field can only hold the generated name
+                        # or a previous import's name (manual renames
+                        # live in ``name_by_user``), so updating it when
+                        # it equals the previous import is safe.
+                        if prev and not overwrite:
+                            dev = dev_reg.async_get_device(
+                                identifiers={
+                                    (DOMAIN, str(op.get("bus_address") or "").upper())
+                                }
+                            )
+                            if dev is not None and dev.name == prev:
+                                dev_reg.async_update_device(
+                                    dev.id, name=key_name
+                                )
+                                keys_named += 1
+            if store_changed:
+                await self.button_storage.async_save()
+
+            modules_changed = False
+            if self.module_storage is not None:
+                modules_store = self.module_storage.data.get("nikobus_module")
+                if isinstance(modules_store, dict):
+                    for addr, module in modules_store.items():
+                        if not isinstance(module, dict):
+                            continue
+                        key = str(addr).upper()
+                        if key not in name_map:
+                            continue
+                        hit = _display_for(key)
+                        if hit is None:
+                            continue
+                        display = hit[0]
+                        if module.get("nkb_name") != display:
+                            module["nkb_name"] = display
+                            modules_changed = True
+                if modules_changed:
+                    await self.module_storage.async_save()
+                    # ``dict_module_data`` holds copies of the store
+                    # entries — refresh it so the live view carries the
+                    # imported names too.
+                    self._rebuild_dict_module_data()
 
         entities = list(er.async_entries_for_config_entry(ent_reg, entry_id))
 

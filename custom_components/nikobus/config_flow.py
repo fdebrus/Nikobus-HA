@@ -30,6 +30,8 @@ from nikobus_connect.discovery import find_module
 from .const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_NKB_IMPORT_CATEGORIES,
+    CONF_NKB_IMPORT_OVERWRITE,
     CONF_PRESS_REPEAT,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
@@ -600,32 +602,52 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
         if user_input is not None:
             cats = {c for c in NKB_IMPORT_CATEGORIES if user_input.get(c)}
+            overwrite = bool(user_input.get("overwrite"))
             if not cats:
                 errors["base"] = "nkb_nothing_selected"
             else:
                 try:
                     await self._coordinator().async_import_nkb_names(
-                        categories=cats, overwrite=bool(user_input.get("overwrite"))
+                        categories=cats, overwrite=overwrite
                     )
                 except HomeAssistantError as err:
                     errors["base"] = getattr(err, "translation_key", None) \
                         or "nkb_parse_failed"
                 else:
+                    # Remember the choices: the form pre-fills from them
+                    # on the next visit and the bridge button replays
+                    # them, so both import paths stay in step. (Storing
+                    # changed options triggers the background reload —
+                    # harmless now that imported names persist in the
+                    # integration's own stores and are re-asserted on
+                    # every setup.)
                     return self.async_create_entry(
-                        title="", data=dict(self.config_entry.options)
+                        title="",
+                        data={
+                            **dict(self.config_entry.options),
+                            CONF_NKB_IMPORT_CATEGORIES: sorted(cats),
+                            CONF_NKB_IMPORT_OVERWRITE: overwrite,
+                        },
                     )
 
+        # Pre-fill from the last-applied choices so the form reflects
+        # what is currently in effect instead of resetting every time.
+        options = self.config_entry.options
+        stored_cats = options.get(CONF_NKB_IMPORT_CATEGORIES)
+        last_cats = (
+            set(stored_cats)
+            if isinstance(stored_cats, (list, tuple, set)) and stored_cats
+            else set(NKB_IMPORT_CATEGORIES)
+        )
+        last_overwrite = bool(options.get(CONF_NKB_IMPORT_OVERWRITE, False))
+        schema: dict[Any, Any] = {
+            vol.Optional(cat, default=cat in last_cats): bool
+            for cat in NKB_IMPORT_CATEGORIES
+        }
+        schema[vol.Optional("overwrite", default=last_overwrite)] = bool
         return self.async_show_form(
             step_id="import_nkb",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional("device_names", default=True): bool,
-                    vol.Optional("channel_names", default=True): bool,
-                    vol.Optional("areas", default=True): bool,
-                    vol.Optional("scenes", default=True): bool,
-                    vol.Optional("overwrite", default=False): bool,
-                }
-            ),
+            data_schema=vol.Schema(schema),
             errors=errors,
         )
 

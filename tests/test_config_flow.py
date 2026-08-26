@@ -21,6 +21,8 @@ from custom_components.nikobus.config_flow import (
 from custom_components.nikobus.const import (
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
+    CONF_NKB_IMPORT_CATEGORIES,
+    CONF_NKB_IMPORT_OVERWRITE,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
 )
@@ -217,6 +219,80 @@ class TestOptionsFlow(unittest.TestCase):
         result = _run(flow.async_step_polling({CONF_REFRESH_INTERVAL: 600}))
         self.assertEqual(result["type"], "create_entry")
         self.assertEqual(result["data"][CONF_REFRESH_INTERVAL], 600)
+
+    # --- Import from .nkb: remembered choices --------------------------
+
+    @staticmethod
+    def _schema_defaults(result) -> dict:
+        """Extract {field: default} from the form schema.
+
+        The conftest voluptuous stub's ``Schema`` returns the schema
+        dict itself; its ``Optional`` markers preserve ``.schema`` /
+        ``.default`` like the real library."""
+        return {
+            key.schema: key.default()
+            for key in result["data_schema"]
+        }
+
+    def test_import_nkb_form_prefills_from_last_applied_options(self):
+        flow = self._options_flow()
+        flow.config_entry.options = {
+            CONF_NKB_IMPORT_CATEGORIES: ["device_names", "areas"],
+            CONF_NKB_IMPORT_OVERWRITE: True,
+        }
+        result = _run(flow.async_step_import_nkb(None))
+        self.assertEqual(result["type"], "form")
+        self.assertEqual(
+            self._schema_defaults(result),
+            {
+                "device_names": True,
+                "channel_names": False,
+                "areas": True,
+                "scenes": False,
+                "overwrite": True,
+            },
+        )
+
+    def test_import_nkb_form_defaults_to_everything_when_never_applied(self):
+        result = _run(self._options_flow().async_step_import_nkb(None))
+        self.assertEqual(
+            self._schema_defaults(result),
+            {
+                "device_names": True,
+                "channel_names": True,
+                "areas": True,
+                "scenes": True,
+                "overwrite": False,
+            },
+        )
+
+    def test_import_nkb_submit_persists_choices_in_options(self):
+        flow = self._options_flow()
+        flow.config_entry.options = {"keep_me": 1}
+        coord = flow.config_entry.runtime_data
+        coord.async_import_nkb_names = AsyncMock(return_value={})
+        result = _run(
+            flow.async_step_import_nkb(
+                {
+                    "device_names": True,
+                    "channel_names": False,
+                    "areas": True,
+                    "scenes": False,
+                    "overwrite": True,
+                }
+            )
+        )
+        self.assertEqual(result["type"], "create_entry")
+        coord.async_import_nkb_names.assert_awaited_once_with(
+            categories={"device_names", "areas"}, overwrite=True
+        )
+        self.assertEqual(
+            result["data"][CONF_NKB_IMPORT_CATEGORIES],
+            ["areas", "device_names"],
+        )
+        self.assertTrue(result["data"][CONF_NKB_IMPORT_OVERWRITE])
+        # Unrelated options carried through untouched.
+        self.assertEqual(result["data"]["keep_me"], 1)
 
 
 class TestSceneEditor(unittest.TestCase):
