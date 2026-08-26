@@ -13,7 +13,6 @@ import asyncio
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-
 # Conftest sets up the coordinator stubs; we just need to import the
 # coordinator module after conftest has run.
 
@@ -339,13 +338,13 @@ def test_frame_counter_only_counts_during_inventory_subphase() -> None:
 
 
 class _AsyncNoop:
-    def __call__(self, *args):  # noqa: D102
+    def __call__(self, *args):
         async def _noop():
             return None
         return _noop()
 
 
-from nikobus_connect.discovery import InventoryQueryType as _IQT  # noqa: E402
+from nikobus_connect.discovery import InventoryQueryType as _IQT
 
 _PCLINK = _IQT.PC_LINK
 

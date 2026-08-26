@@ -468,7 +468,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
             await self._apply_module_state(module_id, stop_state)
         except asyncio.CancelledError:
             raise
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - defensive: timed stop is best-effort
             _LOGGER.error("Failed to send timed stop for module %s: %s", module_id, err)
 
     def _state_to_byte(self, module_type: str | None, state: Any) -> int | None:
@@ -502,4 +502,3 @@ class NikobusSceneEntity(NikobusEntity, Scene):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Stateless scene: Ignore general coordinator updates."""
-        pass

@@ -37,7 +37,6 @@ from pathlib import Path
 
 from nikobus_connect.nkb import find_nkb_file, mode_code, parse_nkb
 
-
 # --- the two pure helpers the integration uses, copied verbatim so this
 # --- script needs only nikobus-connect, not the HA custom component ----------
 

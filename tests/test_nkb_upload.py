@@ -67,9 +67,9 @@ def test_save_uploaded_nkb_invalid_rejected_and_not_saved(tmp_path):
     with patch("homeassistant.components.file_upload.process_uploaded_file",
                _uploaded(str(src))), \
          patch("custom_components.nikobus.nkbnames.parse_nkb",
-               side_effect=ValueError("not a .nkb")):
-        with pytest.raises(_NkbUploadError) as ei:
-            _run(flow._save_uploaded_nkb("file-id"))
+               side_effect=ValueError("not a .nkb")), \
+         pytest.raises(_NkbUploadError) as ei:
+        _run(flow._save_uploaded_nkb("file-id"))
 
     assert ei.value.key == "invalid_nkb"
     # the canonical file must NOT be written when validation fails

@@ -19,7 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 def register_output_module_devices(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    specs: Iterable["EntitySpec"],
+    specs: Iterable[EntitySpec],
 ) -> None:
     """Register one device per physical output module address.
 

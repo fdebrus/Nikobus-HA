@@ -16,8 +16,8 @@ from homeassistant.helpers.event import async_call_later
 from .button import op_point_display_name, register_wall_button_devices
 from .const import DOMAIN, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .router import iter_operation_points
 from .entity import NikobusEntity
+from .router import iter_operation_points
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -174,4 +174,3 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Ignore coordinator updates as this sensor is event-driven."""
-        pass

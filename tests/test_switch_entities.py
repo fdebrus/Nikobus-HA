@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.nikobus.switch import (
-    NikobusRelaySwitchEntity,
     NikobusCoverSwitchEntity,
+    NikobusRelaySwitchEntity,
 )
 
 

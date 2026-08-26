@@ -60,7 +60,7 @@ def _per_module_decode_metrics(
         op_points = phys.get("operation_points") or {}
         if not isinstance(op_points, dict):
             continue
-        for key_label, op in op_points.items():
+        for op in op_points.values():
             if not isinstance(op, dict):
                 continue
             for link in op.get("linked_modules") or []:
@@ -92,7 +92,7 @@ def _per_module_decode_metrics(
 
     # Resolve channel counts from dict_module_data
     channel_counts: dict[str, int] = {}
-    for _bucket, modules in (coordinator.dict_module_data or {}).items():
+    for modules in (coordinator.dict_module_data or {}).values():
         if not isinstance(modules, dict):
             continue
         for addr, meta in modules.items():

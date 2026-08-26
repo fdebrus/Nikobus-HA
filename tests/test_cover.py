@@ -17,14 +17,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.nikobus.const import CATEGORY_CENTRAL_FUNCTIONS, DOMAIN
 from custom_components.nikobus.cover import (
+    STATE_CLOSING,
+    STATE_ERROR,
+    STATE_OPENING,
+    STATE_STOPPED,
     NikobusCFCoverEntity,
     NikobusCoverEntity,
     _parse_cf_time,
     _parse_operation_time,
-    STATE_STOPPED,
-    STATE_OPENING,
-    STATE_CLOSING,
-    STATE_ERROR,
 )
 from custom_components.nikobus.nkbtravelcalculator import NikobusTravelCalculator
 
@@ -602,7 +602,7 @@ class TestCFCoverConstruction(unittest.TestCase):
     def test_unparseable_time_falls_back_to_module_config(self):
         members = [{"module_address": "8CF5", "channel": 1,
                     "open_time": None, "close_time": None}]
-        ent, coord = _make_cf_cover(members=members)
+        ent, _coord = _make_cf_cover(members=members)
         # _parse_cf_time(None) → coordinator.get_cover_operation_time (30.0)
         self.assertEqual(ent._members[0]["open_time"], 30.0)
         self.assertEqual(ent._members[0]["close_time"], 30.0)

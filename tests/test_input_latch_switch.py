@@ -5,8 +5,8 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock
 
-from custom_components.nikobus.switch import input_ab_addresses
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
+from custom_components.nikobus.switch import input_ab_addresses
 
 
 class TestInputABAddresses(unittest.TestCase):

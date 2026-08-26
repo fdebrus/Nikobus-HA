@@ -15,9 +15,9 @@ from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.nikobus.const import operation_signal
 from custom_components.nikobus.light import (
+    NikobusCoverLightEntity,
     NikobusDimmerEntity,
     NikobusRelayEntity,
-    NikobusCoverLightEntity,
 )
 
 

@@ -5,7 +5,11 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from nikobus_connect.discovery import DecodedCommand, InventoryResult, NikobusDiscovery
-from nikobus_connect.discovery.protocol import DecoderContext, normalize_payload, reverse_hex
+from nikobus_connect.discovery.protocol import (
+    DecoderContext,
+    normalize_payload,
+    reverse_hex,
+)
 from nikobus_connect.discovery.shutter_decoder import decode as shutter_decode
 
 

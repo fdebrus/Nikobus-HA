@@ -25,7 +25,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-
 from nikobus_connect.discovery import InventoryQueryType
 
 from .const import (
@@ -60,7 +59,6 @@ from .nkbreconcile import (
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
-
     from nikobus_connect import NikobusCommandHandler
     from nikobus_connect.discovery import NikobusDiscovery
 
@@ -480,7 +478,7 @@ class NikobusDiscoveryMixin:
             )
 
         # --- Button bucketing ----------------------------------------
-        remaining = {str(a).upper() for a in modules.keys()}
+        remaining = {str(a).upper() for a in modules}
         bucket_counts = {
             "active": 0,
             "legacy_orphan": 0,
@@ -970,7 +968,7 @@ class NikobusDiscoveryMixin:
             changed = await async_apply_manual_config(
                 self.hass, self.module_storage, self.dict_button_data
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.exception("Manual inventory import failed")
             return False
         if changed:
@@ -1038,7 +1036,7 @@ class NikobusDiscoveryMixin:
                     continue
                 if isinstance(modules, dict):
                     self._discovery_module_order.extend(
-                        str(addr).upper() for addr in modules.keys()
+                        str(addr).upper() for addr in modules
                     )
             _LOGGER.debug(
                 "Module scan (all) — buckets=%s, queue=%s",

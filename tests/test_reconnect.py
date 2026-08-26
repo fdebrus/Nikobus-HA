@@ -4,9 +4,8 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
-from custom_components.nikobus.coordinator import NikobusDataCoordinator
 from custom_components.nikobus.const import RECONNECT_DELAY_INITIAL, RECONNECT_DELAY_MAX
-
+from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
 # ---------------------------------------------------------------------------
 # Helpers

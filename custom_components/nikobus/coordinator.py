@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -15,7 +15,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-
 from nikobus_connect import (
     CoordinatorProtocol,
     NikobusAPI,
@@ -24,12 +23,16 @@ from nikobus_connect import (
     NikobusEventListener,
 )
 from nikobus_connect.discovery import (
-    NikobusDiscovery,
     InventoryQueryType,
+    NikobusDiscovery,
     find_module,
     find_operation_point,
 )
-from nikobus_connect.exceptions import NikobusConnectionError, NikobusDataError, NikobusError
+from nikobus_connect.exceptions import (
+    NikobusConnectionError,
+    NikobusDataError,
+    NikobusError,
+)
 
 from .const import (
     CONF_CONNECTION_STRING,
@@ -38,7 +41,6 @@ from .const import (
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     DEFAULT_PRESS_REPEAT,
-    PRESS_REPEAT_DELAY,
     DEVICE_ADDRESS_INVENTORY,
     DEVICE_INVENTORY_ANSWER,
     DISCOVERY_PHASE_ERROR,
@@ -56,6 +58,7 @@ from .const import (
     DISCOVERY_SUB_PHASE_REGISTER_SCAN,
     DOMAIN,
     ISSUE_NO_BUTTONS_CONFIGURED,
+    PRESS_REPEAT_DELAY,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
 )
@@ -448,7 +451,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             )
         except asyncio.CancelledError:
             raise
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - defensive: callback must never kill the listener
             _LOGGER.error("Feedback callback failed: %s", err)
 
     async def _inventory_callback(self, message: str, discovery_active: bool) -> None:
@@ -539,7 +542,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
     # Phase-aware progress (consumes nikobus-connect 0.3.5+ on_progress)
     # ------------------------------------------------------------------
 
-    _SUB_TO_LEGACY_PHASE: dict[str, str] = {
+    _SUB_TO_LEGACY_PHASE: ClassVar[dict[str, str]] = {
         DISCOVERY_SUB_PHASE_IDLE: DISCOVERY_PHASE_IDLE,
         DISCOVERY_SUB_PHASE_INVENTORY: DISCOVERY_PHASE_PC_LINK,
         DISCOVERY_SUB_PHASE_IDENTITY: DISCOVERY_PHASE_PC_LINK,
@@ -721,7 +724,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 registers_done=registers_done,
                 registers_total=effective_register_total,
             )
-        except Exception as err:  # pragma: no cover - defensive
+        except Exception as err:  # noqa: BLE001 # pragma: no cover - defensive
             _LOGGER.debug("Discovery progress handler failed: %s", err)
 
     # ------------------------------------------------------------------
@@ -739,7 +742,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         so the integration self-heals.
         """
         if self.discovery_running:
-            return None
+            return
         polled = 0
         failures = 0
         try:
@@ -750,7 +753,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                     )
                     polled += polled_n
                     failures += failed_n
-            return None
+            return
         except NikobusDataError as err:
             _LOGGER.error("Failed to fetch Nikobus data: %s", err)
             raise UpdateFailed(f"Data refresh failed: {err}") from err
@@ -813,7 +816,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                         failed += 1
                 except asyncio.CancelledError:
                     raise
-                except Exception as err:
+                except Exception as err:  # noqa: BLE001 - defensive: per-group failures are counted, not fatal
                     failed += 1
                     # Per-group failures are noise on installs that
                     # hit periodic bus-silent windows (issue #337) —
@@ -1488,7 +1491,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
 def _implements_coordinator_protocol(
     coordinator: NikobusDataCoordinator,
-) -> "CoordinatorProtocol":
+) -> CoordinatorProtocol:
     """mypy-time structural check: the coordinator satisfies the library's
     ``CoordinatorProtocol`` (nikobus-connect 0.27.0+). Never called at
     runtime — if a contract member is removed from this class, this

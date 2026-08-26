@@ -34,9 +34,12 @@ def _ensure_stubs() -> None:
     # also references CONFIG on its inventory-trigger button.
     for mod_name in ("homeassistant.const", "homeassistant.helpers.entity"):
         mod = sys.modules.get(mod_name)
-        if mod is not None and hasattr(mod, "EntityCategory"):
-            if not hasattr(mod.EntityCategory, "CONFIG"):
-                mod.EntityCategory.CONFIG = "config"
+        if (
+            mod is not None
+            and hasattr(mod, "EntityCategory")
+            and not hasattr(mod.EntityCategory, "CONFIG")
+        ):
+            mod.EntityCategory.CONFIG = "config"
 
 
 def _load_button_module():

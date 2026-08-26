@@ -306,9 +306,8 @@ def test_import_raises_when_no_file():
 
     coord = _coord()
     with patch("custom_components.nikobus.nkbnames.find_nkb_file",
-               return_value=None):
-        with pytest.raises(HomeAssistantError):
-            _run(coord.async_import_nkb_names())
+               return_value=None), pytest.raises(HomeAssistantError):
+        _run(coord.async_import_nkb_names())
 
 
 # --------------------------------------------------------------------------- #

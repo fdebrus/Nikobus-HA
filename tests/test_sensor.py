@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from custom_components.nikobus.const import DOMAIN, HUB_IDENTIFIER
 from custom_components.nikobus.sensor import (
     NikobusConnectionSensor,
     NikobusDiscoveryStatusSensor,
 )
-from custom_components.nikobus.const import DOMAIN, HUB_IDENTIFIER
 
 _ICONS_JSON = (
     Path(__file__).parent.parent

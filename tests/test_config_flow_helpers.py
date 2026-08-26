@@ -12,14 +12,14 @@ import unittest
 import voluptuous as vol
 
 from custom_components.nikobus.config_flow import (
-    _validate_optional_hex6,
-    _module_type_order,
+    _coerce_int,
     _make_default_channel,
     _module_label,
+    _module_type_order,
+    _needs_polling,
     _set_or_drop,
     _set_time_or_drop,
-    _coerce_int,
-    _needs_polling,
+    _validate_optional_hex6,
 )
 from custom_components.nikobus.const import CONF_HAS_FEEDBACK_MODULE, CONF_PRIOR_GEN3
 

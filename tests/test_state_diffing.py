@@ -55,7 +55,7 @@ def test_availability_flip_writes_even_if_state_same():
 
 
 def test_update_clears_optimistic_state_before_diffing():
-    e, coord = _switch(state=False)
+    e, _coord = _switch(state=False)
     e._is_on = True                          # stale optimistic 'on'
     e._handle_coordinator_update()           # cleared, real state is off
     assert e._is_on is None
@@ -74,7 +74,7 @@ def test_dimmer_diffs_on_brightness():
 
 
 def test_dimmer_update_clears_both_optimistic_caches():
-    e, coord = _dimmer(level=0)
+    e, _coord = _dimmer(level=0)
     e._is_on = True
     e._optimistic_brightness = 180
     e._handle_coordinator_update()

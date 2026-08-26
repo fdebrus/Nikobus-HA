@@ -7,7 +7,8 @@ import importlib.machinery
 import importlib.util
 import sys
 import types
-from datetime import datetime, timezone as _tz
+from datetime import datetime
+from datetime import timezone as _tz
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -433,7 +434,7 @@ _mod(
     "serial_asyncio",
     open_serial_connection=AsyncMock(return_value=(AsyncMock(), AsyncMock())),
 )
-_mod("aiofiles", **{"open": AsyncMock()})
+_mod("aiofiles", open=AsyncMock())
 
 # ---------------------------------------------------------------------------
 # Nikobus package skeleton (bypass __init__.py which requires voluptuous/HA)

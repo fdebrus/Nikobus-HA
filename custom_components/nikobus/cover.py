@@ -213,7 +213,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     @property
     def current_cover_position(self) -> int:
         """Return the current position of the cover (0-100)."""
-        return int(round(self._position))
+        return round(self._position)
 
     @property
     def is_opening(self) -> bool:
@@ -256,10 +256,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Restore state and listen for Nikobus bus events."""
         await super().async_added_to_hass()
-        if last_state := await self.async_get_last_state():
-            if (pos := last_state.attributes.get(ATTR_CURRENT_POSITION)) is not None:
-                self._position = float(pos)
-                self._calculator.set_position(self._position)
+        if (last_state := await self.async_get_last_state()) and (
+            pos := last_state.attributes.get(ATTR_CURRENT_POSITION)
+        ) is not None:
+            self._position = float(pos)
+            self._calculator.set_position(self._position)
 
         # Per-address signal keyed by this cover's module address: only
         # this module's covers are woken on a press, instead of a global
@@ -503,13 +504,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 await asyncio.sleep(0.5)
         except asyncio.CancelledError:
             pass
-        except Exception as err:
-            _LOGGER.error(
-                "Cover %s ch%d motion loop failed — forcing stop: %s",
+        except Exception:
+            _LOGGER.exception(
+                "Cover %s ch%d motion loop failed — forcing stop",
                 self._address,
                 self._channel,
-                err,
-                exc_info=True,
             )
             await self._stop(send_stop=False)
 
@@ -665,7 +664,7 @@ class NikobusCFCoverEntity(NikobusEntity, CoverEntity):
     @property
     def current_cover_position(self) -> int:
         """Return the current group position (0-100)."""
-        return int(round(self._position))
+        return round(self._position)
 
     @property
     def is_opening(self) -> bool:
@@ -842,7 +841,7 @@ class NikobusCFCoverEntity(NikobusEntity, CoverEntity):
             await self._commit_module(module_id, stop_state)
         except asyncio.CancelledError:
             raise
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001 - defensive: one module's failure must not abort the CF stop
             _LOGGER.error("CF cover %s: timed stop failed for %s: %s", self._bus_address, module_id, err)
 
     async def _stop(self) -> None:
