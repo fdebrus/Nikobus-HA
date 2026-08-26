@@ -60,6 +60,11 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Not (yet) in home-assistant/brands; skip that check so a valid
-          # custom integration isn't failed for it.
-          ignore: brands
+          # brands: not (yet) in home-assistant/brands; skip that check so
+          # a valid custom integration isn't failed for it.
+          # license: the repo ships the PolyForm Noncommercial 1.0.0
+          # LICENSE, but GitHub's license detection only knows the
+          # choosealicense.com set (all of which permit commercial use)
+          # — a noncommercial license can never be "identified", so the
+          # check would stay red forever by design, not by accident.
+          ignore: brands license
