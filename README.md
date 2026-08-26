@@ -655,4 +655,4 @@ The integration talks to Nikobus hardware over its serial bus. It was developed 
 
 **Trademark:** Nikobus is a trademark of Niko NV. This project is an independent community effort, not affiliated with, endorsed by, or sponsored by Niko NV.
 
-**License:** provided for personal and non-commercial use. You may view, copy, modify, and share the code and documentation for non-commercial purposes. Commercial use requires prior written permission from the maintainers. Provided "as is" without warranties of any kind.
+**License:** [PolyForm Noncommercial License 1.0.0](LICENSE) — you may use, copy, modify, and share the software for any **noncommercial** purpose (personal use, education, research, charities and the like). **Any commercial use requires a separate license from the maintainers** — get in touch. Provided "as is" without warranties of any kind (see the license for the exact terms).
