@@ -73,7 +73,7 @@ async def _generate_manual_files_from_nkb(hass: HomeAssistant) -> bool:
 
     try:
         config = await hass.async_add_executor_job(build_config_from_nkb, str(nkb))
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.exception(
             "Could not build config from %s — leaving it for a PC-Link scan",
             nkb.name,
@@ -565,9 +565,7 @@ def _is_consolidation_candidate(entry: dict[str, Any]) -> bool:
     if entry.get("channels") != 1:
         return False
     ops = entry.get("operation_points")
-    if not isinstance(ops, dict) or list(ops.keys()) != ["1A"]:
-        return False
-    return True
+    return isinstance(ops, dict) and list(ops) == ["1A"]
 
 
 def _common_description_prefix(descriptions: list[str]) -> str:
@@ -738,14 +736,14 @@ async def async_apply_manual_config(
         await _generate_manual_files_from_nkb(hass)
     except asyncio.CancelledError:
         raise
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.exception("Manual config: .nkb bootstrap failed")
 
     try:
         modules_loaded, module_path = await _apply_module_config(hass, module_store)
     except asyncio.CancelledError:
         raise
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.exception(
             "Manual config: failed to apply %s — module store left unchanged",
             MANUAL_MODULE_CONFIG_FILENAME,
@@ -759,7 +757,7 @@ async def async_apply_manual_config(
         )
     except asyncio.CancelledError:
         raise
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.exception(
             "Manual config: failed to apply %s — button store left unchanged",
             MANUAL_BUTTON_CONFIG_FILENAME,

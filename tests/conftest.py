@@ -7,7 +7,8 @@ import importlib.machinery
 import importlib.util
 import sys
 import types
-from datetime import datetime, timezone as _tz
+from datetime import datetime
+from datetime import timezone as _tz
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -197,6 +198,9 @@ _mod("homeassistant.helpers.entity_registry", async_get=lambda hass: None)
 
 # homeassistant.helpers.area_registry
 _mod("homeassistant.helpers.area_registry", async_get=lambda hass: None)
+
+# homeassistant.helpers.label_registry (labels import category)
+_mod("homeassistant.helpers.label_registry", async_get=lambda hass: None)
 
 # homeassistant.helpers.issue_registry — used by coordinator.refresh_repair_issues
 class _IssueSeverity:
@@ -430,7 +434,7 @@ _mod(
     "serial_asyncio",
     open_serial_connection=AsyncMock(return_value=(AsyncMock(), AsyncMock())),
 )
-_mod("aiofiles", **{"open": AsyncMock()})
+_mod("aiofiles", open=AsyncMock())
 
 # ---------------------------------------------------------------------------
 # Nikobus package skeleton (bypass __init__.py which requires voluptuous/HA)

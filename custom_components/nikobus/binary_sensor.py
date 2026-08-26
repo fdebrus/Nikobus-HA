@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.const import EntityCategory
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -15,8 +16,8 @@ from homeassistant.helpers.event import async_call_later
 from .button import op_point_display_name, register_wall_button_devices
 from .const import DOMAIN, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .router import iter_operation_points
 from .entity import NikobusEntity
+from .router import iter_operation_points
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,9 +52,16 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
 
     One entity per ``(physical_address, key_label)`` pair; grouped under the
     physical-button device in the registry.
+
+    Categorised DIAGNOSTIC (3.13.0), like the press-simulation buttons:
+    press pulses are automation signals, not room controls — keeping
+    them out of the Controls sections and auto-dashboards leaves the
+    real outputs as the visible surface. Automations targeting these
+    sensors are unaffected.
     """
 
     _attr_entity_registry_enabled_default = False
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,
@@ -166,4 +174,3 @@ class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Ignore coordinator updates as this sensor is event-driven."""
-        pass

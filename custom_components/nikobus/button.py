@@ -603,7 +603,16 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
 
     One entity per ``(physical_address, key_label)`` pair; grouped under the
     physical-button device in the registry.
+
+    Categorised DIAGNOSTIC (3.13.0): a press-simulation is a tool, not a
+    day-to-day control — the lights/covers/switches are. On a real
+    install these ~150 entities drowned out the ~50 actual outputs on
+    device pages and auto-generated dashboards. Diagnostic entities
+    stay fully usable (device page, automations, scripts); they're just
+    no longer auto-placed as controls.
     """
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self,

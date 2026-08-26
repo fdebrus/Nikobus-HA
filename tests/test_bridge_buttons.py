@@ -109,3 +109,18 @@ def test_import_button_ignores_unknown_stored_categories():
     coord.async_import_nkb_names.assert_awaited_once_with(
         categories={"device_names"}, overwrite=False
     )
+
+
+# --------------------------------------------------------------------------- #
+# Press-simulation entities are DIAGNOSTIC (3.13.0): tools, not room
+# controls — keeps ~150 of them out of Controls sections and
+# auto-dashboards while staying fully usable in automations.
+# --------------------------------------------------------------------------- #
+def test_press_entities_are_diagnostic():
+    from custom_components.nikobus.binary_sensor import NikobusButtonBinarySensor
+    from custom_components.nikobus.button import NikobusButtonEntity
+
+    assert NikobusButtonEntity._attr_entity_category == "diagnostic"
+    assert NikobusButtonBinarySensor._attr_entity_category == "diagnostic"
+    # Press sensors additionally stay disabled by default.
+    assert NikobusButtonBinarySensor._attr_entity_registry_enabled_default is False

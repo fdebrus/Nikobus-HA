@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import voluptuous as vol
 from homeassistant.components.repairs import RepairsFlow
@@ -147,7 +147,7 @@ class LegacyUndecodedButtonsRepairFlow(RepairsFlow):
             bits.append(description)
         return " — ".join(bits)
 
-    _REASON_LABELS = {
+    _REASON_LABELS: ClassVar[dict[str, str]] = {
         "legacy_undecoded": "no decoded links",
         "legacy_orphan": "residue / stale links",
     }

@@ -330,7 +330,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await _test_connection(self.hass, conn_str)
             except ValueError:
                 errors["base"] = "cannot_connect"
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("Unexpected error during Nikobus connection test")
                 errors["base"] = "unknown"
             else:
@@ -404,7 +404,7 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             except ValueError:
                 errors["base"] = "cannot_connect"
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.exception("Unexpected error during Nikobus reconfigure test")
                 errors["base"] = "unknown"
             else:
@@ -575,7 +575,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             with process_uploaded_file(hass, file_id) as src:
                 try:
                     parse_nkb(src)  # parses → it's a usable .nkb
-                except Exception as err:  # noqa: BLE001 — surface as flow error
+                except Exception as err:
                     raise _NkbUploadError("invalid_nkb") from err
                 shutil.copyfile(src, dest)
 
@@ -583,7 +583,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             await hass.async_add_executor_job(_validate_and_save)
         except _NkbUploadError:
             raise
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             _LOGGER.exception("Failed to save uploaded .nkb file")
             raise _NkbUploadError("upload_failed") from err
 

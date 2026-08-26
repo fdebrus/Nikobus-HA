@@ -43,13 +43,13 @@ class NikobusConfig:
             return {}
 
         except json.JSONDecodeError as err:
-            _LOGGER.error("Failed to decode JSON in %s file: %s", data_type, err, exc_info=True)
+            _LOGGER.exception("Failed to decode JSON in %s file", data_type)
             raise NikobusDataError(f"Failed to decode JSON in {data_type} file: {err}") from err
 
         except asyncio.CancelledError:
             raise
         except Exception as err:
-            _LOGGER.error("Failed to load %s data: %s", data_type, err, exc_info=True)
+            _LOGGER.exception("Failed to load %s data", data_type)
             raise NikobusDataError(f"Failed to load {data_type} data: {err}") from err
 
     async def save_json_data(
@@ -69,7 +69,7 @@ class NikobusConfig:
                 await file.write(json.dumps(data, indent=4, ensure_ascii=False))
             await asyncio.to_thread(os.replace, tmp_path, file_path)
         except OSError as err:
-            _LOGGER.error("Failed to save %s data: %s", data_type, err, exc_info=True)
+            _LOGGER.exception("Failed to save %s data", data_type)
             raise NikobusDataError(f"Failed to save {data_type} data: {err}") from err
 
     def _handle_file_not_found(self, file_path: str, data_type: str) -> None:

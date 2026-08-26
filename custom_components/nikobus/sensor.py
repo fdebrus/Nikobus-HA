@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -47,7 +47,7 @@ class NikobusConnectionSensor(CoordinatorEntity[NikobusDataCoordinator], SensorE
     _attr_translation_key = "connection"
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = [_CONNECTED, _RECONNECTING, _DISCONNECTED]
+    _attr_options: ClassVar[list[str]] = [_CONNECTED, _RECONNECTING, _DISCONNECTED]
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         """Initialize the sensor."""

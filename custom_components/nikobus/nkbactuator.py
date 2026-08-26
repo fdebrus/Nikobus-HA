@@ -345,6 +345,11 @@ class NikobusActuator:
                 m_group: str = group,
                 m_press_id: str = press_id,
                 m_requires_long_press: bool = requires_long_press,
+                # Bound at definition time like the others — the
+                # finally-block below runs after awaits, when the
+                # enclosing loop variable may already have moved on
+                # to another module's key (ruff B023).
+                m_cache_key: str = cache_key,
             ) -> None:
                 try:
                     # STEP 1: Immediate UI Update (Skip for dimmers)
@@ -366,7 +371,7 @@ class NikobusActuator:
                                 await self._coordinator.async_event_handler("nikobus_refreshed", {"impacted_module_address": m_addr})
                         except asyncio.CancelledError:
                             raise
-                        except Exception as err:
+                        except Exception as err:  # noqa: BLE001 - defensive: keep the refresh loop alive
                             _LOGGER.debug("[%s] Immediate refresh of module %s failed: %s", m_press_id, m_addr, err)
 
                     # Read again once the outputs have settled.
@@ -388,12 +393,12 @@ class NikobusActuator:
                 except asyncio.CancelledError:
                     _LOGGER.debug("[%s] Refresh of module %s cancelled by a newer press", m_press_id, m_addr)
                     return
-                except Exception as err:
+                except Exception as err:  # noqa: BLE001 - defensive: keep the refresh loop alive
                     _LOGGER.error("[%s] Failed to refresh module %s group %s: %s", m_press_id, m_addr, m_group, err)
                 finally:
                     # Clean up the task reference when done
-                    if self._module_refresh_tasks.get(cache_key) == asyncio.current_task():
-                        self._module_refresh_tasks.pop(cache_key, None)
+                    if self._module_refresh_tasks.get(m_cache_key) == asyncio.current_task():
+                        self._module_refresh_tasks.pop(m_cache_key, None)
 
             # Schedule the newly requested refresh
             self._module_refresh_tasks[cache_key] = self._hass.async_create_task(_refresh_task())

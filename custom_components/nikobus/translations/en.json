@@ -271,7 +271,8 @@
           "channel_names": "Channel names (lights, covers, switches)",
           "areas": "Areas (from rooms)",
           "scenes": "Scenes (light + shutter/master)",
-          "overwrite": "Overwrite names/Areas I've already set"
+          "overwrite": "Overwrite names/Areas I've already set",
+          "labels": "Labels (Nikobus: outputs / buttons / scenes)"
         }
       },
       "manage_scenes": {

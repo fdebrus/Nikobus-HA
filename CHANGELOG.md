@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.13.0
+
+- **Key and IR child devices now inherit their plate's Area.** Every key
+  of a plate is its own HA device, and none of them ever got an Area
+  from the `.nkb` import — on a real install that left ~150 of ~215
+  Nikobus devices invisible to Area views and the auto-generated
+  dashboard. The Areas import now propagates the plate's room to all
+  its children (IR op-points included). Manually-assigned Areas are
+  preserved unless Overwrite is ticked.
+- **Press-simulation buttons and press sensors are now *diagnostic*
+  entities.** They're automation signals and tools, not day-to-day room
+  controls — the lights, covers, and switches are. On device pages they
+  move to the collapsed Diagnostic section, and auto-generated
+  dashboards stop listing ~150 of them as controls. Automations,
+  scripts, and manual dashboard cards that use them are unaffected.
+- **New import category: Labels.** The `.nkb` import can now apply
+  entity-class labels — `Nikobus Output`, `Nikobus Button`,
+  `Nikobus Scene` — for one-click filtering in HA's tables and target
+  pickers. Additive only: your own labels are never touched, and
+  removing one of ours sticks until you re-run the labels import.
+
 ## 3.12.0
 
 - **Button plates get the Nikobus application's numbering straight from

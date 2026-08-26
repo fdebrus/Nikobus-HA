@@ -13,7 +13,6 @@ from custom_components.nikobus.const import (
 )
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
-
 # ---------------------------------------------------------------------------
 # Minimal coordinator-like object for testing pure state methods
 # ---------------------------------------------------------------------------
@@ -1682,9 +1681,8 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
         with patch(
             "custom_components.nikobus.nkbmanual.async_apply_manual_config",
             new_callable=AsyncMock, return_value=False,
-        ):
-            with self.assertRaises(HomeAssistantError):
-                await coord.start_pc_link_inventory(auto_reload=False)
+        ), self.assertRaises(HomeAssistantError):
+            await coord.start_pc_link_inventory(auto_reload=False)
 
 
 class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):

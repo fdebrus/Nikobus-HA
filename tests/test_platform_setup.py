@@ -10,10 +10,9 @@ out (``register_output_module_devices``).
 from __future__ import annotations
 
 import asyncio
+import importlib
 import unittest
 from unittest.mock import MagicMock, patch
-
-import importlib
 
 # ``from custom_components.nikobus import light`` would resolve to the
 # *homeassistant.components.light* stub: the package __init__ imports the
@@ -78,7 +77,7 @@ def _entry_and_coord():
 
 class TestOutputPlatformSetup(unittest.TestCase):
     def _setup(self, platform):
-        hass, entry, coord = _entry_and_coord()
+        hass, entry, _coord = _entry_and_coord()
         added: list = []
         with patch.object(
             platform, "register_output_module_devices", MagicMock()
@@ -160,7 +159,7 @@ class TestOutputPlatformSetup(unittest.TestCase):
         self.assertEqual(cf_covers[0]._attr_unique_id, "nikobus_cf_cover_3880cd")
 
     def test_routing_is_cached_per_entry(self):
-        hass, entry, coord = _entry_and_coord()
+        hass, entry, _coord = _entry_and_coord()
         added: list = []
         with patch.object(
             light_platform, "register_output_module_devices", MagicMock()

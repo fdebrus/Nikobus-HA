@@ -86,12 +86,12 @@ class TestConfigFlowUser(unittest.TestCase):
         flow = _flow()
         # unique_id is the lower-cased connection string.
         flow._configured_unique_ids = {"192.168.2.50:9999"}
-        with patch(_TEST_CONN, new=AsyncMock()):
-            with self.assertRaises(AbortFlow) as ctx:
-                _run(
-                    flow.async_step_user(
-                        {CONF_CONNECTION_STRING: "192.168.2.50:9999"}
-                    )
+        with patch(_TEST_CONN, new=AsyncMock()), \
+                self.assertRaises(AbortFlow) as ctx:
+            _run(
+                flow.async_step_user(
+                    {CONF_CONNECTION_STRING: "192.168.2.50:9999"}
+                )
                 )
         self.assertEqual(ctx.exception.reason, "already_configured")
 
@@ -249,6 +249,7 @@ class TestOptionsFlow(unittest.TestCase):
                 "channel_names": False,
                 "areas": True,
                 "scenes": False,
+                "labels": False,
                 "overwrite": True,
             },
         )
@@ -262,6 +263,7 @@ class TestOptionsFlow(unittest.TestCase):
                 "channel_names": True,
                 "areas": True,
                 "scenes": True,
+                "labels": True,
                 "overwrite": False,
             },
         )

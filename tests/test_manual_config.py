@@ -39,7 +39,7 @@ class _AsyncFileContext:
         self._fh = None
 
     async def __aenter__(self):
-        self._fh = open(self._path, self._mode)
+        self._fh = open(self._path, self._mode)  # noqa: ASYNC230, SIM115 - aiofiles test double keeps the handle open
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -1276,7 +1276,7 @@ class TestMultiKeyNkbButtons(unittest.TestCase):
     def test_builder_multikey_loads_into_op_points(self):
         try:
             from nikobus_connect.nkb import build_config
-        except Exception as exc:  # pragma: no cover - lib not on path
+        except Exception as exc:  # noqa: BLE001 # pragma: no cover - lib not on path
             self.skipTest(f"nikobus_connect not importable: {exc}")
 
         # A 4-button plate (faces A/B/C/D) + a 2-button plate (A/B).
@@ -1322,7 +1322,7 @@ class TestMultiKeyNkbButtons(unittest.TestCase):
     def test_builder_eight_button_loads_all_faces(self):
         try:
             from nikobus_connect.nkb import build_config
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:  # noqa: BLE001 # pragma: no cover
             self.skipTest(f"nikobus_connect not importable: {exc}")
 
         faces = ["1A", "1B", "1C", "1D", "2A", "2B", "2C", "2D"]

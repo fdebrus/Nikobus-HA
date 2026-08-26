@@ -18,15 +18,17 @@ from nikobus_connect.nkb import (
     NkbData,
     SceneDef,
     find_nkb_file,
-    mode_code as _mode_code,
     parse_nkb,
+)
+from nikobus_connect.nkb import (
+    mode_code as _mode_code,
 )
 
 __all__ = [
     "CANONICAL_NKB_FILENAME",
     "NkbData",
     "SceneDef",
+    "_mode_code",
     "find_nkb_file",
     "parse_nkb",
-    "_mode_code",
 ]
