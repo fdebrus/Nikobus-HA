@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.13.1
+
+- **Fix: Modular Interface (05-206) inputs never updated their A/B
+  sensors and latch switch** (#485). The 05-206 computes its input bus
+  addresses with a different firmware scheme than the Logic Module
+  (05-201), but discovery applied the Logic-Module formula to both —
+  so the integration listened on addresses the hardware never emits.
+  Hardware captures from the reporter's install pinned the real 05-206
+  scheme (and re-validated the 05-201 one on a third unit). Requires
+  `nikobus-connect >= 0.34.0`. After updating, press **1. Load Project
+  Overview** once — the corrected input entries replace the stale ones
+  automatically.
+- CI: skip the HACS license check — the repository's PolyForm
+  Noncommercial license is real but not in GitHub's detection dataset
+  (which contains no noncommercial license at all), so the check can
+  never pass by design.
+
 ## 3.13.0
 
 - **Key and IR child devices now inherit their plate's Area.** Every key
