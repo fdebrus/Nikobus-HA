@@ -35,13 +35,55 @@ class TestInputABAddresses(unittest.TestCase):
         self.assertEqual(int(b[0], 16), (int(a[0], 16) + 4) % 16)
         self.assertEqual(a[1:], b[1:])
 
-    def test_interface_module_uses_same_derivation(self):
-        # interface_module inputs derive identically (the library uses
-        # the same helper for both types).
+    def test_interface_module_uses_its_own_derivation(self):
+        # Issue #485: the 05-206 uses a DIFFERENT firmware scheme
+        # (0x180000 + addr + slot). The previous revision of this test
+        # asserted identical derivation for both types — that
+        # assumption is exactly what broke interface latches.
         self.assertEqual(
             input_ab_addresses(self._phys(1, ptype="interface_module")),
-            ("21814B", "61814B"),
+            ("2C0A46", "6C0A46"),
         )
+
+    def test_interface_module_0548_fallback_matches_captured_frames(self):
+        # The #485 install's Interface Module: hardware emits
+        # 24A806/64A806 for input 1 — the type-aware fallback must
+        # reproduce that.
+        self.assertEqual(
+            input_ab_addresses(
+                self._phys(1, parent="0548", ptype="interface_module")
+            ),
+            ("24A806", "64A806"),
+        )
+
+    def test_store_operation_points_take_priority_over_derivation(self):
+        # #485 root cause: the latch re-derived addresses instead of
+        # reading the store's op points — so it could disagree with the
+        # A/B sensors, which always use the store. The store is now the
+        # primary source; derivation is only a fallback.
+        phys = {
+            **self._phys(1, parent="0548", ptype="interface_module"),
+            "operation_points": {
+                "1A": {"bus_address": "24A806"},
+                "1B": {"bus_address": "64A806"},
+            },
+        }
+        self.assertEqual(input_ab_addresses(phys), ("24A806", "64A806"))
+
+        # Even deliberately-divergent stored ops win over derivation —
+        # whatever the sensors listen on, the latch listens on.
+        phys["operation_points"] = {
+            "1A": {"bus_address": "AAAAAA"},
+            "1B": {"bus_address": "BBBBBB"},
+        }
+        self.assertEqual(input_ab_addresses(phys), ("AAAAAA", "BBBBBB"))
+
+    def test_malformed_operation_points_fall_back_to_derivation(self):
+        phys = {
+            **self._phys(1),
+            "operation_points": {"1A": {"bus_address": ""}, "1B": "junk"},
+        }
+        self.assertEqual(input_ab_addresses(phys), ("21814B", "61814B"))
 
     def test_missing_provenance_returns_none(self):
         self.assertIsNone(input_ab_addresses({}))
