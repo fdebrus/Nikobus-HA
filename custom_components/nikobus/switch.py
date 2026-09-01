@@ -43,17 +43,31 @@ def input_ab_addresses(phys: Mapping[str, Any]) -> tuple[str, str] | None:
     """Return ``(addr_1A, addr_1B)`` bus addresses for a synthesized
     PC-Logic / Modular-Interface input, or ``None``.
 
-    A PC-Logic logical input emits two bus events — its 1A and 1B
-    forms. Validated against two installs (and the library's own
-    derivation note):
+    Primary source: the entry's own stored operation points — the merge
+    layer computed those with the correct per-module-type address
+    scheme, so reading them back can never drift from what the A/B
+    binary sensors listen on. Issue #485 follow-up: this function used
+    to re-derive the physical from parent + slot WITHOUT the module
+    type, silently recomputing pc_logic-formula addresses for
+    interface_module inputs — the latch then listened (and transmitted)
+    on addresses the 05-206 never uses, while the sensors, fed from the
+    store, pulsed correctly.
 
-      * ``1A = convert_nikobus_address(physical)``
-      * ``1B`` = ``1A`` with the first hex nibble incremented by 4
-
-    The physical address is re-derived from the input's
-    ``pc_logic_parent_address`` + ``pc_logic_slot_index`` provenance so
-    this doesn't depend on the button-store key format.
+    Fallback for a malformed entry without usable op points: re-derive
+    from the ``pc_logic_parent_address`` + ``pc_logic_slot_index``
+    provenance, passing the parent module type through to the library
+    (``1A = convert(physical)``, ``1B`` = first nibble + 4 — validated
+    on three pc_logic installs and the #485 interface_module).
     """
+
+    ops = phys.get("operation_points")
+    if isinstance(ops, Mapping):
+        op_a, op_b = ops.get("1A"), ops.get("1B")
+        if isinstance(op_a, Mapping) and isinstance(op_b, Mapping):
+            addr_a = str(op_a.get("bus_address") or "").upper()
+            addr_b = str(op_b.get("bus_address") or "").upper()
+            if len(addr_a) == 6 and len(addr_b) == 6:
+                return addr_a, addr_b
 
     if convert_nikobus_address is None or derive_pc_logic_input_physicals is None:
         return None
@@ -64,7 +78,11 @@ def input_ab_addresses(phys: Mapping[str, Any]) -> tuple[str, str] | None:
     try:
         # Deriving exactly ``slot`` physicals yields the slot we want at
         # ``[slot - 1]``; the library raises for an out-of-range slot.
-        physical = derive_pc_logic_input_physicals(parent, slot)[slot - 1]
+        physical = derive_pc_logic_input_physicals(
+            parent,
+            slot,
+            module_type=str(phys.get("pc_logic_parent_type") or "pc_logic"),
+        )[slot - 1]
     except (ValueError, IndexError):  # pragma: no cover - defensive
         return None
     addr_1a = convert_nikobus_address(physical)

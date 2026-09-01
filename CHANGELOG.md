@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.13.2
+
+- **Fix: the A/B latch switch of Modular Interface inputs stayed frozen
+  even after 3.13.1** (#485 follow-up). 3.13.1 fixed the input
+  *addresses*, and the A/B press sensors started pulsing — but the
+  latch switch computed its own addresses instead of reading them from
+  storage, still using the old Logic-Module formula. It now uses the
+  exact same addresses the sensors listen on (and falls back to a
+  type-aware derivation only for malformed entries), so it latches on
+  the A signal and clears on the B signal as designed. Its on/off
+  commands also transmit the correct addresses now. Logic-Module
+  latches were unaffected.
+
 ## 3.13.1
 
 - **Fix: Modular Interface (05-206) inputs never updated their A/B
