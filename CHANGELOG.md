@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.14.0
+
+- **Covers self-recalibrate on every full open/close.** The position
+  model dead-reckons from configured operation times, so the estimate
+  slowly drifts from the physical shutter (motor ageing, temperature,
+  tick rounding). Previously a stop frame was sent the moment the
+  *estimate* said the travel was done — freezing that drift in place,
+  and `set position 0/100` stopped with no margin at all. Now any
+  HA-commanded motion ending at 0 or 100 sends no stop frame: the motor
+  runs into its mechanical end stop (erasing the drift), and the roller
+  module's own per-channel run time releases the relay — exactly what
+  already happens after a physical wall-button full travel.
+  Intermediate positions and explicit Stop are unchanged.
+
 ## 3.13.2
 
 - **Fix: the A/B latch switch of Modular Interface inputs stayed frozen

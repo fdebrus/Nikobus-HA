@@ -207,6 +207,69 @@ class TestShouldStop(unittest.TestCase):
         self.assertFalse(ent._should_stop())
 
 
+class TestEndsAtEndStop(unittest.TestCase):
+    """A motion ending at 0/100 must NOT send a bus stop frame.
+
+    The position model dead-reckons, so "estimate says 100" doesn't mean
+    the shutter physically arrived. Suppressing the stop lets the motor
+    run into the mechanical limit switch — which erases accumulated
+    drift on every full travel — while the roller module's own run time
+    releases the relay. Only an intermediate target needs a stop frame.
+    """
+
+    def test_decision_per_target(self):
+        ent, _ = _make_cover()
+        for target, expected in ((None, True), (0, True), (100, True), (50, False)):
+            ent._target_position = target
+            self.assertEqual(ent._ends_at_end_stop(), expected, target)
+
+    def _finish_motion(self, target):
+        """Run the motion loop with an already-expired run limit / reached
+        target and capture the send_stop decision."""
+        ent, _ = _make_cover()
+        ent._state = STATE_OPENING
+        ent._movement_source = "ha"
+        ent._target_position = target
+        ent._position = 100.0
+        ent._calculator.set_position(100.0)
+        ent._current_run_limit = 0.0
+        ent._stop = AsyncMock()
+        _run(ent._motion_loop())
+        ent._stop.assert_awaited_once()
+        return ent._stop.await_args.kwargs["send_stop"]
+
+    def test_full_open_suppresses_bus_stop(self):
+        self.assertFalse(self._finish_motion(None))
+
+    def test_target_100_suppresses_bus_stop(self):
+        self.assertFalse(self._finish_motion(100))
+
+    def test_intermediate_target_still_sends_stop(self):
+        ent, _ = _make_cover()
+        ent._state = STATE_OPENING
+        ent._movement_source = "ha"
+        ent._target_position = 50
+        ent._position = 50.0
+        ent._calculator.set_position(50.0)
+        ent._current_run_limit = 999.0
+        ent._stop = AsyncMock()
+        _run(ent._motion_loop())
+        ent._stop.assert_awaited_once()
+        self.assertTrue(ent._stop.await_args.kwargs["send_stop"])
+
+    def test_nikobus_sourced_motion_never_sends_stop(self):
+        ent, _ = _make_cover()
+        ent._state = STATE_CLOSING
+        ent._movement_source = "nikobus"
+        ent._target_position = None
+        ent._position = 0.0
+        ent._calculator.set_position(0.0)
+        ent._current_run_limit = 0.0
+        ent._stop = AsyncMock()
+        _run(ent._motion_loop())
+        self.assertFalse(ent._stop.await_args.kwargs["send_stop"])
+
+
 class TestStop(unittest.TestCase):
     def test_finalizes_state_and_optimistic_write(self):
         ent, coord = _make_cover()

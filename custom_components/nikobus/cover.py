@@ -497,7 +497,17 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                         # Snap to exact target to eliminate 0.5 s tick overshoot.
                         self._position = float(self._target_position)
                         self._calculator.set_position(self._position)
-                    await self._stop(send_stop=(movement_source == "ha"))
+                    # A motion ending at 0/100 gets no bus stop: the position
+                    # model dead-reckons and drifts, so the estimate saying
+                    # "arrived" doesn't mean the shutter is physically at the
+                    # end. Left running, the motor reaches the limit switch —
+                    # erasing the accumulated drift — and the roller module's
+                    # own per-channel run time releases the relay, exactly as
+                    # after a physical wall-button full travel.
+                    send_stop = (
+                        movement_source == "ha" and not self._ends_at_end_stop()
+                    )
+                    await self._stop(send_stop=send_stop)
                     break
 
                 self.async_write_ha_state()
@@ -511,6 +521,16 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 self._channel,
             )
             await self._stop(send_stop=False)
+
+    def _ends_at_end_stop(self) -> bool:
+        """Whether the current motion finishes at a physical end position.
+
+        Full open/close (no target — the loop only terminates on the run
+        limit) and an explicit target of 0/100 both end at a mechanical
+        end stop; only an intermediate target requires an actual bus stop
+        frame to halt the motor mid-travel.
+        """
+        return self._target_position is None or self._target_position in (0, 100)
 
     def _should_stop(self) -> bool:
         """Check if cover reached the target position."""
