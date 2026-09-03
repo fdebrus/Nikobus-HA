@@ -453,7 +453,7 @@
     },
     "backup_modules": {
       "name": "Moduleprogrammering back-uppen",
-      "description": "Leest het volledige programmeergeheugen van elke uitgangsmodule (of de opgegeven modules) naar config/nikobus_backup/<tijdstempel>/ als .nkm-bestanden, samen met een samenvatting van de controles.",
+      "description": "Leest het volledige programmeergeheugen van elke uitgangsmodule (of de opgegeven modules) naar config/nikobus_backup/ in een map genoemd naar het tijdstip van uitvoering, als .nkm-bestanden, samen met een samenvatting van de controles.",
       "fields": {
         "addresses": {
           "name": "Moduleadressen",

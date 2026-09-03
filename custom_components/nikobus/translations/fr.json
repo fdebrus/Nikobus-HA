@@ -453,7 +453,7 @@
     },
     "backup_modules": {
       "name": "Sauvegarder la programmation des modules",
-      "description": "Lit l'image de programmation complète de chaque module de sortie (ou de ceux listés) dans config/nikobus_backup/<horodatage>/ sous forme de fichiers .nkm, avec un résumé des vérifications.",
+      "description": "Lit l'image de programmation complète de chaque module de sortie (ou de ceux listés) dans config/nikobus_backup/ dans un dossier nommé d'après l'heure d'exécution, sous forme de fichiers .nkm, avec un résumé des vérifications.",
       "fields": {
         "addresses": {
           "name": "Adresses des modules",

@@ -414,7 +414,7 @@
     },
     "backup_modules": {
       "name": "Backup module programming",
-      "description": "Reads the full programming image of every output module (or the listed ones) into config/nikobus_backup/<timestamp>/ as .nkm files, together with a summary of the status checks.",
+      "description": "Reads the full programming image of every output module (or the listed ones) into config/nikobus_backup/ in a folder named after the run time, as .nkm files, together with a summary of the status checks.",
       "fields": {
         "addresses": {
           "name": "Module addresses",
