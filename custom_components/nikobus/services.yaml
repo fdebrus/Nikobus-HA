@@ -66,3 +66,21 @@ purge_stale_inventory:
       required: true
       selector:
         object:
+
+sync_pc_link_clock:
+
+verify_modules:
+  fields:
+    addresses:
+      example: "['9105', '4707']"
+      required: false
+      selector:
+        object:
+
+backup_modules:
+  fields:
+    addresses:
+      example: "['9105', '4707']"
+      required: false
+      selector:
+        object:

@@ -53,6 +53,9 @@ async def async_setup_entry(
         NikobusPcLinkInventoryButton(coordinator),
         NikobusModuleScanButton(coordinator),
         NikobusImportNkbNamesButton(coordinator),
+        NikobusSyncClockButton(coordinator),
+        NikobusVerifyProgrammingButton(coordinator),
+        NikobusBackupProgrammingButton(coordinator),
     ]
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
@@ -693,3 +696,74 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Stateless entity — ignore coordinator state updates."""
+
+class _NikobusMaintenanceButton(_NikobusBridgeButton):
+    """Bridge buttons that read the modules' programming.
+
+    Greyed out while discovery or another maintenance run is busy —
+    both share the bus and must not interleave.
+    """
+
+    @property
+    def available(self) -> bool:
+        programming = self._coordinator.programming
+        return not (self._coordinator.discovery_running or programming.running)
+
+    def _start(self, coro: Any, name: str) -> None:
+        programming = self._coordinator.programming
+        if self._coordinator.discovery_running:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="discovery_already_running"
+            )
+        if programming.running:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="maintenance_running"
+            )
+        self.hass.async_create_background_task(coro, name=name)
+
+
+class NikobusSyncClockButton(_NikobusMaintenanceButton):
+    """Set the PC-Link clock from Home Assistant's time."""
+
+    _attr_translation_key = "sync_pc_link_clock"
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_sync_pc_link_clock_button"
+
+    async def async_press(self) -> None:
+        await self._coordinator.programming.async_sync_clock()
+
+
+class NikobusVerifyProgrammingButton(_NikobusMaintenanceButton):
+    """Check every output module's status and memory CRC."""
+
+    _attr_translation_key = "verify_module_programming"
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_verify_programming_button"
+
+    async def async_press(self) -> None:
+        _LOGGER.info("Module programming check triggered via UI button")
+        self._start(
+            self._coordinator.programming.async_verify_modules(),
+            "nikobus_verify_programming",
+        )
+
+
+class NikobusBackupProgrammingButton(_NikobusMaintenanceButton):
+    """Read every output module's programming image into a backup folder."""
+
+    _attr_translation_key = "backup_module_programming"
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_backup_programming_button"
+
+    async def async_press(self) -> None:
+        _LOGGER.info("Module programming backup triggered via UI button")
+        self._start(
+            self._coordinator.programming.async_backup_modules(),
+            "nikobus_backup_programming",
+        )

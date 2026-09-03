@@ -48,6 +48,19 @@ SERVICE_QUERY_MODULE_INVENTORY: Final = "query_module_inventory"
 SERVICE_SEND_BUTTON_PRESS: Final = "send_button_press"
 SERVICE_DETECT_STALE_INVENTORY: Final = "detect_stale_inventory"
 SERVICE_PURGE_STALE_INVENTORY: Final = "purge_stale_inventory"
+SERVICE_SYNC_PC_LINK_CLOCK: Final = "sync_pc_link_clock"
+SERVICE_VERIFY_MODULES: Final = "verify_modules"
+SERVICE_BACKUP_MODULES: Final = "backup_modules"
+
+# Optional module-address list shared by the programming actions; empty
+# means every output module.
+MODULE_LIST_SCHEMA: Final = vol.Schema(
+    {
+        vol.Optional("addresses", default=list): vol.All(
+            cv.ensure_list, [vol.All(cv.string, str.upper)]
+        ),
+    }
+)
 
 # Default per-module probe budget. The library's
 # ``NikobusDiscovery.detect_stale_inventory`` polls each candidate module
@@ -311,6 +324,56 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         handle_purge_stale_inventory,
         PURGE_STALE_INVENTORY_SCHEMA,
         supports_response=SupportsResponse.ONLY,
+    )
+
+    def _programming(call: ServiceCall) -> Any:
+        coordinator = _loaded_coordinator(hass)
+        if coordinator is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_loaded_entry",
+            )
+        return coordinator.programming
+
+    async def handle_sync_pc_link_clock(call: ServiceCall) -> dict[str, Any]:
+        """Set the PC-Link clock from Home Assistant's local time."""
+        clock = await _programming(call).async_sync_clock()
+        return {"pc_link_time": clock.isoformat()}
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SYNC_PC_LINK_CLOCK,
+        handle_sync_pc_link_clock,
+        vol.Schema({}),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def handle_verify_modules(call: ServiceCall) -> dict[str, Any]:
+        """Check module status and memory CRC; returns the per-module report."""
+        return await _programming(call).async_verify_modules(
+            call.data.get("addresses") or None
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_VERIFY_MODULES,
+        handle_verify_modules,
+        MODULE_LIST_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def handle_backup_modules(call: ServiceCall) -> dict[str, Any]:
+        """Read every output module's programming image into a backup folder."""
+        return await _programming(call).async_backup_modules(
+            call.data.get("addresses") or None
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_BACKUP_MODULES,
+        handle_backup_modules,
+        MODULE_LIST_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
     )
     return True
 

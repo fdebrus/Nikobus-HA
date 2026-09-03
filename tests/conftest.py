@@ -62,7 +62,9 @@ _mod(
     callback=_ha_callback,
     ServiceCall=type("ServiceCall", (), {}),
     ServiceResponse=dict,
-    SupportsResponse=type("SupportsResponse", (), {"ONLY": "only", "NONE": "none"}),
+    SupportsResponse=type(
+        "SupportsResponse", (), {"ONLY": "only", "NONE": "none", "OPTIONAL": "optional"}
+    ),
 )
 class _ConfigEntry:
     def __class_getitem__(cls, item):
@@ -304,6 +306,7 @@ _mod(
 _mod("homeassistant.components")
 class _SensorDeviceClass:
     ENUM = "enum"
+    TIMESTAMP = "timestamp"
 
 
 class _SensorStateClass:

@@ -9,6 +9,15 @@
             },
             "import_nkb_names": {
                 "default": "mdi:file-import"
+            },
+            "sync_pc_link_clock": {
+                "default": "mdi:clock-check"
+            },
+            "verify_module_programming": {
+                "default": "mdi:memory"
+            },
+            "backup_module_programming": {
+                "default": "mdi:content-save-all"
             }
         },
         "sensor": {
@@ -32,6 +41,17 @@
                     "finished": "mdi:check-circle",
                     "error": "mdi:alert-circle"
                 }
+            },
+            "pc_link_clock": {
+                "default": "mdi:clock-outline"
+            },
+            "programming_health": {
+                "default": "mdi:memory",
+                "state": {
+                    "ok": "mdi:check-circle",
+                    "problem": "mdi:alert-circle",
+                    "unknown": "mdi:help-circle"
+                }
             }
         }
     },
@@ -47,6 +67,15 @@
         },
         "purge_stale_inventory": {
             "service": "mdi:delete-sweep"
+        },
+        "sync_pc_link_clock": {
+            "service": "mdi:clock-check"
+        },
+        "verify_modules": {
+            "service": "mdi:memory"
+        },
+        "backup_modules": {
+            "service": "mdi:content-save-all"
         }
     }
 }
