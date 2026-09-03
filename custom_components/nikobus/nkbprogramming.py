@@ -259,7 +259,10 @@ class NikobusProgramming:
             status = await api.get_module_status(address)
             check.eeprom_error = status.eeprom_error
             check.record_count_a = status.record_count_a
-            check.record_count_b = status.record_count_b
+            # 0xFF = "no second table" on switch / roller modules.
+            check.record_count_b = (
+                None if status.record_count_b == 0xFF else status.record_count_b
+            )
             if image:
                 data = await api.read_module_memory(address, module_type)
                 check.image_bytes = len(data)
