@@ -1446,6 +1446,14 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         known.add(f"{DOMAIN}_pc_link_inventory_button")
         known.add(f"{DOMAIN}_module_scan_button")
         known.add(f"{DOMAIN}_import_nkb_names_button")
+        # 3.15.0 programming maintenance entities (sensor.py / button.py).
+        # Every hub entity must be listed here — anything missing is
+        # evicted by the orphan cleanup right after the platform adds it.
+        known.add(f"{DOMAIN}_pc_link_clock")
+        known.add(f"{DOMAIN}_programming_health")
+        known.add(f"{DOMAIN}_sync_pc_link_clock_button")
+        known.add(f"{DOMAIN}_verify_programming_button")
+        known.add(f"{DOMAIN}_backup_programming_button")
         return known
 
     def _rebuild_dict_module_data(self) -> None:

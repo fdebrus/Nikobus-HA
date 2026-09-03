@@ -108,3 +108,36 @@ class TestMaintenanceButtons(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHubEntitiesSurviveOrphanCleanup(unittest.TestCase):
+    """Every hub entity's unique_id must be in the coordinator's known set.
+
+    3.15.0 shipped the maintenance entities without listing them, so the
+    orphan cleanup deleted them right after the platforms added them —
+    the buttons and sensors never appeared on the bridge device.
+    """
+
+    def test_maintenance_entity_ids_are_known(self):
+        from custom_components.nikobus.coordinator import NikobusDataCoordinator
+
+        coord = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
+        coord.dict_module_data = {}
+        coord.dict_scene_data = {}
+        coord.dict_button_data = {"nikobus_button": {}}
+        coord.cf_storage = MagicMock()
+        coord.cf_storage.data = {"nikobus_cf": {}}
+        known = coord.get_known_entity_unique_ids()
+
+        fake = _coordinator()
+        entities = [
+            NikobusPcLinkClockSensor(fake),
+            NikobusSyncClockButton(fake),
+            NikobusVerifyProgrammingButton(fake),
+            NikobusBackupProgrammingButton(fake),
+        ]
+        health = NikobusProgrammingHealthSensor.__new__(NikobusProgrammingHealthSensor)
+        health._attr_unique_id = f"{DOMAIN}_programming_health"
+        entities.append(health)
+        for entity in entities:
+            self.assertIn(entity._attr_unique_id, known, entity.__class__.__name__)
