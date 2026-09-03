@@ -12,7 +12,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.exceptions import HomeAssistantError
-
 from nikobus_connect.discovery.feedback_decoder import (
     FEEDBACK_IMAGE_SIZE,
     LED_MODE_TABLE_OFFSET,
