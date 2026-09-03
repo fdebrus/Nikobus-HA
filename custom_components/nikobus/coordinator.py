@@ -468,8 +468,14 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             return
         if self.inventory_query_type == InventoryQueryType.PC_LINK:
             self.nikobus_discovery.handle_device_address_inventory(message)
-        else:
-            await self.nikobus_discovery.query_module_inventory(message[3:7])
+            return
+        # Module stage. The only $18 frames here are replies to the
+        # engine's own module-status queries (already consumed from the
+        # response queue) and all-FF trailers. Starting a module
+        # discovery from one — as the legacy "module button pressed"
+        # path did — re-scanned the module under its byte-swapped wire
+        # address and blocked the command queue for the real scan.
+        _LOGGER.debug("Status frame during module scan ignored: %s", message)
 
     async def _discovery_frame_callback(self, message: str) -> None:
         """Route $2E/$1E discovery response frames."""

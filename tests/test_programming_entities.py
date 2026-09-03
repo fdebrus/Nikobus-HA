@@ -157,3 +157,35 @@ class TestStatusFrameOutsideDiscovery(unittest.TestCase):
         coord = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
         coord.nikobus_discovery = MagicMock(spec=[])  # no discovery methods at all
         _run(coord._inventory_callback("$18F58600500F3FFFAC61FE", False))
+
+
+class TestStatusFrameDuringModuleScan(unittest.TestCase):
+    """During the module stage a $18 frame is the module's reply to the
+    engine's own status query. It must not start a discovery for the
+    byte-swapped wire address it carries (phantom module, blocked queue)."""
+
+    def test_module_stage_frame_does_not_start_a_scan(self):
+        from custom_components.nikobus.coordinator import (
+            InventoryQueryType,
+            NikobusDataCoordinator,
+        )
+
+        coord = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
+        coord.nikobus_discovery = MagicMock()
+        coord.nikobus_discovery.query_module_inventory = AsyncMock()
+        coord.inventory_query_type = InventoryQueryType.MODULE
+        _run(coord._inventory_callback("$18F58600500C3FFFF531D1", True))
+        coord.nikobus_discovery.query_module_inventory.assert_not_awaited()
+        coord.nikobus_discovery.handle_device_address_inventory.assert_not_called()
+
+    def test_pc_link_stage_frame_still_feeds_the_inventory(self):
+        from custom_components.nikobus.coordinator import (
+            InventoryQueryType,
+            NikobusDataCoordinator,
+        )
+
+        coord = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
+        coord.nikobus_discovery = MagicMock()
+        coord.inventory_query_type = InventoryQueryType.PC_LINK
+        _run(coord._inventory_callback("$18F58600500F3FFFAC61FE", True))
+        coord.nikobus_discovery.handle_device_address_inventory.assert_called_once()

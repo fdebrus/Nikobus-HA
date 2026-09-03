@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.15.6
+
+- **Fix: discovery scans failed on every module since 3.15.0.** The count-driven scan asks each module for its status first. The module's reply is a `$18` frame, and during the module stage the integration still treated any `$18` frame as "a module button was pressed, discover it" — using the byte-swapped wire address. Each real scan therefore spawned a phantom scan of a module that does not exist, whose status query held the command queue for 15 s while the real scan's register reads timed out one after another. Status replies are now ignored in the module stage; the engine already consumes them from its response queue.
+- Ruff findings in the 3.15.5 tests (import order, unused variable).
+
+
 ## 3.15.5
 
 - **Covers: the stop frame at fully open/closed is back, sent after an end-stop margin.** Since 3.14.0 a motion started from Home Assistant that ended at 0 or 100 sent no stop at all and left the relay to the module's own run time. Where that run time is longer than the real travel (a common installer setting) the relay stayed engaged well after the shutter had arrived, and a wall button pressed in that window only stopped the relay — a second press was needed to move the shutter. The stop frame is now sent **End-stop margin** seconds after the estimated arrival (new per-channel setting under *Customize a module*, default 3 s, same as before 3.14.0): the motor still runs into the end stop during the margin, which keeps erasing the position drift, and the relay is released right after, so the wall button acts on the first press. A large margin restores the 3.14.0 behaviour for installs that prefer it.
