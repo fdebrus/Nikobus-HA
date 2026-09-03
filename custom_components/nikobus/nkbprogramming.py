@@ -1,0 +1,371 @@
+"""What the Nikobus modules are programmed to do — read-only maintenance.
+
+Groups the features that read a module's own programming rather than
+its live state: the PC-Link clock, the per-module status / integrity
+check, the programming backup, and the cover run times derived from
+the roller links. Everything here is read-only on the bus.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.util import dt as dt_util
+from nikobus_connect.api import MODULE_IMAGE_SIZES
+
+from .const import DOMAIN, ISSUE_MODULE_CRC_MISMATCH, ISSUE_MODULE_EEPROM_ERROR
+from .router import iter_operation_points
+
+_LOGGER = logging.getLogger(__name__)
+
+BACKUP_DIR = "nikobus_backup"
+
+HEALTH_OK = "ok"
+HEALTH_PROBLEM = "problem"
+HEALTH_UNKNOWN = "unknown"
+
+# Roller link modes that drive a shutter for their configured run time.
+_ROLLER_UP_MODES = ("M02", "M06")
+_ROLLER_DOWN_MODES = ("M03", "M07")
+_ROLLER_BOTH_MODES = ("M01",)
+
+_RUN_TIME_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(s|m)\b")
+
+
+def parse_run_time_label(label: Any) -> float | None:
+    """Seconds encoded in a decoded timer label (``"30 s"``, ``"1 m"``).
+
+    Labels without a duration (``OFF``) and sub-second impulses return
+    ``None`` — they don't describe a travel.
+    """
+    if not isinstance(label, str):
+        return None
+    match = _RUN_TIME_RE.search(label)
+    if not match:
+        return None
+    value = float(match.group(1).replace(",", "."))
+    seconds = value * 60 if match.group(2) == "m" else value
+    return seconds if seconds >= 1 else None
+
+
+def link_run_time(
+    button_data: dict[str, Any] | None,
+    module_address: str,
+    channel: int,
+    direction: str,
+) -> float | None:
+    """Longest run time programmed into the roller links of one output.
+
+    Scans every button link that targets ``module_address``/``channel``
+    and returns the largest run time among the links whose mode moves
+    the shutter in ``direction`` (``"up"`` or ``"down"``); ``None`` when
+    no link carries one. This is the time the module itself keeps the
+    relay engaged, so it is the physical truth for the position model.
+    """
+    modes = _ROLLER_BOTH_MODES + (
+        _ROLLER_UP_MODES if direction == "up" else _ROLLER_DOWN_MODES
+    )
+    target = str(module_address).upper()
+    best: float | None = None
+    buttons = (button_data or {}).get("nikobus_button") or {}
+    for _addr, _key, op_point, _ in iter_operation_points(buttons):
+        for link in op_point.get("linked_modules") or []:
+            if not isinstance(link, dict):
+                continue
+            if str(link.get("module_address") or "").upper() != target:
+                continue
+            if link.get("channel") != channel:
+                continue
+            mode = str(link.get("mode") or "")
+            if not mode.startswith(modes):
+                continue
+            seconds = parse_run_time_label(link.get("t1"))
+            if seconds is not None and (best is None or seconds > best):
+                best = seconds
+    return best
+
+
+@dataclass
+class ModuleCheck:
+    """Result of one module's status / integrity check."""
+
+    address: str
+    module_type: str
+    description: str
+    eeprom_error: bool | None = None
+    record_count_a: int | None = None
+    record_count_b: int | None = None
+    crc_ok: bool | None = None
+    module_crc: int | None = None
+    computed_crc: int | None = None
+    image_bytes: int | None = None
+    error: str | None = None
+
+    @property
+    def status(self) -> str:
+        if self.error is not None or self.eeprom_error is None:
+            return HEALTH_UNKNOWN
+        if self.eeprom_error or self.crc_ok is False:
+            return HEALTH_PROBLEM
+        return HEALTH_OK
+
+    def as_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["status"] = self.status
+        return data
+
+
+class NikobusProgramming:
+    """Read-only maintenance over the modules' programming."""
+
+    def __init__(self, hass: HomeAssistant, coordinator: Any) -> None:
+        self._hass = hass
+        self._coordinator = coordinator
+        self._lock = asyncio.Lock()
+        self.running = False
+        self.clock: datetime | None = None
+        self.clock_read_at: datetime | None = None
+        self.clock_drift_seconds: float | None = None
+        self.checks: dict[str, ModuleCheck] = {}
+        self.last_check_at: datetime | None = None
+        self.last_backup_path: str | None = None
+        self.last_backup_at: datetime | None = None
+
+    # -- inventory helpers -------------------------------------------------
+
+    def _modules(self) -> list[tuple[str, str, dict[str, Any]]]:
+        """``(address, module_type, entry)`` over the coordinator's grouped view.
+
+        ``dict_module_data`` is keyed by module type, then by address.
+        """
+        data = self._coordinator.dict_module_data or {}
+        out: list[tuple[str, str, dict[str, Any]]] = []
+        for module_type, group in data.items():
+            if not isinstance(group, dict):
+                continue
+            for address, entry in group.items():
+                if isinstance(entry, dict):
+                    out.append(
+                        (str(address).upper(), str(entry.get("module_type") or module_type), entry)
+                    )
+        return out
+
+    def pc_link_address(self) -> str | None:
+        """Address of the PC-Link, or ``None`` when no inventory names one."""
+        for address, module_type, _entry in self._modules():
+            if module_type == "pc_link":
+                return address
+        return None
+
+    def output_modules(self) -> list[tuple[str, str, str]]:
+        """``(address, module_type, description)`` of every module with an image."""
+        return [
+            (address, module_type, str(entry.get("description") or address))
+            for address, module_type, entry in self._modules()
+            if module_type in MODULE_IMAGE_SIZES
+        ]
+
+    def link_run_time(self, module_address: str, channel: int, direction: str) -> float | None:
+        return link_run_time(self._coordinator.dict_button_data, module_address, channel, direction)
+
+    @property
+    def health(self) -> str:
+        if not self.checks:
+            return HEALTH_UNKNOWN
+        statuses = {check.status for check in self.checks.values()}
+        if HEALTH_PROBLEM in statuses:
+            return HEALTH_PROBLEM
+        if HEALTH_UNKNOWN in statuses and HEALTH_OK not in statuses:
+            return HEALTH_UNKNOWN
+        return HEALTH_OK
+
+    # -- guards --------------------------------------------------------------
+
+    def _api(self) -> Any:
+        api = self._coordinator.api
+        if api is None or not self._coordinator.nikobus_connection.is_connected:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="not_connected"
+            )
+        return api
+
+    def _require_pc_link(self) -> str:
+        address = self.pc_link_address()
+        if address is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="no_pc_link_known"
+            )
+        return address
+
+    def _acquire(self) -> None:
+        if self._coordinator.discovery_running:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="discovery_already_running"
+            )
+        if self.running:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="maintenance_running"
+            )
+
+    # -- PC-Link clock -----------------------------------------------------
+
+    async def async_read_clock(self) -> datetime | None:
+        """Read the PC-Link clock; ``None`` when it can't be read."""
+        api = self._api()
+        address = self._require_pc_link()
+        try:
+            naive = await api.get_pc_link_time(address)
+        except ValueError:
+            # The controller answered but its clock was never set.
+            _LOGGER.warning("PC-Link %s reports an unset clock", address)
+            self.clock = None
+            self.clock_drift_seconds = None
+            self.clock_read_at = dt_util.now()
+            return None
+        now = dt_util.now()
+        self.clock = naive.replace(tzinfo=now.tzinfo)
+        self.clock_drift_seconds = (naive - now.replace(tzinfo=None)).total_seconds()
+        self.clock_read_at = now
+        return self.clock
+
+    async def async_sync_clock(self) -> datetime:
+        """Write Home Assistant's local time into the PC-Link and re-read it."""
+        api = self._api()
+        address = self._require_pc_link()
+        now = dt_util.now()
+        await api.set_pc_link_time(address, now.replace(tzinfo=None, microsecond=0))
+        _LOGGER.info("PC-Link %s clock set to %s", address, now.isoformat(timespec="seconds"))
+        clock = await self.async_read_clock()
+        return clock or now
+
+    # -- status / integrity ------------------------------------------------
+
+    async def _check_module(
+        self, api: Any, address: str, module_type: str, description: str, *, image: bool
+    ) -> tuple[ModuleCheck, bytes | None]:
+        check = ModuleCheck(address, module_type, description)
+        data: bytes | None = None
+        try:
+            status = await api.get_module_status(address)
+            check.eeprom_error = status.eeprom_error
+            check.record_count_a = status.record_count_a
+            check.record_count_b = status.record_count_b
+            if image:
+                data = await api.read_module_memory(address, module_type)
+                check.image_bytes = len(data)
+                check.crc_ok, check.module_crc, check.computed_crc = (
+                    await api.verify_module_memory(address, module_type, data)
+                )
+        except Exception as err:  # noqa: BLE001 - one module's failure must not abort the run
+            check.error = str(err) or err.__class__.__name__
+            _LOGGER.warning("Programming check of module %s failed: %s", address, check.error)
+        return check, data
+
+    def _apply_issues(self, check: ModuleCheck) -> None:
+        for key, active in (
+            (ISSUE_MODULE_EEPROM_ERROR, check.eeprom_error is True),
+            (ISSUE_MODULE_CRC_MISMATCH, check.crc_ok is False),
+        ):
+            issue_id = f"{key}_{check.address.lower()}"
+            if active:
+                ir.async_create_issue(
+                    self._hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=key,
+                    translation_placeholders={
+                        "address": check.address,
+                        "description": check.description,
+                    },
+                )
+            elif check.error is None:
+                ir.async_delete_issue(self._hass, DOMAIN, issue_id)
+
+    async def async_verify_modules(
+        self, addresses: list[str] | None = None, *, image: bool = True
+    ) -> dict[str, Any]:
+        """Check every output module (or ``addresses``): status and CRC."""
+        self._acquire()
+        api = self._api()
+        wanted = {a.upper() for a in addresses} if addresses else None
+        self.running = True
+        try:
+            async with self._lock:
+                for address, module_type, description in self.output_modules():
+                    if wanted is not None and address not in wanted:
+                        continue
+                    check, _ = await self._check_module(
+                        api, address, module_type, description, image=image
+                    )
+                    self.checks[address] = check
+                    self._apply_issues(check)
+                self.last_check_at = dt_util.now()
+        finally:
+            self.running = False
+            self._coordinator.async_update_listeners()
+        return self.check_report()
+
+    def check_report(self) -> dict[str, Any]:
+        return {
+            "health": self.health,
+            "checked_at": self.last_check_at.isoformat() if self.last_check_at else None,
+            "modules": {addr: check.as_dict() for addr, check in self.checks.items()},
+        }
+
+    # -- backup --------------------------------------------------------------
+
+    async def async_backup_modules(self, addresses: list[str] | None = None) -> dict[str, Any]:
+        """Read every output module's programming image into a backup folder.
+
+        Writes ``<config>/nikobus_backup/<timestamp>/<address>_<type>.nkm``
+        (the raw image) plus ``summary.json`` with the status / CRC result
+        of each module. The check results are kept like a verify run.
+        """
+        self._acquire()
+        api = self._api()
+        wanted = {a.upper() for a in addresses} if addresses else None
+        stamp = dt_util.now().strftime("%Y%m%d-%H%M%S")
+        folder = Path(self._hass.config.path(BACKUP_DIR, stamp))
+        self.running = True
+        try:
+            async with self._lock:
+                images: dict[str, bytes] = {}
+                for address, module_type, description in self.output_modules():
+                    if wanted is not None and address not in wanted:
+                        continue
+                    check, data = await self._check_module(
+                        api, address, module_type, description, image=True
+                    )
+                    self.checks[address] = check
+                    self._apply_issues(check)
+                    if data is not None:
+                        images[f"{address}_{module_type}.nkm"] = data
+                self.last_check_at = dt_util.now()
+                summary = self.check_report()
+                await self._hass.async_add_executor_job(_write_backup, folder, images, summary)
+                self.last_backup_path = str(folder)
+                self.last_backup_at = self.last_check_at
+        finally:
+            self.running = False
+            self._coordinator.async_update_listeners()
+        _LOGGER.info("Nikobus programming backup written to %s (%d image(s))", folder, len(images))
+        return {"path": str(folder), "images": sorted(images), **summary}
+
+
+def _write_backup(folder: Path, images: dict[str, bytes], summary: dict[str, Any]) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, data in images.items():
+        (folder / name).write_bytes(data)
+    (folder / "summary.json").write_text(json.dumps(summary, indent=2))

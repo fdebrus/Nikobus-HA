@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+from datetime import datetime, timedelta
 from typing import Any, ClassVar
 
 from homeassistant.components.sensor import (
@@ -11,6 +13,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -18,8 +21,13 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, SIGNAL_DISCOVERY_STATE
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import hub_device_info
+from .nkbprogramming import HEALTH_OK, HEALTH_PROBLEM, HEALTH_UNKNOWN
+
+_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
+# Only the PC-Link clock sensor polls; the others are push-driven.
+SCAN_INTERVAL = timedelta(hours=1)
 
 _CONNECTED = "connected"
 _RECONNECTING = "reconnecting"
@@ -31,12 +39,14 @@ async def async_setup_entry(
     entry: NikobusConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """Set up the Nikobus connection + discovery sensors."""
+    """Set up the Nikobus connection, discovery and programming sensors."""
     coordinator: NikobusDataCoordinator = entry.runtime_data
     async_add_entities([
         NikobusConnectionSensor(coordinator),
         NikobusDiscoveryStatusSensor(coordinator),
         NikobusDiscoveryProgressSensor(coordinator),
+        NikobusPcLinkClockSensor(coordinator),
+        NikobusProgrammingHealthSensor(coordinator),
     ])
 
 
@@ -169,3 +179,102 @@ class NikobusDiscoveryProgressSensor(_DiscoverySignalEntity):
     @property
     def native_value(self) -> float:
         return self._coordinator.discovery_progress_percent
+
+
+class NikobusPcLinkClockSensor(SensorEntity):
+    """The PC-Link's own clock, re-read every hour.
+
+    The controller keeps naive local time and knows nothing about
+    daylight-saving changes, so the drift against Home Assistant's
+    clock is exposed as an attribute — the "Sync PC-Link clock" button
+    or the ``nikobus.sync_pc_link_clock`` action corrects it.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "pc_link_clock"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_should_poll = True
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        self._coordinator = coordinator
+        self._attr_unique_id = f"{DOMAIN}_pc_link_clock"
+        self._attr_device_info = hub_device_info()
+
+    @property
+    def available(self) -> bool:
+        return self._coordinator.programming.pc_link_address() is not None
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self._coordinator.programming.clock
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        programming = self._coordinator.programming
+        read_at = programming.clock_read_at
+        return {
+            "pc_link_address": programming.pc_link_address(),
+            "drift_seconds": programming.clock_drift_seconds,
+            "last_read": read_at.isoformat() if read_at else None,
+        }
+
+    async def async_update(self) -> None:
+        """Re-read the controller clock; keep the last value on failure."""
+        programming = self._coordinator.programming
+        if programming.pc_link_address() is None or programming.running:
+            return
+        try:
+            await programming.async_read_clock()
+        except HomeAssistantError as err:
+            _LOGGER.debug("PC-Link clock not read: %s", err)
+        except Exception as err:  # noqa: BLE001 - polling must never raise into HA
+            _LOGGER.warning("PC-Link clock read failed: %s", err)
+
+
+class NikobusProgrammingHealthSensor(CoordinatorEntity[NikobusDataCoordinator], SensorEntity):
+    """Outcome of the last programming check (module status + CRC).
+
+    ``ok`` when every checked module reports a clean EEPROM and a
+    matching CRC, ``problem`` when any doesn't, ``unknown`` before the
+    first check. Per-module detail lives in the attributes; the check
+    itself runs from the "Verify module programming" / "Backup module
+    programming" buttons or the matching actions.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "programming_health"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options: ClassVar[list[str]] = [HEALTH_OK, HEALTH_PROBLEM, HEALTH_UNKNOWN]
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_programming_health"
+        self._attr_device_info = hub_device_info()
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.programming.health
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        programming = self.coordinator.programming
+        return {
+            "checked_at": (
+                programming.last_check_at.isoformat() if programming.last_check_at else None
+            ),
+            "last_backup": programming.last_backup_path,
+            "modules": {
+                address: {
+                    "description": check.description,
+                    "status": check.status,
+                    "eeprom_error": check.eeprom_error,
+                    "records": check.record_count_a,
+                    "records_bank_2": check.record_count_b,
+                    "crc_ok": check.crc_ok,
+                    "error": check.error,
+                }
+                for address, check in programming.checks.items()
+            },
+        }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.15.0
+
+- **New: Backup module programming.** A bridge button (and `nikobus.backup_modules` action) reads the complete programming image of every switch, dimmer and roller module — the button links, timers and hash tables the module runs on — into `config/nikobus_backup/<timestamp>/` as one `.nkm` file per module plus a `summary.json`. A lifeline for installs whose Nikobus PC software and project file are long gone. Read-only on the bus.
+- **New: Verify module programming.** Asks every output module for its own status (EEPROM-error flag, number of links) and checks the checksum it computes over its memory against the image read back. Results land on the new **Programming health** diagnostic sensor (per-module detail in its attributes) and any faulty module raises a Repair issue naming it. Also available as `nikobus.verify_modules`.
+- **New: PC-Link clock.** A diagnostic timestamp sensor shows the controller's own clock (re-read hourly, drift against Home Assistant in an attribute) and a **Sync PC-Link clock** button / `nikobus.sync_pc_link_clock` action sets it from Home Assistant's local time — the controller's calendar functions never knew about daylight-saving changes until now.
+- **Covers use the run time programmed into the module.** When a roller channel still carries the discovery placeholder (30 s), its travel time now comes from the roller links programmed into that module (the time the module itself keeps the relay engaged), so the position model and the 3.14.0 end-stop behaviour match the hardware. A value you set on the channel yourself still wins.
+- Discovery reads exactly the links each module reports instead of a fixed band, and decodes dimmer ramp times — via `nikobus-connect >= 0.35.0` (required).
+
+
 ## 3.14.0
 
 - **Covers self-recalibrate on every full open/close.** The position

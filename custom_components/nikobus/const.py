@@ -170,6 +170,11 @@ ISSUE_LEGACY_UNDECODED_BUTTONS: Final[str] = "legacy_undecoded_buttons"
 # reports the same and asks for reprogramming). Informational only; the
 # fix is reprogramming the module, not anything HA can do.
 ISSUE_CORRUPT_MODULES: Final[str] = "corrupt_modules"
+# Raised by the programming check (module status / CRC verification):
+# the module itself flags an EEPROM error, or the CRC it computes over
+# its memory image differs from the image we just read back.
+ISSUE_MODULE_EEPROM_ERROR: Final[str] = "module_eeprom_error"
+ISSUE_MODULE_CRC_MISMATCH: Final[str] = "module_crc_mismatch"
 
 # Physical button types that are INPUT-ONLY by design — they generate
 # bus press telegrams when their contacts change state but they don't

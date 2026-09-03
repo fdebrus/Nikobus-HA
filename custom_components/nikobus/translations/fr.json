@@ -214,6 +214,17 @@
       },
       "discovery_progress": {
         "name": "Progression de la découverte"
+      },
+      "pc_link_clock": {
+        "name": "Horloge du PC-Link"
+      },
+      "programming_health": {
+        "name": "État de la programmation",
+        "state": {
+          "ok": "OK",
+          "problem": "Problème",
+          "unknown": "Non vérifié"
+        }
       }
     },
     "button": {
@@ -225,6 +236,15 @@
       },
       "import_nkb_names": {
         "name": "3. Importer les noms depuis .nkb"
+      },
+      "sync_pc_link_clock": {
+        "name": "Synchroniser l'horloge du PC-Link"
+      },
+      "verify_module_programming": {
+        "name": "Vérifier la programmation des modules"
+      },
+      "backup_module_programming": {
+        "name": "Sauvegarder la programmation des modules"
       }
     }
   },
@@ -261,6 +281,14 @@
     "corrupt_modules": {
       "title": "Un module Nikobus doit être reprogrammé",
       "description": "{count} module(s) Nikobus ont signalé une table de liens corrompue et ont été ignorés pendant la découverte (leurs liens boutons n'ont pas pu être lus) : **{modules}**.\n\nC'est un problème côté module — le logiciel Nikobus signale la même chose et demande une reprogrammation. Ouvrez le logiciel Nikobus, reprogrammez le(s) module(s) listé(s), puis relancez **Charger l'installation existante**. Cet avertissement disparaît automatiquement dès que le module se lit correctement."
+    },
+    "module_eeprom_error": {
+      "title": "Le module Nikobus {description} ({address}) signale une erreur EEPROM",
+      "description": "Le module signale lui-même un défaut de sa mémoire de programmation. Ses liaisons peuvent se comporter de façon erratique ; la solution est de reprogrammer le module avec le logiciel PC Nikobus (ou de le restaurer depuis une sauvegarde). Relancez ensuite **Vérifier la programmation des modules** pour effacer ce problème."
+    },
+    "module_crc_mismatch": {
+      "title": "Somme de contrôle de programmation incorrecte pour le module Nikobus {description} ({address})",
+      "description": "La somme de contrôle calculée par le module sur sa mémoire de programmation diffère de l'image relue par Home Assistant, ce qui indique un transfert corrompu ou interrompu. Relancez **Vérifier la programmation des modules** ; si le problème persiste, reprogrammez le module avec le logiciel PC Nikobus."
     }
   },
   "exceptions": {
@@ -304,7 +332,13 @@
       "message": "L'analyse forensic des registres nécessite un module_address. Spécifiez-en un (par ex. 940C) — la plage de registres ne peut pas être appliquée à tous les modules."
     },
     "not_connected": {
-      "message": "Le bus Nikobus n'est pas connecté — impossible d'envoyer une commande. Vérifiez la connexion et réessayez."
+      "message": "Nikobus n'est pas connecté."
+    },
+    "maintenance_running": {
+      "message": "Une vérification ou une sauvegarde de programmation est déjà en cours — attendez qu'elle se termine."
+    },
+    "no_pc_link_known": {
+      "message": "Aucun PC-Link n'est encore connu — lancez d'abord **1. Charger la vue d'ensemble du projet**."
     }
   },
   "selector": {
@@ -400,6 +434,30 @@
         "address": {
           "name": "Adresse",
           "description": "Adresse de bus du bouton à simuler (par ex. 84DFFC)."
+        }
+      }
+    },
+    "sync_pc_link_clock": {
+      "name": "Synchroniser l'horloge du PC-Link",
+      "description": "Règle l'horloge interne du PC-Link sur l'heure locale actuelle de Home Assistant et renvoie l'heure relue."
+    },
+    "verify_modules": {
+      "name": "Vérifier la programmation des modules",
+      "description": "Interroge chaque module de sortie (ou ceux listés) sur son état et compare sa somme de contrôle avec l'image mémoire relue. Renvoie un rapport par module et crée une réparation pour tout module en défaut.",
+      "fields": {
+        "addresses": {
+          "name": "Adresses des modules",
+          "description": "Liste facultative d'adresses de modules pour limiter l'opération (par exemple ['9105', '4707']). Vide = tous les modules de commutation, variation et volets."
+        }
+      }
+    },
+    "backup_modules": {
+      "name": "Sauvegarder la programmation des modules",
+      "description": "Lit l'image de programmation complète de chaque module de sortie (ou de ceux listés) dans config/nikobus_backup/<horodatage>/ sous forme de fichiers .nkm, avec un résumé des vérifications.",
+      "fields": {
+        "addresses": {
+          "name": "Adresses des modules",
+          "description": "Liste facultative d'adresses de modules pour limiter l'opération (par exemple ['9105', '4707']). Vide = tous les modules de commutation, variation et volets."
         }
       }
     }

@@ -214,6 +214,17 @@
       },
       "discovery_progress": {
         "name": "Ontdekkingsvoortgang"
+      },
+      "pc_link_clock": {
+        "name": "PC-Link-klok"
+      },
+      "programming_health": {
+        "name": "Programmeringsstatus",
+        "state": {
+          "ok": "OK",
+          "problem": "Probleem",
+          "unknown": "Niet gecontroleerd"
+        }
       }
     },
     "button": {
@@ -225,6 +236,15 @@
       },
       "import_nkb_names": {
         "name": "3. Namen importeren uit .nkb"
+      },
+      "sync_pc_link_clock": {
+        "name": "PC-Link-klok synchroniseren"
+      },
+      "verify_module_programming": {
+        "name": "Moduleprogrammering controleren"
+      },
+      "backup_module_programming": {
+        "name": "Moduleprogrammering back-uppen"
       }
     }
   },
@@ -261,6 +281,14 @@
     "corrupt_modules": {
       "title": "Nikobus-module moet opnieuw geprogrammeerd worden",
       "description": "{count} Nikobus-module(s) meldden een beschadigde koppelingstabel en werden overgeslagen tijdens detectie (hun knopkoppelingen konden niet gelezen worden): **{modules}**.\n\nDit is een probleem aan de modulezijde — de Nikobus PC-software meldt hetzelfde en vraagt om herprogrammeren. Open de Nikobus PC-software, herprogrammeer de vermelde module(s) en voer daarna opnieuw **Bestaande installatie laden** uit. Deze waarschuwing verdwijnt automatisch zodra de module weer correct gelezen wordt."
+    },
+    "module_eeprom_error": {
+      "title": "Nikobus-module {description} ({address}) meldt een EEPROM-fout",
+      "description": "De module meldt zelf een fout in zijn programmeergeheugen. Zijn koppelingen kunnen zich onvoorspelbaar gedragen; de oplossing is de module opnieuw programmeren met de Nikobus-pc-software (of herstellen vanaf een back-up). Voer daarna **Moduleprogrammering controleren** opnieuw uit om dit probleem te wissen."
+    },
+    "module_crc_mismatch": {
+      "title": "Checksum van de programmering van Nikobus-module {description} ({address}) klopt niet",
+      "description": "De checksum die de module over zijn programmeergeheugen berekent, verschilt van het geheugenbeeld dat Home Assistant zojuist heeft teruggelezen, wat wijst op een beschadigde of onderbroken overdracht. Voer **Moduleprogrammering controleren** opnieuw uit; blijft het probleem, programmeer de module dan opnieuw met de Nikobus-pc-software."
     }
   },
   "exceptions": {
@@ -304,7 +332,13 @@
       "message": "Forensische registerscan vereist een module_address. Geef er een op (bijv. 940C) — het registerbereik kan niet op alle modules worden toegepast."
     },
     "not_connected": {
-      "message": "De Nikobus-bus is niet verbonden — kan geen commando verzenden. Controleer de verbinding en probeer opnieuw."
+      "message": "Nikobus is niet verbonden."
+    },
+    "maintenance_running": {
+      "message": "Er loopt al een controle of back-up van de programmering — wacht tot die klaar is."
+    },
+    "no_pc_link_known": {
+      "message": "Er is nog geen PC-Link bekend — voer eerst **1. Projectoverzicht laden** uit."
     }
   },
   "selector": {
@@ -400,6 +434,30 @@
         "address": {
           "name": "Adres",
           "description": "Busadres van de te simuleren knop (bijv. 84DFFC)."
+        }
+      }
+    },
+    "sync_pc_link_clock": {
+      "name": "PC-Link-klok synchroniseren",
+      "description": "Zet de interne klok van de PC-Link op de huidige lokale tijd van Home Assistant en geeft de teruggelezen tijd terug."
+    },
+    "verify_modules": {
+      "name": "Moduleprogrammering controleren",
+      "description": "Vraagt elke uitgangsmodule (of de opgegeven modules) om zijn status en vergelijkt de checksum van de programmering met het teruggelezen geheugenbeeld. Geeft een rapport per module terug en maakt een herstelmelding aan voor elke module met een probleem.",
+      "fields": {
+        "addresses": {
+          "name": "Moduleadressen",
+          "description": "Optionele lijst van moduleadressen om de actie te beperken (bijvoorbeeld ['9105', '4707']). Leeg betekent alle schakel-, dim- en rolluikmodules."
+        }
+      }
+    },
+    "backup_modules": {
+      "name": "Moduleprogrammering back-uppen",
+      "description": "Leest het volledige programmeergeheugen van elke uitgangsmodule (of de opgegeven modules) naar config/nikobus_backup/<tijdstempel>/ als .nkm-bestanden, samen met een samenvatting van de controles.",
+      "fields": {
+        "addresses": {
+          "name": "Moduleadressen",
+          "description": "Optionele lijst van moduleadressen om de actie te beperken (bijvoorbeeld ['9105', '4707']). Leeg betekent alle schakel-, dim- en rolluikmodules."
         }
       }
     }

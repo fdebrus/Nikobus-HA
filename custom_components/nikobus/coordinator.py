@@ -66,6 +66,7 @@ from .discovery_mixin import NikobusDiscoveryMixin
 from .nkbactuator import NikobusActuator
 from .nkbconfig import NikobusConfig
 from .nkbmanual import legacy_config_files_present
+from .nkbprogramming import NikobusProgramming
 from .nkbreconcile import (
     build_controlled_by_index,
 )
@@ -143,6 +144,10 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         # the library's ``NikobusDiscovery.discovered_cf_broadcasts``.
         self.cf_storage = NikobusCFStorage(hass)
         self.api: NikobusAPI | None = None
+        # Read-only maintenance over the modules' programming (PC-Link
+        # clock, status / integrity checks, backups, link-derived run
+        # times). Talks to the bus through ``self.api`` once connected.
+        self.programming = NikobusProgramming(hass, self)
 
         # ``dict_module_data`` is a derived view of ``module_storage.data``,
         # grouped by ``module_type`` for the library's scan planner and for
@@ -1078,16 +1083,37 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
     def get_cover_operation_time(
         self, module_id: str, channel: int, direction: str = "up", default: float = 30.0
     ) -> float:
-        """Fetch travel time for a shutter channel."""
+        """Fetch travel time for a shutter channel.
+
+        A value the user set on the channel wins. When the channel still
+        carries the discovery placeholder (``30``) or nothing at all, the
+        run time programmed into the module's own roller links is used —
+        that is how long the module actually keeps the relay engaged, so
+        it is the physical truth for the position model. ``default``
+        only applies when neither source knows.
+        """
         hit = find_module(self.module_storage.data, module_id)
         if hit is None or hit[1].get("module_type") != "roller_module":
             return default
+        configured: float | None = None
         try:
             ch = hit[1].get("channels", [])[int(channel) - 1]
             ot = ch.get(f"operation_time_{direction}")
-            return float(ot) if ot and float(ot) > 0 else default
+            if ot and float(ot) > 0:
+                configured = float(ot)
         except (IndexError, ValueError, KeyError, TypeError):
-            return default
+            configured = None
+        if configured is not None and configured != default:
+            return configured
+        programming = getattr(self, "programming", None)
+        programmed = (
+            programming.link_run_time(module_id, int(channel), direction)
+            if programming is not None
+            else None
+        )
+        if programmed is not None:
+            return programmed
+        return configured if configured is not None else default
 
     # ------------------------------------------------------------------
     # Convenience state accessors used by entity platforms
