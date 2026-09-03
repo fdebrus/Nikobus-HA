@@ -331,7 +331,7 @@ class TestCoordinatorSceneHelpers(unittest.TestCase):
         dev.name_by_user = None
         dev.name = "dimmer_module_d1"
         reg = MagicMock()
-        reg.async_get_device.return_value = dev
+        reg.async_get_device_by_identifier.return_value = dev
         with patch("custom_components.nikobus.coordinator.dr.async_get",
                    return_value=reg):
             self.assertEqual(c.address_label("0E6C"), "dimmer_module_d1 (0E6C)")

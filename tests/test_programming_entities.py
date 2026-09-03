@@ -77,15 +77,12 @@ class TestHealthSensor(unittest.TestCase):
 
 class TestMaintenanceButtons(unittest.TestCase):
     def test_availability_gating(self):
-        # Verify/backup grey out while either discovery or a maintenance
-        # run is busy; the clock sync only needs the bus queue, so it
-        # stays available during a backup and only yields to discovery.
-        self.assertTrue(NikobusVerifyProgrammingButton(_coordinator()).available)
-        self.assertFalse(NikobusVerifyProgrammingButton(_coordinator(running=True)).available)
-        self.assertFalse(NikobusVerifyProgrammingButton(_coordinator(discovery_running=True)).available)
-        self.assertTrue(NikobusSyncClockButton(_coordinator()).available)
-        self.assertTrue(NikobusSyncClockButton(_coordinator(running=True)).available)
-        self.assertFalse(NikobusSyncClockButton(_coordinator(discovery_running=True)).available)
+        # One bridge action at a time: every bridge button greys out
+        # while discovery or a maintenance run is busy.
+        for cls in (NikobusVerifyProgrammingButton, NikobusSyncClockButton, NikobusBackupProgrammingButton):
+            self.assertTrue(cls(_coordinator()).available, cls.__name__)
+            self.assertFalse(cls(_coordinator(running=True)).available, cls.__name__)
+            self.assertFalse(cls(_coordinator(discovery_running=True)).available, cls.__name__)
 
     def test_sync_button_awaits_sync(self):
         coord = _coordinator()

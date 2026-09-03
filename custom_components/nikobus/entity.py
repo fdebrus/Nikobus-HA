@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import BRAND, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusDataCoordinator
+from .nkbdevices import parent_device_id
 
 # Sentinel return for ``_render_state``: this entity opts out of
 # write-diffing and writes on every coordinator update (the default).
@@ -87,8 +88,18 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
             manufacturer=BRAND,
             model=self._device_model,
         )
+        #: Identifier of the parent device (category / plate), if any.
+        self._via_device = via_device
         if via_device is not None:
-            device_info["via_device"] = via_device
+            hass = getattr(coordinator, "hass", None)
+            entry = getattr(coordinator, "config_entry", None)
+            parent_id = parent_device_id(
+                dr.async_get(hass) if hass is not None else None,
+                str(getattr(entry, "entry_id", "") or ""),
+                via_device,
+            )
+            if parent_id is not None:
+                device_info["via_device_id"] = parent_id
         self._attr_device_info = device_info
 
         #: Last ``(available, render_state)`` actually written, for diffing.

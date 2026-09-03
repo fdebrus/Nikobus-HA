@@ -31,6 +31,7 @@ from .const import CONFIG_ENTRY_VERSION, DOMAIN, HUB_IDENTIFIER
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import hub_device_info
 from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
+from .nkbdevices import parent_device_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -522,7 +523,7 @@ def _register_category_devices(
             manufacturer="Niko",
             name=display_name,
             model=model,
-            via_device=(DOMAIN, HUB_IDENTIFIER),
+            via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, HUB_IDENTIFIER)),
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
@@ -554,13 +555,13 @@ async def _async_cleanup_orphan_entities(
         entity.device_id for entity in ent_reg.entities.values()
         if entity.config_entry_id == entry.entry_id and entity.device_id
     }
+    entry_devices = list(dr.async_entries_for_config_entry(dev_reg, entry.entry_id))
     via_parent_ids = {
-        device.via_device_id for device in dev_reg.devices.values()
-        if device.via_device_id and entry.entry_id in device.config_entries
+        device.via_device_id for device in entry_devices if device.via_device_id
     }
 
-    for device in list(dev_reg.devices.values()):
-        if entry.entry_id in device.config_entries and hub_identifier not in device.identifiers:
+    for device in entry_devices:
+        if hub_identifier not in device.identifiers:
             if device.id in devices_with_entities or device.id in via_parent_ids:
                 continue
             dev_reg.async_remove_device(device.id)

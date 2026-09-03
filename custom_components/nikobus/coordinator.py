@@ -1039,8 +1039,9 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             return ""
         addr = str(address).upper()
         if self.hass is not None:
-            device = dr.async_get(self.hass).async_get_device(
-                identifiers={(DOMAIN, addr)}
+            entry = getattr(self, "config_entry", None)
+            device = dr.async_get(self.hass).async_get_device_by_identifier(
+                (DOMAIN, addr), str(getattr(entry, "entry_id", "") or "")
             )
             if device is not None:
                 name = device.name_by_user or device.name

@@ -193,6 +193,9 @@ _mod(
     DeviceInfo=_DeviceInfo,
     DeviceEntry=type("DeviceEntry", (), {}),
     async_get=lambda hass: None,
+    # Real HA: list of DeviceEntry for a config entry. Tests that need
+    # devices patch this (see test_nkbnames) or hand in a fake registry.
+    async_entries_for_config_entry=lambda registry, entry_id: [],
 )
 
 # homeassistant.helpers.entity_registry

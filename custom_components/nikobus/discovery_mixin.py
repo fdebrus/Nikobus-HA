@@ -1390,10 +1390,9 @@ class NikobusDiscoveryMixin:
                         # live in ``name_by_user``), so updating it when
                         # it equals the previous import is safe.
                         if prev and not overwrite:
-                            dev = dev_reg.async_get_device(
-                                identifiers={
-                                    (DOMAIN, str(op.get("bus_address") or "").upper())
-                                }
+                            dev = dev_reg.async_get_device_by_identifier(
+                                (DOMAIN, str(op.get("bus_address") or "").upper()),
+                                self.config_entry.entry_id,
                             )
                             if dev is not None and dev.name == prev:
                                 dev_reg.async_update_device(

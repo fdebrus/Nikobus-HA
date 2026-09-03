@@ -650,7 +650,7 @@ class TestCFCoverConstruction(unittest.TestCase):
             cf_config={"pattern": "roller", "name": "Gordijnen keuken", "outputs": []}
         )
         self.assertEqual(
-            ent._attr_device_info["via_device"],
+            ent._via_device,
             (DOMAIN, CATEGORY_CENTRAL_FUNCTIONS),
         )
         self.assertEqual(

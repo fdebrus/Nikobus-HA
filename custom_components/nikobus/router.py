@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
 from .const import BRAND, CATEGORY_OUTPUT_MODULES, DOMAIN
+from .nkbdevices import parent_device_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def register_output_module_devices(
             manufacturer=BRAND,
             name=spec.module_desc,
             model=spec.module_model,
-            via_device=(DOMAIN, CATEGORY_OUTPUT_MODULES),
+            via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, CATEGORY_OUTPUT_MODULES)),
         )
         registered.add(spec.address)
 
