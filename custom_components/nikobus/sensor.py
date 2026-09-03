@@ -201,6 +201,11 @@ class NikobusPcLinkClockSensor(SensorEntity):
         self._attr_unique_id = f"{DOMAIN}_pc_link_clock"
         self._attr_device_info = hub_device_info()
 
+    async def async_added_to_hass(self) -> None:
+        """Read the clock right away instead of waiting a full poll interval."""
+        await super().async_added_to_hass()
+        self.async_schedule_update_ha_state(force_refresh=True)
+
     @property
     def available(self) -> bool:
         return self._coordinator.programming.pc_link_address() is not None

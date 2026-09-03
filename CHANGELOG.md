@@ -4,6 +4,7 @@
 
 - **Fix: "Listener loop failed: 'NikobusDiscovery' object has no attribute 'process_mode_button_press'"** logged on every module-status reply. Status frames arriving outside a discovery run were routed to a discovery method that no longer exists; they are now ignored there (the query layer already consumes them). The backup / verify results were unaffected, only the log was.
 - **Sync PC-Link clock stays available during a backup or check.** It only needs two queued commands, so it no longer greys out (and no longer triggers "referenced entity not available" when pressed) while a longer maintenance run is in progress. Discovery still blocks it.
+- The PC-Link clock sensor reads the clock as soon as it is added instead of waiting for the first hourly poll (it stayed "unknown" for an hour after every restart).
 - Bus frames are logged as "Bus event frame" instead of "Press frame" at debug level.
 
 
