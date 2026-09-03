@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.15.3
+
+- **Fix: dimmer modules no longer fail the programming check.** A dimmer's own checksum skips the six bytes between its two link banks; the check computed it over the whole image, so every healthy dimmer was flagged with a false "checksum mismatch" Repair issue. Fixed in `nikobus-connect 0.35.1` (required). Re-run **Verify module programming** once to clear the issue.
+- The programming report shows *no second table* as empty instead of 255 on switch and roller modules.
+
+
 ## 3.15.2
 
 - **Fix: "Listener loop failed: 'NikobusDiscovery' object has no attribute 'process_mode_button_press'"** logged on every module-status reply. Status frames arriving outside a discovery run were routed to a discovery method that no longer exists; they are now ignored there (the query layer already consumes them). The backup / verify results were unaffected, only the log was.
