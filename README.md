@@ -149,6 +149,7 @@ Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scen
 - **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`none`; rollers: `cover`/`switch`/`light`/`none`).
 - **LED on / off addresses** → feedback-LED bus addresses (blank if unused).
 - **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator.
+- **End-stop margin** (rollers) → seconds after the estimated arrival at fully open/closed before a Home Assistant-started motion sends its stop frame (default 3). The motor runs into the end stop during the margin, which keeps the position model honest; the stop then releases the relay so a wall button acts on the first press. Set it higher to let the module's own run time release the relay instead.
 
 Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 

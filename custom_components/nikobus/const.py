@@ -269,6 +269,9 @@ MAX_EXTENDED_RELEASE_MS: Final[int] = 5000
 # Covers
 # =============================================================================
 DEFAULT_COVER_MOVEMENT_BUFFER: Final[float] = 3.0
+# Seconds after the estimated arrival at 0/100 before HA releases the
+# relay of a motion it started (per-channel ``end_stop_margin`` override).
+DEFAULT_COVER_END_STOP_MARGIN: Final[float] = 3.0
 DEFAULT_COVER_DEBOUNCE_DELAY: Final[float] = 0.3
 DEFAULT_COVER_OPERATION_TIME: Final[float] = 30.0
 

@@ -250,6 +250,8 @@ def _convert_channel(
             out["operation_time_up"] = channel["operation_time_up"]
         if "operation_time_down" in channel:
             out["operation_time_down"] = channel["operation_time_down"]
+        if "end_stop_margin" in channel:
+            out["end_stop_margin"] = channel["end_stop_margin"]
         # Legacy single ``operation_time`` → split into both directions.
         if "operation_time" in channel and "operation_time_up" not in out:
             legacy_time = channel["operation_time"]

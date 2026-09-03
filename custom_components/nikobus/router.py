@@ -194,6 +194,7 @@ class EntitySpec:
     module_model: str
     operation_time_up: str | None = None
     operation_time_down: str | None = None
+    end_stop_margin: str | None = None
 
 
 def build_unique_id(domain: str, kind: str, address: str, channel: int) -> str:
@@ -314,6 +315,7 @@ def build_routing(
                         module_model=module_model,
                         operation_time_up=channel_info.get("operation_time_up"),
                         operation_time_down=channel_info.get("operation_time_down"),
+                        end_stop_margin=channel_info.get("end_stop_margin"),
                     )
                 )
 

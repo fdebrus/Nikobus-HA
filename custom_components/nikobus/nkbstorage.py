@@ -17,7 +17,8 @@ Two parallel Stores back the integration:
               "channels": [
                   {"description", "entity_type",
                    "led_on", "led_off",
-                   "operation_time_up", "operation_time_down"}, ...
+                   "operation_time_up", "operation_time_down",
+                   "end_stop_margin"}, ...
               ],
               "discovered_info": {"name", "device_type", "channels_count"},
           },

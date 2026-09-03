@@ -122,7 +122,8 @@
           "led_on": "Déclencheur LED allumée (adresse bus 6-hex, optionnel)",
           "led_off": "Déclencheur LED éteinte (adresse bus 6-hex, optionnel)",
           "operation_time_up": "Temps de course à l'ouverture (secondes)",
-          "operation_time_down": "Temps de course à la fermeture (secondes)"
+          "operation_time_down": "Temps de course à la fermeture (secondes)",
+          "end_stop_margin": "Marge de fin de course (secondes)"
         }
       },
       "upload_nkb": {
