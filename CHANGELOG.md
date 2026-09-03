@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.16.0
+
+- **New: Import LED links from feedback module.** A bridge button (and `nikobus.import_feedback_leds` action, with an *Overwrite* option) reads the programming of the feedback module (05-207) and fills the LED-on / LED-off trigger address of every output channel with the wall key whose feedback LED tracks it — the addresses you had to look up and type by hand under *Customize a module*. The key is identified from the plate the feedback module names and from the links discovery already knows; a report of the assignments is returned by the action. Typed addresses stay unless Overwrite is on; imported ones are refreshed on every run. Requires `nikobus-connect >= 0.36.0`.
+- **Backup and Verify include the feedback module.** Its image lands in the backup as `<address>_feedback_module.nkm`; the checksum comparison is skipped for it because its coverage is not known yet, and a missing status reply is tolerated.
+- **Fix: cover run times from the module links never matched the stored links.** The lookup expected a flat link shape while discovery stores links as per-module output lists, so every cover fell back to the configured or default time. Now read from the stored shape.
+- **Fix: the PC-Link clock reply appeared as a phantom module** (`F5FF`, carrying the date as its output state) on installs with a feedback module. Fixed in `nikobus-connect 0.36.0`.
+
+
 ## 3.15.6
 
 - **Fix: discovery scans failed on every module since 3.15.0.** The count-driven scan asks each module for its status first. The module's reply is a `$18` frame, and during the module stage the integration still treated any `$18` frame as "a module button was pressed, discover it" — using the byte-swapped wire address. Each real scan therefore spawned a phantom scan of a module that does not exist, whose status query held the command queue for 15 s while the real scan's register reads timed out one after another. Status replies are now ignored in the module stage; the engine already consumes them from its response queue.

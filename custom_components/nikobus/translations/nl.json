@@ -246,6 +246,9 @@
       },
       "backup_module_programming": {
         "name": "Moduleprogrammering back-uppen"
+      },
+      "import_feedback_leds": {
+        "name": "LED-koppelingen importeren uit feedbackmodule"
       }
     }
   },
@@ -340,6 +343,9 @@
     },
     "no_pc_link_known": {
       "message": "Er is nog geen PC-Link bekend — voer eerst **1. Projectoverzicht laden** uit."
+    },
+    "no_feedback_module": {
+      "message": "Er is geen feedbackmodule (05-207) bekend — voer eerst **1. Projectoverzicht laden** uit, of schakel de feedbackmodule in bij de integratie-opties."
     }
   },
   "selector": {
@@ -459,6 +465,16 @@
         "addresses": {
           "name": "Moduleadressen",
           "description": "Optionele lijst van moduleadressen om de actie te beperken (bijvoorbeeld ['9105', '4707']). Leeg betekent alle schakel-, dim- en rolluikmodules."
+        }
+      }
+    },
+    "import_feedback_leds": {
+      "name": "LED-koppelingen importeren uit feedbackmodule",
+      "description": "Leest de programmering van de feedbackmodule en vult het LED-aan / LED-uit triggeradres van elk uitgangskanaal in met de wandtoets waarvan de LED het volgt. Handmatig ingevulde adressen blijven staan tenzij Overschrijven aan staat; adressen van een eerdere import worden vernieuwd.",
+      "fields": {
+        "overwrite": {
+          "name": "Overschrijven",
+          "description": "Ook handmatig ingestelde LED-adressen vervangen."
         }
       }
     }

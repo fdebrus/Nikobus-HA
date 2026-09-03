@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from custom_components.nikobus.button import (
     NikobusBackupProgrammingButton,
+    NikobusImportFeedbackLedsButton,
     NikobusSyncClockButton,
     NikobusVerifyProgrammingButton,
 )
@@ -28,9 +29,11 @@ def _run(coro):
         loop.close()
 
 
-def _coordinator(pc_link="86F5", running=False, discovery_running=False):
+def _coordinator(pc_link="86F5", running=False, discovery_running=False, feedback=("966C",)):
     programming = SimpleNamespace(
         pc_link_address=lambda: pc_link,
+        feedback_modules=lambda: [(a, a) for a in feedback],
+        async_import_feedback_leds=AsyncMock(),
         clock=None,
         clock_read_at=None,
         clock_drift_seconds=None,
@@ -79,10 +82,19 @@ class TestMaintenanceButtons(unittest.TestCase):
     def test_availability_gating(self):
         # One bridge action at a time: every bridge button greys out
         # while discovery or a maintenance run is busy.
-        for cls in (NikobusVerifyProgrammingButton, NikobusSyncClockButton, NikobusBackupProgrammingButton):
+        for cls in (
+            NikobusVerifyProgrammingButton,
+            NikobusSyncClockButton,
+            NikobusBackupProgrammingButton,
+            NikobusImportFeedbackLedsButton,
+        ):
             self.assertTrue(cls(_coordinator()).available, cls.__name__)
             self.assertFalse(cls(_coordinator(running=True)).available, cls.__name__)
             self.assertFalse(cls(_coordinator(discovery_running=True)).available, cls.__name__)
+
+    def test_led_import_needs_a_feedback_module(self):
+        self.assertFalse(NikobusImportFeedbackLedsButton(_coordinator(feedback=())).available)
+        self.assertTrue(NikobusImportFeedbackLedsButton(_coordinator()).available)
 
     def test_sync_button_awaits_sync(self):
         coord = _coordinator()
@@ -94,6 +106,7 @@ class TestMaintenanceButtons(unittest.TestCase):
         for cls, method in (
             (NikobusVerifyProgrammingButton, "async_verify_modules"),
             (NikobusBackupProgrammingButton, "async_backup_modules"),
+            (NikobusImportFeedbackLedsButton, "async_import_feedback_leds"),
         ):
             button = cls(coord)
             button.hass = MagicMock()
@@ -138,6 +151,7 @@ class TestHubEntitiesSurviveOrphanCleanup(unittest.TestCase):
             NikobusSyncClockButton(fake),
             NikobusVerifyProgrammingButton(fake),
             NikobusBackupProgrammingButton(fake),
+            NikobusImportFeedbackLedsButton(fake),
         ]
         health = NikobusProgrammingHealthSensor.__new__(NikobusProgrammingHealthSensor)
         health._attr_unique_id = f"{DOMAIN}_programming_health"

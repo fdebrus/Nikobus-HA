@@ -13,13 +13,24 @@ from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.exceptions import HomeAssistantError
 
+from nikobus_connect.discovery.feedback_decoder import (
+    FEEDBACK_IMAGE_SIZE,
+    LED_MODE_TABLE_OFFSET,
+    REGION_GROUP_ADDRESSES,
+    REGION_LED_LISTS,
+    REGION_OUTPUT_MODULES,
+    decode_feedback_image,
+)
+
 from custom_components.nikobus.nkbprogramming import (
     HEALTH_OK,
     HEALTH_PROBLEM,
     HEALTH_UNKNOWN,
+    LED_SOURCE_FEEDBACK,
     NikobusProgramming,
     link_run_time,
     parse_run_time_label,
+    resolve_feedback_led,
 )
 
 
@@ -189,6 +200,179 @@ class TestVerifyAndBackup(unittest.TestCase):
         prog = NikobusProgramming(_hass("/tmp"), coord)
         with self.assertRaises(HomeAssistantError):
             _run(prog.async_verify_modules())
+
+
+class TestLinkRunTimeStoredShape(unittest.TestCase):
+    """Discovery stores links as ``{module_address, outputs: [...]}``."""
+
+    def test_reads_outputs_list(self):
+        buttons = {
+            "nikobus_button": {
+                "1A2B3C": {
+                    "operation_points": {
+                        "1A": {
+                            "bus_address": "081032",
+                            "linked_modules": [
+                                {
+                                    "module_address": "9105",
+                                    "outputs": [
+                                        {"channel": 2, "mode": "M02 (Open)", "t1": "20 s"},
+                                        {"channel": 2, "mode": "M03 (Close)", "t1": "35 s"},
+                                    ],
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        }
+        self.assertEqual(link_run_time(buttons, "9105", 2, "up"), 20.0)
+        self.assertEqual(link_run_time(buttons, "9105", 2, "down"), 35.0)
+
+
+def _feedback_image() -> bytes:
+    """Plate 1843B4 (4 keys, group 0): slot 0 tracks 5B05 ch 1, slot 3
+    tracks 5B05 ch 6 and dimmer 0E6C ch 2; own LED 1 tracks 0E6C ch 2."""
+    img = bytearray(b"\xff" * FEEDBACK_IMAGE_SIZE)
+    base = REGION_OUTPUT_MODULES[0]
+    img[base : base + 8] = bytes([1, 0x5B, 0x05, 0, 0x00, 0x21, 0xFF, 0xFF])
+    img[base + 8 : base + 16] = bytes([3, 0x0E, 0x6C, 0, 0x00, 0x02, 0xFF, 0xFF])
+    grp = REGION_GROUP_ADDRESSES[0]
+    img[grp : grp + 3] = bytes([0x06, 0x10, 0xEC])  # 1843B4 with bit 0 cleared
+    lists = REGION_LED_LISTS[0]
+    stream = bytes(
+        [0x00, 0x00, 0x04, 0x00, 0x00, 0x01, 0x00, 0x02, 0x04, 0x03, 0x00, 0x02, 0x04, 0xC0]
+    )
+    img[lists : lists + len(stream)] = stream
+    img[LED_MODE_TABLE_OFFSET] = 0
+    img[LED_MODE_TABLE_OFFSET + 3] = 0
+    return bytes(img)
+
+
+def _plate(links: dict[str, list[tuple[str, int]]]) -> dict:
+    """Plate 1843B4 with its four real key addresses and the given links."""
+    addresses = {"1A": "8B7086", "1B": "CB7086", "1C": "0B7086", "1D": "4B7086"}
+    return {
+        "1843B4": {
+            "type": "Button",
+            "operation_points": {
+                key: {
+                    "bus_address": addr,
+                    "linked_modules": [
+                        {"module_address": m, "outputs": [{"channel": c, "mode": "M01 (On / off)"}]}
+                        for m, c in links.get(key, [])
+                    ],
+                }
+                for key, addr in addresses.items()
+            },
+        }
+    }
+
+
+class TestResolveFeedbackLed(unittest.TestCase):
+    def _led(self, slot):
+        decoded = decode_feedback_image(_feedback_image())
+        return next(led for led in decoded.leds if led.slot == slot)
+
+    def test_links_single_out_the_key(self):
+        buttons = _plate({"1A": [("5B05", 1)], "1B": [("5B05", 6)]})
+        self.assertEqual(
+            resolve_feedback_led(self._led(0), [("5B05", 1)], buttons),
+            ("1843B4", "1A", "8B7086"),
+        )
+        self.assertEqual(
+            resolve_feedback_led(self._led(3), [("5B05", 6), ("0E6C", 2)], buttons),
+            ("1843B4", "1B", "CB7086"),
+        )
+
+    def test_row_order_decides_without_links(self):
+        buttons = _plate({})
+        # slot 0 = row 0 = 1D on a 4-key plate, slot 3 = 1A
+        self.assertEqual(resolve_feedback_led(self._led(0), [("5B05", 1)], buttons)[1], "1D")
+        self.assertEqual(resolve_feedback_led(self._led(3), [("5B05", 6)], buttons)[1], "1A")
+
+    def test_unknown_plate_is_unresolved(self):
+        self.assertIsNone(resolve_feedback_led(self._led(0), [("5B05", 1)], {}))
+
+
+def _import_coordinator(api, channels_5b05=None, links=None):
+    coord = _coordinator(
+        modules={
+            "switch_module": {"5B05": {"module_type": "switch_module", "description": "S2"}},
+            "dimmer_module": {"0E6C": {"module_type": "dimmer_module", "description": "D1"}},
+            "feedback_module": {"966C": {"module_type": "feedback_module", "description": "FB"}},
+        },
+        api=api,
+    )
+    coord.dict_button_data = {"nikobus_button": _plate(links or {"1A": [("5B05", 1)], "1B": [("5B05", 6)]})}
+    coord.module_storage = SimpleNamespace(
+        data={
+            "nikobus_module": {
+                "5B05": {
+                    "module_type": "switch_module",
+                    "channels": channels_5b05
+                    or [{"description": f"out {i}"} for i in range(1, 13)],
+                },
+                "0E6C": {"module_type": "dimmer_module", "channels": [{"description": f"d {i}"} for i in range(1, 13)]},
+            }
+        }
+    )
+    coord.async_on_module_save = AsyncMock()
+    return coord
+
+
+class TestImportFeedbackLeds(unittest.TestCase):
+    def test_fills_led_addresses_and_saves(self):
+        api = _api()
+        api.read_module_memory = AsyncMock(return_value=_feedback_image())
+        coord = _import_coordinator(api)
+        prog = NikobusProgramming(_hass("/tmp"), coord)
+        report = _run(prog.async_import_feedback_leds())
+        api.read_module_memory.assert_awaited_once_with("966C", "feedback_module")
+        self.assertEqual((report["leds"], report["resolved"]), (3, 2))  # own LED has no plate
+        self.assertEqual(report["channels_updated"], 3)
+        ch = coord.module_storage.data["nikobus_module"]["5B05"]["channels"]
+        self.assertEqual((ch[0]["led_on"], ch[0]["led_off"], ch[0]["led_source"]), ("8B7086", "8B7086", LED_SOURCE_FEEDBACK))
+        self.assertEqual(ch[5]["led_on"], "CB7086")
+        dimmer = coord.module_storage.data["nikobus_module"]["0E6C"]["channels"]
+        self.assertEqual(dimmer[1]["led_on"], "CB7086")
+        coord.async_on_module_save.assert_awaited_once()
+        self.assertEqual(len(report["unresolved"]), 1)  # the module's own LED
+        self.assertFalse(prog.running)
+
+    def test_keeps_typed_addresses_unless_overwrite(self):
+        api = _api()
+        api.read_module_memory = AsyncMock(return_value=_feedback_image())
+        channels = [{"description": f"out {i}"} for i in range(1, 13)]
+        channels[0]["led_on"] = "AAAAAA"
+        coord = _import_coordinator(api, channels_5b05=channels)
+        prog = NikobusProgramming(_hass("/tmp"), coord)
+        report = _run(prog.async_import_feedback_leds())
+        self.assertEqual(channels[0]["led_on"], "AAAAAA")
+        self.assertEqual(report["channels_kept"], 1)
+        report = _run(prog.async_import_feedback_leds(overwrite=True))
+        self.assertEqual(channels[0]["led_on"], "8B7086")
+        # The two channels imported on the first run already hold the
+        # address: unchanged, so counted as kept.
+        self.assertEqual((report["channels_updated"], report["channels_kept"]), (1, 2))
+
+    def test_without_feedback_module_raises(self):
+        prog = NikobusProgramming(_hass("/tmp"), _coordinator(api=_api()))
+        with self.assertRaises(HomeAssistantError):
+            _run(prog.async_import_feedback_leds())
+
+    def test_backup_includes_feedback_module_without_crc(self):
+        api = _api()
+        api.get_module_status = AsyncMock(side_effect=RuntimeError("no answer"))
+        coord = _import_coordinator(api)
+        with TemporaryDirectory() as tmp:
+            prog = NikobusProgramming(_hass(tmp), coord)
+            result = _run(prog.async_backup_modules(["966C"]))
+            self.assertIn("966C_feedback_module.nkm", result["images"])
+            check = result["modules"]["966C"]
+            self.assertIsNone(check["crc_ok"])
+            self.assertIsNone(check["error"])
+            api.verify_module_memory.assert_not_awaited()
 
 
 if __name__ == "__main__":

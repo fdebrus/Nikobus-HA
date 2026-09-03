@@ -52,6 +52,7 @@ SERVICE_PURGE_STALE_INVENTORY: Final = "purge_stale_inventory"
 SERVICE_SYNC_PC_LINK_CLOCK: Final = "sync_pc_link_clock"
 SERVICE_VERIFY_MODULES: Final = "verify_modules"
 SERVICE_BACKUP_MODULES: Final = "backup_modules"
+SERVICE_IMPORT_FEEDBACK_LEDS: Final = "import_feedback_leds"
 
 # Optional module-address list shared by the programming actions; empty
 # means every output module.
@@ -374,6 +375,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_BACKUP_MODULES,
         handle_backup_modules,
         MODULE_LIST_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    async def handle_import_feedback_leds(call: ServiceCall) -> dict[str, Any]:
+        """Fill the channels' LED trigger addresses from the feedback module."""
+        return await _programming(call).async_import_feedback_leds(
+            overwrite=bool(call.data.get("overwrite", False))
+        )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_IMPORT_FEEDBACK_LEDS,
+        handle_import_feedback_leds,
+        vol.Schema({vol.Optional("overwrite", default=False): cv.boolean}),
         supports_response=SupportsResponse.OPTIONAL,
     )
     return True

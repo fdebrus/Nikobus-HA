@@ -84,3 +84,11 @@ backup_modules:
       required: false
       selector:
         object:
+
+import_feedback_leds:
+  fields:
+    overwrite:
+      required: false
+      default: false
+      selector:
+        boolean:
