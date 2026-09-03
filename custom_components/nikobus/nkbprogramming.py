@@ -20,10 +20,16 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from nikobus_connect.api import MODULE_IMAGE_SIZES
 
-from .const import DOMAIN, ISSUE_MODULE_CRC_MISMATCH, ISSUE_MODULE_EEPROM_ERROR
+from .const import (
+    DOMAIN,
+    ISSUE_MODULE_CRC_MISMATCH,
+    ISSUE_MODULE_EEPROM_ERROR,
+    SIGNAL_DISCOVERY_STATE,
+)
 from .router import iter_operation_points
 
 _LOGGER = logging.getLogger(__name__)
@@ -189,6 +195,11 @@ class NikobusProgramming:
             return HEALTH_UNKNOWN
         return HEALTH_OK
 
+    def _set_running(self, running: bool) -> None:
+        """Flip the busy flag and repaint the bridge buttons' availability."""
+        self.running = running
+        async_dispatcher_send(self._hass, SIGNAL_DISCOVERY_STATE)
+
     # -- guards --------------------------------------------------------------
 
     def _api(self) -> Any:
@@ -303,7 +314,7 @@ class NikobusProgramming:
         self._acquire()
         api = self._api()
         wanted = {a.upper() for a in addresses} if addresses else None
-        self.running = True
+        self._set_running(True)
         try:
             async with self._lock:
                 for address, module_type, description in self.output_modules():
@@ -316,7 +327,7 @@ class NikobusProgramming:
                     self._apply_issues(check)
                 self.last_check_at = dt_util.now()
         finally:
-            self.running = False
+            self._set_running(False)
             self._coordinator.async_update_listeners()
         return self.check_report()
 
@@ -341,7 +352,7 @@ class NikobusProgramming:
         wanted = {a.upper() for a in addresses} if addresses else None
         stamp = dt_util.now().strftime("%Y%m%d-%H%M%S")
         folder = Path(self._hass.config.path(BACKUP_DIR, stamp))
-        self.running = True
+        self._set_running(True)
         try:
             async with self._lock:
                 images: dict[str, bytes] = {}
@@ -361,7 +372,7 @@ class NikobusProgramming:
                 self.last_backup_path = str(folder)
                 self.last_backup_at = self.last_check_at
         finally:
-            self.running = False
+            self._set_running(False)
             self._coordinator.async_update_listeners()
         _LOGGER.info("Nikobus programming backup written to %s (%d image(s))", folder, len(images))
         return {"path": str(folder), "images": sorted(images), **summary}

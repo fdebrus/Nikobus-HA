@@ -787,7 +787,7 @@ def test_reimport_with_changed_plate_name_refreshes_key_devices():
     coord = _coord(button_data=store)
     key_dev = _device("d2", "9A43A2", name="Ancien nom Key 1A")
     dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
-    dev_reg.async_get_device.return_value = key_dev
+    dev_reg.async_get_device_by_identifier.return_value = key_dev
     with _patches(data, [], [], dev_reg, ent_reg, area_reg):
         _run(coord.async_import_nkb_names(categories={"device_names"}))
 
@@ -807,7 +807,7 @@ def test_reimport_key_heal_leaves_foreign_registry_names_alone():
     coord = _coord(button_data=store)
     key_dev = _device("d2", "9A43A2", name="Something else entirely")
     dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
-    dev_reg.async_get_device.return_value = key_dev
+    dev_reg.async_get_device_by_identifier.return_value = key_dev
     with _patches(data, [], [], dev_reg, ent_reg, area_reg):
         _run(coord.async_import_nkb_names(categories={"device_names"}))
 

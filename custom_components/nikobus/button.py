@@ -28,6 +28,7 @@ from .const import (
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, hub_device_info
+from .nkbdevices import parent_device_id
 from .router import (
     INPUT_MODULE_TYPES,
     OPAQUE_MODULE_TYPES,
@@ -185,7 +186,7 @@ def register_wall_button_devices(
                 manufacturer=BRAND,
                 name=name,
                 model=str(phys.get("model") or "PC-Logic Logical Input"),
-                via_device=via_device,
+                via_device_id=parent_device_id(device_registry, entry.entry_id, via_device),
             )
             continue
 
@@ -204,7 +205,7 @@ def register_wall_button_devices(
                 manufacturer=BRAND,
                 name=name,
                 model=str(phys.get("model") or "Remote Code"),
-                via_device=via_device,
+                via_device_id=parent_device_id(device_registry, entry.entry_id, via_device),
             )
             continue
 
@@ -231,7 +232,7 @@ def register_wall_button_devices(
             manufacturer=BRAND,
             name=str(phys.get("nkb_name") or default_name),
             model=model,
-            via_device=(DOMAIN, category),
+            via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, category)),
         )
 
 
@@ -260,7 +261,7 @@ def _ensure_remote_transmitter_parent_device(
         manufacturer=BRAND,
         name=f"Remote Transmitter ({suffix})",
         model="RF Remote (synthesized)",
-        via_device=(DOMAIN, CATEGORY_REMOTES),
+        via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, CATEGORY_REMOTES)),
     )
 
 
@@ -312,7 +313,7 @@ def _ensure_pc_logic_parent_device(
         manufacturer=BRAND,
         name=name,
         model=model,
-        via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
+        via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, CATEGORY_SYSTEM_MODULES)),
     )
 
 
@@ -354,7 +355,7 @@ def register_input_module_devices(
             manufacturer=BRAND,
             name=description,
             model=model,
-            via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
+            via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, CATEGORY_SYSTEM_MODULES)),
         )
 
 
@@ -383,7 +384,7 @@ def register_opaque_module_devices(
             manufacturer=BRAND,
             name=description,
             model=model,
-            via_device=(DOMAIN, CATEGORY_SYSTEM_MODULES),
+            via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, CATEGORY_SYSTEM_MODULES)),
         )
 
 
@@ -453,7 +454,15 @@ class _NikobusBridgeButton(ButtonEntity):
 
     @property
     def available(self) -> bool:
-        return not self._coordinator.discovery_running
+        # One bridge action at a time: discovery and the programming
+        # maintenance runs share the bus, so every bridge button greys
+        # out while any of them is busy.
+        return not (self._coordinator.discovery_running or self._maintenance_running)
+
+    @property
+    def _maintenance_running(self) -> bool:
+        programming = getattr(self._coordinator, "programming", None)
+        return getattr(programming, "running", False) is True
 
     async def async_added_to_hass(self) -> None:
         """Re-render availability whenever discovery state changes."""
@@ -700,14 +709,9 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
 class _NikobusMaintenanceButton(_NikobusBridgeButton):
     """Bridge buttons that read the modules' programming.
 
-    Greyed out while discovery or another maintenance run is busy —
-    both share the bus and must not interleave.
+    Availability follows the bridge rule (one action at a time); the
+    press handlers re-check it so a race can't start two bus runs.
     """
-
-    @property
-    def available(self) -> bool:
-        programming = self._coordinator.programming
-        return not (self._coordinator.discovery_running or programming.running)
 
     def _start(self, coro: Any, name: str) -> None:
         programming = self._coordinator.programming
@@ -723,21 +727,13 @@ class _NikobusMaintenanceButton(_NikobusBridgeButton):
 
 
 class NikobusSyncClockButton(_NikobusMaintenanceButton):
-    """Set the PC-Link clock from Home Assistant's time.
-
-    Two queued commands, so it stays available while a backup or check
-    runs (the command queue serialises them); only discovery blocks it.
-    """
+    """Set the PC-Link clock from Home Assistant's time."""
 
     _attr_translation_key = "sync_pc_link_clock"
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_sync_pc_link_clock_button"
-
-    @property
-    def available(self) -> bool:
-        return not self._coordinator.discovery_running
 
     async def async_press(self) -> None:
         await self._coordinator.programming.async_sync_clock()
