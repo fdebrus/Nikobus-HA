@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.15.1
+
+- **Fix: the 3.15.0 buttons and sensors never appeared.** The new hub entities (Sync PC-Link clock, Verify / Backup module programming, PC-Link clock, Programming health) were created at startup and immediately deleted by the integration's orphan cleanup, which only keeps entities whose ids it knows. They are now registered as known; after updating they show up on the Nikobus Bridge device without any further action.
+
+
 ## 3.15.0
 
 - **New: Backup module programming.** A bridge button (and `nikobus.backup_modules` action) reads the complete programming image of every switch, dimmer and roller module — the button links, timers and hash tables the module runs on — into `config/nikobus_backup/<timestamp>/` as one `.nkm` file per module plus a `summary.json`. A lifeline for installs whose Nikobus PC software and project file are long gone. Read-only on the bus.
