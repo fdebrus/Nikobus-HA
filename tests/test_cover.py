@@ -313,7 +313,7 @@ class TestDeferredEndStop(unittest.TestCase):
         coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening")
 
     def test_new_ha_command_cancels_pending_stop(self):
-        ent, coord = _make_cover(margin=10.0)
+        ent, _ = _make_cover(margin=10.0)
         pending = MagicMock()
         ent._end_stop_task = pending
         _run(ent._request_move("opening"))
