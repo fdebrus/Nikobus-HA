@@ -17,8 +17,8 @@ from custom_components.nikobus.config_flow import (
     _module_label,
     _module_type_order,
     _needs_polling,
-    _set_or_drop,
     _set_margin_or_drop,
+    _set_or_drop,
     _set_time_or_drop,
     _validate_optional_hex6,
 )
