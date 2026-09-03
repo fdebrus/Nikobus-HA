@@ -77,8 +77,14 @@ class TestHealthSensor(unittest.TestCase):
 
 class TestMaintenanceButtons(unittest.TestCase):
     def test_availability_gating(self):
+        # Verify/backup grey out while either discovery or a maintenance
+        # run is busy; the clock sync only needs the bus queue, so it
+        # stays available during a backup and only yields to discovery.
+        self.assertTrue(NikobusVerifyProgrammingButton(_coordinator()).available)
+        self.assertFalse(NikobusVerifyProgrammingButton(_coordinator(running=True)).available)
+        self.assertFalse(NikobusVerifyProgrammingButton(_coordinator(discovery_running=True)).available)
         self.assertTrue(NikobusSyncClockButton(_coordinator()).available)
-        self.assertFalse(NikobusSyncClockButton(_coordinator(running=True)).available)
+        self.assertTrue(NikobusSyncClockButton(_coordinator(running=True)).available)
         self.assertFalse(NikobusSyncClockButton(_coordinator(discovery_running=True)).available)
 
     def test_sync_button_awaits_sync(self):
@@ -141,3 +147,16 @@ class TestHubEntitiesSurviveOrphanCleanup(unittest.TestCase):
         entities.append(health)
         for entity in entities:
             self.assertIn(entity._attr_unique_id, known, entity.__class__.__name__)
+
+
+class TestStatusFrameOutsideDiscovery(unittest.TestCase):
+    """A $18 reply outside discovery (module status / CRC query) must not
+    reach a discovery method — it used to call a method that no longer
+    exists and error the listener loop on every status reply."""
+
+    def test_inventory_callback_ignores_frame_when_idle(self):
+        from custom_components.nikobus.coordinator import NikobusDataCoordinator
+
+        coord = NikobusDataCoordinator.__new__(NikobusDataCoordinator)
+        coord.nikobus_discovery = MagicMock(spec=[])  # no discovery methods at all
+        _run(coord._inventory_callback("$18F58600500F3FFFAC61FE", False))

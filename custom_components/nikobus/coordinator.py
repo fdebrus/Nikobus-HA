@@ -404,11 +404,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
     async def _event_callback(self, message: str) -> None:
         """Route non-feedback bus events (buttons, ACKs, discovery frames)."""
-        _LOGGER.debug(
-            "Press frame %s (raw hex %s)",
-            message,
-            message.encode().hex(),
-        )
+        _LOGGER.debug("Bus event frame %s", message)
         if message.startswith("#N"):
             # Extract the 6-char address after the "#N" prefix
             if self.nikobus_actuator and len(message) >= 8:
@@ -460,16 +456,20 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             _LOGGER.error("Feedback callback failed: %s", err)
 
     async def _inventory_callback(self, message: str, discovery_active: bool) -> None:
-        """Route $18 inventory frames."""
-        if not self.nikobus_discovery:
+        """Route $18 frames.
+
+        During discovery they are inventory answers for the engine.
+        Outside discovery a $18 frame is a query reply (module status,
+        EEPROM CRC) that the command layer already consumed from the
+        response queue — nothing to route, so it is only logged.
+        """
+        if not self.nikobus_discovery or not discovery_active:
+            _LOGGER.debug("Status frame outside discovery: %s", message)
             return
-        if discovery_active:
-            if self.inventory_query_type == InventoryQueryType.PC_LINK:
-                self.nikobus_discovery.handle_device_address_inventory(message)
-            else:
-                await self.nikobus_discovery.query_module_inventory(message[3:7])
+        if self.inventory_query_type == InventoryQueryType.PC_LINK:
+            self.nikobus_discovery.handle_device_address_inventory(message)
         else:
-            await self.nikobus_discovery.process_mode_button_press(message)
+            await self.nikobus_discovery.query_module_inventory(message[3:7])
 
     async def _discovery_frame_callback(self, message: str) -> None:
         """Route $2E/$1E discovery response frames."""
