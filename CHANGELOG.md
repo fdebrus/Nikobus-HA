@@ -1,11 +1,15 @@
 # Changelog
 
+## 3.15.4
+
+- **All bridge buttons grey out while any bridge action runs** — discovery, a programming check or a backup — one bus action at a time, and no more "referenced entity not available" surprises from pressing a second one.
+- **Home Assistant 2027.8 / 2027.9 deprecations resolved.** Device parents are now registered with `via_device_id`, device lookups use `async_get_device_by_identifier`, and the orphan cleanup enumerates the config entry's devices instead of the registry mapping — the "deprecated `via_device` parameter" / "uses `device_registry.devices` as a mapping" warnings (24 per start-up) are gone.
+
+
 ## 3.15.3
 
 - **Fix: dimmer modules no longer fail the programming check.** A dimmer's own checksum skips the six bytes between its two link banks; the check computed it over the whole image, so every healthy dimmer was flagged with a false "checksum mismatch" Repair issue. Fixed in `nikobus-connect 0.35.1` (required). Re-run **Verify module programming** once to clear the issue.
 - The programming report shows *no second table* as empty instead of 255 on switch and roller modules.
-- **All bridge buttons grey out while any bridge action runs** — discovery, a programming check or a backup — one bus action at a time, and no more "referenced entity not available" surprises from pressing a second one.
-- **Home Assistant 2027.8 / 2027.9 deprecations resolved.** Device parents are now registered with `via_device_id`, device lookups use `async_get_device_by_identifier`, and the orphan cleanup enumerates the config entry's devices instead of the registry mapping — the "deprecated `via_device` parameter" / "uses `device_registry.devices` as a mapping" warnings (24 per start-up) are gone.
 
 
 ## 3.15.2
