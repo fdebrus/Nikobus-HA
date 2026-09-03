@@ -723,13 +723,21 @@ class _NikobusMaintenanceButton(_NikobusBridgeButton):
 
 
 class NikobusSyncClockButton(_NikobusMaintenanceButton):
-    """Set the PC-Link clock from Home Assistant's time."""
+    """Set the PC-Link clock from Home Assistant's time.
+
+    Two queued commands, so it stays available while a backup or check
+    runs (the command queue serialises them); only discovery blocks it.
+    """
 
     _attr_translation_key = "sync_pc_link_clock"
 
     def __init__(self, coordinator: NikobusDataCoordinator) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{DOMAIN}_sync_pc_link_clock_button"
+
+    @property
+    def available(self) -> bool:
+        return not self._coordinator.discovery_running
 
     async def async_press(self) -> None:
         await self._coordinator.programming.async_sync_clock()

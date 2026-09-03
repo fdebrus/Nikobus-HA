@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.15.2
+
+- **Fix: "Listener loop failed: 'NikobusDiscovery' object has no attribute 'process_mode_button_press'"** logged on every module-status reply. Status frames arriving outside a discovery run were routed to a discovery method that no longer exists; they are now ignored there (the query layer already consumes them). The backup / verify results were unaffected, only the log was.
+- **Sync PC-Link clock stays available during a backup or check.** It only needs two queued commands, so it no longer greys out (and no longer triggers "referenced entity not available" when pressed) while a longer maintenance run is in progress. Discovery still blocks it.
+- Bus frames are logged as "Bus event frame" instead of "Press frame" at debug level.
+
+
 ## 3.15.1
 
 - **Fix: the 3.15.0 buttons and sensors never appeared.** The new hub entities (Sync PC-Link clock, Verify / Backup module programming, PC-Link clock, Programming health) were created at startup and immediately deleted by the integration's orphan cleanup, which only keeps entities whose ids it knows. They are now registered as known; after updating they show up on the Nikobus Bridge device without any further action.
