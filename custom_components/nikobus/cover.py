@@ -23,6 +23,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import (
     CATEGORY_CENTRAL_FUNCTIONS,
     DEFAULT_COVER_DEBOUNCE_DELAY,
+    DEFAULT_COVER_END_STOP_MARGIN,
     DEFAULT_COVER_MOVEMENT_BUFFER,
     DEFAULT_COVER_OPERATION_TIME,
     DOMAIN,
@@ -57,6 +58,26 @@ def _parse_operation_time(value: Any, fallback: float, label: str, address: str)
         "Cover %s: invalid %s %r — must be a positive number. Using default %.1fs.",
         address,
         label,
+        value,
+        fallback,
+    )
+    return fallback
+
+
+def _parse_end_stop_margin(value: Any, fallback: float, address: str) -> float:
+    """Parse the per-channel end-stop margin (seconds, zero allowed)."""
+    if value is None:
+        return fallback
+    try:
+        margin = float(value)
+        if margin >= 0:
+            return margin
+    except (TypeError, ValueError):
+        pass
+    _LOGGER.warning(
+        "Cover %s: invalid end_stop_margin %r — must be zero or a positive number. "
+        "Using default %.1fs.",
+        address,
         value,
         fallback,
     )
@@ -118,6 +139,10 @@ async def async_setup_entry(
             spec.address,
         )
 
+        end_stop_margin = _parse_end_stop_margin(
+            spec.end_stop_margin, DEFAULT_COVER_END_STOP_MARGIN, spec.address
+        )
+
         entities.append(
             NikobusCoverEntity(
                 coordinator,
@@ -128,6 +153,7 @@ async def async_setup_entry(
                 spec.module_model,
                 op_time_up,
                 op_time_down,
+                end_stop_margin,
             )
         )
 
@@ -175,6 +201,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         model: str,
         op_time_up: float,
         op_time_down: float,
+        end_stop_margin: float = DEFAULT_COVER_END_STOP_MARGIN,
     ) -> None:
         """Initialize the cover entity."""
         super().__init__(coordinator, address, module_desc, model)
@@ -186,6 +213,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._attr_unique_id = build_unique_id("cover", "cover", address, channel)
 
         self._calculator = NikobusTravelCalculator(op_time_up, op_time_down)
+        # Seconds after the estimated arrival at 0/100 before the stop
+        # frame of an HA-started motion goes out (see _motion_loop).
+        self._end_stop_margin = end_stop_margin
 
         self._position: float = 100.0
         self._state = STATE_STOPPED
@@ -193,6 +223,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._motion_task: asyncio.Task[None] | None = None
         self._coalesce_task: asyncio.Task[None] | None = None
         self._error_recovery_task: asyncio.Task[None] | None = None
+        # Pending deferred stop frame of a motion that ended at 0/100.
+        self._end_stop_task: asyncio.Task[None] | None = None
 
         self._movement_source = "ha"
         self._current_run_limit: float = 0.0
@@ -249,6 +281,7 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             **parent_attrs,
             "operation_time_up": self._calculator.time_up,
             "operation_time_down": self._calculator.time_down,
+            "end_stop_margin": self._end_stop_margin,
             "movement_source": self._movement_source,
             "controlled_by": self.coordinator.get_controlled_by(self._address, self._channel),
         }
@@ -273,7 +306,12 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         )
 
         def _cancel_cover_tasks() -> None:
-            for task_attr in ("_motion_task", "_coalesce_task", "_error_recovery_task"):
+            for task_attr in (
+                "_motion_task",
+                "_coalesce_task",
+                "_error_recovery_task",
+                "_end_stop_task",
+            ):
                 task = getattr(self, task_attr, None)
                 if task:
                     task.cancel()
@@ -434,6 +472,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 await self._stop(send_stop=True)
                 await asyncio.sleep(0.5)
 
+        # A new HA command supersedes any stop frame still pending from
+        # the previous full travel.
+        self._cancel_end_stop()
         self._movement_source = "ha"
         self._target_position = target
 
@@ -497,17 +538,26 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                         # Snap to exact target to eliminate 0.5 s tick overshoot.
                         self._position = float(self._target_position)
                         self._calculator.set_position(self._position)
-                    # A motion ending at 0/100 gets no bus stop: the position
-                    # model dead-reckons and drifts, so the estimate saying
-                    # "arrived" doesn't mean the shutter is physically at the
-                    # end. Left running, the motor reaches the limit switch —
-                    # erasing the accumulated drift — and the roller module's
-                    # own per-channel run time releases the relay, exactly as
-                    # after a physical wall-button full travel.
-                    send_stop = (
-                        movement_source == "ha" and not self._ends_at_end_stop()
-                    )
+                    # A motion ending at 0/100 gets its stop frame only
+                    # after the end-stop margin: the position model
+                    # dead-reckons and drifts, so the estimate saying
+                    # "arrived" doesn't mean the shutter is physically at
+                    # the end. Left running for the margin, the motor
+                    # reaches the limit switch (erasing the drift); the
+                    # stop then releases the relay so a wall button acts
+                    # on the first press again. The margin counts from
+                    # the estimated arrival, i.e. the run limit minus the
+                    # safety buffer.
+                    send_stop = movement_source == "ha"
+                    deferred = 0.0
+                    if send_stop and self._ends_at_end_stop():
+                        arrival = self._current_run_limit - DEFAULT_COVER_MOVEMENT_BUFFER
+                        deferred = arrival + self._end_stop_margin - elapsed
+                        if deferred > 0:
+                            send_stop = False
                     await self._stop(send_stop=send_stop)
+                    if deferred > 0:
+                        self._schedule_end_stop(deferred)
                     break
 
                 self.async_write_ha_state()
@@ -527,10 +577,29 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         Full open/close (no target — the loop only terminates on the run
         limit) and an explicit target of 0/100 both end at a mechanical
-        end stop; only an intermediate target requires an actual bus stop
-        frame to halt the motor mid-travel.
+        end stop; only an intermediate target needs its stop frame the
+        moment the estimate reaches the target.
         """
         return self._target_position is None or self._target_position in (0, 100)
+
+    def _schedule_end_stop(self, delay: float) -> None:
+        """Send the stop frame of a finished full travel after ``delay`` s."""
+        self._cancel_end_stop()
+
+        async def _deferred_stop() -> None:
+            await asyncio.sleep(delay)
+            # force_api: the state was committed to STOPPED when the loop
+            # ended; the relay is still engaged until this frame goes out.
+            await self._stop(send_stop=True, force_api=True)
+
+        self._end_stop_task = self.hass.async_create_task(_deferred_stop())
+
+    def _cancel_end_stop(self) -> None:
+        """Drop a pending deferred stop frame (never the task running us)."""
+        task = self._end_stop_task
+        self._end_stop_task = None
+        if task is not None and task is not asyncio.current_task():
+            task.cancel()
 
     def _should_stop(self) -> bool:
         """Check if cover reached the target position."""
@@ -567,6 +636,8 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self.coordinator.set_bytearray_state(self._address, self._channel, STATE_STOPPED)
 
         if send_stop and (stopped_state != STATE_STOPPED or force_api):
+            # A frame going out now makes any deferred end-stop redundant.
+            self._cancel_end_stop()
             if stopped_state == STATE_OPENING:
                 dir_cmd = "opening"
             elif stopped_state == STATE_CLOSING:

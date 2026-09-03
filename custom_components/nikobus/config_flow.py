@@ -36,6 +36,7 @@ from .const import (
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
     CONFIG_ENTRY_VERSION,
+    DEFAULT_COVER_END_STOP_MARGIN,
     DEFAULT_PRESS_REPEAT,
     DOMAIN,
     NKB_IMPORT_CATEGORIES,
@@ -186,6 +187,22 @@ def _set_time_or_drop(mapping: dict[str, Any], key: str, value: Any) -> None:
         mapping.pop(key, None)
         return
     if as_int <= 0:
+        mapping.pop(key, None)
+        return
+    mapping[key] = str(as_int)
+
+
+def _set_margin_or_drop(mapping: dict[str, Any], key: str, value: Any) -> None:
+    """Store a non-negative seconds value (as a string); drop it otherwise."""
+    if value in (None, ""):
+        mapping.pop(key, None)
+        return
+    try:
+        as_int = int(float(value))
+    except (TypeError, ValueError):
+        mapping.pop(key, None)
+        return
+    if as_int < 0:
         mapping.pop(key, None)
         return
     mapping[key] = str(as_int)
@@ -859,6 +876,9 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                     down = user_input.get("operation_time_down")
                     _set_time_or_drop(channel, "operation_time_up", up)
                     _set_time_or_drop(channel, "operation_time_down", down)
+                    _set_margin_or_drop(
+                        channel, "end_stop_margin", user_input.get("end_stop_margin")
+                    )
 
                 await coordinator.async_on_module_save()
                 # Return to the module step so the user can edit another
@@ -920,6 +940,16 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             )] = NumberSelector(
                 NumberSelectorConfig(
                     min=1, max=600, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
+                )
+            )
+            schema_dict[vol.Optional(
+                "end_stop_margin",
+                default=_coerce_int(
+                    channel.get("end_stop_margin"), int(DEFAULT_COVER_END_STOP_MARGIN)
+                ),
+            )] = NumberSelector(
+                NumberSelectorConfig(
+                    min=0, max=120, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
                 )
             )
 

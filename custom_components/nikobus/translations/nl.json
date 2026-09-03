@@ -122,7 +122,8 @@
           "led_on": "LED-aan trigger (6-hex busadres, optioneel)",
           "led_off": "LED-uit trigger (6-hex busadres, optioneel)",
           "operation_time_up": "Looptijd omhoog (seconden)",
-          "operation_time_down": "Looptijd omlaag (seconden)"
+          "operation_time_down": "Looptijd omlaag (seconden)",
+          "end_stop_margin": "Eindaanslagmarge (seconden)"
         }
       },
       "upload_nkb": {

@@ -18,6 +18,7 @@ from custom_components.nikobus.config_flow import (
     _module_type_order,
     _needs_polling,
     _set_or_drop,
+    _set_margin_or_drop,
     _set_time_or_drop,
     _validate_optional_hex6,
 )
@@ -122,3 +123,21 @@ class TestNeedsPolling(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSetMarginOrDrop(unittest.TestCase):
+    def test_zero_is_stored(self):
+        m = {}
+        _set_margin_or_drop(m, "end_stop_margin", 0)
+        self.assertEqual(m["end_stop_margin"], "0")
+
+    def test_float_truncates_to_int_string(self):
+        m = {}
+        _set_margin_or_drop(m, "end_stop_margin", 7.9)
+        self.assertEqual(m["end_stop_margin"], "7")
+
+    def test_negative_empty_and_junk_drop(self):
+        for bad in (-1, "", None, "abc"):
+            m = {"end_stop_margin": "3"}
+            _set_margin_or_drop(m, "end_stop_margin", bad)
+            self.assertNotIn("end_stop_margin", m, bad)

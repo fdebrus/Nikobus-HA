@@ -24,6 +24,7 @@ from custom_components.nikobus.cover import (
     NikobusCFCoverEntity,
     NikobusCoverEntity,
     _parse_cf_time,
+    _parse_end_stop_margin,
     _parse_operation_time,
 )
 from custom_components.nikobus.nkbtravelcalculator import NikobusTravelCalculator
@@ -138,14 +139,14 @@ class TestParseOperationTime(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # NikobusCoverEntity — state machine
 # ---------------------------------------------------------------------------
-def _make_cover(op_up=10.0, op_down=10.0):
+def _make_cover(op_up=10.0, op_down=10.0, margin=3.0):
     coord = MagicMock()
     coord.api.open_cover = AsyncMock()
     coord.api.close_cover = AsyncMock()
     coord.api.stop_cover = AsyncMock()
     coord.set_bytearray_state = MagicMock()
     ent = NikobusCoverEntity(
-        coord, "9105", 1, "Shutter 1", "Roller module", "05-001", op_up, op_down
+        coord, "9105", 1, "Shutter 1", "Roller module", "05-001", op_up, op_down, margin
     )
     ent.hass = MagicMock()
 
@@ -208,13 +209,15 @@ class TestShouldStop(unittest.TestCase):
 
 
 class TestEndsAtEndStop(unittest.TestCase):
-    """A motion ending at 0/100 must NOT send a bus stop frame.
+    """A motion ending at 0/100 sends its stop frame after the end-stop margin.
 
     The position model dead-reckons, so "estimate says 100" doesn't mean
-    the shutter physically arrived. Suppressing the stop lets the motor
-    run into the mechanical limit switch — which erases accumulated
-    drift on every full travel — while the roller module's own run time
-    releases the relay. Only an intermediate target needs a stop frame.
+    the shutter physically arrived. Holding the stop for the margin lets
+    the motor run into the mechanical limit switch — erasing accumulated
+    drift on every full travel — and then releases the relay, so a wall
+    button acts on the first press again. With the default margin equal
+    to the safety buffer the stop goes out the moment the loop ends;
+    a larger margin defers it. Intermediate targets stop immediately.
     """
 
     def test_decision_per_target(self):
@@ -223,29 +226,45 @@ class TestEndsAtEndStop(unittest.TestCase):
             ent._target_position = target
             self.assertEqual(ent._ends_at_end_stop(), expected, target)
 
-    def _finish_motion(self, target):
+    def _finish_motion(self, target, margin=3.0, run_limit=0.0):
         """Run the motion loop with an already-expired run limit / reached
         target and capture the send_stop decision."""
-        ent, _ = _make_cover()
+        ent, _ = _make_cover(margin=margin)
         ent._state = STATE_OPENING
         ent._movement_source = "ha"
         ent._target_position = target
         ent._position = 100.0
         ent._calculator.set_position(100.0)
-        ent._current_run_limit = 0.0
+        ent._current_run_limit = run_limit
         ent._stop = AsyncMock()
         _run(ent._motion_loop())
         ent._stop.assert_awaited_once()
-        return ent._stop.await_args.kwargs["send_stop"]
+        return ent, ent._stop.await_args.kwargs["send_stop"]
 
-    def test_full_open_suppresses_bus_stop(self):
-        self.assertFalse(self._finish_motion(None))
+    def test_full_open_sends_stop_with_default_margin(self):
+        ent, send_stop = self._finish_motion(None)
+        self.assertTrue(send_stop)
+        ent.hass.async_create_task.assert_not_called()
 
-    def test_target_100_suppresses_bus_stop(self):
-        self.assertFalse(self._finish_motion(100))
+    def test_target_100_sends_stop_with_default_margin(self):
+        ent, send_stop = self._finish_motion(100)
+        self.assertTrue(send_stop)
+        ent.hass.async_create_task.assert_not_called()
+
+    def test_larger_margin_defers_the_stop(self):
+        # Run limit 3 s = arrival at 0 s (+ buffer); margin 10 s → the
+        # loop commits STOPPED without a frame and schedules it for later.
+        ent, send_stop = self._finish_motion(None, margin=10.0, run_limit=3.0)
+        self.assertFalse(send_stop)
+        ent.hass.async_create_task.assert_called_once()
+
+    def test_zero_margin_sends_stop_immediately(self):
+        ent, send_stop = self._finish_motion(None, margin=0.0, run_limit=3.0)
+        self.assertTrue(send_stop)
+        ent.hass.async_create_task.assert_not_called()
 
     def test_intermediate_target_still_sends_stop(self):
-        ent, _ = _make_cover()
+        ent, _ = _make_cover(margin=30.0)
         ent._state = STATE_OPENING
         ent._movement_source = "ha"
         ent._target_position = 50
@@ -256,6 +275,7 @@ class TestEndsAtEndStop(unittest.TestCase):
         _run(ent._motion_loop())
         ent._stop.assert_awaited_once()
         self.assertTrue(ent._stop.await_args.kwargs["send_stop"])
+        ent.hass.async_create_task.assert_not_called()
 
     def test_nikobus_sourced_motion_never_sends_stop(self):
         ent, _ = _make_cover()
@@ -268,6 +288,75 @@ class TestEndsAtEndStop(unittest.TestCase):
         ent._stop = AsyncMock()
         _run(ent._motion_loop())
         self.assertFalse(ent._stop.await_args.kwargs["send_stop"])
+        ent.hass.async_create_task.assert_not_called()
+
+
+class TestDeferredEndStop(unittest.TestCase):
+    """The deferred stop frame releases the relay after the margin."""
+
+    def test_deferred_stop_forces_the_frame_after_sleep(self):
+        ent, coord = _make_cover(margin=10.0)
+        ent._state = STATE_STOPPED
+        ent._last_motion_direction = "opening"
+        captured = {}
+
+        def _capture(coro):
+            captured["coro"] = coro
+            return MagicMock()
+
+        ent.hass.async_create_task = MagicMock(side_effect=_capture)
+        ent._schedule_end_stop(7.0)
+        sleep = AsyncMock()
+        with patch("custom_components.nikobus.cover.asyncio.sleep", new=sleep):
+            _run(captured["coro"])
+        sleep.assert_awaited_once_with(7.0)
+        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening")
+
+    def test_new_ha_command_cancels_pending_stop(self):
+        ent, coord = _make_cover(margin=10.0)
+        pending = MagicMock()
+        ent._end_stop_task = pending
+        _run(ent._request_move("opening"))
+        pending.cancel.assert_called_once()
+        self.assertIsNone(ent._end_stop_task)
+
+    def test_sent_stop_frame_cancels_pending_stop(self):
+        ent, coord = _make_cover(margin=10.0)
+        pending = MagicMock()
+        ent._end_stop_task = pending
+        ent._state = STATE_OPENING
+        _run(ent._stop(send_stop=True))
+        pending.cancel.assert_called_once()
+        coord.api.stop_cover.assert_awaited_once()
+
+    def test_silent_stop_keeps_pending_stop(self):
+        # A bus poll reporting STOPPED must not drop the frame that
+        # actually releases the relay.
+        ent, _ = _make_cover(margin=10.0)
+        pending = MagicMock()
+        ent._end_stop_task = pending
+        ent._state = STATE_OPENING
+        _run(ent._stop(send_stop=False))
+        pending.cancel.assert_not_called()
+
+    def test_margin_is_a_state_attribute(self):
+        ent, _ = _make_cover(margin=7.0)
+        self.assertEqual(ent.extra_state_attributes["end_stop_margin"], 7.0)
+
+
+class TestParseEndStopMargin(unittest.TestCase):
+    def test_none_uses_fallback(self):
+        self.assertEqual(_parse_end_stop_margin(None, 3.0, "9105"), 3.0)
+
+    def test_zero_is_valid(self):
+        self.assertEqual(_parse_end_stop_margin("0", 3.0, "9105"), 0.0)
+
+    def test_positive_string(self):
+        self.assertEqual(_parse_end_stop_margin("12", 3.0, "9105"), 12.0)
+
+    def test_negative_and_junk_fall_back(self):
+        for bad in ("-1", "abc", object()):
+            self.assertEqual(_parse_end_stop_margin(bad, 3.0, "9105"), 3.0)
 
 
 class TestStop(unittest.TestCase):
