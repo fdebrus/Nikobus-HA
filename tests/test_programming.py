@@ -376,3 +376,46 @@ class TestImportFeedbackLeds(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReadBlocks(unittest.TestCase):
+    def test_reads_and_reports_timeouts_with_link_mode(self):
+        from nikobus_connect.exceptions import NikobusTimeoutError
+
+        api = _api()
+        api.set_link_mode = AsyncMock()
+        calls: list[tuple[int, bytes]] = []
+
+        async def query(func, address, args=None):
+            calls.append((func, args))
+            if args == b"\x00\x06":
+                raise NikobusTimeoutError("Failed to receive ACK and state")
+            return bytes.fromhex("6C96") + bytes(range(16))
+
+        api._command_handler = SimpleNamespace(query=query)
+        coord = _import_coordinator(api)
+        prog = NikobusProgramming(_hass("/tmp"), coord)
+        result = _run(prog.async_read_blocks("966c", [0, 0x600], link_mode=True))
+        self.assertEqual(result["address"], "966C")
+        self.assertEqual(result["blocks"]["0x0000"], bytes(range(16)).hex().upper())
+        self.assertTrue(result["blocks"]["0x0600"].startswith("timeout"))
+        self.assertEqual([c[0] for c in calls], [0x10, 0x10])
+        self.assertEqual(
+            [c.args for c in api.set_link_mode.await_args_list],
+            [("966C", True), ("966C", False)],
+        )
+        self.assertFalse(prog.running)
+
+    def test_eight_byte_function(self):
+        api = _api()
+        seen = []
+
+        async def query(func, address, args=None):
+            seen.append(func)
+            return bytes.fromhex("6C96") + b"\x01" * 8
+
+        api._command_handler = SimpleNamespace(query=query)
+        prog = NikobusProgramming(_hass("/tmp"), _import_coordinator(api))
+        result = _run(prog.async_read_blocks("966C", ["0xC00"], block_size=8))
+        self.assertEqual(seen, [0x22])
+        self.assertEqual(result["blocks"]["0x0C00"], "01" * 8)

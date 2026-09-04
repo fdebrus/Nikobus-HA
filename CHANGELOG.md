@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.16.2
+
+- **New diagnostic action `nikobus.read_module_blocks`.** Sends raw 16-byte (0x10) or 8-byte (0x22) block reads to one module, optionally inside link mode, and returns each block as hex, with unanswered blocks reported as timeouts. Meant for working out the memory access of module types that are not settled yet, such as the feedback module, which so far accepts link mode and the status query but ignores 16-byte reads at blocks 0 and 0x600.
+
+
 ## 3.16.1
 
 - **Feedback module read works through link mode.** On a real 05-207 the status query is answered but block reads are ignored, so 3.16.0's Backup and LED import stopped at the first block. `nikobus-connect 0.36.1` (required) retries the read in link mode, the mode the module is programmed in, and leaves it again in every case. Link mode changes no programming.

@@ -477,6 +477,28 @@
           "description": "Ook handmatig ingestelde LED-adressen vervangen."
         }
       }
+    },
+    "read_module_blocks": {
+      "name": "Geheugenblokken van een module lezen (diagnose)",
+      "description": "Stuurt ruwe blokleesopdrachten naar één module en geeft de bytes van elk blok als hex terug, voor moduletypes waarvan de geheugentoegang nog wordt uitgezocht. Een blok zonder antwoord wordt als time-out gemeld. Met koppelmodus wordt de module eerst in koppelmodus gezet en daarna weer eruit gehaald; koppelmodus wijzigt geen programmering.",
+      "fields": {
+        "address": {
+          "name": "Moduleadres",
+          "description": "Vier hexadecimale cijfers, bijvoorbeeld 966C."
+        },
+        "blocks": {
+          "name": "Blokindexen",
+          "description": "Lijst van blokindexen, decimaal of hexadecimaal (bijvoorbeeld ['0x0', '0x600'])."
+        },
+        "block_size": {
+          "name": "Blokgrootte",
+          "description": "16 bytes (functie 0x10, de meeste modules) of 8 bytes (functie 0x22, dimmers)."
+        },
+        "link_mode": {
+          "name": "Koppelmodus",
+          "description": "De leesopdrachten in koppelmodus sturen (0x18 ervoor, 0x19 erna)."
+        }
+      }
     }
   }
 }
