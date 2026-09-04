@@ -24,6 +24,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 from nikobus_connect.api import MODULE_CRC_UNKNOWN, MODULE_IMAGE_SIZES
 from nikobus_connect.discovery.feedback_decoder import (
+    KEY_LABELS_BY_ROW,
     FeedbackImage,
     FeedbackLed,
     decode_feedback_image,
@@ -50,14 +51,10 @@ BACKUP_DIR = "nikobus_backup"
 LED_SOURCE_FEEDBACK = "feedback_module"
 
 # Row order of the LED slots inside one push-button module group, by
-# number of keys on the plate (the order the Nikobus application lists
-# them). Used only when the link table cannot single out the key.
-_LED_ROW_KEYS: dict[int, tuple[str, ...]] = {
-    1: ("1A",),
-    2: ("1B", "1A"),
-    4: ("1D", "1C", "1B", "1A"),
-    8: ("2D", "2C", "2B", "2A", "1D", "1C", "1B", "1A"),
-}
+# number of keys on the plate: the key order A, B, C, D (validated on a
+# real module: slot 2 of a 4-key plate is key C). Used when the link
+# table cannot single out the key.
+_LED_ROW_KEYS: dict[int, tuple[str, ...]] = KEY_LABELS_BY_ROW
 
 HEALTH_OK = "ok"
 HEALTH_PROBLEM = "problem"

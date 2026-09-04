@@ -2,7 +2,7 @@
 
 ## 3.16.3
 
-- **Feedback module read validated on a real 05-207 and made resilient** (`nikobus-connect 0.36.2`, required). The module serves block reads only in link mode, needs a moment after entering and leaving it, and drops an occasional block while it pushes feedback frames; the read now goes straight to link mode, pauses, retries each block and treats an unreadable LED-mode table as unknown modes. Backup of the feedback module and the LED import work end to end.
+- **Feedback module read validated on a real 05-207 and made resilient** (`nikobus-connect 0.36.2`, required). The module serves block reads only in link mode, needs a moment after entering and leaving it, and drops an occasional block while it pushes feedback frames; the read now goes straight to link mode, pauses, retries each block and treats an unreadable LED-mode table as unknown modes. Backup of the feedback module and the LED import work end to end. The LED import now follows the corrected decoder (group table placement per software build, key order A, B, C, D inside a plate).
 
 
 ## 3.16.2
