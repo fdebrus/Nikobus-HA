@@ -728,7 +728,7 @@ class _NikobusMaintenanceButton(_NikobusBridgeButton):
         async def _run() -> None:
             try:
                 await coro
-            except Exception:  # noqa: BLE001 - a failed run is reported, not lost
+            except Exception:  # a failed run is reported, not lost
                 _LOGGER.exception("%s failed", name)
 
         self.hass.async_create_background_task(_run(), name=name)
