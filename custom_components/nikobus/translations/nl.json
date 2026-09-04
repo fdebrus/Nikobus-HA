@@ -246,9 +246,6 @@
       },
       "backup_module_programming": {
         "name": "Moduleprogrammering back-uppen"
-      },
-      "import_feedback_leds": {
-        "name": "LED-koppelingen importeren uit feedbackmodule"
       }
     }
   },
@@ -343,9 +340,6 @@
     },
     "no_pc_link_known": {
       "message": "Er is nog geen PC-Link bekend — voer eerst **1. Projectoverzicht laden** uit."
-    },
-    "no_feedback_module": {
-      "message": "Er is geen feedbackmodule (05-207) bekend — voer eerst **1. Projectoverzicht laden** uit, of schakel de feedbackmodule in bij de integratie-opties."
     }
   },
   "selector": {
@@ -465,38 +459,6 @@
         "addresses": {
           "name": "Moduleadressen",
           "description": "Optionele lijst van moduleadressen om de actie te beperken (bijvoorbeeld ['9105', '4707']). Leeg betekent alle schakel-, dim- en rolluikmodules."
-        }
-      }
-    },
-    "import_feedback_leds": {
-      "name": "LED-koppelingen importeren uit feedbackmodule",
-      "description": "Leest de programmering van de feedbackmodule en vult het LED-aan / LED-uit triggeradres van elk uitgangskanaal in met de wandtoets waarvan de LED het volgt. Handmatig ingevulde adressen blijven staan tenzij Overschrijven aan staat; adressen van een eerdere import worden vernieuwd.",
-      "fields": {
-        "overwrite": {
-          "name": "Overschrijven",
-          "description": "Ook handmatig ingestelde LED-adressen vervangen."
-        }
-      }
-    },
-    "read_module_blocks": {
-      "name": "Geheugenblokken van een module lezen (diagnose)",
-      "description": "Stuurt ruwe blokleesopdrachten naar één module en geeft de bytes van elk blok als hex terug, voor moduletypes waarvan de geheugentoegang nog wordt uitgezocht. Een blok zonder antwoord wordt als time-out gemeld. Met koppelmodus wordt de module eerst in koppelmodus gezet en daarna weer eruit gehaald; koppelmodus wijzigt geen programmering.",
-      "fields": {
-        "address": {
-          "name": "Moduleadres",
-          "description": "Vier hexadecimale cijfers, bijvoorbeeld 966C."
-        },
-        "blocks": {
-          "name": "Blokindexen",
-          "description": "Lijst van blokindexen, decimaal of hexadecimaal (bijvoorbeeld ['0x0', '0x600'])."
-        },
-        "block_size": {
-          "name": "Blokgrootte",
-          "description": "16 bytes (functie 0x10, de meeste modules) of 8 bytes (functie 0x22, dimmers)."
-        },
-        "link_mode": {
-          "name": "Koppelmodus",
-          "description": "De leesopdrachten in koppelmodus sturen (0x18 ervoor, 0x19 erna)."
         }
       }
     }

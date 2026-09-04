@@ -148,7 +148,6 @@ Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scen
 - **Description** → the entity name.
 - **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`none`; rollers: `cover`/`switch`/`light`/`none`).
 - **LED on / off addresses** → feedback-LED bus addresses (blank if unused).
-  With a feedback module (05-207) on the bus, press **Import LED links from feedback module** on the Nikobus Bridge (or call `nikobus.import_feedback_leds`) and these are filled in from the module's own programming; addresses you typed stay unless you choose Overwrite.
 - **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator.
 - **End-stop margin** (rollers) → seconds after the estimated arrival at fully open/closed before a Home Assistant-started motion sends its stop frame (default 3). The motor runs into the end stop during the margin, which keeps the position model honest; the stop then releases the relay so a wall button acts on the first press. Set it higher to let the module's own run time release the relay instead.
 

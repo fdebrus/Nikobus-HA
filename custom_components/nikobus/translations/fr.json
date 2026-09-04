@@ -246,9 +246,6 @@
       },
       "backup_module_programming": {
         "name": "Sauvegarder la programmation des modules"
-      },
-      "import_feedback_leds": {
-        "name": "Importer les liens LED du module de feedback"
       }
     }
   },
@@ -343,9 +340,6 @@
     },
     "no_pc_link_known": {
       "message": "Aucun PC-Link n'est encore connu — lancez d'abord **1. Charger la vue d'ensemble du projet**."
-    },
-    "no_feedback_module": {
-      "message": "Aucun module de feedback (05-207) n'est connu — lancez d'abord **1. Charger la vue d'ensemble du projet**, ou activez le module de feedback dans les options de l'intégration."
     }
   },
   "selector": {
@@ -465,38 +459,6 @@
         "addresses": {
           "name": "Adresses des modules",
           "description": "Liste facultative d'adresses de modules pour limiter l'opération (par exemple ['9105', '4707']). Vide = tous les modules de commutation, variation et volets."
-        }
-      }
-    },
-    "import_feedback_leds": {
-      "name": "Importer les liens LED du module de feedback",
-      "description": "Lit la programmation du module de feedback et remplit l'adresse de déclenchement LED allumée / LED éteinte de chaque canal de sortie avec la touche murale dont la LED le suit. Les adresses saisies à la main sont conservées sauf si Écraser est activé ; celles d'un import précédent sont rafraîchies.",
-      "fields": {
-        "overwrite": {
-          "name": "Écraser",
-          "description": "Remplacer aussi les adresses LED saisies à la main."
-        }
-      }
-    },
-    "read_module_blocks": {
-      "name": "Lire des blocs mémoire d'un module (diagnostic)",
-      "description": "Envoie des lectures de blocs bruts à un module et renvoie les octets de chaque bloc en hexadécimal, pour les types de modules dont l'accès mémoire n'est pas encore établi. Un bloc sans réponse est signalé comme délai dépassé. Avec le mode liaison, le module est d'abord mis en mode liaison puis retiré de ce mode ; le mode liaison ne modifie aucune programmation.",
-      "fields": {
-        "address": {
-          "name": "Adresse du module",
-          "description": "Quatre chiffres hexadécimaux, par exemple 966C."
-        },
-        "blocks": {
-          "name": "Index de blocs",
-          "description": "Liste d'index de blocs, en décimal ou hexadécimal (par exemple ['0x0', '0x600'])."
-        },
-        "block_size": {
-          "name": "Taille de bloc",
-          "description": "16 octets (fonction 0x10, la plupart des modules) ou 8 octets (fonction 0x22, variateurs)."
-        },
-        "link_mode": {
-          "name": "Mode liaison",
-          "description": "Envoyer les lectures en mode liaison (0x18 avant, 0x19 après)."
         }
       }
     }
