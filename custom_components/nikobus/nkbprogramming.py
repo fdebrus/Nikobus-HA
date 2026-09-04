@@ -469,7 +469,8 @@ class NikobusProgramming:
                         index = _block_index(block)
                         key = f"0x{index:04X}"
                         try:
-                            payload = await api._command_handler.query(  # noqa: SLF001 - diagnostic access
+                            # Diagnostic access to the command layer's generic query.
+                            payload = await api._command_handler.query(
                                 func, address, make_block_index_args(index)
                             )
                         except NikobusError as err:
@@ -613,9 +614,7 @@ def _block_index(value: Any) -> int:
     """Block index from an int or a hex string (``"600"`` / ``"0x600"``)."""
     if isinstance(value, int):
         return value
-    text = str(value).strip().lower()
-    if text.startswith("0x"):
-        text = text[2:]
+    text = str(value).strip().lower().removeprefix("0x")
     return int(text, 16)
 
 
