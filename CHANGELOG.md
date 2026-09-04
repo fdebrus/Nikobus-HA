@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.16.1
+
+- **Feedback module read works through link mode.** On a real 05-207 the status query is answered but block reads are ignored, so 3.16.0's Backup and LED import stopped at the first block. `nikobus-connect 0.36.1` (required) retries the read in link mode, the mode the module is programmed in, and leaves it again in every case. Link mode changes no programming.
+
+
 ## 3.16.0
 
 - **New: Import LED links from feedback module.** A bridge button (and `nikobus.import_feedback_leds` action, with an *Overwrite* option) reads the programming of the feedback module (05-207) and fills the LED-on / LED-off trigger address of every output channel with the wall key whose feedback LED tracks it — the addresses you had to look up and type by hand under *Customize a module*. The key is identified from the plate the feedback module names and from the links discovery already knows; a report of the assignments is returned by the action. Typed addresses stay unless Overwrite is on; imported ones are refreshed on every run. Requires `nikobus-connect >= 0.36.0`.
