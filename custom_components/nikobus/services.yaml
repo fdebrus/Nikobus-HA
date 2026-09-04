@@ -84,37 +84,3 @@ backup_modules:
       required: false
       selector:
         object:
-
-import_feedback_leds:
-  fields:
-    overwrite:
-      required: false
-      default: false
-      selector:
-        boolean:
-
-read_module_blocks:
-  fields:
-    address:
-      example: "966C"
-      required: true
-      selector:
-        text:
-    blocks:
-      example: "['0x0', '0x600']"
-      required: true
-      selector:
-        object:
-    block_size:
-      required: false
-      default: 16
-      selector:
-        select:
-          options:
-            - "8"
-            - "16"
-    link_mode:
-      required: false
-      default: false
-      selector:
-        boolean:

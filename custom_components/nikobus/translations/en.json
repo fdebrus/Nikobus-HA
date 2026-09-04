@@ -79,9 +79,6 @@
       },
       "backup_module_programming": {
         "name": "Backup module programming"
-      },
-      "import_feedback_leds": {
-        "name": "Import LED links from feedback module"
       }
     },
     "sensor": {
@@ -210,9 +207,6 @@
     },
     "no_pc_link_known": {
       "message": "No PC-Link is known yet — run **1. Load Project Overview** first."
-    },
-    "no_feedback_module": {
-      "message": "No feedback module (05-207) is known — run **1. Load Project Overview** first, or enable the feedback module in the integration options."
     }
   },
   "options": {
@@ -426,38 +420,6 @@
         "addresses": {
           "name": "Module addresses",
           "description": "Optional list of module addresses to limit the run to (for example ['9105', '4707']). Empty means every switch, dimmer and roller module."
-        }
-      }
-    },
-    "import_feedback_leds": {
-      "name": "Import LED links from feedback module",
-      "description": "Reads the feedback module's programming and fills the LED-on / LED-off trigger address of every output channel with the wall key whose LED tracks it. Addresses you typed yourself are kept unless Overwrite is on; addresses from an earlier import are refreshed.",
-      "fields": {
-        "overwrite": {
-          "name": "Overwrite",
-          "description": "Also replace LED addresses that were set by hand."
-        }
-      }
-    },
-    "read_module_blocks": {
-      "name": "Read module memory blocks (diagnostic)",
-      "description": "Sends raw block reads to one module and returns the bytes of each block as hex, for module types whose memory access is still being worked out. A block that goes unanswered is reported as a timeout. With link mode on, the module is put in link mode first and taken out of it afterwards; link mode changes no programming.",
-      "fields": {
-        "address": {
-          "name": "Module address",
-          "description": "Four hex digits, for example 966C."
-        },
-        "blocks": {
-          "name": "Block indexes",
-          "description": "List of block indexes, decimal or hex (for example ['0x0', '0x600'])."
-        },
-        "block_size": {
-          "name": "Block size",
-          "description": "16 bytes (function 0x10, most modules) or 8 bytes (function 0x22, dimmers)."
-        },
-        "link_mode": {
-          "name": "Link mode",
-          "description": "Send the reads inside link mode (0x18 before, 0x19 after)."
         }
       }
     }

@@ -52,8 +52,6 @@ SERVICE_PURGE_STALE_INVENTORY: Final = "purge_stale_inventory"
 SERVICE_SYNC_PC_LINK_CLOCK: Final = "sync_pc_link_clock"
 SERVICE_VERIFY_MODULES: Final = "verify_modules"
 SERVICE_BACKUP_MODULES: Final = "backup_modules"
-SERVICE_IMPORT_FEEDBACK_LEDS: Final = "import_feedback_leds"
-SERVICE_READ_MODULE_BLOCKS: Final = "read_module_blocks"
 
 # Optional module-address list shared by the programming actions; empty
 # means every output module.
@@ -92,25 +90,6 @@ def _parse_register_byte(value: Any) -> int:
             raise vol.Invalid(f"Cannot parse '{value}' as a hex register byte") from None
     if not (0 <= n <= 0xFF):
         raise vol.Invalid(f"Register {n:#x} out of range 0x00..0xFF")
-    return n
-
-
-def _parse_block_index(value: Any) -> int:
-    """Accept an int 0..65535 or a hex string (``"600"``, ``"0x600"``)."""
-    if isinstance(value, bool):
-        raise vol.Invalid("Block index must be an integer or hex string, not a bool")
-    if isinstance(value, int):
-        n = value
-    else:
-        text = str(value).strip()
-        if text.lower().startswith("0x"):
-            text = text[2:]
-        try:
-            n = int(text, 16)
-        except ValueError as err:
-            raise vol.Invalid(f"Block index must be an integer or hex string, got: {value!r}") from err
-    if not 0 <= n <= 0xFFFF:
-        raise vol.Invalid(f"Block index out of range 0..0xFFFF: {n}")
     return n
 
 
@@ -398,43 +377,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         supports_response=SupportsResponse.OPTIONAL,
     )
 
-    async def handle_import_feedback_leds(call: ServiceCall) -> dict[str, Any]:
-        """Fill the channels' LED trigger addresses from the feedback module."""
-        return await _programming(call).async_import_feedback_leds(
-            overwrite=bool(call.data.get("overwrite", False))
-        )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_IMPORT_FEEDBACK_LEDS,
-        handle_import_feedback_leds,
-        vol.Schema({vol.Optional("overwrite", default=False): cv.boolean}),
-        supports_response=SupportsResponse.OPTIONAL,
-    )
-
-    async def handle_read_module_blocks(call: ServiceCall) -> dict[str, Any]:
-        """Diagnostic raw block read of one module; returns the hex per block."""
-        return await _programming(call).async_read_blocks(
-            call.data["address"],
-            call.data["blocks"],
-            block_size=call.data.get("block_size", 16),
-            link_mode=bool(call.data.get("link_mode", False)),
-        )
-
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_READ_MODULE_BLOCKS,
-        handle_read_module_blocks,
-        vol.Schema(
-            {
-                vol.Required("address"): cv.string,
-                vol.Required("blocks"): vol.All(cv.ensure_list, [_parse_block_index]),
-                vol.Optional("block_size", default=16): vol.In([8, 16]),
-                vol.Optional("link_mode", default=False): cv.boolean,
-            }
-        ),
-        supports_response=SupportsResponse.ONLY,
-    )
     return True
 
 

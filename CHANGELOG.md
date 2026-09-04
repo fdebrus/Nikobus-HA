@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.17.0
+
+- **Removed: Import LED links from feedback module, and the block-read diagnostic.** Reading a feedback module (05-207) required putting it into link mode — the mode that gates erasing and writing a module — and never became reliable on real hardware. The risk of using the write-enable mode for a read was not worth it, so the **Import LED links** bridge button, the `nikobus.import_feedback_leds` action and the `nikobus.read_module_blocks` diagnostic are gone, and the integration no longer puts any module into link mode. Fill the LED-on / LED-off trigger addresses by hand under *Customize a module* as before. Backup and Verify continue to cover switch, dimmer and roller modules. Requires `nikobus-connect >= 0.37.0`. The real-time state push from a Feedback Module is unaffected.
+
+
 ## 3.16.4
 
 - **Feedback module read completes when the module goes quiet mid-way** (`nikobus-connect 0.36.3`, required). On a real 05-207 the LED import read the output table, the plate table, the LED list and the LED modes, then the module stopped answering; the read now re-enters link mode and carries on, and the last two tables are optional.

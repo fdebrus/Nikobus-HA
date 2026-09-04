@@ -1461,7 +1461,6 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         known.add(f"{DOMAIN}_sync_pc_link_clock_button")
         known.add(f"{DOMAIN}_verify_programming_button")
         known.add(f"{DOMAIN}_backup_programming_button")
-        known.add(f"{DOMAIN}_import_feedback_leds_button")
         return known
 
     def _rebuild_dict_module_data(self) -> None:
