@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.16.3
+
+- **Feedback module read validated on a real 05-207 and made resilient** (`nikobus-connect 0.36.2`, required). The module serves block reads only in link mode, needs a moment after entering and leaving it, and drops an occasional block while it pushes feedback frames; the read now goes straight to link mode, pauses, retries each block and treats an unreadable LED-mode table as unknown modes. Backup of the feedback module and the LED import work end to end. The LED import now follows the corrected decoder (group table placement per software build, key order A, B, C, D inside a plate).
+
+
 ## 3.16.2
 
 - **New diagnostic action `nikobus.read_module_blocks`.** Sends raw 16-byte (0x10) or 8-byte (0x22) block reads to one module, optionally inside link mode, and returns each block as hex, with unanswered blocks reported as timeouts. Meant for working out the memory access of module types that are not settled yet, such as the feedback module, which so far accepts link mode and the status query but ignores 16-byte reads at blocks 0 and 0x600.

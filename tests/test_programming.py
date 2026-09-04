@@ -286,9 +286,9 @@ class TestResolveFeedbackLed(unittest.TestCase):
 
     def test_row_order_decides_without_links(self):
         buttons = _plate({})
-        # slot 0 = row 0 = 1D on a 4-key plate, slot 3 = 1A
-        self.assertEqual(resolve_feedback_led(self._led(0), [("5B05", 1)], buttons)[1], "1D")
-        self.assertEqual(resolve_feedback_led(self._led(3), [("5B05", 6)], buttons)[1], "1A")
+        # rows follow the key order: slot 0 = 1A, slot 3 = 1D on a 4-key plate
+        self.assertEqual(resolve_feedback_led(self._led(0), [("5B05", 1)], buttons)[1], "1A")
+        self.assertEqual(resolve_feedback_led(self._led(3), [("5B05", 6)], buttons)[1], "1D")
 
     def test_unknown_plate_is_unresolved(self):
         self.assertIsNone(resolve_feedback_led(self._led(0), [("5B05", 1)], {}))
