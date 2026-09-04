@@ -79,6 +79,9 @@
       },
       "backup_module_programming": {
         "name": "Backup module programming"
+      },
+      "import_feedback_leds": {
+        "name": "Import LED links from feedback module"
       }
     },
     "sensor": {
@@ -207,6 +210,9 @@
     },
     "no_pc_link_known": {
       "message": "No PC-Link is known yet — run **1. Load Project Overview** first."
+    },
+    "no_feedback_module": {
+      "message": "No feedback module (05-207) is known — run **1. Load Project Overview** first, or enable the feedback module in the integration options."
     }
   },
   "options": {
@@ -420,6 +426,16 @@
         "addresses": {
           "name": "Module addresses",
           "description": "Optional list of module addresses to limit the run to (for example ['9105', '4707']). Empty means every switch, dimmer and roller module."
+        }
+      }
+    },
+    "import_feedback_leds": {
+      "name": "Import LED links from feedback module",
+      "description": "Reads the feedback module's programming and fills the LED-on / LED-off trigger address of every output channel with the wall key whose LED tracks it. Addresses you typed yourself are kept unless Overwrite is on; addresses from an earlier import are refreshed.",
+      "fields": {
+        "overwrite": {
+          "name": "Overwrite",
+          "description": "Also replace LED addresses that were set by hand."
         }
       }
     }

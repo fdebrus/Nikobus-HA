@@ -57,6 +57,7 @@ async def async_setup_entry(
         NikobusSyncClockButton(coordinator),
         NikobusVerifyProgrammingButton(coordinator),
         NikobusBackupProgrammingButton(coordinator),
+        NikobusImportFeedbackLedsButton(coordinator),
     ]
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
@@ -770,4 +771,27 @@ class NikobusBackupProgrammingButton(_NikobusMaintenanceButton):
         self._start(
             self._coordinator.programming.async_backup_modules(),
             "nikobus_backup_programming",
+        )
+
+
+class NikobusImportFeedbackLedsButton(_NikobusMaintenanceButton):
+    """Fill the channels' LED trigger addresses from the feedback module."""
+
+    _attr_translation_key = "import_feedback_leds"
+
+    def __init__(self, coordinator: NikobusDataCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_import_feedback_leds_button"
+
+    @property
+    def available(self) -> bool:
+        programming = getattr(self._coordinator, "programming", None)
+        has_module = bool(programming and programming.feedback_modules())
+        return has_module and super().available
+
+    async def async_press(self) -> None:
+        _LOGGER.info("Feedback LED import triggered via UI button")
+        self._start(
+            self._coordinator.programming.async_import_feedback_leds(),
+            "nikobus_import_feedback_leds",
         )
