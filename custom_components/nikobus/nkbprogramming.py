@@ -29,6 +29,12 @@ from nikobus_connect.discovery.feedback_decoder import (
     decode_feedback_image,
 )
 from nikobus_connect.discovery.fileio import find_module
+from nikobus_connect.exceptions import NikobusError
+from nikobus_connect.protocol import (
+    FUNC_READ_BLOCK8,
+    FUNC_READ_BLOCK16,
+    make_block_index_args,
+)
 
 from .const import (
     DOMAIN,
@@ -430,6 +436,61 @@ class NikobusProgramming:
         return {"path": str(folder), "images": sorted(images), **summary}
 
 
+    # -- raw block reads (diagnostics) ---------------------------------------
+
+    async def async_read_blocks(
+        self,
+        address: str,
+        blocks: list[int],
+        *,
+        block_size: int = 16,
+        link_mode: bool = False,
+    ) -> dict[str, Any]:
+        """Read raw memory blocks from one module and return them as hex.
+
+        Diagnostic helper for module types whose memory access is not
+        settled yet: sends the 16-byte (0x10) or 8-byte (0x22) read for
+        each block index, optionally inside link mode (0x18 / 0x19,
+        left again in every case). A block that goes unanswered is
+        reported as ``"timeout"`` instead of aborting the run.
+        """
+        self._acquire()
+        api = self._api()
+        address = address.upper()
+        func = FUNC_READ_BLOCK8 if block_size == 8 else FUNC_READ_BLOCK16
+        results: dict[str, str] = {}
+        self._set_running(True)
+        try:
+            async with self._lock:
+                if link_mode:
+                    await api.set_link_mode(address, True)
+                try:
+                    for block in blocks:
+                        index = _block_index(block)
+                        key = f"0x{index:04X}"
+                        try:
+                            # Diagnostic access to the command layer's generic query.
+                            payload = await api._command_handler.query(
+                                func, address, make_block_index_args(index)
+                            )
+                        except NikobusError as err:
+                            results[key] = f"timeout: {err}" if "ACK" in str(err) else f"error: {err}"
+                            continue
+                        results[key] = payload[2:].hex().upper() if len(payload) > 2 else payload.hex().upper()
+                finally:
+                    if link_mode:
+                        await api.set_link_mode(address, False)
+        finally:
+            self._set_running(False)
+            self._coordinator.async_update_listeners()
+        _LOGGER.info("Block read of %s (%d-byte, link mode %s): %s", address, block_size, link_mode, results)
+        return {
+            "address": address,
+            "block_size": block_size,
+            "link_mode": link_mode,
+            "blocks": results,
+        }
+
     # -- feedback module LED links -------------------------------------------
 
     def feedback_modules(self) -> list[tuple[str, str]]:
@@ -547,6 +608,14 @@ class NikobusProgramming:
         entry["led_off"] = bus_address
         entry["led_source"] = LED_SOURCE_FEEDBACK
         return True
+
+
+def _block_index(value: Any) -> int:
+    """Block index from an int or a hex string (``"600"`` / ``"0x600"``)."""
+    if isinstance(value, int):
+        return value
+    text = str(value).strip().lower().removeprefix("0x")
+    return int(text, 16)
 
 
 def resolve_feedback_led(

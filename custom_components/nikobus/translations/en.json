@@ -438,6 +438,28 @@
           "description": "Also replace LED addresses that were set by hand."
         }
       }
+    },
+    "read_module_blocks": {
+      "name": "Read module memory blocks (diagnostic)",
+      "description": "Sends raw block reads to one module and returns the bytes of each block as hex, for module types whose memory access is still being worked out. A block that goes unanswered is reported as a timeout. With link mode on, the module is put in link mode first and taken out of it afterwards; link mode changes no programming.",
+      "fields": {
+        "address": {
+          "name": "Module address",
+          "description": "Four hex digits, for example 966C."
+        },
+        "blocks": {
+          "name": "Block indexes",
+          "description": "List of block indexes, decimal or hex (for example ['0x0', '0x600'])."
+        },
+        "block_size": {
+          "name": "Block size",
+          "description": "16 bytes (function 0x10, most modules) or 8 bytes (function 0x22, dimmers)."
+        },
+        "link_mode": {
+          "name": "Link mode",
+          "description": "Send the reads inside link mode (0x18 before, 0x19 after)."
+        }
+      }
     }
   },
   "selector": {

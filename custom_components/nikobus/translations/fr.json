@@ -477,6 +477,28 @@
           "description": "Remplacer aussi les adresses LED saisies à la main."
         }
       }
+    },
+    "read_module_blocks": {
+      "name": "Lire des blocs mémoire d'un module (diagnostic)",
+      "description": "Envoie des lectures de blocs bruts à un module et renvoie les octets de chaque bloc en hexadécimal, pour les types de modules dont l'accès mémoire n'est pas encore établi. Un bloc sans réponse est signalé comme délai dépassé. Avec le mode liaison, le module est d'abord mis en mode liaison puis retiré de ce mode ; le mode liaison ne modifie aucune programmation.",
+      "fields": {
+        "address": {
+          "name": "Adresse du module",
+          "description": "Quatre chiffres hexadécimaux, par exemple 966C."
+        },
+        "blocks": {
+          "name": "Index de blocs",
+          "description": "Liste d'index de blocs, en décimal ou hexadécimal (par exemple ['0x0', '0x600'])."
+        },
+        "block_size": {
+          "name": "Taille de bloc",
+          "description": "16 octets (fonction 0x10, la plupart des modules) ou 8 octets (fonction 0x22, variateurs)."
+        },
+        "link_mode": {
+          "name": "Mode liaison",
+          "description": "Envoyer les lectures en mode liaison (0x18 avant, 0x19 après)."
+        }
+      }
     }
   }
 }
