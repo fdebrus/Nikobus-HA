@@ -724,7 +724,14 @@ class _NikobusMaintenanceButton(_NikobusBridgeButton):
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="maintenance_running"
             )
-        self.hass.async_create_background_task(coro, name=name)
+
+        async def _run() -> None:
+            try:
+                await coro
+            except Exception:  # a failed run is reported, not lost
+                _LOGGER.exception("%s failed", name)
+
+        self.hass.async_create_background_task(_run(), name=name)
 
 
 class NikobusSyncClockButton(_NikobusMaintenanceButton):
