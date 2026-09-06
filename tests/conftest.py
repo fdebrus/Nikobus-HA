@@ -240,7 +240,11 @@ class _Store:
 _mod("homeassistant.helpers.storage", Store=_Store)
 
 # homeassistant.helpers.event
-_mod("homeassistant.helpers.event", async_call_later=lambda *a, **kw: (lambda: None))
+_mod(
+    "homeassistant.helpers.event",
+    async_call_later=lambda *a, **kw: (lambda: None),
+    async_track_time_interval=lambda *a, **kw: (lambda: None),
+)
 
 # homeassistant.helpers.entity_platform
 _mod(

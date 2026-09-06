@@ -290,6 +290,14 @@
     "module_crc_mismatch": {
       "title": "Checksum van de programmering van Nikobus-module {description} ({address}) klopt niet",
       "description": "De checksum die de module over zijn programmeergeheugen berekent, verschilt van het geheugenbeeld dat Home Assistant zojuist heeft teruggelezen, wat wijst op een beschadigde of onderbroken overdracht. Voer **Moduleprogrammering controleren** opnieuw uit; blijft het probleem, programmeer de module dan opnieuw met de Nikobus-pc-software."
+    },
+    "module_programming_changed": {
+      "title": "Nikobus-module {description} ({address}) is opnieuw geprogrammeerd",
+      "description": "De checksum die de module over zijn programmering rapporteert, verschilt van de checksum die op {recorded_at} is vastgelegd, toen Home Assistant zijn koppelingen voor het laatst heeft gelezen. De module is sindsdien opnieuw geprogrammeerd, waarschijnlijk met de Nikobus-pc-software, dus de knopkoppelingen die Home Assistant kent, kloppen mogelijk niet meer. Voer **Alle modulekoppelingen scannen** uit (of **Moduleprogrammering controleren** / **back-uppen**) om de module opnieuw te lezen; deze waarschuwing verdwijnt daarna vanzelf."
+    },
+    "no_device_answered": {
+      "title": "Geen Nikobus-apparaat antwoordde op {port}",
+      "description": "De poort ging open en de handshake is verzonden, maar niets aan de andere kant bevestigde de aanwezigheidstest van Home Assistant. Opdrachten lopen op een time-out tot een apparaat antwoordt. Controleer de kabel en de voeding van de PC-Link, zorg dat de Nikobus-pc-software de poort niet bezet houdt en herstart de PC-Link als hij door een ander programma is gebruikt. Gebruikt uw installatie een PC-Logic als gateway en werkt alles, dan kunt u deze waarschuwing negeren; ze verdwijnt vanzelf bij de volgende geslaagde verbinding."
     }
   },
   "exceptions": {

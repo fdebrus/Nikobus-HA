@@ -2165,3 +2165,40 @@ class TestSurfaceCorruptModules(unittest.TestCase):
         NikobusDataCoordinator._surface_corrupt_modules(coord)
         mock_create.assert_not_called()
         mock_delete.assert_called_once()
+
+
+class TestDevicePresenceIssue(unittest.TestCase):
+    """The presence-probe verdict of the library surfaces as a Repair issue."""
+
+    def _coord(self, answered):
+        coord = MagicMock()
+        coord.hass = MagicMock()
+        coord.config_entry.entry_id = "entry1"
+        coord.connection_string = "/dev/ttyUSB0"
+        coord.nikobus_connection = MagicMock()
+        coord.nikobus_connection.device_answered = answered
+        return coord
+
+    def test_silence_raises_issue(self):
+        coord = self._coord(False)
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._surface_device_probe(coord)
+        ir.async_create_issue.assert_called_once()
+        assert ir.async_create_issue.call_args.args[2] == "no_device_answered_entry1"
+        assert ir.async_create_issue.call_args.kwargs["translation_placeholders"] == {"port": "/dev/ttyUSB0"}
+
+    def test_answer_clears_issue(self):
+        for answered in (True, None):
+            coord = self._coord(answered)
+            with patch("custom_components.nikobus.coordinator.ir") as ir:
+                NikobusDataCoordinator._surface_device_probe(coord)
+            ir.async_create_issue.assert_not_called()
+            ir.async_delete_issue.assert_called_once_with(coord.hass, "nikobus", "no_device_answered_entry1")
+
+    def test_old_library_without_attribute_clears_issue(self):
+        coord = self._coord(True)
+        del coord.nikobus_connection.device_answered
+        coord.nikobus_connection = MagicMock(spec=[])  # no attribute at all
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._surface_device_probe(coord)
+        ir.async_delete_issue.assert_called_once()

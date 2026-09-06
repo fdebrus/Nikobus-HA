@@ -270,6 +270,12 @@ class NikobusProgrammingHealthSensor(CoordinatorEntity[NikobusDataCoordinator], 
                 programming.last_check_at.isoformat() if programming.last_check_at else None
             ),
             "last_backup": programming.last_backup_path,
+            "programming_changed": list(programming.programming_changed),
+            "change_checked_at": (
+                programming.last_change_check_at.isoformat()
+                if programming.last_change_check_at
+                else None
+            ),
             "modules": {
                 address: {
                     "description": check.description,

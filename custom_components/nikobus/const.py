@@ -175,6 +175,22 @@ ISSUE_CORRUPT_MODULES: Final[str] = "corrupt_modules"
 # its memory image differs from the image we just read back.
 ISSUE_MODULE_EEPROM_ERROR: Final[str] = "module_eeprom_error"
 ISSUE_MODULE_CRC_MISMATCH: Final[str] = "module_crc_mismatch"
+# Raised by the daily programming-change check: the CRC a module reports
+# over its memory (function 0x13, one read-only frame) differs from the
+# one recorded when its links were last scanned, verified or backed up —
+# the module was reprogrammed behind Home Assistant's back.
+ISSUE_MODULE_PROGRAMMING_CHANGED: Final[str] = "module_programming_changed"
+# The port opened but nothing acknowledged the presence probe the
+# library sends after the handshake (nikobus-connect 0.37.2). The
+# connection stays up — some gateways may not answer the probe — but
+# the user should check what is on the other end.
+ISSUE_NO_DEVICE_ANSWERED: Final[str] = "no_device_answered"
+# Programming-change check cadence: first pass a few minutes after setup
+# (clear of the initial sync and any discovery), then once a day.
+PROGRAMMING_CHANGE_CHECK_DELAY_S: Final[int] = 10 * 60
+PROGRAMMING_CHANGE_CHECK_INTERVAL_S: Final[int] = 24 * 60 * 60
+PROGRAMMING_STORAGE_KEY: Final[str] = "nikobus.programming"
+PROGRAMMING_STORAGE_VERSION: Final[int] = 1
 
 # Physical button types that are INPUT-ONLY by design — they generate
 # bus press telegrams when their contacts change state but they don't

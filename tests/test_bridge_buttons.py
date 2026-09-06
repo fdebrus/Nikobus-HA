@@ -33,10 +33,11 @@ def _run(coro):
         loop.close()
 
 
-def _coordinator(*, discovery_running=False, has_output_modules=True):
+def _coordinator(*, discovery_running=False, has_output_modules=True, maintenance_running=False):
     coord = MagicMock()
     coord.discovery_running = discovery_running
     coord.has_known_output_modules = has_output_modules
+    coord.programming.running = maintenance_running
     coord.config_entry.options = {}
     return coord
 
@@ -56,6 +57,16 @@ def test_all_bridge_buttons_available_when_idle():
     assert NikobusPcLinkInventoryButton(coord).available is True
     assert NikobusModuleScanButton(coord).available is True
     assert NikobusImportNkbNamesButton(coord).available is True
+
+
+def test_all_bridge_buttons_unavailable_while_maintenance_runs():
+    """Verify / backup / clock sync own the bus too. The module-scan
+    button used to override ``available`` with a discovery-only check
+    and stayed pressable during a verify run (3.17.2 field report)."""
+    coord = _coordinator(maintenance_running=True)
+    assert NikobusPcLinkInventoryButton(coord).available is False
+    assert NikobusModuleScanButton(coord).available is False
+    assert NikobusImportNkbNamesButton(coord).available is False
 
 
 def test_module_scan_button_still_requires_known_modules():

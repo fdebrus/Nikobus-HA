@@ -518,6 +518,16 @@ class NikobusDiscoveryMixin:
         # a still-valid corruption warning.
         if inventory_query_type != InventoryQueryType.PC_LINK:
             self._surface_corrupt_modules()
+            # The links were just read from the modules: take each
+            # module's current CRC as its known programming, so the daily
+            # change check measures against this scan. One read-only
+            # frame per module; best effort.
+            try:
+                await self.programming.async_check_programming_changes(
+                    record=True, force=True
+                )
+            except Exception as err:  # noqa: BLE001 - never let this abort reconciliation
+                _LOGGER.debug("Programming baseline not recorded after scan: %s", err)
 
         # Ingest the library's classified CF activation broadcasts (the
         # ``38 41 XX`` / ``38 80 XX`` addresses surfaced by
