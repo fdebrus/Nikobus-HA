@@ -21,6 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from nikobus_connect.api import MODULE_IMAGE_SIZES
 
@@ -28,6 +29,9 @@ from .const import (
     DOMAIN,
     ISSUE_MODULE_CRC_MISMATCH,
     ISSUE_MODULE_EEPROM_ERROR,
+    ISSUE_MODULE_PROGRAMMING_CHANGED,
+    PROGRAMMING_STORAGE_KEY,
+    PROGRAMMING_STORAGE_VERSION,
     SIGNAL_DISCOVERY_STATE,
 )
 from .router import iter_operation_points
@@ -170,6 +174,15 @@ class NikobusProgramming:
         self.last_check_at: datetime | None = None
         self.last_backup_path: str | None = None
         self.last_backup_at: datetime | None = None
+        # Programming-change detection: the CRC each module reported
+        # (function 0x13) when its programming was last read — links
+        # scanned, verified or backed up. ``{address: {"crc", "description",
+        # "recorded_at"}}``, persisted so a reprogramming done while Home
+        # Assistant was down is still noticed. ``None`` until loaded.
+        self._crc_baseline: dict[str, dict[str, Any]] = {}
+        self._store: Store[dict[str, Any]] | None = None
+        self.programming_changed: list[str] = []
+        self.last_change_check_at: datetime | None = None
 
     # -- inventory helpers -------------------------------------------------
 
@@ -283,6 +296,120 @@ class NikobusProgramming:
         clock = await self.async_read_clock()
         return clock or now
 
+    # -- programming-change baseline ------------------------------------------
+
+    async def async_load(self) -> None:
+        """Load the persisted CRC baseline (once, at coordinator setup)."""
+        self._store = Store(self._hass, PROGRAMMING_STORAGE_VERSION, PROGRAMMING_STORAGE_KEY)
+        loaded = await self._store.async_load()
+        baseline = (loaded or {}).get("module_crc") if isinstance(loaded, dict) else None
+        self._crc_baseline = {
+            str(addr).upper(): dict(entry)
+            for addr, entry in (baseline or {}).items()
+            if isinstance(entry, dict) and isinstance(entry.get("crc"), int)
+        }
+
+    async def _async_save_baseline(self) -> None:
+        if self._store is None:
+            return
+        try:
+            await self._store.async_save({"module_crc": self._crc_baseline})
+        except (OSError, HomeAssistantError):
+            _LOGGER.exception("Failed to persist the Nikobus programming baseline")
+
+    @property
+    def crc_baseline(self) -> dict[str, dict[str, Any]]:
+        return self._crc_baseline
+
+    def _record_baseline(self, address: str, crc: int, description: str) -> None:
+        """Take ``crc`` as the known programming of ``address``; clears its issue."""
+        self._crc_baseline[address.upper()] = {
+            "crc": crc,
+            "description": description,
+            "recorded_at": dt_util.now().isoformat(),
+        }
+        if address.upper() in self.programming_changed:
+            self.programming_changed.remove(address.upper())
+        ir.async_delete_issue(
+            self._hass, DOMAIN, f"{ISSUE_MODULE_PROGRAMMING_CHANGED}_{address.lower()}"
+        )
+
+    async def async_check_programming_changes(
+        self, *, record: bool = False, force: bool = False
+    ) -> dict[str, Any]:
+        """Compare every output module's reported CRC with the baseline.
+
+        One read-only frame per module (function 0x13). A module without
+        a baseline, or every module when ``record`` is set (after a link
+        scan), has its current CRC recorded silently. A module whose CRC
+        moved away from its baseline was reprogrammed since Home Assistant
+        last read its links: a Repair issue asks for a link rescan, and
+        the address is listed in ``programming_changed``. Skipped while a
+        discovery or a maintenance run owns the bus, unless ``force``.
+        """
+        if not force and (self._coordinator.discovery_running or self.running):
+            return {"skipped": True, "changed": list(self.programming_changed)}
+        api = self._api()
+        changed: list[str] = []
+        async with self._lock:
+            for address, _module_type, description in self.output_modules():
+                try:
+                    crc = await api.get_module_crc(address)
+                except Exception as err:  # noqa: BLE001 - one module's silence must not abort the pass
+                    _LOGGER.debug("Programming CRC of module %s not read: %s", address, err)
+                    if address in self.programming_changed:
+                        changed.append(address)
+                    continue
+                baseline = self._crc_baseline.get(address)
+                if record or baseline is None:
+                    self._record_baseline(address, crc, description)
+                    continue
+                if baseline.get("crc") == crc:
+                    if address in self.programming_changed:
+                        ir.async_delete_issue(
+                            self._hass,
+                            DOMAIN,
+                            f"{ISSUE_MODULE_PROGRAMMING_CHANGED}_{address.lower()}",
+                        )
+                    continue
+                changed.append(address)
+                if address not in self.programming_changed:
+                    _LOGGER.warning(
+                        "Nikobus module %s (%s) was reprogrammed since its links were "
+                        "last read (CRC 0x%04X, recorded 0x%04X) — rescan its links",
+                        address,
+                        description,
+                        crc,
+                        baseline.get("crc"),
+                    )
+                ir.async_create_issue(
+                    self._hass,
+                    DOMAIN,
+                    f"{ISSUE_MODULE_PROGRAMMING_CHANGED}_{address.lower()}",
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_MODULE_PROGRAMMING_CHANGED,
+                    translation_placeholders={
+                        "address": address,
+                        "description": description,
+                        "recorded_at": str(baseline.get("recorded_at") or "")[:16].replace("T", " "),
+                    },
+                )
+            self.programming_changed = changed
+            self.last_change_check_at = dt_util.now()
+            await self._async_save_baseline()
+        self._coordinator.async_update_listeners()
+        return {"skipped": False, "changed": list(changed)}
+
+    async def async_scheduled_change_check(self, _now: Any = None) -> None:
+        """Timer entry point: never raises, logs at DEBUG when it can't run."""
+        try:
+            await self.async_check_programming_changes()
+        except HomeAssistantError as err:
+            _LOGGER.debug("Programming-change check skipped: %s", err)
+        except Exception:  # noqa: BLE001 - a timer callback must never raise into HA
+            _LOGGER.exception("Programming-change check failed")
+
     # -- status / integrity ------------------------------------------------
 
     async def _check_module(
@@ -304,6 +431,11 @@ class NikobusProgramming:
                 check.crc_ok, check.module_crc, check.computed_crc = (
                     await api.verify_module_memory(address, module_type, data)
                 )
+                if isinstance(check.module_crc, int):
+                    # A verified or backed-up image is the new known
+                    # programming: this is the CRC a later change is
+                    # measured against.
+                    self._record_baseline(address, check.module_crc, description)
         except Exception as err:  # noqa: BLE001 - one module's failure must not abort the run
             check.error = str(err) or err.__class__.__name__
             _LOGGER.warning("Programming check of module %s failed: %s", address, check.error)

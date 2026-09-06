@@ -38,6 +38,8 @@ def _coordinator(pc_link="86F5", running=False, discovery_running=False):
         checks={},
         last_check_at=None,
         last_backup_path=None,
+        programming_changed=[],
+        last_change_check_at=None,
         health=HEALTH_UNKNOWN,
         async_read_clock=AsyncMock(),
         async_sync_clock=AsyncMock(),

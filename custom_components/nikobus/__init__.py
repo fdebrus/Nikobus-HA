@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any, Final
 
 import voluptuous as vol
@@ -25,9 +26,16 @@ from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONFIG_ENTRY_VERSION, DOMAIN, HUB_IDENTIFIER
+from .const import (
+    CONFIG_ENTRY_VERSION,
+    DOMAIN,
+    HUB_IDENTIFIER,
+    PROGRAMMING_CHANGE_CHECK_DELAY_S,
+    PROGRAMMING_CHANGE_CHECK_INTERVAL_S,
+)
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import hub_device_info
 from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
@@ -473,6 +481,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
     # 7. Surface repair issues for actionable misconfigurations.
     coordinator.refresh_repair_issues()
+
+    # 8. Programming-change watch: one read-only CRC frame per output
+    # module, a few minutes after setup and then once a day. A module
+    # reprogrammed with the Nikobus PC software raises a Repair issue
+    # asking for a link rescan.
+    entry.async_on_unload(
+        async_call_later(
+            hass,
+            PROGRAMMING_CHANGE_CHECK_DELAY_S,
+            coordinator.programming.async_scheduled_change_check,
+        )
+    )
+    entry.async_on_unload(
+        async_track_time_interval(
+            hass,
+            coordinator.programming.async_scheduled_change_check,
+            timedelta(seconds=PROGRAMMING_CHANGE_CHECK_INTERVAL_S),
+        )
+    )
 
     _LOGGER.info("Nikobus integration setup complete")
     return True

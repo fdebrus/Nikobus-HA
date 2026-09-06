@@ -290,6 +290,10 @@
     "module_crc_mismatch": {
       "title": "Somme de contrôle de programmation incorrecte pour le module Nikobus {description} ({address})",
       "description": "La somme de contrôle calculée par le module sur sa mémoire de programmation diffère de l'image relue par Home Assistant, ce qui indique un transfert corrompu ou interrompu. Relancez **Vérifier la programmation des modules** ; si le problème persiste, reprogrammez le module avec le logiciel PC Nikobus."
+    },
+    "module_programming_changed": {
+      "title": "Le module Nikobus {description} ({address}) a été reprogrammé",
+      "description": "La somme de contrôle que le module rapporte sur sa programmation diffère de celle enregistrée le {recorded_at}, dernière lecture de ses liens par Home Assistant. Le module a été reprogrammé depuis, très probablement avec le logiciel PC Nikobus : les liens de boutons connus de Home Assistant peuvent ne plus lui correspondre. Lancez **Scanner tous les liens des modules** (ou **Vérifier** / **Sauvegarder la programmation des modules**) pour relire le module ; cet avertissement disparaît ensuite de lui-même."
     }
   },
   "exceptions": {

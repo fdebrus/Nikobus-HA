@@ -319,6 +319,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
             self.dict_button_data = await self.button_storage.async_load()
             await self.cf_storage.async_load()
+            await self.programming.async_load()
 
             # 3.0.0: the legacy friendly-name overlay (importing entity
             # names from nikobus_module_config.json / nikobus_button_config.json

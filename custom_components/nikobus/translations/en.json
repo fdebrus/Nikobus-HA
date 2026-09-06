@@ -157,6 +157,10 @@
     "module_crc_mismatch": {
       "title": "Nikobus module {description} ({address}) programming checksum mismatch",
       "description": "The checksum the module computes over its programming memory differs from the image Home Assistant just read back, which points to a corrupted or interrupted transfer. Re-run **Verify module programming**; if it persists, reprogram the module with the Nikobus PC software."
+    },
+    "module_programming_changed": {
+      "title": "Nikobus module {description} ({address}) was reprogrammed",
+      "description": "The checksum the module reports over its programming differs from the one recorded on {recorded_at}, when Home Assistant last read its links. The module was reprogrammed since, most likely with the Nikobus PC software, so the button links Home Assistant knows may no longer match it. Run **Scan all module links** (or **Verify module programming** / **Backup module programming**) to read the module again; this warning clears by itself afterwards."
     }
   },
   "exceptions": {

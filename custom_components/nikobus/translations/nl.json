@@ -290,6 +290,10 @@
     "module_crc_mismatch": {
       "title": "Checksum van de programmering van Nikobus-module {description} ({address}) klopt niet",
       "description": "De checksum die de module over zijn programmeergeheugen berekent, verschilt van het geheugenbeeld dat Home Assistant zojuist heeft teruggelezen, wat wijst op een beschadigde of onderbroken overdracht. Voer **Moduleprogrammering controleren** opnieuw uit; blijft het probleem, programmeer de module dan opnieuw met de Nikobus-pc-software."
+    },
+    "module_programming_changed": {
+      "title": "Nikobus-module {description} ({address}) is opnieuw geprogrammeerd",
+      "description": "De checksum die de module over zijn programmering rapporteert, verschilt van de checksum die op {recorded_at} is vastgelegd, toen Home Assistant zijn koppelingen voor het laatst heeft gelezen. De module is sindsdien opnieuw geprogrammeerd, waarschijnlijk met de Nikobus-pc-software, dus de knopkoppelingen die Home Assistant kent, kloppen mogelijk niet meer. Voer **Alle modulekoppelingen scannen** uit (of **Moduleprogrammering controleren** / **back-uppen**) om de module opnieuw te lezen; deze waarschuwing verdwijnt daarna vanzelf."
     }
   },
   "exceptions": {

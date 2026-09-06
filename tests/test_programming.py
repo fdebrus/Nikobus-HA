@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -98,6 +98,7 @@ def _api(eeprom_error=False, crc_ok=True):
         return_value=SimpleNamespace(eeprom_error=eeprom_error, record_count_a=12, record_count_b=0)
     )
     api.read_module_memory = AsyncMock(return_value=b"\xff" * 64)
+    api.get_module_crc = AsyncMock(return_value=0x1234)
     api.verify_module_memory = AsyncMock(return_value=(crc_ok, 0x1234, 0x1234 if crc_ok else 0x9999))
     api.get_pc_link_time = AsyncMock(return_value=datetime(2026, 9, 3, 21, 10, 43))  # noqa: DTZ001
     api.set_pc_link_time = AsyncMock()
@@ -222,3 +223,85 @@ class TestLinkRunTimeStoredShape(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestProgrammingChange(unittest.TestCase):
+    """Daily CRC watch: baseline, change detection, acknowledgement."""
+
+    def _prog(self, api=None, discovery_running=False):
+        coord = _coordinator(api=api or _api())
+        coord.discovery_running = discovery_running
+        return NikobusProgramming(_hass("/tmp"), coord)
+
+    def test_first_check_records_baseline_silently(self):
+        prog = self._prog()
+        with patch("custom_components.nikobus.nkbprogramming.ir") as ir:
+            result = _run(prog.async_check_programming_changes())
+        self.assertEqual(result, {"skipped": False, "changed": []})
+        self.assertEqual({a: e["crc"] for a, e in prog.crc_baseline.items()}, {"9105": 0x1234, "4707": 0x1234})
+        ir.async_create_issue.assert_not_called()
+        self.assertIsNotNone(prog.last_change_check_at)
+
+    def test_changed_crc_raises_issue_until_rescanned(self):
+        api = _api()
+        prog = self._prog(api=api)
+        with patch("custom_components.nikobus.nkbprogramming.ir"):
+            _run(prog.async_check_programming_changes())
+        # The switch module gets reprogrammed: its CRC moves.
+        api.get_module_crc = AsyncMock(side_effect=lambda addr: 0xBEEF if addr == "9105" else 0x1234)
+        with patch("custom_components.nikobus.nkbprogramming.ir") as ir:
+            result = _run(prog.async_check_programming_changes())
+        self.assertEqual(result["changed"], ["9105"])
+        self.assertEqual(prog.programming_changed, ["9105"])
+        ir.async_create_issue.assert_called_once()
+        kwargs = ir.async_create_issue.call_args.kwargs
+        self.assertEqual(kwargs["translation_key"], "module_programming_changed")
+        self.assertEqual(kwargs["translation_placeholders"]["address"], "9105")
+        self.assertEqual(ir.async_create_issue.call_args.args[2], "module_programming_changed_9105")
+        # Baseline untouched until the links are read again.
+        self.assertEqual(prog.crc_baseline["9105"]["crc"], 0x1234)
+        # A link scan records the new CRC and clears the issue.
+        with patch("custom_components.nikobus.nkbprogramming.ir") as ir:
+            _run(prog.async_check_programming_changes(record=True, force=True))
+        self.assertEqual(prog.programming_changed, [])
+        self.assertEqual(prog.crc_baseline["9105"]["crc"], 0xBEEF)
+        ir.async_delete_issue.assert_any_call(prog._hass, "nikobus", "module_programming_changed_9105")
+
+    def test_verify_resets_baseline(self):
+        api = _api()
+        prog = self._prog(api=api)
+        with patch("custom_components.nikobus.nkbprogramming.ir"):
+            _run(prog.async_check_programming_changes())
+        api.get_module_crc = AsyncMock(return_value=0xBEEF)
+        with patch("custom_components.nikobus.nkbprogramming.ir"):
+            _run(prog.async_check_programming_changes())
+        self.assertEqual(sorted(prog.programming_changed), ["4707", "9105"])
+        # Verify reads the module CRC (0x1234 in the fake) and takes it as the baseline.
+        with patch("custom_components.nikobus.nkbprogramming.ir") as ir:
+            _run(prog.async_verify_modules())
+        self.assertEqual(prog.programming_changed, [])
+        self.assertEqual(prog.crc_baseline["9105"]["crc"], 0x1234)
+        ir.async_delete_issue.assert_any_call(prog._hass, "nikobus", "module_programming_changed_9105")
+
+    def test_skipped_while_discovery_runs(self):
+        api = _api()
+        prog = self._prog(api=api, discovery_running=True)
+        result = _run(prog.async_check_programming_changes())
+        self.assertTrue(result["skipped"])
+        api.get_module_crc.assert_not_awaited()
+
+    def test_silent_module_keeps_previous_flag(self):
+        api = _api()
+        prog = self._prog(api=api)
+        with patch("custom_components.nikobus.nkbprogramming.ir"):
+            _run(prog.async_check_programming_changes())
+        api.get_module_crc = AsyncMock(side_effect=RuntimeError("timeout"))
+        with patch("custom_components.nikobus.nkbprogramming.ir") as ir:
+            result = _run(prog.async_check_programming_changes())
+        self.assertEqual(result["changed"], [])
+        ir.async_create_issue.assert_not_called()
+
+    def test_scheduled_entry_point_never_raises(self):
+        coord = _coordinator(api=None)  # not connected → HomeAssistantError inside
+        prog = NikobusProgramming(_hass("/tmp"), coord)
+        _run(prog.async_scheduled_change_check())

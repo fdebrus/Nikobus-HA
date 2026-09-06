@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.17.2
+
+- **Reprogrammed modules are noticed.** Every output module keeps a checksum of its own programming (function `0x13`, one read-only frame). Home Assistant now records it whenever it reads a module's programming — after *Scan all module links*, *Verify* or *Backup* — and re-reads it ten minutes after start-up and then once a day. A module whose checksum moved was reprogrammed with the Nikobus PC software since its links were last read: a Repair issue names it and asks for a link rescan, the *Programming health* sensor lists it under `programming_changed`, and the issue clears by itself once the module is read again. Nothing is written to any module.
+- **Corrupted bus frames are dropped** (`nikobus-connect 0.37.2`, required): a byte flipped between a module and the PC-Link used to pass the PC-Link's checksum and could file an output state under a phantom module address; the module's own checksum inside the frame is now verified as well.
+
 ## 3.17.1
 
 - **Scan all module links no longer collides with polling** (`nikobus-connect 0.37.1`, required). On installations that poll (no Feedback Module), a poll already under way when the scan started — the initial sync after a reload, a running 120 s cycle, a button-triggered refresh — was sent on the bus in the middle of a register read. The two replies garbled each other, the scan saw the module's link table start one block late and discarded the whole module as corrupt, leaving every button on it without links (#502: a switch module with 33 records, all its buttons empty, and the modules probed as absent afterwards). The library now serialises every bus exchange, so a queued command goes out between two register reads, never on top of one. Run *Scan all module links* again after updating.
