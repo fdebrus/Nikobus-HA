@@ -428,6 +428,12 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             if len(message) >= 21:
                 state_hex = message[9:21]
                 start = 0 if group == 1 else 6
+                _LOGGER.debug(
+                    "Feedback frame for module %s group %d — outputs %s",
+                    address,
+                    group,
+                    state_hex,
+                )
                 buf = self._module_states.get(address)
                 if buf is None:
                     # Auto-allocate if module wasn't pre-registered
