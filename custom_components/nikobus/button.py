@@ -528,10 +528,10 @@ class NikobusModuleScanButton(_NikobusBridgeButton):
 
     @property
     def available(self) -> bool:
-        return (
-            self._coordinator.has_known_output_modules
-            and not self._coordinator.discovery_running
-        )
+        # The base class greys the button while a discovery or a
+        # programming maintenance run (verify / backup / clock sync)
+        # owns the bus; this button adds the "something to scan" gate.
+        return self._coordinator.has_known_output_modules and super().available
 
     async def async_press(self) -> None:
         """Scan all output modules for button links.
@@ -546,6 +546,11 @@ class NikobusModuleScanButton(_NikobusBridgeButton):
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="discovery_already_running",
+            )
+        if self._maintenance_running:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="maintenance_running",
             )
         self.hass.async_create_background_task(
             self._coordinator.start_module_scan(),
