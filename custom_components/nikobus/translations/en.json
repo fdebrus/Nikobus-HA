@@ -161,6 +161,10 @@
     "module_programming_changed": {
       "title": "Nikobus module {description} ({address}) was reprogrammed",
       "description": "The checksum the module reports over its programming differs from the one recorded on {recorded_at}, when Home Assistant last read its links. The module was reprogrammed since, most likely with the Nikobus PC software, so the button links Home Assistant knows may no longer match it. Run **Scan all module links** (or **Verify module programming** / **Backup module programming**) to read the module again; this warning clears by itself afterwards."
+    },
+    "no_device_answered": {
+      "title": "No Nikobus device answered on {port}",
+      "description": "The port opened and the handshake was sent, but nothing on the other end acknowledged Home Assistant's presence probe. Commands will time out until a device answers. Check the cable and the PC-Link power, make sure the Nikobus PC software is not holding the port, and if the PC-Link was used by another program, power-cycle it. If your installation uses a PC-Logic as gateway and everything works, you can ignore this warning; it clears by itself on the next successful connection."
     }
   },
   "exceptions": {

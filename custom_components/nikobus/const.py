@@ -180,6 +180,11 @@ ISSUE_MODULE_CRC_MISMATCH: Final[str] = "module_crc_mismatch"
 # one recorded when its links were last scanned, verified or backed up —
 # the module was reprogrammed behind Home Assistant's back.
 ISSUE_MODULE_PROGRAMMING_CHANGED: Final[str] = "module_programming_changed"
+# The port opened but nothing acknowledged the presence probe the
+# library sends after the handshake (nikobus-connect 0.37.2). The
+# connection stays up — some gateways may not answer the probe — but
+# the user should check what is on the other end.
+ISSUE_NO_DEVICE_ANSWERED: Final[str] = "no_device_answered"
 # Programming-change check cadence: first pass a few minutes after setup
 # (clear of the initial sync and any discovery), then once a day.
 PROGRAMMING_CHANGE_CHECK_DELAY_S: Final[int] = 10 * 60

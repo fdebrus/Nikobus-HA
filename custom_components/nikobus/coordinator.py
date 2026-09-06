@@ -58,6 +58,7 @@ from .const import (
     DISCOVERY_SUB_PHASE_REGISTER_SCAN,
     DOMAIN,
     ISSUE_NO_BUTTONS_CONFIGURED,
+    ISSUE_NO_DEVICE_ANSWERED,
     PRESS_REPEAT_DELAY,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
@@ -261,6 +262,32 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             data={"entry_id": self.config_entry.entry_id},
         )
 
+    def _surface_device_probe(self) -> None:
+        """Repair issue when the port opened but nothing answered the probe.
+
+        ``NikobusConnect.device_answered`` (nikobus-connect 0.37.2) is the
+        verdict of the presence probe run after the handshake. ``False``
+        means a wrong port, an unpowered PC-Link, a bridge with nothing
+        behind it or a serial handle left dead by the Nikobus PC software:
+        the connection stays up, so say it here instead of letting every
+        command time out silently. Re-evaluated on every (re)connect;
+        older libraries without the attribute clear the issue.
+        """
+        answered = getattr(self.nikobus_connection, "device_answered", None)
+        issue_id = f"{ISSUE_NO_DEVICE_ANSWERED}_{self.config_entry.entry_id}"
+        if answered is False:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_NO_DEVICE_ANSWERED,
+                translation_placeholders={"port": str(self.connection_string)},
+            )
+            return
+        ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
     @property
     def connection_status(self) -> str:
         """Return 'connected', 'reconnecting', or 'disconnected'."""
@@ -306,6 +333,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         except NikobusConnectionError as err:
             _LOGGER.error("Failed to connect to Nikobus: %s", err)
             raise
+        self._surface_device_probe()
 
         try:
             # Module data lives in .storage/nikobus.modules. Boot loads
