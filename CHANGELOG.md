@@ -4,6 +4,7 @@
 
 - **Reprogrammed modules are noticed.** Every output module keeps a checksum of its own programming (function `0x13`, one read-only frame). Home Assistant now records it whenever it reads a module's programming — after *Scan all module links*, *Verify* or *Backup* — and re-reads it ten minutes after start-up and then once a day. A module whose checksum moved was reprogrammed with the Nikobus PC software since its links were last read: a Repair issue names it and asks for a link rescan, the *Programming health* sensor lists it under `programming_changed`, and the issue clears by itself once the module is read again. Nothing is written to any module.
 - **Corrupted bus frames are dropped** (`nikobus-connect 0.37.2`, required): a byte flipped between a module and the PC-Link used to pass the PC-Link's checksum and could file an output state under a phantom module address; the module's own checksum inside the frame is now verified as well.
+- **Dimmer preset levels read `10% … 100%`** (`nikobus-connect 0.37.2`): the M11 / M12 preset in a button's link attributes was rendered `1% … 10%`; `70%` where it used to say `7%`. Roller *Stop* links (M04) no longer show an operating time. Visible after the next *Scan all module links*.
 
 ## 3.17.1
 
