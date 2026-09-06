@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.17.1
+
+- **Scan all module links no longer collides with polling** (`nikobus-connect 0.37.1`, required). On installations that poll (no Feedback Module), a poll already under way when the scan started — the initial sync after a reload, a running 120 s cycle, a button-triggered refresh — was sent on the bus in the middle of a register read. The two replies garbled each other, the scan saw the module's link table start one block late and discarded the whole module as corrupt, leaving every button on it without links (#502: a switch module with 33 records, all its buttons empty, and the modules probed as absent afterwards). The library now serialises every bus exchange, so a queued command goes out between two register reads, never on top of one. Run *Scan all module links* again after updating.
+
 ## 3.17.0
 
 - **Removed: Import LED links from feedback module, and the block-read diagnostic.** Reading a feedback module (05-207) required putting it into link mode — the mode that gates erasing and writing a module — and never became reliable on real hardware. The risk of using the write-enable mode for a read was not worth it, so the **Import LED links** bridge button, the `nikobus.import_feedback_leds` action and the `nikobus.read_module_blocks` diagnostic are gone, and the integration no longer puts any module into link mode. Fill the LED-on / LED-off trigger addresses by hand under *Customize a module* as before. Backup and Verify continue to cover switch, dimmer and roller modules. Requires `nikobus-connect >= 0.37.0`. The real-time state push from a Feedback Module is unaffected.
