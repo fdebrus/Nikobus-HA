@@ -20,6 +20,8 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names (numbered like in the Nikobus software), **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply. Imported names persist across restarts and re-discovery.
 - 🎬 **Scenes that fire atomically** — Central Function scenes are activated on the bus the same way a physical scene key would, with no per-channel fan-out.
 - ⚡ **Real-time or polled** — instant pushed state with a Feedback Module, or a configurable poll without one.
+- 🛡️ **Backup & verify your modules' programming** — read every module's memory image into a backup folder, check each module's status and checksum, and get a Repair issue when a module is reprogrammed behind Home Assistant's back. Read-only on the bus: nothing is ever written to a module.
+- 🕒 **PC-Link clock** — see the controller's clock and its drift, and set it from Home Assistant (the only write the integration performs).
 
 ---
 
@@ -30,6 +32,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - [Supported hardware](#supported-hardware)
 - [Installation & setup](#installation--setup)
 - [Discovery workflow](#discovery-workflow)
+- [Maintenance: backup, verify & clock](#maintenance-backup-verify--clock)
 - [Importing from your `.nkb` project](#importing-from-your-nkb-project)
 - [Buttons, inputs & the entity model](#buttons-inputs--the-entity-model)
 - [Events & automations](#events--automations)
@@ -50,7 +53,8 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 3. Open the **Nikobus Bridge** device and press **1. Load Project Overview** — this enumerates the bus via the PC-Link.
 4. Press **2. Load Existing Installation** — this maps which button drives which output, and extracts scenes.
 5. *(Optional)* [Upload your `.nkb`](#importing-from-your-nkb-project) and press **3. Import Names from .nkb** to pull in your real names, rooms, and scenes.
-6. Done. Your modules appear as lights / switches / covers; buttons appear as devices you can trigger automations from.
+6. Press **Backup module programming** once and keep the folder somewhere safe — it is the only copy of your modules' programming outside the modules themselves. See [Maintenance](#maintenance-backup-verify--clock).
+7. Done. Your modules appear as lights / switches / covers; buttons appear as devices you can trigger automations from.
 
 > A large install takes a few minutes to scan. Progress is shown on the Bridge device's **Discovery status** / **Discovery progress** sensors.
 
@@ -58,7 +62,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 
 ## Prerequisites
 
-- **A PC-Link (05-200) on the bus.** Home Assistant connects *through* the PC-Link — it is the required interface and the source of the device inventory. (See [Troubleshooting](#troubleshooting) if your install also has a PC-Logic.)
+- **A serial gateway to the bus.** Normally a **PC-Link (05-200)**: it is the source of the device inventory that discovery reads. Installations that connect through a **Feedback Module (05-207)** or a **PC-Logic (05-201)** serial port work too, but inventory then comes from the fallback files (see [Installs without a PC-Link](#installs-without-a-pc-link)) and link scanning still reads the output modules directly.
 - **One client at a time.** Only one program may talk to the bus. Stop the Nikobus PC software (and any other bridge) before starting Home Assistant.
 - **A connection path**: a USB/serial adapter (`/dev/ttyUSB0`) or a TCP-to-serial bridge (`host:port`).
 - **(Optional) a Feedback Module (05-207)** wired to the PC-Link. If present, enable the toggle during setup and module states are pushed in real time; without one, HA polls on a configurable interval.
@@ -124,7 +128,7 @@ Module and button data live in Home Assistant's own storage (`.storage/nikobus.m
 
 Everything is driven from the **Nikobus Bridge** device page. The three buttons are meant to be pressed **in order**, top to bottom.
 
-> While a scan is running, all three bridge buttons **grey out** and re-enable when it finishes — follow the live progress on the **Discovery status** / **Discovery progress** sensors.
+> While a scan or a maintenance run (backup, verify, clock sync) is in progress, **every bridge button greys out** and re-enables when it finishes — one bus action at a time. Follow the live progress on the **Discovery status** / **Discovery progress** sensors. Wait about ten seconds after a reload or after *1. Load Project Overview* before pressing *2. Load Existing Installation*, so the start-up sync has finished; since 3.17.1 the scan and the polling share a bus lock and can no longer garble each other, but there is no point starting one on top of the other.
 
 ### 1. Load Project Overview
 
@@ -148,7 +152,7 @@ Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scen
 - **Description** → the entity name.
 - **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`none`; rollers: `cover`/`switch`/`light`/`none`).
 - **LED on / off addresses** → feedback-LED bus addresses (blank if unused).
-- **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator.
+- **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator. A channel still carrying the discovery placeholder takes its run time from the operating time programmed into the module itself; a value you set here wins.
 - **End-stop margin** (rollers) → seconds after the estimated arrival at fully open/closed before a Home Assistant-started motion sends its stop frame (default 3). The motor runs into the end stop during the margin, which keeps the position model honest; the stop then releases the relay so a wall button acts on the first press. Set it higher to let the module's own run time release the relay instead.
 
 Changes persist in `.storage/nikobus.modules` and survive re-discovery.
@@ -158,6 +162,47 @@ Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Load Project Overview* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory.
 
 > **Since 3.0.0** these files are an **inventory source only**. The previous behaviour that imported their descriptions as friendly names on every startup has been removed — entity names live in Home Assistant (see [Renaming](#renaming)). If you only kept the files for their names and you have a PC-Link, you can delete them; the integration logs a warning when it finds them.
+
+---
+
+## Maintenance: backup, verify & clock
+
+Three more buttons on the **Nikobus Bridge** device, all **read-only on the bus** except the clock sync. They share the bus with discovery, so they grey out while anything else runs.
+
+### Backup module programming
+
+Every switch, dimmer and roller module keeps its complete programming in its own memory: which button drives which output, in which mode, with which timers. **Backup module programming** (or the `nikobus.backup_modules` action) reads the full memory image of every output module and writes it under `config/nikobus_backup/<timestamp>/`, one `.nkm` file per module plus a `summary.json` with each module's status and checksum. Nothing is written to any module. Run it once after setup and after any change made with the Nikobus PC software, and keep the folder: if a module ever fails, you have its exact programming.
+
+### Verify module programming
+
+Each module can report its status and a checksum it computes over its own memory. **Verify module programming** (or `nikobus.verify_modules`) asks every module for both, reads its memory back and compares. The result lands on the **Programming health** diagnostic sensor (`ok` / `problem` / `unknown`, with per-module detail in the attributes), and a module with an EEPROM error or a checksum mismatch raises a Repair issue naming it. On a healthy installation every checksum matches bit for bit, so a mismatch is real.
+
+### Reprogrammed modules are noticed
+
+Home Assistant records each module's checksum whenever it reads the module's programming — after *2. Load Existing Installation*, *Verify* or *Backup* — and re-reads it ten minutes after start-up and then once a day (one read-only frame per module). A module whose checksum moved was reprogrammed with the Nikobus PC software since its links were last read: a Repair issue asks for a link rescan, the **Programming health** sensor lists the address under `programming_changed`, and the issue clears by itself once the module is read again.
+
+### PC-Link clock
+
+The PC-Link keeps its own clock for the calendar functions of the Nikobus software, and it knows nothing about daylight-saving changes. The **PC-Link clock** diagnostic sensor reads it every hour and exposes `drift_seconds` against Home Assistant's time. **Sync PC-Link clock** (or `nikobus.sync_pc_link_clock`) sets it from Home Assistant's local time — this is the only frame the integration ever writes to a module. Nothing syncs automatically; an automation on the drift covers the DST changes:
+
+```yaml
+alias: Nikobus - sync PC-Link clock on drift
+triggers:
+  - trigger: state
+    entity_id: sensor.nikobus_bridge_pc_link_clock
+    attribute: drift_seconds
+conditions:
+  - condition: template
+    value_template: "{{ (state_attr('sensor.nikobus_bridge_pc_link_clock', 'drift_seconds') | float(0)) | abs > 120 }}"
+actions:
+  - action: nikobus.sync_pc_link_clock
+```
+
+> The clock sensor's state is the PC-Link's time, so it changes on every hourly read. If that clutters your logbook, exclude `sensor.nikobus_bridge_pc_link_clock` from the logbook in `configuration.yaml`.
+
+### What is deliberately not there
+
+Restoring a backup into a module, and reading a Feedback Module's memory, are not offered. Both require the module's programming mode, which is also its write-enable mode; the integration never enters it. Reprogramming a module is a job for the Nikobus PC software, with the backup as your safety net.
 
 ---
 
@@ -455,6 +500,10 @@ Activation sends one command per channel (HA-driven fan-out), touching only the 
 
 On a dropped connection the integration reconnects with exponential back-off (5 s → 10 s → 20 s → … capped at 60 s). Entities go unavailable until the link is restored, then resume without an HA restart.
 
+Every connection ends with a **presence probe**: after the handshake the integration sends a status query the PC-Link (or a Feedback Module used as gateway) acknowledges, and takes any Nikobus frame relayed meanwhile as proof that a device is on the line. When the port opens but nothing answers — wrong port, PC-Link unpowered, serial handle left dead by the Nikobus PC software — the integration still starts, but a Repair issue names the port and what to check instead of every command timing out silently. A PC-Logic used as gateway may not acknowledge the probe; if the warning appears there while everything works, ignore it, it clears on the next answered connection.
+
+Only one exchange is on the bus at a time: polls, user commands and discovery reads are serialised through one lock, so a scan started during a poll cannot garble either.
+
 The **Connection** sensor on the Bridge device exposes the live status (`connected` / `reconnecting` / `disconnected`) and carries diagnostic attributes you can use in automations: `last_connected` (timestamp of the last successful connect), `reconnect_attempts` (consecutive retries since), and `connection_string`. For example, alert when the bus has been down for a while:
 
 ```yaml
@@ -472,7 +521,7 @@ trigger:
 
 ## Services
 
-The integration registers four services in the `nikobus.` domain. All appear in **Developer Tools → Actions** with a form (from `services.yaml`) and can be called from scripts and automations.
+The integration registers seven services in the `nikobus.` domain. All appear in **Developer Tools → Actions** with a form (from `services.yaml`) and can be called from scripts and automations.
 
 ### `nikobus.query_module_inventory`
 
@@ -549,6 +598,30 @@ data:
 response_variable: purged
 ```
 
+### `nikobus.backup_modules`
+
+Reads every output module's programming image (or only `addresses`) into `config/nikobus_backup/<timestamp>/` and returns the folder path, the image file names and the per-module status / checksum summary. Read-only on the bus. Same as the **Backup module programming** button.
+
+| Field | Required | Example | Description |
+|---|---|---|---|
+| `addresses` | no | `["9105", "4707"]` | Module addresses to back up. Omit for every output module. |
+
+### `nikobus.verify_modules`
+
+Asks every output module (or only `addresses`) for its status and checksum, reads its memory back and compares. Returns the health verdict and per-module detail; the same data drives the **Programming health** sensor and the EEPROM / checksum Repair issues. Same as the **Verify module programming** button.
+
+| Field | Required | Example | Description |
+|---|---|---|---|
+| `addresses` | no | `["9105"]` | Module addresses to verify. Omit for every output module. |
+
+### `nikobus.sync_pc_link_clock`
+
+Sets the PC-Link clock to Home Assistant's local time and returns the time written. No fields. The only action that writes to a module; see [PC-Link clock](#pc-link-clock).
+
+```yaml
+action: nikobus.sync_pc_link_clock
+```
+
 ---
 
 ## Troubleshooting
@@ -590,13 +663,27 @@ The store rebuilds cleanly with proper device types and no duplicates. Names you
 
 Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`) — a clean re-discovery preserves them as long as the bus addresses are unchanged. Names applied by a `.nkb` import are stored by the integration (since **3.12.0**) and re-applied automatically. (Removed in **3.0.0**: names are no longer imported from a legacy `nikobus_button_config.json`; set them in HA, or [import them from your `.nkb`](#importing-from-your-nkb-project), and they persist.)
 
+### *2. Load Existing Installation* left a module without links, or logged "link table looks corrupt"
+
+Up to 3.17.0 a poll already in flight when the scan started could be sent in the middle of a register read; the two replies garbled each other and the module's link table was discarded as corrupt, leaving every button on it with empty `linked_modules`. Update to 3.17.1 or later, where bus exchanges are serialised, and run the scan again. If a module still reads as corrupt on 3.17.1+, the Nikobus PC software will report the same: reprogram that module with it.
+
+### Repair issue: "Nikobus module … was reprogrammed"
+
+The module's checksum no longer matches the one recorded when its links were last read, so its programming changed — usually the Nikobus PC software. Run **2. Load Existing Installation** (or *Verify* / *Backup*); the issue clears once the module is read again. See [Maintenance](#maintenance-backup-verify--clock).
+
+### Repair issue: "No Nikobus device answered on …"
+
+The port opened but nothing acknowledged the presence probe. Check the cable and the PC-Link power, make sure the Nikobus PC software is not holding the port, and if the PC-Link was used by another program, power-cycle it. On a PC-Logic gateway where everything works, ignore it. See [Connectivity](#connectivity).
+
 ### State is slow to update
 
 Without a Feedback Module, external changes (manual relay actuation, another client) are only seen on the next poll. Physical button presses still trigger immediate targeted refreshes. Add a 05-207 Feedback Module for real-time updates, or lower the polling interval.
 
+With a Feedback Module, the module itself polls the output modules it is configured to track and the integration listens to the answers; with debug logging you see each one as `Feedback frame for module 4707 group 2 — outputs …`. If those lines never appear, the Feedback Module is not tracking that module: add the output to its configuration in the Nikobus PC software and download the module again.
+
 ### Stale records from a previous install
 
-A second-hand PC-Link (or replaced hardware) can leave records for modules that are no longer on the bus. Run [`nikobus.detect_stale_inventory`](#nikobusdetect_stale_inventory) to see which addresses don't respond, then [`nikobus.purge_stale_inventory`](#nikobuspurge_stale_inventory) to remove the ones you confirm are gone. See [Services](#services) for all four services and their parameters.
+A second-hand PC-Link (or replaced hardware) can leave records for modules that are no longer on the bus. Run [`nikobus.detect_stale_inventory`](#nikobusdetect_stale_inventory) to see which addresses don't respond, then [`nikobus.purge_stale_inventory`](#nikobuspurge_stale_inventory) to remove the ones you confirm are gone. See [Services](#services) for all seven services and their parameters.
 
 ---
 
@@ -609,6 +696,7 @@ A second-hand PC-Link (or replaced hardware) can leave records for modules that 
 - **One config entry per HA instance.** Two separate Nikobus buses can't share one Home Assistant.
 - **Inventory comes from the PC-Link.** A PC-Logic cannot serve the device inventory (see [Troubleshooting](#troubleshooting)).
 - **Friendly names, rooms, and named scenes come from the `.nkb`.** The bus carries wiring, not labels — without the project file, devices keep their generic discovered names.
+- **Read-only by design.** The integration never writes to a module's programming: no restore from backup, no Feedback Module memory read (both need the module's programming mode). The PC-Link clock sync is the only write.
 
 ---
 
@@ -618,10 +706,10 @@ The code is split into two packages.
 
 **[nikobus-connect](https://github.com/fdebrus/nikobus-connect)** — pip-installed, pinned in `manifest.json`. The low-level layer:
 
-- `NikobusConnect` — serial/TCP transport + PC-Link handshake.
-- `NikobusEventListener` — parses CR-terminated ASCII frames; dispatches presses and feedback.
-- `NikobusCommandHandler` — queued, retrying command processor that throttles bursts.
-- `NikobusAPI` — high-level operations (read/set output state, cover start/stop).
+- `NikobusConnect` — serial/TCP transport, PC-Link handshake and the presence probe.
+- `NikobusEventListener` — parses CR-terminated ASCII frames, validates both checksums (the PC-Link's CRC-8 and the module's CRC-16), dispatches presses and feedback.
+- `NikobusCommandHandler` — queued, retrying command processor that throttles bursts and owns the bus lock every exchange takes.
+- `NikobusAPI` — high-level operations (read/set output state, cover start/stop, module status / checksum / memory image, PC-Link clock).
 - `NikobusDiscovery` — PC-Link inventory + module register scan; reads the PC-Link's registry header to bound the sweep and filter its diagnostic filler pages, reverse-engineers button→output mappings, and classifies CF broadcasts.
 
 **This integration (`custom_components/nikobus/`)** — the Home Assistant glue:
@@ -630,6 +718,9 @@ The code is split into two packages.
 - `nkbstorage.py` — the three HA Stores (`nikobus.modules`, `nikobus.buttons`, `nikobus.cfs`).
 - `nkbnames.py` — reads names, rooms, per-channel names, and scene groups from a `.nkb` project (Access database in a ZIP, parsed with a vendored pure-Python reader).
 - `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs (inventory source only).
+- `nkbprogramming.py` — the read-only maintenance layer: module status and checksum checks, memory backups, the reprogramming watch, the PC-Link clock.
+- `nkbreconcile.py` — reconciles the links read from the bus with the `.nkb` project.
+- `discovery_mixin.py` — the discovery lifecycle on the HA side (inventory, link scan, post-scan reconciliation, `.nkb` import).
 - `nkbactuator.py` — turns incoming button frames into HA events with debounce + duration tracking.
 - `nkbconfig.py` — scene-file loader/writer.
 - `nkbtravelcalculator.py` — virtual cover-position tracking.
@@ -642,7 +733,8 @@ The code is split into two packages.
 ### Staying in sync
 
 1. **Button-driven refresh** — each button carries its `linked_modules`; a press immediately refreshes the impacted module group(s).
-2. **Periodic refresh** — the polling interval, or the Feedback Module's push when present.
+2. **Periodic refresh** — the polling interval when there is no Feedback Module.
+3. **Feedback Module push** — a 05-207 polls, on its own, the output modules it is configured to track, and the PC-Link relays both its queries and the modules' answers. The integration captures those answers and updates the entities without sending anything itself, so the periodic poll is switched off when the option is set.
 
 ### Interoperability
 
