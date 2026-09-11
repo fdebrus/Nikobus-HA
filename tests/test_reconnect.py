@@ -2,7 +2,7 @@
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from custom_components.nikobus.const import RECONNECT_DELAY_INITIAL, RECONNECT_DELAY_MAX
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
@@ -245,3 +245,17 @@ class TestReconnectConstants(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestReconnectReevaluatesProbe(unittest.IsolatedAsyncioTestCase):
+    """A successful reconnect re-runs the presence probe in the library;
+    the coordinator surfaces its fresh verdict before the first refresh."""
+
+    async def test_probe_surfaced_after_reconnect(self):
+        coord = _make_coordinator()
+        coord.nikobus_connection.device_answered = True
+        coord._async_update_data = AsyncMock()
+        coord.async_update_listeners = MagicMock()
+        with patch.object(NikobusDataCoordinator, "_surface_device_probe") as surface:
+            await coord._reconnect_loop()
+        surface.assert_called_once()

@@ -500,7 +500,7 @@ Activation sends one command per channel (HA-driven fan-out), touching only the 
 
 On a dropped connection the integration reconnects with exponential back-off (5 s → 10 s → 20 s → … capped at 60 s). Entities go unavailable until the link is restored, then resume without an HA restart.
 
-Every connection ends with a **presence probe**: after the handshake the integration sends a status query the PC-Link (or a Feedback Module used as gateway) acknowledges, and takes any Nikobus frame relayed meanwhile as proof that a device is on the line. When the port opens but nothing answers — wrong port, PC-Link unpowered, serial handle left dead by the Nikobus PC software — the integration still starts, but a Repair issue names the port and what to check instead of every command timing out silently. A PC-Logic used as gateway may not acknowledge the probe; if the warning appears there while everything works, ignore it, it clears on the next answered connection.
+Every connection ends with a **presence probe**: after the handshake the integration sends a status query the PC-Link (or a Feedback Module used as gateway) acknowledges, and takes any Nikobus frame relayed meanwhile as proof that a device is on the line. When the port opens but nothing answers — wrong port, PC-Link unpowered, serial handle left dead by the Nikobus PC software — the integration still starts, but a Repair issue names the port and what to check instead of every command timing out silently. The verdict is not final: the first Nikobus frame received afterwards — a button press, the answer to a command — withdraws the issue, so a probe missed while the PC-Link was still resetting on a cold boot corrects itself within seconds. A PC-Logic used as gateway may not acknowledge the probe; if the warning stays there while everything works, ignore it.
 
 Only one exchange is on the bus at a time: polls, user commands and discovery reads are serialised through one lock, so a scan started during a poll cannot garble either.
 
@@ -673,7 +673,7 @@ The module's checksum no longer matches the one recorded when its links were las
 
 ### Repair issue: "No Nikobus device answered on …"
 
-The port opened but nothing acknowledged the presence probe. Check the cable and the PC-Link power, make sure the Nikobus PC software is not holding the port, and if the PC-Link was used by another program, power-cycle it. On a PC-Logic gateway where everything works, ignore it. See [Connectivity](#connectivity).
+The port opened but nothing acknowledged the presence probe. Check the cable and the PC-Link power, make sure the Nikobus PC software is not holding the port, and if the PC-Link was used by another program, power-cycle it. The issue withdraws itself as soon as any Nikobus frame is received, so if the bus works the warning is gone within seconds; on a PC-Logic gateway where it stays while everything works, ignore it. See [Connectivity](#connectivity).
 
 ### State is slow to update
 

@@ -164,7 +164,7 @@
     },
     "no_device_answered": {
       "title": "No Nikobus device answered on {port}",
-      "description": "The port opened and the handshake was sent, but nothing on the other end acknowledged Home Assistant's presence probe. Commands will time out until a device answers. Check the cable and the PC-Link power, make sure the Nikobus PC software is not holding the port, and if the PC-Link was used by another program, power-cycle it. If your installation uses a PC-Logic as gateway and everything works, you can ignore this warning; it clears by itself on the next successful connection."
+      "description": "The port opened and the handshake was sent, but nothing on the other end acknowledged Home Assistant's presence probe. Commands will time out until a device answers. Check the cable and the PC-Link power, make sure the Nikobus PC software is not holding the port, and if the PC-Link was used by another program, power-cycle it. The warning clears by itself as soon as any Nikobus frame is received — a button press, the answer to a command — or on the next connection that is answered. If it stays while everything works, your gateway (a PC-Logic, for instance) simply does not acknowledge the probe and the warning can be ignored."
     }
   },
   "exceptions": {
