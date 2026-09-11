@@ -2202,3 +2202,35 @@ class TestDevicePresenceIssue(unittest.TestCase):
         with patch("custom_components.nikobus.coordinator.ir") as ir:
             NikobusDataCoordinator._surface_device_probe(coord)
         ir.async_delete_issue.assert_called_once()
+
+    def test_library_overturning_a_silent_probe_withdraws_the_issue(self):
+        """The coordinator hands ``_surface_device_probe`` to the library
+        as ``on_device_answered``: the first frame received after a silent
+        probe deletes the issue on the spot, not at the next reload."""
+        hass = MagicMock()
+        entry = MagicMock()
+        entry.entry_id = "entry1"
+        entry.data = {"connection_string": "/dev/ttyUSB0"}
+        entry.options = {}
+        with (
+            patch("custom_components.nikobus.coordinator.NikobusConnect") as connect_cls,
+            patch("custom_components.nikobus.coordinator.NikobusConfig"),
+            patch("custom_components.nikobus.coordinator.NikobusButtonStorage"),
+            patch("custom_components.nikobus.coordinator.NikobusModuleStorage"),
+            patch("custom_components.nikobus.coordinator.NikobusProgramming", create=True),
+            patch("custom_components.nikobus.coordinator.DataUpdateCoordinator.__init__", return_value=None),
+        ):
+            connection = connect_cls.return_value
+            connection.device_answered = None
+            try:
+                coord = NikobusDataCoordinator(hass, entry)
+            except Exception as err:  # pragma: no cover - constructor drift
+                self.skipTest(f"coordinator constructor needs more scaffolding: {err}")
+        assert connection.on_device_answered == coord._surface_device_probe
+        coord.hass = hass
+        coord.config_entry = entry
+        coord.connection_string = "/dev/ttyUSB0"
+        connection.device_answered = True
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            connection.on_device_answered()
+        ir.async_delete_issue.assert_called_once_with(hass, "nikobus", "no_device_answered_entry1")

@@ -297,7 +297,7 @@
     },
     "no_device_answered": {
       "title": "Aucun appareil Nikobus n'a répondu sur {port}",
-      "description": "Le port s'est ouvert et le handshake a été envoyé, mais rien n'a acquitté la sonde de présence de Home Assistant. Les commandes échoueront par dépassement de délai tant qu'aucun appareil ne répond. Vérifiez le câble et l'alimentation du PC-Link, assurez-vous que le logiciel PC Nikobus n'occupe pas le port et, si le PC-Link a été utilisé par un autre programme, redémarrez-le électriquement. Si votre installation utilise un PC-Logic comme passerelle et que tout fonctionne, vous pouvez ignorer cet avertissement ; il disparaît de lui-même à la prochaine connexion réussie."
+      "description": "Le port s'est ouvert et le handshake a été envoyé, mais rien n'a acquitté la sonde de présence de Home Assistant. Les commandes échoueront par dépassement de délai tant qu'aucun appareil ne répond. Vérifiez le câble et l'alimentation du PC-Link, assurez-vous que le logiciel PC Nikobus n'occupe pas le port et, si le PC-Link a été utilisé par un autre programme, redémarrez-le électriquement. L'avertissement disparaît de lui-même dès qu'une trame Nikobus est reçue — un appui sur un bouton, la réponse à une commande — ou à la prochaine connexion qui obtient une réponse. S'il persiste alors que tout fonctionne, votre passerelle (un PC-Logic, par exemple) n'acquitte simplement pas la sonde et l'avertissement peut être ignoré."
     }
   },
   "exceptions": {

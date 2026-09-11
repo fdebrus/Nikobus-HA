@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.17.3
+
+- **The "No Nikobus device answered" Repair issue withdraws itself as soon as the bus answers** (`nikobus-connect 0.37.3`, required). The verdict of the start-up probe was only re-evaluated at the next reload: a probe missed on a cold boot — host restart, USB re-enumeration, the PC-Link still resetting when the probe went out — left the warning up for days while every command worked. The library now overturns a silent verdict on the first well-formed frame it receives (a button press, the answer to a command) and tells the integration, which deletes the issue on the spot. The probe also waits a second after the handshake before its first attempt, so a cold boot passes it in the first place. The issue is re-evaluated after an automatic reconnect as well.
+
 ## 3.17.2
 
 - **Reprogrammed modules are noticed.** Every output module keeps a checksum of its own programming (function `0x13`, one read-only frame). Home Assistant now records it whenever it reads a module's programming — after *Scan all module links*, *Verify* or *Backup* — and re-reads it ten minutes after start-up and then once a day. A module whose checksum moved was reprogrammed with the Nikobus PC software since its links were last read: a Repair issue names it and asks for a link rescan, the *Programming health* sensor lists it under `programming_changed`, and the issue clears by itself once the module is read again. Nothing is written to any module.

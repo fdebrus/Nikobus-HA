@@ -137,6 +137,10 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         )
 
         self.nikobus_connection = NikobusConnect(self.connection_string)
+        # A probe that found the port silent is overturned by the first
+        # frame the listener receives (nikobus-connect 0.37.3): withdraw
+        # the Repair issue as soon as that happens, not at the next reload.
+        self.nikobus_connection.on_device_answered = self._surface_device_probe
         self.nikobus_config = NikobusConfig(hass)
         self.button_storage = NikobusButtonStorage(hass)
         self.module_storage = NikobusModuleStorage(hass)
@@ -270,8 +274,10 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         means a wrong port, an unpowered PC-Link, a bridge with nothing
         behind it or a serial handle left dead by the Nikobus PC software:
         the connection stays up, so say it here instead of letting every
-        command time out silently. Re-evaluated on every (re)connect;
-        older libraries without the attribute clear the issue.
+        command time out silently. Re-evaluated on every (re)connect and
+        again when the library overturns a silent verdict on the first
+        frame received (``on_device_answered``); older libraries without
+        the attribute clear the issue.
         """
         answered = getattr(self.nikobus_connection, "device_answered", None)
         issue_id = f"{ISSUE_NO_DEVICE_ANSWERED}_{self.config_entry.entry_id}"
@@ -1369,6 +1375,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 await self.nikobus_listener.start()
                 self._last_connected = datetime.now(timezone.utc)
                 self._reconnect_attempts = 0
+                self._surface_device_probe()
                 await self._async_update_data()
                 self.async_update_listeners()
                 _LOGGER.info("Nikobus reconnected after %d attempt(s)", attempts)

@@ -297,7 +297,7 @@
     },
     "no_device_answered": {
       "title": "Geen Nikobus-apparaat antwoordde op {port}",
-      "description": "De poort ging open en de handshake is verzonden, maar niets aan de andere kant bevestigde de aanwezigheidstest van Home Assistant. Opdrachten lopen op een time-out tot een apparaat antwoordt. Controleer de kabel en de voeding van de PC-Link, zorg dat de Nikobus-pc-software de poort niet bezet houdt en herstart de PC-Link als hij door een ander programma is gebruikt. Gebruikt uw installatie een PC-Logic als gateway en werkt alles, dan kunt u deze waarschuwing negeren; ze verdwijnt vanzelf bij de volgende geslaagde verbinding."
+      "description": "De poort ging open en de handshake is verzonden, maar niets aan de andere kant bevestigde de aanwezigheidstest van Home Assistant. Opdrachten lopen op een time-out tot een apparaat antwoordt. Controleer de kabel en de voeding van de PC-Link, zorg dat de Nikobus-pc-software de poort niet bezet houdt en herstart de PC-Link als hij door een ander programma is gebruikt. De waarschuwing verdwijnt vanzelf zodra een Nikobus-frame wordt ontvangen — een druk op een knop, het antwoord op een opdracht — of bij de volgende verbinding die beantwoord wordt. Blijft ze staan terwijl alles werkt, dan bevestigt uw gateway (bijvoorbeeld een PC-Logic) de test gewoon niet en kunt u de waarschuwing negeren."
     }
   },
   "exceptions": {
