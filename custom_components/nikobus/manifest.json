@@ -22,5 +22,5 @@
     "pyserial-asyncio-fast>=0.16",
     "nikobus-connect>=0.37.3"
   ],
-  "version": "3.17.3"
+  "version": "3.17.4"
 }
