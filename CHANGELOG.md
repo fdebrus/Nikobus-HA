@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.17.4
+
+- **Minimum Home Assistant version declared: 2026.8.0.** Since 3.15.5 the integration registers device parents with the device registry's `via_device_id` argument, introduced in Home Assistant 2026.8 when `via_device` was deprecated. Nothing declared that requirement, so HACS let the integration install on an older core, where set-up failed with `TypeError: DeviceRegistry.async_get_or_create() got an unexpected keyword argument 'via_device_id'` (#507). `hacs.json` now carries the minimum, so HACS refuses the installation or update on an older core with a clear message instead, and the README says it. No functional change.
+
 ## 3.17.3
 
 - **The "No Nikobus device answered" Repair issue withdraws itself as soon as the bus answers** (`nikobus-connect 0.37.3`, required). The verdict of the start-up probe was only re-evaluated at the next reload: a probe missed on a cold boot — host restart, USB re-enumeration, the PC-Link still resetting when the probe went out — left the warning up for days while every command worked. The library now overturns a silent verdict on the first well-formed frame it receives (a button press, the answer to a command) and tells the integration, which deletes the issue on the spot. The probe also waits a second after the handshake before its first attempt, so a cold boot passes it in the first place. The issue is re-evaluated after an automatic reconnect as well.

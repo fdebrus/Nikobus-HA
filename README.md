@@ -107,6 +107,8 @@ One HA **device** is created per physical button, with one button-entity + binar
 
 ## Installation & setup
 
+**Requires Home Assistant 2026.8.0 or later** (releases since 3.15.5 use the device registry's `via_device_id`, introduced in 2026.8; HACS refuses the installation on an older core).
+
 1. Install through HACS using the button below (or clone into `config/custom_components/nikobus`):
 
    [![Add to HACS](https://img.shields.io/badge/HACS-Add%20Custom%20Repository-blue.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fdebrus&repository=Nikobus-HA&category=integration)
