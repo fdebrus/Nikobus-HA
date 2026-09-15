@@ -271,6 +271,26 @@ class NikobusActuator:
         _physical_addr, _key_label, op_point = hit
         await self.process_button_modules(op_point, address, press_context)
 
+    async def refresh_after_host_press(self, address: str) -> None:
+        """Refresh the modules a press *sent by Home Assistant* impacts.
+
+        The interface never relays the host's own ``#N`` back, so the
+        inbound path (``handle_button_press`` → ``button_discovery``)
+        never runs for it and the impacted outputs were only read at the
+        next poll or feedback push — minutes, on a pushed installation.
+        Same delayed reads and debounce keys as an inbound press; no
+        ``nikobus_button_operation`` event, since nobody pressed a key.
+        """
+        hit = find_operation_point(self._dict_button_data, address.upper())
+        if hit is None:
+            _LOGGER.debug("Host press of %s: no operation point known, nothing to refresh", address)
+            return
+        _physical_addr, _key_label, op_point = hit
+        press_id = f"host-{address.upper()}-{uuid.uuid4().hex[:8]}"
+        await self.process_button_modules(
+            op_point, address.upper(), {"press_id": press_id}, fire_event=False
+        )
+
     def _derive_impacted_modules(self, op_point: dict[str, Any]) -> list[tuple[str, str]]:
         """Return the unique (module_address, group) pairs this op-point affects.
 
@@ -294,8 +314,20 @@ class NikobusActuator:
                 seen.add((module_address, group))
         return list(seen)
 
-    async def process_button_modules(self, op_point: dict[str, Any], button_address: str, press_context: dict[str, Any] | None) -> None:
-        """Refresh states for specific modules impacted by this op-point."""
+    async def process_button_modules(
+        self,
+        op_point: dict[str, Any],
+        button_address: str,
+        press_context: dict[str, Any] | None,
+        *,
+        fire_event: bool = True,
+    ) -> None:
+        """Refresh states for specific modules impacted by this op-point.
+
+        ``fire_event=False`` (a press Home Assistant sent itself) skips
+        the ``nikobus_button_operation`` event and only schedules the
+        reads.
+        """
         press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
 
         impacted = self._derive_impacted_modules(op_point)
@@ -317,17 +349,18 @@ class NikobusActuator:
             # 1. Fire Event IMMEDIATELY for HA Automations
             # ==========================================
             # 4. Post-refresh notification (nikobus_button_operation)
-            self._fire_event(
-                EVENT_BUTTON_OPERATION,
-                PressState(button_address.upper(), 0, 0, press_id, addr, None),
-                state_value="released",
-                duration=(press_context or {}).get("duration_s"),
-                bucket=(press_context or {}).get("bucket"),
-                extra={
-                    "impacted_module_address": addr,
-                    "impacted_module_group": group,
-                }
-            )
+            if fire_event:
+                self._fire_event(
+                    EVENT_BUTTON_OPERATION,
+                    PressState(button_address.upper(), 0, 0, press_id, addr, None),
+                    state_value="released",
+                    duration=(press_context or {}).get("duration_s"),
+                    bucket=(press_context or {}).get("bucket"),
+                    extra={
+                        "impacted_module_address": addr,
+                        "impacted_module_group": group,
+                    }
+                )
 
             # ==========================================
             # 2. Strict Module Debouncer (Prevents UI Jumps)

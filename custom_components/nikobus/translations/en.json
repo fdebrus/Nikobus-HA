@@ -300,8 +300,8 @@
         "data": {
           "entity_type": "Entity type",
           "description": "Channel description",
-          "led_on": "LED-on trigger (6-hex bus address, optional)",
-          "led_off": "LED-off trigger (6-hex bus address, optional)",
+          "led_on": "LED-on key (6-hex bus address, optional)",
+          "led_off": "LED-off key (6-hex bus address, optional)",
           "operation_time_up": "Travel time up (seconds)",
           "operation_time_down": "Travel time down (seconds)",
           "end_stop_margin": "End-stop margin (seconds)"

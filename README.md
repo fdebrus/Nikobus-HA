@@ -153,7 +153,7 @@ Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scen
 *Configure → Customize a module* lets you, per channel:
 - **Description** → the entity name.
 - **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`none`; rollers: `cover`/`switch`/`light`/`none`).
-- **LED on / off addresses** → feedback-LED bus addresses (blank if unused).
+- **LED on / off key** → the bus address of the wall key whose LED shows this channel. When filled, Home Assistant *presses that key* instead of switching the output, so the key's LED and the output stay in step (a key that toggles the output itself, in impulse mode, must be driven this way). When empty, Home Assistant switches the output directly and no plate LED is updated.
 - **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator. A channel still carrying the discovery placeholder takes its run time from the operating time programmed into the module itself; a value you set here wins.
 - **End-stop margin** (rollers) → seconds after the estimated arrival at fully open/closed before a Home Assistant-started motion sends its stop frame (default 3). The motor runs into the end stop during the margin, which keeps the position model honest; the stop then releases the relay so a wall button acts on the first press. Set it higher to let the module's own run time release the relay instead.
 
