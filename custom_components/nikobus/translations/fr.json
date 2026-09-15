@@ -15,12 +15,12 @@
         "title": "Configuration matérielle",
         "description": "Indiquez votre matériel Nikobus afin que l'intégration utilise la stratégie de mise à jour optimale.",
         "data": {
-          "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+          "has_feedbackmodule": "Module Feedback (05-207) installé, Home Assistant connecté au port du PC-Link",
           "prior_gen3": "PC-Link antérieur à la Gen 3",
           "press_repeat": "Répétitions de l'appui simulé"
         },
         "data_description": {
-          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire.",
+          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même : ce port ne relaie pas les requêtes du module, l'état poussé ne peut pas être attribué ; l'état est alors interrogé.",
           "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
           "press_repeat": "Nombre de fois où chaque appui déclenché par HA (bouton, scène, CF, interrupteur) est envoyé sur le bus. Un vrai bouton répète son télégramme ; un seul envoi peut être manqué en cas de trafic. Défaut 3."
         }
@@ -40,13 +40,13 @@
         "description": "Mettez à jour la connexion ou les paramètres matériels. La connexion sera retestée.",
         "data": {
           "connection_string": "Connexion (port série ou IP:port)",
-          "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+          "has_feedbackmodule": "Module Feedback (05-207) installé, Home Assistant connecté au port du PC-Link",
           "prior_gen3": "PC-Link antérieur à la Gen 3",
           "refresh_interval": "Intervalle de scrutation (secondes)"
         },
         "data_description": {
           "connection_string": "Chemin du périphérique série ou adresse TCP du pont PC-Link",
-          "has_feedbackmodule": "Lorsqu'il est activé, le module de retour (Feedback Module) transmet automatiquement les changements d'état — aucune interrogation nécessaire.",
+          "has_feedbackmodule": "Lorsqu'il est activé, le module Feedback transmet automatiquement les changements d'état — aucune interrogation nécessaire. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même : ce port ne relaie pas les requêtes du module, l'état poussé ne peut pas être attribué ; l'état est alors interrogé.",
           "prior_gen3": "Active les ajustements de compatibilité pour le matériel PC-Link de première et deuxième génération.",
           "refresh_interval": "Fréquence de lecture de l'état des modules sur le bus (60–3600 s). Des valeurs plus basses accélèrent les mises à jour mais augmentent le trafic du bus."
         }
@@ -77,12 +77,12 @@
         "title": "Configuration matérielle",
         "description": "Mettez à jour les paramètres matériels. L'intégration rechargera automatiquement.",
         "data": {
-          "has_feedbackmodule": "Module Feedback (05-207) installé et connecté via PC-Link",
+          "has_feedbackmodule": "Module Feedback (05-207) installé, Home Assistant connecté au port du PC-Link",
           "prior_gen3": "PC-Link antérieur à la Gen 3",
           "press_repeat": "Répétitions de l'appui simulé"
         },
         "data_description": {
-          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état.",
+          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même.",
           "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
           "press_repeat": "Nombre de fois où chaque appui déclenché par HA (bouton, scène, CF, interrupteur) est envoyé sur le bus. Un vrai bouton répète son télégramme ; un seul envoi peut être manqué en cas de trafic. Défaut 3."
         }
@@ -298,6 +298,14 @@
     "no_device_answered": {
       "title": "Aucun appareil Nikobus n'a répondu sur {port}",
       "description": "Le port s'est ouvert et le handshake a été envoyé, mais rien n'a acquitté la sonde de présence de Home Assistant. Les commandes échoueront par dépassement de délai tant qu'aucun appareil ne répond. Vérifiez le câble et l'alimentation du PC-Link, assurez-vous que le logiciel PC Nikobus n'occupe pas le port et, si le PC-Link a été utilisé par un autre programme, redémarrez-le électriquement. L'avertissement disparaît de lui-même dès qu'une trame Nikobus est reçue — un appui sur un bouton, la réponse à une commande — ou à la prochaine connexion qui obtient une réponse. S'il persiste alors que tout fonctionne, votre passerelle (un PC-Logic, par exemple) n'acquitte simplement pas la sonde et l'avertissement peut être ignoré."
+    },
+    "feedback_module_port": {
+      "title": "Home Assistant est connecté au port du module Feedback sur {port}",
+      "description": "L'option module Feedback est activée, mais la passerelle relaie les réponses d'état poussées par le module sans les requêtes qui les précèdent, ce que seul un PC-Link fait. Le port série est celui du module Feedback lui-même. Sans la requête, une réponse poussée ne peut pas être attribuée à un groupe de sorties, et les deux moitiés d'un module à 12 canaux se retrouvent inversées au rythme d'interrogation du module (un variateur affiché à 100 % qui n'a pas bougé, une lumière qui bascule toutes les minutes). Désactivez l'option **module Feedback** dans les réglages de l'intégration : l'état est alors interrogé, ce qui est correct sur ce port. L'avertissement disparaît de lui-même dès qu'une requête est relayée."
+    },
+    "module_type_mismatch": {
+      "title": "Le module Nikobus {description} ({address}) n'est pas un {module_type}",
+      "description": "Le module répond à sa requête d'état comme un {family}, mais l'inventaire l'enregistre comme {module_type}. Ses entités et le décodage de ses liaisons suivent le type enregistré et peuvent donc être faux. Lancez **Charger l'aperçu du projet** pour rafraîchir l'inventaire ; si le type reste faux, corrigez-le dans *Personnaliser un module*."
     }
   },
   "exceptions": {

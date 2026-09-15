@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
-from .const import BRAND, CATEGORY_OUTPUT_MODULES, DOMAIN
+from .const import BRAND, CATEGORY_OUTPUT_MODULES, DOMAIN, HUB_IDENTIFIER
 from .nkbdevices import parent_device_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -117,6 +117,25 @@ def pc_logic_input_naming(
     if not isinstance(parent_addr, str) or not isinstance(slot, int):
         return None
     return f"{input_label_prefix(phys)}-INPUT {slot}", (DOMAIN, parent_addr.upper())
+
+
+def calendar_channel_naming(
+    phys: Mapping[str, Any],
+) -> tuple[str, tuple[str, str]] | None:
+    """``(device_name, via_device_identifier)`` if ``phys`` is a PC-Link
+    calendar channel the library synthesized from a link record; else
+    ``None``.
+
+    The library files a link whose button address is one of the
+    PC-Link's 100 calendar channels (CH001 … CH100, halves A and B)
+    under an entry carrying ``calendar_channel``. HA parents it under
+    the bridge — the PC-Link is the bridge — and names it after the
+    channel as the Nikobus software does.
+    """
+    label = phys.get("calendar_channel") if isinstance(phys, Mapping) else None
+    if not isinstance(label, str) or not label:
+        return None
+    return f"PC-Link calendar {label}", (DOMAIN, HUB_IDENTIFIER)
 
 
 def is_input_module_child(phys: Any) -> bool:

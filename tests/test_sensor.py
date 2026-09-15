@@ -149,6 +149,18 @@ class TestSensorAttributes(unittest.TestCase):
         attrs = self._sensor(reconnect_attempts=7).extra_state_attributes
         self.assertEqual(attrs["reconnect_attempts"], 7)
 
+    def test_gateway_identity_exposed(self):
+        coord = _make_coordinator()
+        coord.gateway_identity = ("86F5", "pc_link")
+        attrs = _make_sensor(coord).extra_state_attributes
+        self.assertEqual(attrs["gateway_address"], "86F5")
+        self.assertEqual(attrs["gateway_type"], "pc_link")
+
+    def test_gateway_identity_unknown_is_none(self):
+        attrs = self._sensor().extra_state_attributes
+        self.assertIsNone(attrs["gateway_address"])
+        self.assertIsNone(attrs["gateway_type"])
+
     def test_connection_string_not_exposed(self):
         # The connection string is treated as sensitive by the
         # diagnostics module (TO_REDACT); the live attribute must not

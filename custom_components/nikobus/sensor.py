@@ -81,9 +81,18 @@ class NikobusConnectionSensor(CoordinatorEntity[NikobusDataCoordinator], SensorE
         that policy. It remains visible to the owner in the config entry.
         """
         last = self.coordinator.last_connected
+        identity = getattr(self.coordinator, "gateway_identity", None)
+        gateway_address, gateway_family = (
+            identity if isinstance(identity, tuple) and len(identity) == 2 else (None, None)
+        )
         return {
             "last_connected": last.isoformat() if last else None,
             "reconnect_attempts": self.coordinator.reconnect_attempts,
+            # What answered the presence probe: the PC-Link, or a
+            # Feedback Module / PC-Logic used as gateway. ``None`` when
+            # the gateway sent no identity frame.
+            "gateway_address": gateway_address,
+            "gateway_type": gateway_family,
         }
 
 
@@ -284,6 +293,7 @@ class NikobusProgrammingHealthSensor(CoordinatorEntity[NikobusDataCoordinator], 
                     "records": check.record_count_a,
                     "records_bank_2": check.record_count_b,
                     "crc_ok": check.crc_ok,
+                    "family_ok": check.family_ok,
                     "error": check.error,
                 }
                 for address, check in programming.checks.items()

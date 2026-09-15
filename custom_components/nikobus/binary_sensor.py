@@ -17,7 +17,7 @@ from .button import op_point_display_name, register_wall_button_devices
 from .const import DOMAIN, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity
-from .router import iter_operation_points
+from .router import calendar_channel_naming, iter_operation_points
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ async def async_setup_entry(
             coordinator, physical_addr, key_label, op_point, parent_phys=phys
         )
         for physical_addr, key_label, op_point, phys in iter_operation_points(buttons)
+        if calendar_channel_naming(phys) is None  # never pressed on the bus
     ]
     async_add_entities(entities)
 

@@ -92,11 +92,12 @@ def _coordinator(modules=None, api=None):
     return coord
 
 
-def _api(eeprom_error=False, crc_ok=True):
+def _api(eeprom_error=False, crc_ok=True, type_code=None):
     api = MagicMock()
-    api.get_module_status = AsyncMock(
-        return_value=SimpleNamespace(eeprom_error=eeprom_error, record_count_a=12, record_count_b=0)
-    )
+    status = SimpleNamespace(eeprom_error=eeprom_error, record_count_a=12, record_count_b=0)
+    if type_code is not None:
+        status.type_code = type_code
+    api.get_module_status = AsyncMock(return_value=status)
     api.read_module_memory = AsyncMock(return_value=b"\xff" * 64)
     api.get_module_crc = AsyncMock(return_value=0x1234)
     api.verify_module_memory = AsyncMock(return_value=(crc_ok, 0x1234, 0x1234 if crc_ok else 0x9999))
@@ -305,3 +306,38 @@ class TestProgrammingChange(unittest.TestCase):
         coord = _coordinator(api=None)  # not connected → HomeAssistantError inside
         prog = NikobusProgramming(_hass("/tmp"), coord)
         _run(prog.async_scheduled_change_check())
+
+
+class TestFamilyCrossCheck(unittest.TestCase):
+    """Verify compares the module's family byte with its stored type."""
+
+    def test_matching_family_is_ok(self):
+        # 9105 is stored as a switch module; 0x10 is the switch family.
+        prog = NikobusProgramming(_hass("/tmp"), _coordinator(api=_api(type_code=0x10)))
+        with patch("custom_components.nikobus.nkbprogramming.ir") as ir:
+            report = _run(prog.async_verify_modules(["9105"]))
+        self.assertEqual(report["health"], HEALTH_OK)
+        self.assertTrue(report["modules"]["9105"]["family_ok"])
+        self.assertEqual(report["modules"]["9105"]["family"], "switch_module")
+        ir.async_create_issue.assert_not_called()
+
+    def test_mismatching_family_is_a_problem_with_a_repair_issue(self):
+        # Stored as a switch module, answers as a dimmer (0x30).
+        prog = NikobusProgramming(_hass("/tmp"), _coordinator(api=_api(type_code=0x30)))
+        with patch("custom_components.nikobus.nkbprogramming.ir") as ir:
+            report = _run(prog.async_verify_modules(["9105"]))
+        self.assertEqual(report["health"], HEALTH_PROBLEM)
+        self.assertFalse(report["modules"]["9105"]["family_ok"])
+        keys = [c.kwargs["translation_key"] for c in ir.async_create_issue.call_args_list]
+        self.assertIn("module_type_mismatch", keys)
+        call = next(c for c in ir.async_create_issue.call_args_list
+                    if c.kwargs["translation_key"] == "module_type_mismatch")
+        self.assertEqual(call.args[2], "module_type_mismatch_9105")
+        self.assertEqual(call.kwargs["translation_placeholders"]["family"], "dimmer_module")
+
+    def test_status_without_family_byte_is_not_compared(self):
+        prog = NikobusProgramming(_hass("/tmp"), _coordinator(api=_api()))
+        with patch("custom_components.nikobus.nkbprogramming.ir"):
+            report = _run(prog.async_verify_modules(["9105"]))
+        self.assertIsNone(report["modules"]["9105"]["family_ok"])
+        self.assertEqual(report["health"], HEALTH_OK)

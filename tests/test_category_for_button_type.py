@@ -61,7 +61,14 @@ def _load_button_module():
         mod.__package__ = "custom_components.nikobus"
         sys.modules["custom_components.nikobus.button"] = mod
         spec.loader.exec_module(mod)
-    return sys.modules["custom_components.nikobus.button"]
+    button = sys.modules["custom_components.nikobus.button"]
+    # The classifier and the category identifiers it returns live in
+    # ``devices.py`` since 3.18.0; ``button`` re-exports the classifier.
+    from custom_components.nikobus import devices
+
+    for name in ("CATEGORY_INTERFACES", "CATEGORY_REMOTES", "CATEGORY_WALL_BUTTONS"):
+        setattr(button, name, getattr(devices, name))
+    return button
 
 
 def test_universal_interface_routes_to_interfaces() -> None:

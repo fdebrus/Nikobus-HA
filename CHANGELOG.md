@@ -1,5 +1,16 @@
 # Changelog
 
+## 3.18.0
+
+**Requires `nikobus-connect` 0.38.0.**
+
+- **Connected to the Feedback Module's port with the Feedback Module option on: a Repair issue now says so.** Only a PC-Link relays the Feedback Module's state queries; the module's own serial port relays the answers alone, and without the query an answer cannot be attributed to an output group. The result was the two halves of every 12-channel module swapped at the module's polling rhythm — a dimmer shown at 100% that never moved, a light toggling on and off every 66 s. The integration now counts pushed answers against relayed queries and raises *Home Assistant is connected to the Feedback Module's port* (en/fr/nl) after six answers without a single query, asking to turn the option off; polling is the correct mode there. The option's label and description say it too, and the README has a section on it.
+- **A state answer that arrives before our own ack is no longer taken as ours** (`nikobus-connect 0.38.0`). While polling, a `$1C` pushed by the Feedback Module for the other group of the same module could be filed as the answer to Home Assistant's query and shown until the next poll. The library holds such an early frame and uses it only when nothing fresher follows the ack.
+- **Verify cross-checks the module family.** The status reply carries the family byte (switch 0x10 / compact 0x90, roller 0x20, dimmer 0x30); a module that answers as a family other than the type it is stored as is a *problem* in the *Programming health* sensor (`family_ok`), with a Repair issue *Nikobus module … is not a …* naming both. Its entities and link decoding follow the stored type, so this catches an inventory that is wrong.
+- **The Connection sensor names the gateway.** `gateway_address` and `gateway_type` (`pc_link`, `feedback_module`, `pc_logic`) from the status frame the gateway sends behind the probe's ack; `None` when it sends none.
+- Housekeeping: the device-registration helpers moved from `button.py` to a new `devices.py` (same names, re-exported from `button.py`); no behaviour change.
+- **PC-Link calendar channels show up as what they are.** A link whose trigger is one of the PC-Link's 100 calendar channels (CH001 … CH100, A/B — fired by calendar programs and scenes) used to be dropped as an unknown button. It now appears in an output's `controlled_by` as `Calendar channel CH001A (PC-Link)`, with a device *PC-Link calendar CH001A* under the bridge, no press entity (what the PC-Link emits for it is unknown), and treated as input-only by the reconciliation so it never counts as an orphan. Visible after the next *Scan all module links*.
+
 ## 3.17.4
 
 - **Minimum Home Assistant version declared: 2026.8.0.** Since 3.15.5 the integration registers device parents with the device registry's `via_device_id` argument, introduced in Home Assistant 2026.8 when `via_device` was deprecated. Nothing declared that requirement, so HACS let the integration install on an older core, where set-up failed with `TypeError: DeviceRegistry.async_get_or_create() got an unexpected keyword argument 'via_device_id'` (#507). `hacs.json` now carries the minimum, so HACS refuses the installation or update on an older core with a clear message instead, and the README says it. No functional change.
