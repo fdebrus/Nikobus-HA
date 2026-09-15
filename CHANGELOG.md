@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.18.2
+
+**Requires `nikobus-connect` 0.38.2.**
+
+- **A key press from Home Assistant is one write.** The three repeats of a `button.press` (or of an LED trigger, or of a scene) left the PC-Link 150 ms apart, one queued command each, with a poll or a cover command able to slip in between. An impulse/toggle link (switch mode M05) can count that spread as two presses: the lamps go on and immediately off again, or nothing visible happens, while the automation trace is green. The repeats now go out back to back in a single write, at line speed. Reported with measurements by a user driving six driveway spots on one M05 key.
+- **The modules a Home Assistant press impacts are refreshed.** The PC-Link never relays the host's own `#N`, so nothing read those modules after a software press and their entities waited for the next poll or feedback push — 7 to 18 minutes on a pushed installation, against seconds after a wall press. The coordinator now runs the same delayed reads an inbound press triggers, once the burst is on the wire; no `nikobus_button_operation` event is fired for it, since nobody pressed a key. An automation can therefore check the state a few seconds after a press and press again only if the impulse was lost.
+- **LED key fields explained.** *Customize a module* and the README now say what the LED-on / LED-off address does: Home Assistant presses that key instead of switching the output, so the plate LED follows; empty means the output is switched directly and no LED is updated.
+
+## 3.18.1
+
+**Requires `nikobus-connect` 0.38.1.**
+
+- **The start-up presence probe no longer warns falsely on a quiet bus.** The previous probe only earned an acknowledgement that the PC-Link holds back until it has something else to send, so installations without Feedback Module traffic logged *no Nikobus device answered* on every start (withdrawn a fraction of a second later by the first real command, but logged all the same). The probe is now the `#A` identity broadcast, which the PC-Link answers itself within tens of milliseconds with its own status frame; that frame is also what fills `gateway_address` / `gateway_type` on the Connection sensor. README and Repair text updated.
+
 ## 3.18.0
 
 **Requires `nikobus-connect` 0.38.0.**

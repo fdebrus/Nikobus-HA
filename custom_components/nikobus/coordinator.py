@@ -61,7 +61,6 @@ from .const import (
     FEEDBACK_PORT_ANSWERS_THRESHOLD,
     ISSUE_FEEDBACK_MODULE_PORT,
     ISSUE_NO_DEVICE_ANSWERED,
-    PRESS_REPEAT_DELAY,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
 )
@@ -1309,27 +1308,39 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         A/B latch switch, software-scene feedback LEDs, and CF /
         light-scene activation.
         """
-        if not address or self.nikobus_command is None:
-            # No command handler before connect / during teardown —
+        if not address or self.nikobus_command is None or self.api is None:
+            # No command pipeline before connect / during teardown —
             # nothing to send rather than an AttributeError.
             return
         try:
             repeats = max(1, int(self._press_repeat))
         except (TypeError, ValueError):
             repeats = DEFAULT_PRESS_REPEAT
-        command = f"#N{address}\r#E1"
-        for i in range(repeats):
-            await self.nikobus_command.queue_command(command)
-            if i < repeats - 1:
-                await asyncio.sleep(PRESS_REPEAT_DELAY)
+        # One write: the repeats leave the interface back to back. Queued
+        # one by one they went out 150 ms apart (the queue's pacing) with
+        # other commands able to slip in between, which an impulse /
+        # toggle link can count as two presses.
+        self.api.press_repeat = repeats
+        address = address.upper()
+
+        async def _refresh_after_press() -> None:
+            # The interface never relays the host's own #N, so nothing
+            # would read the impacted modules: do what an inbound press
+            # does, once the burst is actually on the wire.
+            actuator = self.nikobus_actuator
+            if actuator is not None:
+                await actuator.refresh_after_host_press(address)
+
+        await self.api.press_button(address, completion_handler=_refresh_after_press)
 
     async def async_event_handler(self, event: str, data: dict[str, Any]) -> None:
         """Send an HA-originated press, or wake the impacted module's entities.
 
-        ``ha_button_pressed`` only queues the bus frame; the resulting bus
-        feedback dispatches the targeted update once the state actually
-        changes, so there's nothing to refresh here — returning avoids a
-        pointless wake of every entity.
+        ``ha_button_pressed`` queues the bus frame; the refresh of the
+        impacted modules is scheduled by ``async_send_button_press`` once
+        the frame is on the wire (the interface never relays the host's
+        own press), so there's nothing to refresh here — returning avoids
+        a pointless wake of every entity.
         """
         if event == "ha_button_pressed":
             await self.async_send_button_press(str(data.get("address") or ""))

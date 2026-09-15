@@ -389,3 +389,51 @@ async def test_short_tap_still_classified_as_short_press():
     assert len(_events_of(actuator, "nikobus_short_button_pressed")) == 1
     assert _events_of(actuator, "nikobus_long_button_pressed") == []
     assert _events_of(actuator, "nikobus_button_pressed_0")[0]["bucket"] == 0
+
+
+# ---------------------------------------------------------------------------
+# A press sent by Home Assistant refreshes what it impacts, silently
+# ---------------------------------------------------------------------------
+
+def _make_actuator_with_link() -> NikobusActuator:
+    actuator = _make_actuator()
+    actuator._dict_button_data["nikobus_button"]["105AA5"] = {
+        "operation_points": {
+            "1C": {
+                "bus_address": "295682",
+                "linked_modules": [
+                    {"module_address": "81F6", "outputs": [{"channel": 7}, {"channel": 9}]}
+                ],
+            }
+        }
+    }
+    return actuator
+
+
+def test_host_press_schedules_the_refresh_without_an_event():
+    """The PC-Link never relays the host's own #N: the refresh must be
+    scheduled explicitly, and no nikobus_button_operation event fired —
+    nobody pressed a key."""
+    import asyncio
+
+    actuator = _make_actuator_with_link()
+    asyncio.run(actuator.refresh_after_host_press("295682"))
+    assert "81F6_2" in actuator._module_refresh_tasks
+    assert _events_of(actuator, "nikobus_button_operation") == []
+
+
+def test_inbound_press_still_fires_the_event():
+    import asyncio
+
+    actuator = _make_actuator_with_link()
+    asyncio.run(actuator.button_discovery("295682", press_context={"press_id": "p1", "duration_s": 0.3}))
+    assert "81F6_2" in actuator._module_refresh_tasks
+    assert len(_events_of(actuator, "nikobus_button_operation")) == 1
+
+
+def test_host_press_of_an_unknown_key_is_a_noop():
+    import asyncio
+
+    actuator = _make_actuator()
+    asyncio.run(actuator.refresh_after_host_press("000000"))
+    assert actuator._module_refresh_tasks == {}
