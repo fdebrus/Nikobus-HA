@@ -22,7 +22,7 @@ def _register(phys):
     hass, entry = MagicMock(), MagicMock()
     entry.entry_id = "E1"
     with patch(
-        "custom_components.nikobus.button.dr.async_get", return_value=dev_reg
+        "custom_components.nikobus.devices.dr.async_get", return_value=dev_reg
     ):
         register_wall_button_devices(hass, entry, {"1843B4": phys})
     calls = [
@@ -80,7 +80,7 @@ def test_calendar_channel_is_named_after_the_channel_under_the_bridge():
     dev_reg = MagicMock()
     hass, entry = MagicMock(), MagicMock()
     entry.entry_id = "E1"
-    with patch("custom_components.nikobus.button.dr.async_get", return_value=dev_reg):
+    with patch("custom_components.nikobus.devices.dr.async_get", return_value=dev_reg):
         register_wall_button_devices(hass, entry, {"E00320": phys})
     calls = [
         c for c in dev_reg.async_get_or_create.call_args_list

@@ -730,6 +730,7 @@ The code is split into two packages.
 - `nkbactuator.py` — turns incoming button frames into HA events with debounce + duration tracking.
 - `nkbconfig.py` — scene-file loader/writer.
 - `nkbtravelcalculator.py` — virtual cover-position tracking.
+- `devices.py` — registers the HA devices: one per wall button, input module, opaque module, and the synthesized children (PC-Logic inputs, remote codes, PC-Link calendar channels).
 - `router.py` — maps module channels to HA entity types; builds the `controlled_by` reverse index.
 - `config_flow.py` — config flow (connection → hardware → polling) and the Configure options menu (customize, upload `.nkb`, import `.nkb`).
 - `repairs.py` — the "No Nikobus buttons configured" repair flow.
