@@ -30,6 +30,7 @@ from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, hub_device_info
 from .nkbdevices import parent_device_id
 from .router import (
+    calendar_channel_naming,
     INPUT_MODULE_TYPES,
     OPAQUE_MODULE_TYPES,
     input_label_prefix,
@@ -83,6 +84,11 @@ def _iter_button_entities(
 ) -> Iterator[NikobusButtonEntity]:
     """Yield one NikobusButtonEntity per discovered operation point."""
     for physical_addr, key_label, op_point, phys in iter_operation_points(buttons):
+        if calendar_channel_naming(phys) is not None:
+            # A PC-Link calendar channel is fired by the PC-Link's own
+            # calendar programs; what it puts on the bus is not known,
+            # so there is nothing Home Assistant could press.
+            continue
         yield NikobusButtonEntity(
             coordinator, physical_addr, key_label, op_point, parent_phys=phys
         )
@@ -164,6 +170,19 @@ def register_wall_button_devices(
     remote_transmitter_parents_registered: set[str] = set()
     for physical_addr, phys in buttons.items():
         if not isinstance(phys, dict):
+            continue
+
+        calendar_naming = calendar_channel_naming(phys)
+        if calendar_naming is not None:
+            name, via_device = calendar_naming
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, physical_addr)},
+                manufacturer=BRAND,
+                name=str(phys.get("nkb_name") or name),
+                model="PC-Link calendar channel",
+                via_device_id=parent_device_id(device_registry, entry.entry_id, via_device),
+            )
             continue
 
         pc_logic_naming = pc_logic_input_naming(phys)

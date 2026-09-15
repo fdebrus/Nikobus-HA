@@ -24,10 +24,12 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from nikobus_connect.api import MODULE_IMAGE_SIZES
+from nikobus_connect.protocol import family_matches, family_name
 
 from .const import (
     DOMAIN,
     ISSUE_MODULE_CRC_MISMATCH,
+    ISSUE_MODULE_TYPE_MISMATCH,
     ISSUE_MODULE_EEPROM_ERROR,
     ISSUE_MODULE_PROGRAMMING_CHANGED,
     PROGRAMMING_STORAGE_KEY,
@@ -140,6 +142,10 @@ class ModuleCheck:
     record_count_a: int | None = None
     record_count_b: int | None = None
     crc_ok: bool | None = None
+    # The module's family byte ($11 status) is the family of the type
+    # it is stored as; ``None`` when unknown or not comparable.
+    family_ok: bool | None = None
+    family: str | None = None
     module_crc: int | None = None
     computed_crc: int | None = None
     image_bytes: int | None = None
@@ -149,7 +155,7 @@ class ModuleCheck:
     def status(self) -> str:
         if self.error is not None or self.eeprom_error is None:
             return HEALTH_UNKNOWN
-        if self.eeprom_error or self.crc_ok is False:
+        if self.eeprom_error or self.crc_ok is False or self.family_ok is False:
             return HEALTH_PROBLEM
         return HEALTH_OK
 
@@ -420,6 +426,20 @@ class NikobusProgramming:
         try:
             status = await api.get_module_status(address)
             check.eeprom_error = status.eeprom_error
+            signature = getattr(status, "type_code", None)
+            if isinstance(signature, int):
+                check.family = family_name(signature)
+                check.family_ok = family_matches(module_type, signature)
+                if check.family_ok is False:
+                    _LOGGER.warning(
+                        "Module %s (%s) is stored as %s but answers as %s (family byte 0x%02X): "
+                        "its type in the inventory is wrong",
+                        address,
+                        description,
+                        module_type,
+                        check.family or "an unknown family",
+                        signature,
+                    )
             check.record_count_a = status.record_count_a
             # 0xFF = "no second table" on switch / roller modules.
             check.record_count_b = (
@@ -445,6 +465,7 @@ class NikobusProgramming:
         for key, active in (
             (ISSUE_MODULE_EEPROM_ERROR, check.eeprom_error is True),
             (ISSUE_MODULE_CRC_MISMATCH, check.crc_ok is False),
+            (ISSUE_MODULE_TYPE_MISMATCH, check.family_ok is False),
         ):
             issue_id = f"{key}_{check.address.lower()}"
             if active:
@@ -458,6 +479,8 @@ class NikobusProgramming:
                     translation_placeholders={
                         "address": check.address,
                         "description": check.description,
+                        "module_type": check.module_type,
+                        "family": check.family or "unknown",
                     },
                 )
             elif check.error is None:

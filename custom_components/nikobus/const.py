@@ -185,6 +185,15 @@ ISSUE_MODULE_PROGRAMMING_CHANGED: Final[str] = "module_programming_changed"
 # connection stays up — some gateways may not answer the probe — but
 # the user should check what is on the other end.
 ISSUE_NO_DEVICE_ANSWERED: Final[str] = "no_device_answered"
+# The Feedback Module option is on but the gateway relays the module's
+# pushed answers without its queries: the serial port is the Feedback
+# Module's own, and pushed state cannot be attributed to an output group.
+ISSUE_FEEDBACK_MODULE_PORT: Final[str] = "feedback_module_port"
+# Pushed answers to see, with no query echo at all, before saying so.
+FEEDBACK_PORT_ANSWERS_THRESHOLD: Final[int] = 6
+# A module answers its status query with a family byte that is not the
+# family of the type it is stored as.
+ISSUE_MODULE_TYPE_MISMATCH: Final[str] = "module_type_mismatch"
 # Programming-change check cadence: first pass a few minutes after setup
 # (clear of the initial sync and any discovery), then once a day.
 PROGRAMMING_CHANGE_CHECK_DELAY_S: Final[int] = 10 * 60

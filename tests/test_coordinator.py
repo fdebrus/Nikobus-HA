@@ -2234,3 +2234,56 @@ class TestDevicePresenceIssue(unittest.TestCase):
         with patch("custom_components.nikobus.coordinator.ir") as ir:
             connection.on_device_answered()
         ir.async_delete_issue.assert_called_once_with(hass, "nikobus", "no_device_answered_entry1")
+
+
+class TestFeedbackPortIssue(unittest.TestCase):
+    """Pushed state answers without the queries behind them = the port is
+    the Feedback Module's own; a Repair issue says to turn the option off."""
+
+    def _coord(self, queries, answers, open_=False):
+        coord = MagicMock()
+        coord.hass = MagicMock()
+        coord.config_entry.entry_id = "entry1"
+        coord.connection_string = "/dev/ttyUSB0"
+        coord.nikobus_listener = MagicMock()
+        coord.nikobus_listener.feedback_queries_seen = queries
+        coord.nikobus_listener.feedback_answers_seen = answers
+        coord._feedback_port_issue_open = open_
+        return coord
+
+    def test_answers_without_queries_raise_the_issue_once(self):
+        coord = self._coord(queries=0, answers=6)
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._surface_feedback_port(coord)
+            NikobusDataCoordinator._surface_feedback_port(coord)
+        ir.async_create_issue.assert_called_once()
+        assert ir.async_create_issue.call_args.args[2] == "feedback_module_port_entry1"
+        assert ir.async_create_issue.call_args.kwargs["translation_key"] == "feedback_module_port"
+        assert coord._feedback_port_issue_open is True
+
+    def test_below_threshold_stays_quiet(self):
+        coord = self._coord(queries=0, answers=3)
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._surface_feedback_port(coord)
+        ir.async_create_issue.assert_not_called()
+
+    def test_a_relayed_query_clears_the_issue(self):
+        coord = self._coord(queries=1, answers=40, open_=True)
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._surface_feedback_port(coord)
+        ir.async_delete_issue.assert_called_once_with(coord.hass, "nikobus", "feedback_module_port_entry1")
+        assert coord._feedback_port_issue_open is False
+
+    def test_pc_link_gateway_never_raises(self):
+        coord = self._coord(queries=12, answers=12)
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._surface_feedback_port(coord)
+        ir.async_create_issue.assert_not_called()
+        ir.async_delete_issue.assert_not_called()
+
+    def test_old_library_without_counters_is_ignored(self):
+        coord = self._coord(queries=0, answers=0)
+        coord.nikobus_listener = MagicMock(spec=[])
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._surface_feedback_port(coord)
+        ir.async_create_issue.assert_not_called()

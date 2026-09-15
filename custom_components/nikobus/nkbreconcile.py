@@ -194,7 +194,7 @@ def classify_button_status(
     """
     if phys.get("pc_logic_parent_address"):
         return "synthesized_input"
-    if phys.get("type") in INPUT_ONLY_BUTTON_TYPES:
+    if phys.get("type") in INPUT_ONLY_BUTTON_TYPES or phys.get("calendar_channel"):
         return "input_only"
     linked = collect_button_linked_modules(phys)
     outputs = collect_button_outputs(phys)

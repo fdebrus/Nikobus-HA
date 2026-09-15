@@ -15,12 +15,12 @@
         "title": "Hardwareconfiguratie",
         "description": "Vertel ons over uw Nikobus-hardware zodat de integratie de optimale updatestrategie kan gebruiken.",
         "data": {
-          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd, Home Assistant verbonden met de poort van de PC-Link",
           "prior_gen3": "PC-Link is ouder dan Gen 3",
           "press_repeat": "Herhalingen gesimuleerde druk"
         },
         "data_description": {
-          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig.",
+          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten: die poort geeft de vragen van de module niet door, dus gepushte status kan niet worden toegewezen; de status wordt dan gepolld.",
           "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
           "press_repeat": "Hoe vaak elke door HA geactiveerde druk (knop, sfeer, CF, schakelaar) op de bus wordt verzonden. Een echte knop herhaalt zijn telegram, dus één verzending kan gemist worden bij een drukke bus. Standaard 3."
         }
@@ -40,13 +40,13 @@
         "description": "Werk de verbinding of hardware-instellingen bij. De verbinding wordt opnieuw getest.",
         "data": {
           "connection_string": "Verbinding (seriële poort of IP:poort)",
-          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd, Home Assistant verbonden met de poort van de PC-Link",
           "prior_gen3": "PC-Link is ouder dan Gen 3",
           "refresh_interval": "Polling-interval (seconden)"
         },
         "data_description": {
           "connection_string": "Pad naar het seriële apparaat of TCP-adres van de PC-Link-brug",
-          "has_feedbackmodule": "Indien ingeschakeld pusht de Feedbackmodule statuswijzigingen automatisch — pollen is niet nodig.",
+          "has_feedbackmodule": "Indien ingeschakeld pusht de Feedbackmodule statuswijzigingen automatisch — pollen is niet nodig. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten: die poort geeft de vragen van de module niet door, dus gepushte status kan niet worden toegewezen; de status wordt dan gepolld.",
           "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor PC-Link-hardware van de eerste en tweede generatie.",
           "refresh_interval": "Hoe vaak de modulestatussen van de bus worden gelezen (60–3600 s). Lagere waarden betekenen snellere updates maar meer busverkeer."
         }
@@ -77,12 +77,12 @@
         "title": "Hardwareconfiguratie",
         "description": "Werk uw hardware-instellingen bij. De integratie herlaadt automatisch.",
         "data": {
-          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd en verbonden via PC-Link",
+          "has_feedbackmodule": "Feedbackmodule (05-207) geïnstalleerd, Home Assistant verbonden met de poort van de PC-Link",
           "prior_gen3": "PC-Link is ouder dan Gen 3",
           "press_repeat": "Herhalingen gesimuleerde druk"
         },
         "data_description": {
-          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen.",
+          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten.",
           "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
           "press_repeat": "Hoe vaak elke door HA geactiveerde druk (knop, sfeer, CF, schakelaar) op de bus wordt verzonden. Een echte knop herhaalt zijn telegram, dus één verzending kan gemist worden bij een drukke bus. Standaard 3."
         }
@@ -298,6 +298,14 @@
     "no_device_answered": {
       "title": "Geen Nikobus-apparaat antwoordde op {port}",
       "description": "De poort ging open en de handshake is verzonden, maar niets aan de andere kant bevestigde de aanwezigheidstest van Home Assistant. Opdrachten lopen op een time-out tot een apparaat antwoordt. Controleer de kabel en de voeding van de PC-Link, zorg dat de Nikobus-pc-software de poort niet bezet houdt en herstart de PC-Link als hij door een ander programma is gebruikt. De waarschuwing verdwijnt vanzelf zodra een Nikobus-frame wordt ontvangen — een druk op een knop, het antwoord op een opdracht — of bij de volgende verbinding die beantwoord wordt. Blijft ze staan terwijl alles werkt, dan bevestigt uw gateway (bijvoorbeeld een PC-Logic) de test gewoon niet en kunt u de waarschuwing negeren."
+    },
+    "feedback_module_port": {
+      "title": "Home Assistant is verbonden met de poort van de Feedbackmodule op {port}",
+      "description": "De optie Feedbackmodule staat aan, maar de gateway geeft de gepushte statusantwoorden van de module door zonder de bijbehorende vragen, wat alleen een PC-Link doet. De seriële poort is die van de Feedbackmodule zelf. Zonder de vraag kan een gepusht antwoord niet aan een uitgangsgroep worden toegewezen, waardoor de twee helften van een 12-kanaalsmodule op het polritme van de module verwisseld raken (een dimmer op 100% die niet bewoog, een lamp die elke minuut omschakelt). Zet de optie **Feedbackmodule** uit in de instellingen van de integratie: de status wordt dan gepolld, wat op deze poort juist is. De waarschuwing verdwijnt vanzelf zodra een vraag wordt doorgegeven."
+    },
+    "module_type_mismatch": {
+      "title": "Nikobus-module {description} ({address}) is geen {module_type}",
+      "description": "De module beantwoordt zijn statusvraag als een {family}, maar de inventaris slaat hem op als {module_type}. Zijn entiteiten en het decoderen van zijn koppelingen volgen het opgeslagen type en kunnen dus fout zijn. Voer **Projectoverzicht laden** uit om de inventaris te verversen; blijft het type fout, corrigeer het dan onder *Een module aanpassen*."
     }
   },
   "exceptions": {

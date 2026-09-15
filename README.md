@@ -65,7 +65,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - **A serial gateway to the bus.** Normally a **PC-Link (05-200)**: it is the source of the device inventory that discovery reads. Installations that connect through a **Feedback Module (05-207)** or a **PC-Logic (05-201)** serial port work too, but inventory then comes from the fallback files (see [Installs without a PC-Link](#installs-without-a-pc-link)) and link scanning still reads the output modules directly.
 - **One client at a time.** Only one program may talk to the bus. Stop the Nikobus PC software (and any other bridge) before starting Home Assistant.
 - **A connection path**: a USB/serial adapter (`/dev/ttyUSB0`) or a TCP-to-serial bridge (`host:port`).
-- **(Optional) a Feedback Module (05-207)** wired to the PC-Link. If present, enable the toggle during setup and module states are pushed in real time; without one, HA polls on a configurable interval.
+- **(Optional) a Feedback Module (05-207)** wired to the PC-Link. If present **and Home Assistant is connected to the PC-Link's port**, enable the toggle during setup and module states are pushed in real time; without one, HA polls on a configurable interval. If Home Assistant is connected to the Feedback Module's own serial port, leave the toggle off (see [Installs without a PC-Link](#installs-without-a-pc-link)).
 - **(Optional) your `.nkb` project file** — the export from the Nikobus PC software. Not required to run, but it's the only place your friendly names, rooms, and scene groupings live. See [Importing from your `.nkb` project](#importing-from-your-nkb-project).
 
 ---
@@ -117,7 +117,7 @@ One HA **device** is created per physical button, with one button-entity + binar
 3. *Settings → Devices & Services → Add Integration → Nikobus*.
 4. Enter the serial path or `IP:port`. The connection is tested immediately.
 5. On **Hardware Configuration**, enable a toggle if it applies:
-   - **Feedback Module (05-207) installed** — real-time pushed state, no polling.
+   - **Feedback Module (05-207) installed, Home Assistant connected to the PC-Link's port** — real-time pushed state, no polling. Leave it off when the serial port is the Feedback Module's own: that port does not relay the module's queries, so pushed state cannot be attributed to an output group and the integration raises a Repair issue asking you to turn it off.
    - **PC-Link older than Gen 3** — disables state polling (early PC-Links don't answer module state queries reliably), leaving push-only updates. **Leave this off on a Gen-3 PC-Link** — ticking it by mistake just makes state updates slower; it has no effect on discovery.
 6. If neither toggle is set, choose a **polling interval** (60–3600 s, default 120).
 7. Finish, then run [discovery](#discovery-workflow).
@@ -163,6 +163,8 @@ Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 
 If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Load Project Overview* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory.
 
+**Connected to the Feedback Module's port:** leave the **Feedback Module** option off and let Home Assistant poll. The module keeps polling the outputs it tracks and its port relays the answers, but never its own queries — and only the query says which output group (channels 1–6 or 7–12) an answer belongs to. With the option on, the two halves of every 12-channel module get swapped at the module's polling rhythm: a dimmer shown at 100% that never moved, a light toggling on and off every minute. The integration detects pushed answers without queries and raises the Repair issue *Home Assistant is connected to the Feedback Module's port*; polling is the correct mode there.
+
 > **Since 3.0.0** these files are an **inventory source only**. The previous behaviour that imported their descriptions as friendly names on every startup has been removed — entity names live in Home Assistant (see [Renaming](#renaming)). If you only kept the files for their names and you have a PC-Link, you can delete them; the integration logs a warning when it finds them.
 
 ---
@@ -177,7 +179,7 @@ Every switch, dimmer and roller module keeps its complete programming in its own
 
 ### Verify module programming
 
-Each module can report its status and a checksum it computes over its own memory. **Verify module programming** (or `nikobus.verify_modules`) asks every module for both, reads its memory back and compares. The result lands on the **Programming health** diagnostic sensor (`ok` / `problem` / `unknown`, with per-module detail in the attributes), and a module with an EEPROM error or a checksum mismatch raises a Repair issue naming it. On a healthy installation every checksum matches bit for bit, so a mismatch is real.
+Each module can report its status and a checksum it computes over its own memory. **Verify module programming** (or `nikobus.verify_modules`) asks every module for both, reads its memory back and compares. The result lands on the **Programming health** diagnostic sensor (`ok` / `problem` / `unknown`, with per-module detail in the attributes), and a module with an EEPROM error or a checksum mismatch raises a Repair issue naming it. On a healthy installation every checksum matches bit for bit, so a mismatch is real. The module's status reply also carries its family (switch, roller, dimmer); a module that answers as a different family than the one it is stored as is reported as a problem, with a Repair issue, since its entities and link decoding follow the stored type.
 
 ### Reprogrammed modules are noticed
 
@@ -309,6 +311,8 @@ wall_button_key: "1C"
 ```
 
 Conversely, every light / switch / cover exposes a **`controlled_by`** attribute listing the buttons that drive it — so you can answer "which wall button turns on this light?" from the entity page.
+
+An output can also be driven by one of the PC-Link's **calendar channels** (CH001 … CH100, the virtual buttons that calendar programs and scenes fire). Those links appear in `controlled_by` as `Calendar channel CH001A (PC-Link)`, and each channel gets a device *PC-Link calendar CH001A* under the bridge. It has no press entity: what the PC-Link puts on the bus when it fires a channel is not known, so Home Assistant never tries to emit it.
 
 ### Renaming
 
@@ -502,7 +506,7 @@ Activation sends one command per channel (HA-driven fan-out), touching only the 
 
 On a dropped connection the integration reconnects with exponential back-off (5 s → 10 s → 20 s → … capped at 60 s). Entities go unavailable until the link is restored, then resume without an HA restart.
 
-Every connection ends with a **presence probe**: after the handshake the integration sends a status query the PC-Link (or a Feedback Module used as gateway) acknowledges, and takes any Nikobus frame relayed meanwhile as proof that a device is on the line. When the port opens but nothing answers — wrong port, PC-Link unpowered, serial handle left dead by the Nikobus PC software — the integration still starts, but a Repair issue names the port and what to check instead of every command timing out silently. The verdict is not final: the first Nikobus frame received afterwards — a button press, the answer to a command — withdraws the issue, so a probe missed while the PC-Link was still resetting on a cold boot corrects itself within seconds. A PC-Logic used as gateway may not acknowledge the probe; if the warning stays there while everything works, ignore it.
+Every connection ends with a **presence probe**: after the handshake the integration sends a status query the PC-Link (or a Feedback Module used as gateway) acknowledges, and takes any Nikobus frame relayed meanwhile as proof that a device is on the line. When the port opens but nothing answers — wrong port, PC-Link unpowered, serial handle left dead by the Nikobus PC software — the integration still starts, but a Repair issue names the port and what to check instead of every command timing out silently. The verdict is not final: the first Nikobus frame received afterwards — a button press, the answer to a command — withdraws the issue, so a probe missed while the PC-Link was still resetting on a cold boot corrects itself within seconds. A PC-Logic used as gateway may not acknowledge the probe; if the warning stays there while everything works, ignore it. The gateway usually answers the probe with its own status frame too; the *Connection* sensor then shows `gateway_address` and `gateway_type` (`pc_link`, `feedback_module` or `pc_logic`).
 
 Only one exchange is on the bus at a time: polls, user commands and discovery reads are serialised through one lock, so a scan started during a poll cannot garble either.
 
@@ -736,7 +740,7 @@ The code is split into two packages.
 
 1. **Button-driven refresh** — each button carries its `linked_modules`; a press immediately refreshes the impacted module group(s).
 2. **Periodic refresh** — the polling interval when there is no Feedback Module.
-3. **Feedback Module push** — a 05-207 polls, on its own, the output modules it is configured to track, and the PC-Link relays both its queries and the modules' answers. The integration captures those answers and updates the entities without sending anything itself, so the periodic poll is switched off when the option is set.
+3. **Feedback Module push** — a 05-207 polls, on its own, the output modules it is configured to track, and the PC-Link relays both its queries and the modules' answers. The integration captures those answers and updates the entities without sending anything itself, so the periodic poll is switched off when the option is set. The output group of an answer is known from the query that preceded it, which is why this mode needs the PC-Link's port: the Feedback Module's own port relays answers only.
 
 ### Interoperability
 

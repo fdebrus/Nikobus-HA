@@ -10,12 +10,12 @@
     "step": {
       "hardware": {
         "data": {
-          "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
+          "has_feedbackmodule": "Feedback Module (05-207) installed, Home Assistant connected to the PC-Link's port",
           "prior_gen3": "PC-Link is older than Gen 3",
           "press_repeat": "Simulated press repeats"
         },
         "data_description": {
-          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
+          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
           "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
           "press_repeat": "How many times each HA-triggered press (button, scene, CF, latch switch) is sent on the bus. A real button repeats its telegram, so a single send can be missed under bus contention. Default 3."
         },
@@ -35,13 +35,13 @@
       "reconfigure": {
         "data": {
           "connection_string": "Connection (serial port or IP:port)",
-          "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
+          "has_feedbackmodule": "Feedback Module (05-207) installed, Home Assistant connected to the PC-Link's port",
           "prior_gen3": "PC-Link is older than Gen 3",
           "refresh_interval": "Polling interval (seconds)"
         },
         "data_description": {
           "connection_string": "Serial device path or TCP address of the PC-Link bridge",
-          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
+          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
           "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
           "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
         },
@@ -165,6 +165,14 @@
     "no_device_answered": {
       "title": "No Nikobus device answered on {port}",
       "description": "The port opened and the handshake was sent, but nothing on the other end acknowledged Home Assistant's presence probe. Commands will time out until a device answers. Check the cable and the PC-Link power, make sure the Nikobus PC software is not holding the port, and if the PC-Link was used by another program, power-cycle it. The warning clears by itself as soon as any Nikobus frame is received — a button press, the answer to a command — or on the next connection that is answered. If it stays while everything works, your gateway (a PC-Logic, for instance) simply does not acknowledge the probe and the warning can be ignored."
+    },
+    "feedback_module_port": {
+      "title": "Home Assistant is connected to the Feedback Module's port on {port}",
+      "description": "The Feedback Module option is on, but the gateway relays the module's pushed state answers without the queries behind them, which only a PC-Link does. The serial port is the Feedback Module's own. Without the query, a pushed answer cannot be attributed to an output group, so the two halves of a 12-channel module get swapped at the module's polling rhythm (a dimmer shown at 100% that never moved, a light toggling every minute). Turn the **Feedback Module** option off in the integration's settings: state is then polled, which is correct on this port. The warning clears by itself once a query is relayed."
+    },
+    "module_type_mismatch": {
+      "title": "Nikobus module {description} ({address}) is not a {module_type}",
+      "description": "The module answers its status query as a {family}, but the inventory stores it as a {module_type}. Its entities and its link decoding follow the stored type, so they may be wrong. Run **Load Project Overview** to refresh the inventory; if the type stays wrong, correct it under *Customize a module*."
     }
   },
   "exceptions": {
@@ -237,12 +245,12 @@
     "step": {
       "hardware": {
         "data": {
-          "has_feedbackmodule": "Feedback Module (05-207) installed and connected via PC-Link",
+          "has_feedbackmodule": "Feedback Module (05-207) installed, Home Assistant connected to the PC-Link's port",
           "prior_gen3": "PC-Link is older than Gen 3",
           "press_repeat": "Simulated press repeats"
         },
         "data_description": {
-          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed.",
+          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
           "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
           "press_repeat": "How many times each HA-triggered press (button, scene, CF, latch switch) is sent on the bus. A real button repeats its telegram, so a single send can be missed under bus contention. Default 3."
         },

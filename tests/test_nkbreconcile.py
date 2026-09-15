@@ -58,6 +58,12 @@ def test_classify_button_status_input_only():
     ) == "input_only"
 
 
+def test_classify_button_status_calendar_channel_is_input_only():
+    assert classify_button_status(
+        {"calendar_channel": "CH001A", "type": "PC-Link Calendar Channel"}, set(), False
+    ) == "input_only"
+
+
 def test_classify_button_status_legacy_undecoded_when_no_outputs():
     assert classify_button_status({"operation_points": {}}, set(), False) == (
         "legacy_undecoded"

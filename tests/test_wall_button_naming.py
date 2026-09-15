@@ -62,3 +62,32 @@ def test_nkb_name_wins_over_registry_number():
         }
     )
     assert name == "7: Porte buanderie (Buanderie)"
+
+
+def test_calendar_channel_is_named_after_the_channel_under_the_bridge():
+    """A link to a PC-Link calendar channel becomes a device named as the
+    Nikobus software names the channel, parented under the bridge, and
+    gets no press entity (what the PC-Link emits for it is unknown)."""
+    from custom_components.nikobus.button import _iter_button_entities
+
+    phys = {
+        "description": "PC-Link calendar channel CH001A",
+        "type": "PC-Link Calendar Channel",
+        "model": "05-200",
+        "calendar_channel": "CH001A",
+        "operation_points": {"CAL": {"bus_address": "E00320", "description": "Calendar channel CH001A (PC-Link)"}},
+    }
+    dev_reg = MagicMock()
+    hass, entry = MagicMock(), MagicMock()
+    entry.entry_id = "E1"
+    with patch("custom_components.nikobus.button.dr.async_get", return_value=dev_reg):
+        register_wall_button_devices(hass, entry, {"E00320": phys})
+    calls = [
+        c for c in dev_reg.async_get_or_create.call_args_list
+        if ("nikobus", "E00320") in c.kwargs.get("identifiers", set())
+    ]
+    assert len(calls) == 1
+    assert calls[0].kwargs["name"] == "PC-Link calendar CH001A"
+    assert calls[0].kwargs["model"] == "PC-Link calendar channel"
+    dev_reg.async_get_device_by_identifier.assert_any_call(("nikobus", "nikobus_hub"), "E1")
+    assert list(_iter_button_entities(MagicMock(), {"E00320": phys})) == []

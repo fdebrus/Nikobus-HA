@@ -58,6 +58,8 @@ from .const import (
     DISCOVERY_SUB_PHASE_REGISTER_SCAN,
     DOMAIN,
     ISSUE_NO_BUTTONS_CONFIGURED,
+    FEEDBACK_PORT_ANSWERS_THRESHOLD,
+    ISSUE_FEEDBACK_MODULE_PORT,
     ISSUE_NO_DEVICE_ANSWERED,
     PRESS_REPEAT_DELAY,
     RECONNECT_DELAY_INITIAL,
@@ -141,6 +143,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         # frame the listener receives (nikobus-connect 0.37.3): withdraw
         # the Repair issue as soon as that happens, not at the next reload.
         self.nikobus_connection.on_device_answered = self._surface_device_probe
+        self._feedback_port_issue_open = False
         self.nikobus_config = NikobusConfig(hass)
         self.button_storage = NikobusButtonStorage(hass)
         self.module_storage = NikobusModuleStorage(hass)
@@ -293,6 +296,58 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             )
             return
         ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    def _surface_feedback_port(self) -> None:
+        """Repair issue when pushed state arrives without the queries behind it.
+
+        With the Feedback Module option on, the listener attributes each
+        pushed ``$1C`` answer to the output group of the ``$1012`` /
+        ``$1017`` query that preceded it. Only a PC-Link relays those
+        queries; the Feedback Module's own serial port relays the
+        answers alone, so the group is guessed and the two halves of a
+        12-channel module end up swapped at the module's polling rhythm.
+        Answers with no query echo at all mean exactly that port: say
+        so and tell the user to turn the option off (state is polled
+        then). Clears as soon as a query echo is seen.
+        """
+        listener = getattr(self, "nikobus_listener", None)
+        queries = getattr(listener, "feedback_queries_seen", None)
+        answers = getattr(listener, "feedback_answers_seen", None)
+        if queries is None or answers is None:
+            return
+        issue_id = f"{ISSUE_FEEDBACK_MODULE_PORT}_{self.config_entry.entry_id}"
+        if queries == 0 and answers >= FEEDBACK_PORT_ANSWERS_THRESHOLD:
+            if not self._feedback_port_issue_open:
+                self._feedback_port_issue_open = True
+                _LOGGER.warning(
+                    "%d state answers pushed by the Feedback Module and not one of its "
+                    "queries relayed: the serial port is the Feedback Module's own, so "
+                    "pushed state cannot be attributed to an output group. Turn the "
+                    "Feedback Module option off; state is then polled.",
+                    answers,
+                )
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_FEEDBACK_MODULE_PORT,
+                    translation_placeholders={"port": str(self.connection_string)},
+                )
+            return
+        if queries > 0 and self._feedback_port_issue_open:
+            self._feedback_port_issue_open = False
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    @property
+    def gateway_identity(self) -> tuple[str | None, str | None]:
+        """``(address, family)`` of the gateway, from the presence probe."""
+        conn = self.nikobus_connection
+        return (
+            getattr(conn, "gateway_address", None),
+            getattr(conn, "gateway_family", None),
+        )
 
     @property
     def connection_status(self) -> str:
@@ -486,6 +541,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 # Resolve any pending get_output_state future immediately
                 if self.nikobus_command:
                     self.nikobus_command.resolve_pending_get(address, group, state_hex)
+                self._surface_feedback_port()
 
             await self.async_event_handler(
                 "nikobus_refreshed",
