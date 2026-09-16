@@ -310,6 +310,8 @@ wall_button_type: "IR Button with 4 Operation Points"
 wall_button_key: "1C"
 ```
 
+Switching several lights or switches of the same module group in one service call sends a single bus frame carrying all of them (one relay click), not one frame per entity.
+
 Conversely, every light / switch / cover exposes a **`controlled_by`** attribute listing the buttons that drive it — so you can answer "which wall button turns on this light?" from the entity page.
 
 An output can also be driven by one of the PC-Link's **calendar channels** (CH001 … CH100, the virtual buttons that calendar programs and scenes fire). Those links appear in `controlled_by` as `Calendar channel CH001A (PC-Link)`, and each channel gets a device *PC-Link calendar CH001A* under the bridge. It has no press entity: what the PC-Link puts on the bus when it fires a channel is not known, so Home Assistant never tries to emit it.

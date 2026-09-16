@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.18.3
+
+**Requires `nikobus-connect` 0.38.3.** No code change in the integration.
+
+- **Several lights or switches of one module switched together are one bus frame.** Each entity used to send its own group write: six lights on one module were six frames 150 ms apart and six relay clicks, the last five redundant. The library now builds the frame when the request reaches the head of its queue, after a 50 ms window in which requests for the same module group join it, so a service call on six lights of one module is one frame, one acknowledgement, one click. Entities on different groups or modules keep their own frames; a single entity is unchanged apart from the 50 ms.
+
 ## 3.18.2
 
 **Requires `nikobus-connect` 0.38.2.**
