@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.19.1
+
+**Requires `nikobus-connect` 0.38.4.** No code change in the integration.
+
+- **A scene that switches every channel of a 12-channel module off now reaches the relays.** The library decided whether to send the second output group (channels 7-12) by looking for a non-zero byte in the state it was about to write — and six zero bytes look the same as "this module has no second group". Switching channels 7-12 off in one scene left the relays on while Home Assistant showed them off, until the next poll flipped the entities back on, looking like lights that turned themselves back on. The library now takes the module's channel count from the inventory (fdebrus/nikobus-connect#148, reported with a full diagnosis by @roswennen); scenes and grouped cover commands are fixed by the library update alone.
+
 ## 3.19.0
 
 - **Documentation overhaul.** The README gains a *Commands on the bus* section (when Home Assistant switches an output directly and when it presses the key instead, what that means for plate LEDs and impulse keys, and the verify-and-retry pattern), a *Which port is Home Assistant connected to?* comparison of the PC-Link / Feedback Module / PC-Logic gateways, a table of every Repair issue with its cause and fix, the Bridge device's entities at a glance, and troubleshooting entries for impulse keys, plate LEDs and relay chatter.
