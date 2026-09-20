@@ -118,6 +118,40 @@ class TestOutputPlatformSetup(unittest.TestCase):
         self.assertEqual(len(covers), 1)
         self.assertEqual(covers[0]._channel, 1)
 
+    def _cover_entity(self, resolved):
+        """Build the per-channel cover with a coordinator resolving
+        ``resolved`` = {direction: seconds or None}."""
+        hass, entry, coord = _entry_and_coord()
+        coord.resolve_cover_operation_time = MagicMock(
+            side_effect=lambda addr, ch, direction: resolved.get(direction)
+        )
+        coord.cf_storage.data = {"nikobus_cf": {}}
+        added: list = []
+        with patch.object(cover_platform, "register_output_module_devices", MagicMock()):
+            _run(
+                cover_platform.async_setup_entry(
+                    hass, entry, lambda ents, **kw: added.extend(ents)
+                )
+            )
+        return next(e for e in added if getattr(e, "_address", None) == "C9A5")
+
+    def test_cover_takes_the_travel_time_the_coordinator_resolves(self):
+        """A channel with no stored travel time runs on the time
+        programmed into the module's own roller links, not on 30 s."""
+        cover = self._cover_entity({"up": 21.0, "down": 24.0})
+        self.assertAlmostEqual(cover._calculator.time_up, 21.0)
+        self.assertAlmostEqual(cover._calculator.time_down, 24.0)
+
+    def test_missing_down_time_follows_the_up_time(self):
+        cover = self._cover_entity({"up": 45.0, "down": None})
+        self.assertAlmostEqual(cover._calculator.time_up, 45.0)
+        self.assertAlmostEqual(cover._calculator.time_down, 45.0)
+
+    def test_nothing_known_falls_back_to_the_default(self):
+        cover = self._cover_entity({"up": None, "down": None})
+        self.assertAlmostEqual(cover._calculator.time_up, 30.0)
+        self.assertAlmostEqual(cover._calculator.time_down, 30.0)
+
     def test_cover_platform_creates_cf_cover_for_pure_roller(self):
         """A pure-roller CF (all shutter members) becomes a grouped
         NikobusCFCoverEntity; a mixed/light CF does not."""

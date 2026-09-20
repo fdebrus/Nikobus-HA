@@ -45,6 +45,9 @@ def _parse_operation_time(value: Any, fallback: float, label: str, address: str)
 
     ``None`` means the field was not configured — silently returns ``fallback``.
     Any other value that is not a positive number logs a warning before falling back.
+    The travel time a cover actually uses is resolved by the coordinator
+    (a stored value, else the module's own roller links); this is kept so
+    a stored value that cannot be read still says so in the log.
     """
     if value is None:
         return fallback
@@ -126,17 +129,25 @@ async def async_setup_entry(
 
     entities = []
     for spec in specs:
-        op_time_up = _parse_operation_time(
-            spec.operation_time_up,
-            DEFAULT_COVER_OPERATION_TIME,
-            "operation_time_up",
-            spec.address,
+        # A value the user set on the channel wins; a channel that never
+        # got one — or still carries the flat 30 discovery used to write
+        # — takes the run time programmed into the module's own roller
+        # links, which is how long the module keeps the relay engaged.
+        # Only when neither knows does the 30 s default apply, and a
+        # missing down time follows the up time as before.
+        _parse_operation_time(
+            spec.operation_time_up, DEFAULT_COVER_OPERATION_TIME, "operation_time_up", spec.address
         )
-        op_time_down = _parse_operation_time(
-            spec.operation_time_down,
-            op_time_up,
-            "operation_time_down",
-            spec.address,
+        _parse_operation_time(
+            spec.operation_time_down, DEFAULT_COVER_OPERATION_TIME, "operation_time_down", spec.address
+        )
+        op_time_up = (
+            coordinator.resolve_cover_operation_time(spec.address, spec.channel, "up")
+            or DEFAULT_COVER_OPERATION_TIME
+        )
+        op_time_down = (
+            coordinator.resolve_cover_operation_time(spec.address, spec.channel, "down")
+            or op_time_up
         )
 
         end_stop_margin = _parse_end_stop_margin(

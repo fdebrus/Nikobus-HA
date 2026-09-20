@@ -40,6 +40,7 @@ from .const import (
     CONF_PRESS_REPEAT,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
+    DEFAULT_COVER_OPERATION_TIME,
     DEFAULT_PRESS_REPEAT,
     DEVICE_ADDRESS_INVENTORY,
     DEVICE_INVENTORY_ANSWER,
@@ -1183,21 +1184,22 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         """Drop the cached controlled-by index — call after discovery updates."""
         self._controlled_by_index = None
 
-    def get_cover_operation_time(
-        self, module_id: str, channel: int, direction: str = "up", default: float = 30.0
-    ) -> float:
-        """Fetch travel time for a shutter channel.
+    def resolve_cover_operation_time(
+        self, module_id: str, channel: int, direction: str
+    ) -> float | None:
+        """Travel time for a shutter channel, or ``None`` when unknown.
 
-        A value the user set on the channel wins. When the channel still
-        carries the discovery placeholder (``30``) or nothing at all, the
-        run time programmed into the module's own roller links is used —
-        that is how long the module actually keeps the relay engaged, so
-        it is the physical truth for the position model. ``default``
-        only applies when neither source knows.
+        A value the user set on the channel wins. When the channel
+        carries nothing, or still carries the flat ``30`` that discovery
+        used to write into every roller channel, the run time programmed
+        into the module's own roller links is used — that is how long
+        the module actually keeps the relay engaged, so it is the
+        physical truth for the position model. ``None`` means neither
+        source knows and the caller should apply its own fallback.
         """
         hit = find_module(self.module_storage.data, module_id)
         if hit is None or hit[1].get("module_type") != "roller_module":
-            return default
+            return None
         configured: float | None = None
         try:
             ch = hit[1].get("channels", [])[int(channel) - 1]
@@ -1206,7 +1208,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 configured = float(ot)
         except (IndexError, ValueError, KeyError, TypeError):
             configured = None
-        if configured is not None and configured != default:
+        if configured is not None and configured != DEFAULT_COVER_OPERATION_TIME:
             return configured
         programming = getattr(self, "programming", None)
         programmed = (
@@ -1216,7 +1218,14 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         )
         if programmed is not None:
             return programmed
-        return configured if configured is not None else default
+        return configured
+
+    def get_cover_operation_time(
+        self, module_id: str, channel: int, direction: str = "up", default: float = 30.0
+    ) -> float:
+        """:meth:`resolve_cover_operation_time` with a caller's fallback."""
+        resolved = self.resolve_cover_operation_time(module_id, channel, direction)
+        return default if resolved is None else resolved
 
     # ------------------------------------------------------------------
     # Convenience state accessors used by entity platforms

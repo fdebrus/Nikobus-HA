@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.19.2
+
+**Requires `nikobus-connect` 0.38.5.**
+
+- **Covers run on the travel time programmed into the module, instead of a flat 30 s.** Discovery wrote `30` into every roller channel it created, and the per-channel cover entity used that number as-is — so every shutter of an installation opened and closed on the same invented 30 s until each one was typed in by hand. The run times are on the bus already: each roller link carries the time the module keeps its relay engaged, per channel and per direction, and the integration has been reading them for scene and grouped-cover timing. Every cover now resolves its travel time the same way: a value you set in *Customize a module* wins, otherwise the module's own roller links decide, and 30 s applies only when neither knows. A missing down time still follows the up time. Reported by @roswennen (28 roller outputs, real times 21–120 s).
+- **New roller channels no longer carry the `30` placeholder** (`nikobus-connect 0.38.5`), which could not be told apart from a travel time someone had really chosen. Channels that already hold `30` keep it and are treated as unset, so they pick up their link time too; anything else you set is untouched.
+- **The travel-time fields show the value actually in use.** *Customize a module* pre-fills them with the resolved time rather than a bare 30, so saving the form writes the real value out.
+
+## 3.19.1
+
+**Requires `nikobus-connect` 0.38.4.** No code change in the integration.
+
+- **A scene that switches every channel of a 12-channel module off now reaches the relays.** The library decided whether to send the second output group (channels 7-12) by looking for a non-zero byte in the state it was about to write — and six zero bytes look the same as "this module has no second group". Switching channels 7-12 off in one scene left the relays on while Home Assistant showed them off, until the next poll flipped the entities back on, looking like lights that turned themselves back on. The library now takes the module's channel count from the inventory (fdebrus/nikobus-connect#148, reported with a full diagnosis by @roswennen); scenes and grouped cover commands are fixed by the library update alone.
+
 ## 3.19.0
 
 - **Documentation overhaul.** The README gains a *Commands on the bus* section (when Home Assistant switches an output directly and when it presses the key instead, what that means for plate LEDs and impulse keys, and the verify-and-retry pattern), a *Which port is Home Assistant connected to?* comparison of the PC-Link / Feedback Module / PC-Logic gateways, a table of every Repair issue with its cause and fix, the Bridge device's entities at a glance, and troubleshooting entries for impulse keys, plate LEDs and relay chatter.

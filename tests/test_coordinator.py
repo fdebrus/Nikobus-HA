@@ -70,6 +70,7 @@ class _FakeCoord:
     set_bytearray_state = NikobusDataCoordinator.set_bytearray_state
     set_bytearray_group_state = NikobusDataCoordinator.set_bytearray_group_state
     _feedback_callback = NikobusDataCoordinator._feedback_callback
+    resolve_cover_operation_time = NikobusDataCoordinator.resolve_cover_operation_time
     get_cover_operation_time = NikobusDataCoordinator.get_cover_operation_time
     _refresh_module_type = NikobusDataCoordinator._refresh_module_type
 
@@ -357,6 +358,46 @@ class TestGetCoverOperationTime(unittest.TestCase):
         c = self._coord_with_cover({"operation_time_up": "25"})
         result = c.get_cover_operation_time("C1C7", 99, "up", default=30.0)
         self.assertAlmostEqual(result, 30.0)
+
+
+class TestResolveCoverOperationTime(unittest.TestCase):
+    """A stored value wins; a channel with none — or still carrying the
+    flat 30 discovery used to write — takes the run time programmed into
+    the module's own roller links."""
+
+    def _coord_with_cover(self, ch_data: dict, link_time=None):
+        c = _coord(module_data={"roller_module": {"C1C7": {"channels": [ch_data]}}})
+        c.programming = MagicMock()
+        c.programming.link_run_time = MagicMock(return_value=link_time)
+        return c
+
+    def test_user_value_wins_over_the_links(self):
+        c = self._coord_with_cover({"operation_time_up": "21"}, link_time=45.0)
+        self.assertAlmostEqual(c.resolve_cover_operation_time("C1C7", 1, "up"), 21.0)
+
+    def test_unset_channel_takes_the_link_run_time(self):
+        c = self._coord_with_cover({}, link_time=45.0)
+        self.assertAlmostEqual(c.resolve_cover_operation_time("C1C7", 1, "up"), 45.0)
+
+    def test_legacy_placeholder_takes_the_link_run_time(self):
+        c = self._coord_with_cover({"operation_time_up": "30"}, link_time=120.0)
+        self.assertAlmostEqual(c.resolve_cover_operation_time("C1C7", 1, "up"), 120.0)
+
+    def test_placeholder_without_links_stays_thirty(self):
+        c = self._coord_with_cover({"operation_time_up": "30"}, link_time=None)
+        self.assertAlmostEqual(c.resolve_cover_operation_time("C1C7", 1, "up"), 30.0)
+
+    def test_nothing_known_is_none(self):
+        c = self._coord_with_cover({}, link_time=None)
+        self.assertIsNone(c.resolve_cover_operation_time("C1C7", 1, "up"))
+
+    def test_non_roller_module_is_none(self):
+        c = _coord(module_data={"switch_module": {"4707": {"channels": [{}]}}})
+        self.assertIsNone(c.resolve_cover_operation_time("4707", 1, "up"))
+
+    def test_get_wraps_resolve_with_the_callers_default(self):
+        c = self._coord_with_cover({}, link_time=None)
+        self.assertAlmostEqual(c.get_cover_operation_time("C1C7", 1, "up", default=12.0), 12.0)
 
 
 # ---------------------------------------------------------------------------
