@@ -53,7 +53,7 @@ _ROUTING_CACHE_KEY = "routing"
 _CAPABILITIES = {
     "roller_module": {"cover", "switch", "light"},
     "switch_module": {"switch", "light"},
-    "dimmer_module": {"light"},
+    "dimmer_module": {"light", "fan"},
 }
 
 # Module types whose channels are *inputs* (presses on the bus), not
@@ -272,7 +272,7 @@ def build_routing(
     This ensures that each channel results in exactly one entity type,
     even if it belongs to a versatile module (like a roller module used for lights).
     """
-    routing: dict[str, list[EntitySpec]] = {"cover": [], "switch": [], "light": []}
+    routing: dict[str, list[EntitySpec]] = {"cover": [], "switch": [], "light": [], "fan": []}
 
     for module_type, modules in dict_module_data.items():
         # Input-class modules (PC-Logic, Modular Interface) and opaque
@@ -373,6 +373,11 @@ def _is_supported_entity_type(module_type: str, entity_type: str) -> bool:
 def _map_entity_type(module_type: str, entity_type: str) -> tuple[str, str]:
     """Map the Nikobus configuration to a Home Assistant domain and internal kind."""
     if module_type == "dimmer_module":
+        # A dimmer output driving a PWM / variable-speed fan (extractor
+        # fans on a 05-007): same 0-255 channel, presented as a fan so
+        # HA and HomeKit offer speed instead of brightness.
+        if entity_type == "fan":
+            return "fan", "dimmer_fan"
         return "light", "dimmer_light"
 
     if module_type == "roller_module":

@@ -377,6 +377,7 @@
     "entity_type_dimmer_module": {
       "options": {
         "default": "Standaard (lamp)",
+        "fan": "Ventilator (regelbaar toerental)",
         "disabled": "Uitgeschakeld (kanaal verbergen)"
       }
     },

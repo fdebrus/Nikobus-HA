@@ -74,7 +74,7 @@ class _NkbUploadError(Exception):
 #                  description-prefix convention.
 _MODULE_ENTITY_TYPES: dict[str, list[str]] = {
     "switch_module": ["default", "light", "disabled"],
-    "dimmer_module": ["default", "disabled"],
+    "dimmer_module": ["default", "fan", "disabled"],
     "roller_module": ["default", "switch", "light", "disabled"],
 }
 
