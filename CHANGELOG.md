@@ -2,6 +2,7 @@
 
 ## 3.19.0
 
+- **Documentation overhaul.** The README gains a *Commands on the bus* section (when Home Assistant switches an output directly and when it presses the key instead, what that means for plate LEDs and impulse keys, and the verify-and-retry pattern), a *Which port is Home Assistant connected to?* comparison of the PC-Link / Feedback Module / PC-Logic gateways, a table of every Repair issue with its cause and fix, the Bridge device's entities at a glance, and troubleshooting entries for impulse keys, plate LEDs and relay chatter.
 - **A dimmer output can be shown as a fan.** *Customize a module* offers **Fan (variable speed)** as entity type for a dimmer-module channel; the channel then appears as a `fan` entity with a speed slider (0–100 % mapped onto the channel's 0–255 level) instead of a `light`, and HomeKit exposes it as a fan with speed. Same bus commands, same state buffer and the same optimistic behaviour as the dimmer light; nothing changes for channels left at the default. For dimmer outputs driving PWM extractor fans (#512), which no longer need a template fan wrapped around a hidden light.
 
 ## 3.18.3
