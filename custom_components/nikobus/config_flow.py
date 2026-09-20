@@ -37,6 +37,7 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     CONFIG_ENTRY_VERSION,
     DEFAULT_COVER_END_STOP_MARGIN,
+    DEFAULT_COVER_OPERATION_TIME,
     DEFAULT_PRESS_REPEAT,
     DOMAIN,
     NKB_IMPORT_CATEGORIES,
@@ -153,11 +154,12 @@ def _make_default_channel(module_type: str, index: int) -> dict[str, Any]:
     re-discovery merge doesn't see drift between user-padded entries
     and library-padded ones.
     """
+    # A roller channel gets no travel time: a flat "30" here could not be
+    # told apart from a value the user chose, so a 21 s and a 120 s
+    # shutter both read as 30 s. Absent means "nobody set one", and the
+    # cover then takes the run time from the module's own roller links.
     label = "input" if module_type in _INPUT_MODULE_TYPES else "output"
-    channel: dict[str, Any] = {"description": f"not_in_use {label}_{index}"}
-    if module_type == "roller_module":
-        channel["operation_time_up"] = "30"
-    return channel
+    return {"description": f"not_in_use {label}_{index}"}
 
 
 def _module_label(address: str, entry: dict[str, Any]) -> str:
@@ -926,9 +928,20 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         }
 
         if module_type == "roller_module":
+            # Show what the cover actually uses: the stored value, or the
+            # run time read from the module's own roller links. Saving the
+            # form then writes that value out, making it explicit.
+            effective_up = (
+                coordinator.resolve_cover_operation_time(address, idx, "up")
+                or DEFAULT_COVER_OPERATION_TIME
+            )
+            effective_down = (
+                coordinator.resolve_cover_operation_time(address, idx, "down")
+                or effective_up
+            )
             schema_dict[vol.Optional(
                 "operation_time_up",
-                default=_coerce_int(channel.get("operation_time_up"), 30),
+                default=_coerce_int(channel.get("operation_time_up"), round(effective_up)),
             )] = NumberSelector(
                 NumberSelectorConfig(
                     min=1, max=600, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"
@@ -936,7 +949,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             )
             schema_dict[vol.Optional(
                 "operation_time_down",
-                default=_coerce_int(channel.get("operation_time_down"), 30),
+                default=_coerce_int(channel.get("operation_time_down"), round(effective_down)),
             )] = NumberSelector(
                 NumberSelectorConfig(
                     min=1, max=600, step=1, mode=NumberSelectorMode.BOX, unit_of_measurement="s"

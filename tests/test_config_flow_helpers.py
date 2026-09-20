@@ -57,9 +57,14 @@ class TestMakeDefaultChannel(unittest.TestCase):
             {"description": "not_in_use output_5"},
         )
 
-    def test_roller_gets_operation_time(self):
-        ch = _make_default_channel("roller_module", 2)
-        self.assertEqual(ch["operation_time_up"], "30")
+    def test_roller_carries_no_travel_time(self):
+        """A flat "30" could not be told from a value the user chose, so
+        a 21 s and a 120 s shutter both read as 30 s. Absent means the
+        cover takes its run time from the module's own roller links."""
+        self.assertEqual(
+            _make_default_channel("roller_module", 2),
+            {"description": "not_in_use output_2"},
+        )
 
     def test_input_label_for_pc_logic(self):
         self.assertEqual(
