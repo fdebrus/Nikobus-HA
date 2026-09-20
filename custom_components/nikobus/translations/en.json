@@ -459,6 +459,7 @@
     "entity_type_dimmer_module": {
       "options": {
         "default": "Default (light)",
+        "fan": "Fan (variable speed)",
         "disabled": "Disabled (hide channel)"
       }
     },

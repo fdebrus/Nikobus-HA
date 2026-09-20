@@ -377,6 +377,7 @@
     "entity_type_dimmer_module": {
       "options": {
         "default": "Par défaut (lumière)",
+        "fan": "Ventilateur (vitesse variable)",
         "disabled": "Désactivé (masquer le canal)"
       }
     },

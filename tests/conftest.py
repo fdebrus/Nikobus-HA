@@ -362,6 +362,14 @@ _mod(
     ATTR_BRIGHTNESS="brightness",
     DOMAIN="light",
 )
+_mod(
+    "homeassistant.components.fan",
+    FanEntity=type("FanEntity", (), {}),
+    FanEntityFeature=type(
+        "FanEntityFeature", (), {"SET_SPEED": 1, "TURN_ON": 32, "TURN_OFF": 64}
+    ),
+    DOMAIN="fan",
+)
 _mod("homeassistant.components.scene", Scene=type("Scene", (), {}), DOMAIN="scene")
 
 # --- config-flow / repairs import surface -------------------------------

@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.19.0
+
+- **A dimmer output can be shown as a fan.** *Customize a module* offers **Fan (variable speed)** as entity type for a dimmer-module channel; the channel then appears as a `fan` entity with a speed slider (0–100 % mapped onto the channel's 0–255 level) instead of a `light`, and HomeKit exposes it as a fan with speed. Same bus commands, same state buffer and the same optimistic behaviour as the dimmer light; nothing changes for channels left at the default. For dimmer outputs driving PWM extractor fans (#512), which no longer need a template fan wrapped around a hidden light.
+
 ## 3.18.3
 
 **Requires `nikobus-connect` 0.38.3.** No code change in the integration.

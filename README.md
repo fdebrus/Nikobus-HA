@@ -19,6 +19,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - 🎛️ **Buttons as triggers** — every keypad key, IR code, and input becomes an event source (and a press-simulation button) for automations.
 - 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names (numbered like in the Nikobus software), **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply. Imported names persist across restarts and re-discovery.
 - 🎬 **Scenes that fire atomically** — Central Function scenes are activated on the bus the same way a physical scene key would, with no per-channel fan-out.
+- 🌀 **Dimmer outputs as fans** — a dimmer channel driving a variable-speed fan can be shown as a `fan` entity with a speed slider (*Customize a module*).
 - ⚡ **Real-time or polled** — instant pushed state with a Feedback Module, or a configurable poll without one.
 - 🛡️ **Backup & verify your modules' programming** — read every module's memory image into a backup folder, check each module's status and checksum, and get a Repair issue when a module is reprogrammed behind Home Assistant's back. Read-only on the bus: nothing is ever written to a module.
 - 🕒 **PC-Link clock** — see the controller's clock and its drift, and set it from Home Assistant (the only write the integration performs).
@@ -152,7 +153,7 @@ Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scen
 
 *Configure → Customize a module* lets you, per channel:
 - **Description** → the entity name.
-- **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`none`; rollers: `cover`/`switch`/`light`/`none`).
+- **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`fan`/`none`; rollers: `cover`/`switch`/`light`/`none`). A dimmer output driving a variable-speed extractor fan shown as `fan` gets a speed slider (0–100 % over the channel's 0–255 range) instead of a brightness, and HomeKit exposes it as a fan.
 - **LED on / off key** → the bus address of the wall key whose LED shows this channel. When filled, Home Assistant *presses that key* instead of switching the output, so the key's LED and the output stay in step (a key that toggles the output itself, in impulse mode, must be driven this way). When empty, Home Assistant switches the output directly and no plate LED is updated.
 - **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator. A channel still carrying the discovery placeholder takes its run time from the operating time programmed into the module itself; a value you set here wins.
 - **End-stop margin** (rollers) → seconds after the estimated arrival at fully open/closed before a Home Assistant-started motion sends its stop frame (default 3). The motor runs into the end stop during the margin, which keeps the position model honest; the stop then releases the relay so a wall button acts on the first press. Set it higher to let the module's own run time release the relay instead.
