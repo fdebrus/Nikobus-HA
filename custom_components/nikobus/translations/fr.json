@@ -267,7 +267,7 @@
         "step": {
           "init": {
             "title": "Examiner les boutons Nikobus hérités",
-            "description": "Ces {count} bouton(s) sont signalés comme hérités après un scan complet de phase 2. La colonne Raison explique pourquoi :\n\n  - **no decoded links** — aucun module de sortie ne référence ce bouton. Soit un bouton mural utilisé uniquement pour des automatisations Home Assistant (à conserver), soit un résidu d'un précédent propriétaire (à purger).\n  - **residue / stale links** — les liens du bouton existent uniquement dans la mémoire de registre PC-Link / PC-Logic sans qu'aucun module de sortie actuel ne les enregistre, ou tous les modules liés ont été évincés. Typiquement une programmation résiduelle d'un précédent propriétaire que l'appairage DIN-button n'a pas effacée (à purger).\n\nPour récupérer un bouton purgé, relancez **Découvrir les modules et boutons** puis **Scanner les liens de tous les modules** — la bibliothèque réinsère tout ce qui figure encore dans le projet.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
+            "description": "Ces {count} bouton(s) sont signalés comme hérités après un scan complet de phase 2. La colonne Raison explique pourquoi :\n\n  - **no decoded links** — aucun module de sortie ne référence ce bouton. Soit un bouton mural utilisé uniquement pour des automatisations Home Assistant (à conserver), soit un résidu d'un précédent propriétaire (à purger).\n  - **residue / stale links** — les liens du bouton existent uniquement dans la mémoire de registre PC-Link / PC-Logic sans qu'aucun module de sortie actuel ne les enregistre, ou tous les modules liés ont été évincés. Typiquement une programmation résiduelle d'un précédent propriétaire que l'appairage DIN-button n'a pas effacée (à purger).\n\nPour récupérer un bouton purgé, relancez **1. Charger l'aperçu du projet** puis **2. Charger l'installation existante** — la bibliothèque réinsère tout ce qui figure encore dans le projet.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
             "data": {
               "addresses": "Boutons à supprimer"
             }
@@ -281,7 +281,7 @@
     },
     "corrupt_modules": {
       "title": "Un module Nikobus doit être reprogrammé",
-      "description": "{count} module(s) Nikobus ont signalé une table de liens corrompue et ont été ignorés pendant la découverte (leurs liens boutons n'ont pas pu être lus) : **{modules}**.\n\nC'est un problème côté module — le logiciel Nikobus signale la même chose et demande une reprogrammation. Ouvrez le logiciel Nikobus, reprogrammez le(s) module(s) listé(s), puis relancez **Charger l'installation existante**. Cet avertissement disparaît automatiquement dès que le module se lit correctement."
+      "description": "{count} module(s) Nikobus ont signalé une table de liens corrompue et ont été ignorés pendant la découverte (leurs liens boutons n'ont pas pu être lus) : **{modules}**.\n\nC'est un problème côté module — le logiciel Nikobus signale la même chose et demande une reprogrammation. Ouvrez le logiciel Nikobus, reprogrammez le(s) module(s) listé(s), puis relancez **2. Charger l'installation existante**. Cet avertissement disparaît automatiquement dès que le module se lit correctement."
     },
     "module_eeprom_error": {
       "title": "Le module Nikobus {description} ({address}) signale une erreur EEPROM",
@@ -293,7 +293,7 @@
     },
     "module_programming_changed": {
       "title": "Le module Nikobus {description} ({address}) a été reprogrammé",
-      "description": "La somme de contrôle que le module rapporte sur sa programmation diffère de celle enregistrée le {recorded_at}, dernière lecture de ses liens par Home Assistant. Le module a été reprogrammé depuis, très probablement avec le logiciel PC Nikobus : les liens de boutons connus de Home Assistant peuvent ne plus lui correspondre. Lancez **Scanner tous les liens des modules** (ou **Vérifier** / **Sauvegarder la programmation des modules**) pour relire le module ; cet avertissement disparaît ensuite de lui-même."
+      "description": "La somme de contrôle que le module rapporte sur sa programmation diffère de celle enregistrée le {recorded_at}, dernière lecture de ses liens par Home Assistant. Le module a été reprogrammé depuis, très probablement avec le logiciel PC Nikobus : les liens de boutons connus de Home Assistant peuvent ne plus lui correspondre. Lancez **2. Charger l'installation existante** (ou **Vérifier la programmation des modules** / **Sauvegarder la programmation des modules**) pour relire le module ; cet avertissement disparaît ensuite de lui-même."
     },
     "no_device_answered": {
       "title": "Aucun appareil Nikobus n'a répondu sur {port}",
@@ -305,7 +305,7 @@
     },
     "module_type_mismatch": {
       "title": "Le module Nikobus {description} ({address}) n'est pas un {module_type}",
-      "description": "Le module répond à sa requête d'état comme un {family}, mais l'inventaire l'enregistre comme {module_type}. Ses entités et le décodage de ses liaisons suivent le type enregistré et peuvent donc être faux. Lancez **Charger l'aperçu du projet** pour rafraîchir l'inventaire ; si le type reste faux, corrigez-le dans *Personnaliser un module*."
+      "description": "Le module répond à sa requête d'état comme un {family}, mais l'inventaire l'enregistre comme {module_type}. Ses entités et le décodage de ses liaisons suivent le type enregistré et peuvent donc être faux. Lancez **1. Charger l'aperçu du projet** pour rafraîchir l'inventaire ; si le type reste faux, corrigez-le dans *Personnaliser un module*."
     }
   },
   "exceptions": {
@@ -355,7 +355,7 @@
       "message": "Une vérification ou une sauvegarde de programmation est déjà en cours — attendez qu'elle se termine."
     },
     "no_pc_link_known": {
-      "message": "Aucun PC-Link n'est encore connu — lancez d'abord **1. Charger la vue d'ensemble du projet**."
+      "message": "Aucun PC-Link n'est encore connu — lancez d'abord **1. Charger l'aperçu du projet**."
     }
   },
   "selector": {

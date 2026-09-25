@@ -134,7 +134,7 @@
         "step": {
           "init": {
             "title": "Review legacy Nikobus buttons",
-            "description": "These {count} button(s) are flagged as legacy after a full Stage-2 scan. The Reason column explains why each one was flagged:\n\n  - **no decoded links** — no output module references this button. Either a wall button used only for Home Assistant automations (KEEP), or residue from a previous owner (PURGE).\n  - **residue / stale links** — the button's links live only in PC-Link / PC-Logic registry memory with no current output module recording them, or every linked module was evicted. Typically residue programming from a previous owner that DIN-button re-pairing didn't clear (PURGE).\n\nTo recover any purged button, re-run **Discover modules & buttons** and then **Scan all module links** — the library re-adds anything currently in the project.\n\n{candidates}\n\nLeave the list empty and submit to keep everything.",
+            "description": "These {count} button(s) are flagged as legacy after a full Stage-2 scan. The Reason column explains why each one was flagged:\n\n  - **no decoded links** — no output module references this button. Either a wall button used only for Home Assistant automations (KEEP), or residue from a previous owner (PURGE).\n  - **residue / stale links** — the button's links live only in PC-Link / PC-Logic registry memory with no current output module recording them, or every linked module was evicted. Typically residue programming from a previous owner that DIN-button re-pairing didn't clear (PURGE).\n\nTo recover any purged button, re-run **1. Load Project Overview** and then **2. Load Existing Installation** — the library re-adds anything currently in the project.\n\n{candidates}\n\nLeave the list empty and submit to keep everything.",
             "data": {
               "addresses": "Buttons to remove"
             }
@@ -148,7 +148,7 @@
     },
     "corrupt_modules": {
       "title": "Nikobus module needs reprogramming",
-      "description": "{count} Nikobus module(s) reported a corrupt link table and were skipped during discovery (their button links could not be read): **{modules}**.\n\nThis is a module-side issue — the Nikobus PC software reports the same and asks for reprogramming. Open the Nikobus PC software, reprogram the listed module(s), then run **Load Existing Installation** again. This warning clears automatically once the module reads cleanly."
+      "description": "{count} Nikobus module(s) reported a corrupt link table and were skipped during discovery (their button links could not be read): **{modules}**.\n\nThis is a module-side issue — the Nikobus PC software reports the same and asks for reprogramming. Open the Nikobus PC software, reprogram the listed module(s), then run **2. Load Existing Installation** again. This warning clears automatically once the module reads cleanly."
     },
     "module_eeprom_error": {
       "title": "Nikobus module {description} ({address}) reports an EEPROM error",
@@ -160,7 +160,7 @@
     },
     "module_programming_changed": {
       "title": "Nikobus module {description} ({address}) was reprogrammed",
-      "description": "The checksum the module reports over its programming differs from the one recorded on {recorded_at}, when Home Assistant last read its links. The module was reprogrammed since, most likely with the Nikobus PC software, so the button links Home Assistant knows may no longer match it. Run **Scan all module links** (or **Verify module programming** / **Backup module programming**) to read the module again; this warning clears by itself afterwards."
+      "description": "The checksum the module reports over its programming differs from the one recorded on {recorded_at}, when Home Assistant last read its links. The module was reprogrammed since, most likely with the Nikobus PC software, so the button links Home Assistant knows may no longer match it. Run **2. Load Existing Installation** (or **Verify module programming** / **Backup module programming**) to read the module again; this warning clears by itself afterwards."
     },
     "no_device_answered": {
       "title": "No Nikobus device answered on {port}",
@@ -172,7 +172,7 @@
     },
     "module_type_mismatch": {
       "title": "Nikobus module {description} ({address}) is not a {module_type}",
-      "description": "The module answers its status query as a {family}, but the inventory stores it as a {module_type}. Its entities and its link decoding follow the stored type, so they may be wrong. Run **Load Project Overview** to refresh the inventory; if the type stays wrong, correct it under *Customize a module*."
+      "description": "The module answers its status query as a {family}, but the inventory stores it as a {module_type}. Its entities and its link decoding follow the stored type, so they may be wrong. Run **1. Load Project Overview** to refresh the inventory; if the type stays wrong, correct it under *Customize a module*."
     }
   },
   "exceptions": {
