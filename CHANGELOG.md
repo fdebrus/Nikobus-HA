@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.19.3
+
+- **Repair issues and the legacy-button repair flow now name the bridge buttons exactly as they are labelled**, in English, French and Dutch. Several texts still carried the names these actions had in earlier releases: the reprogrammed-module warning asked for *Scan all module links* while the button reads *2. Load Existing Installation*, the legacy-button flow named *Discover modules & buttons*, the corrupt-module and wrong-type issues dropped the *1.* / *2.* prefixes so the text did not point at one specific button, the French *no PC-Link known* error named a wording that does not exist, and the Dutch backup reference was a bare fragment. Eighteen references realigned across the three languages. The *Reason* column labels in the legacy-button table stay in English, because the repair flow renders them literally. Reported by a user following the Dutch wording.
+
 ## 3.19.2
 
 **Requires `nikobus-connect` 0.38.5.**

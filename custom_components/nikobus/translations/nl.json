@@ -267,7 +267,7 @@
         "step": {
           "init": {
             "title": "Verouderde Nikobus-knoppen beoordelen",
-            "description": "Deze {count} knop(pen) zijn als verouderd gemarkeerd na een volledige fase-2-scan. De kolom Reden legt uit waarom:\n\n  - **no decoded links** — geen output-module verwijst naar deze knop. Ofwel een wandknop die alleen wordt gebruikt voor Home Assistant-automatiseringen (behouden), ofwel resten van een vorige eigenaar (opschonen).\n  - **residue / stale links** — de koppelingen van de knop bestaan alleen in het PC-Link-/PC-Logic-registergeheugen zonder dat een huidige output-module ze opslaat, of elke gekoppelde module is verwijderd. Doorgaans residuele programmering van een vorige eigenaar die door DIN-button-koppeling niet is gewist (opschonen).\n\nOm een gewiste knop te herstellen, voer **Modules en knoppen ontdekken** opnieuw uit en daarna **Modulelinks scannen** — de bibliotheek voegt alles wat nog in het project staat opnieuw toe.\n\n{candidates}\n\nLaat de lijst leeg en bevestig om alles te behouden.",
+            "description": "Deze {count} knop(pen) zijn als verouderd gemarkeerd na een volledige fase-2-scan. De kolom Reden legt uit waarom:\n\n  - **no decoded links** — geen output-module verwijst naar deze knop. Ofwel een wandknop die alleen wordt gebruikt voor Home Assistant-automatiseringen (behouden), ofwel resten van een vorige eigenaar (opschonen).\n  - **residue / stale links** — de koppelingen van de knop bestaan alleen in het PC-Link-/PC-Logic-registergeheugen zonder dat een huidige output-module ze opslaat, of elke gekoppelde module is verwijderd. Doorgaans residuele programmering van een vorige eigenaar die door DIN-button-koppeling niet is gewist (opschonen).\n\nOm een gewiste knop te herstellen, voer **1. Projectoverzicht laden** opnieuw uit en daarna **2. Bestaande installatie laden** — de bibliotheek voegt alles wat nog in het project staat opnieuw toe.\n\n{candidates}\n\nLaat de lijst leeg en bevestig om alles te behouden.",
             "data": {
               "addresses": "Te verwijderen knoppen"
             }
@@ -281,7 +281,7 @@
     },
     "corrupt_modules": {
       "title": "Nikobus-module moet opnieuw geprogrammeerd worden",
-      "description": "{count} Nikobus-module(s) meldden een beschadigde koppelingstabel en werden overgeslagen tijdens detectie (hun knopkoppelingen konden niet gelezen worden): **{modules}**.\n\nDit is een probleem aan de modulezijde — de Nikobus PC-software meldt hetzelfde en vraagt om herprogrammeren. Open de Nikobus PC-software, herprogrammeer de vermelde module(s) en voer daarna opnieuw **Bestaande installatie laden** uit. Deze waarschuwing verdwijnt automatisch zodra de module weer correct gelezen wordt."
+      "description": "{count} Nikobus-module(s) meldden een beschadigde koppelingstabel en werden overgeslagen tijdens detectie (hun knopkoppelingen konden niet gelezen worden): **{modules}**.\n\nDit is een probleem aan de modulezijde — de Nikobus PC-software meldt hetzelfde en vraagt om herprogrammeren. Open de Nikobus PC-software, herprogrammeer de vermelde module(s) en voer daarna opnieuw **2. Bestaande installatie laden** uit. Deze waarschuwing verdwijnt automatisch zodra de module weer correct gelezen wordt."
     },
     "module_eeprom_error": {
       "title": "Nikobus-module {description} ({address}) meldt een EEPROM-fout",
@@ -293,7 +293,7 @@
     },
     "module_programming_changed": {
       "title": "Nikobus-module {description} ({address}) is opnieuw geprogrammeerd",
-      "description": "De checksum die de module over zijn programmering rapporteert, verschilt van de checksum die op {recorded_at} is vastgelegd, toen Home Assistant zijn koppelingen voor het laatst heeft gelezen. De module is sindsdien opnieuw geprogrammeerd, waarschijnlijk met de Nikobus-pc-software, dus de knopkoppelingen die Home Assistant kent, kloppen mogelijk niet meer. Voer **Alle modulekoppelingen scannen** uit (of **Moduleprogrammering controleren** / **back-uppen**) om de module opnieuw te lezen; deze waarschuwing verdwijnt daarna vanzelf."
+      "description": "De checksum die de module over zijn programmering rapporteert, verschilt van de checksum die op {recorded_at} is vastgelegd, toen Home Assistant zijn koppelingen voor het laatst heeft gelezen. De module is sindsdien opnieuw geprogrammeerd, waarschijnlijk met de Nikobus-pc-software, dus de knopkoppelingen die Home Assistant kent, kloppen mogelijk niet meer. Voer **2. Bestaande installatie laden** uit (of **Moduleprogrammering controleren** / **Moduleprogrammering back-uppen**) om de module opnieuw te lezen; deze waarschuwing verdwijnt daarna vanzelf."
     },
     "no_device_answered": {
       "title": "Geen Nikobus-apparaat antwoordde op {port}",
@@ -305,7 +305,7 @@
     },
     "module_type_mismatch": {
       "title": "Nikobus-module {description} ({address}) is geen {module_type}",
-      "description": "De module beantwoordt zijn statusvraag als een {family}, maar de inventaris slaat hem op als {module_type}. Zijn entiteiten en het decoderen van zijn koppelingen volgen het opgeslagen type en kunnen dus fout zijn. Voer **Projectoverzicht laden** uit om de inventaris te verversen; blijft het type fout, corrigeer het dan onder *Een module aanpassen*."
+      "description": "De module beantwoordt zijn statusvraag als een {family}, maar de inventaris slaat hem op als {module_type}. Zijn entiteiten en het decoderen van zijn koppelingen volgen het opgeslagen type en kunnen dus fout zijn. Voer **1. Projectoverzicht laden** uit om de inventaris te verversen; blijft het type fout, corrigeer het dan onder *Een module aanpassen*."
     }
   },
   "exceptions": {
