@@ -370,6 +370,22 @@ _mod(
     ),
     DOMAIN="fan",
 )
+class _MediaPlayerState(str):
+    ON = "on"
+    OFF = "off"
+
+
+_mod(
+    "homeassistant.components.media_player",
+    MediaPlayerEntity=type("MediaPlayerEntity", (), {}),
+    MediaPlayerEntityFeature=type(
+        "MediaPlayerEntityFeature",
+        (int,),
+        {"TURN_ON": 128, "TURN_OFF": 256, "VOLUME_STEP": 1024, "SELECT_SOURCE": 2048},
+    ),
+    MediaPlayerState=_MediaPlayerState,
+    DOMAIN="media_player",
+)
 _mod("homeassistant.components.scene", Scene=type("Scene", (), {}), DOMAIN="scene")
 
 # --- config-flow / repairs import surface -------------------------------

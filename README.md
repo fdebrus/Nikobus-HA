@@ -15,6 +15,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 ### Highlights
 
 - 🔌 **Automatic discovery** — modules and physical buttons are enumerated straight from the PC-Link; no manual address tables.
+- 🔊 **Audio zones** — an Audio Distribution module (05-205) becomes one media player per zone, with on/off, volume steps and source selection.
 - 💡 **Native entities** — switches, dimmers (with brightness), shutters (with simulated position) and, for a dimmer output that drives a variable-speed fan, a `fan` with a speed slider — one entity per channel, type chosen per channel.
 - 🎛️ **Buttons as triggers, and as actuators** — every keypad key, IR code, and input becomes an event source for automations, and a press-simulation button whose press the bus cannot tell from a real one.
 - 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names (numbered like in the Nikobus software), **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply. Imported names persist across restarts and re-discovery.
@@ -92,7 +93,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 | PC-Logic | `05-201` | Logic controller; its 6 inputs surface as `LM-INPUT 1–6`; usable as gateway (polling only, no inventory) |
 | Modular Interface, 6 inputs | `05-206` | Its 6 inputs surface as `MI-INPUT 1–6` |
 | Feedback Module | `05-207` | Optional; drives plate LEDs and pushes real-time state — through the PC-Link's port. Usable as gateway (polling only) |
-| Audio Distribution Module | `05-205` | Registered for visibility; I/O mapping not yet decoded |
+| Audio Distribution Module | `05-205` | One `media_player` per zone: on/off, volume, source select |
 
 ### Buttons & transmitters
 
@@ -358,6 +359,12 @@ data:
 ```
 
 ---
+
+### Audio Distribution zones
+
+A 05-205 keeps its links in its own memory, and discovery now reads them: for each zone, the bus address that switches it on or off, steps the volume, and selects each source. Every zone becomes a **media player** with those controls, and the trigger addresses are listed in its attributes.
+
+The module answers no state query, so a zone's state is what was last commanded. It is not guesswork on one side only: a wall key pressing the same function is relayed by the PC-Link, so pressing *Zone 2 on* at the wall updates the entity too.
 
 ## Commands on the bus
 
