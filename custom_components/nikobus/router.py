@@ -197,7 +197,49 @@ def iter_operation_points(
 #     0.5.10. Input/output schema not yet validated; creating switches
 #     for it (the previous fall-through behaviour) was wrong, so the
 #     router skips it explicitly.
+# Since 3.20.0 an Audio Distribution module does surface entities — a
+# media player per zone, built from the triggers discovery reads out of
+# the module (nikobus-connect 0.39.0) rather than from output channels.
+# It stays here because it has no channels for the channel router to map.
 OPAQUE_MODULE_TYPES: frozenset[str] = frozenset({"audio_module"})
+
+# Audio functions a zone's media player drives, by the library's label.
+AUDIO_FUNCTION_ON = "M16 (On)"
+AUDIO_FUNCTION_OFF = "M17 (Off)"
+AUDIO_FUNCTION_VOLUME_UP = "M13 (Volume up)"
+AUDIO_FUNCTION_VOLUME_DOWN = "M14 (Volume down)"
+AUDIO_SOURCE_FUNCTIONS: tuple[str, ...] = (
+    "M03 (Source 1)",
+    "M04 (Source 2)",
+    "M05 (Source 3)",
+    "M06 (Source 4)",
+    "M07 (Source 5)",
+    "M08 (Source 6)",
+    "M09 (Source 7)",
+    "M10 (Source 8)",
+)
+
+
+def audio_zones(buttons: Mapping[str, Any] | None) -> dict[tuple[str, int], dict[str, str]]:
+    """``{(module address, zone): {function label: bus address}}``.
+
+    Built from the audio triggers discovery filed in the button store:
+    each entry carries the address the module listens for, its zone and
+    the function it drives. Triggers that address every zone at once
+    (no zone) are returned under zone ``0``.
+    """
+    zones: dict[tuple[str, int], dict[str, str]] = {}
+    for address, entry in (buttons or {}).items():
+        if not isinstance(entry, dict) or not entry.get("audio_function"):
+            continue
+        zone = entry.get("audio_zone") or 0
+        for link in entry.get("operation_points", {}).get("AUD", {}).get("linked_modules", []):
+            module = str(link.get("module_address") or "").upper()
+            if module:
+                zones.setdefault((module, int(zone)), {})[
+                    str(entry["audio_function"])
+                ] = str(address).upper()
+    return zones
 
 
 @dataclass(frozen=True)

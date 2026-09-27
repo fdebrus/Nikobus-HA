@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.20.0
+
+**Requires `nikobus-connect` 0.39.0.**
+
+- **An Audio Distribution module (05-205) becomes one media player per zone.** The module was registered for visibility only, with no entities, because nobody knew where it kept its programming. A user with one captured its memory, and it turned out to hold a full link table: per zone, the bus address that switches it on, switches it off, steps the volume up or down, and selects each source. The library decodes that table (`nikobus-connect` 0.39.0) and each zone now appears as a media player with on/off, volume steps and a source list. The trigger addresses are in the entity's attributes.
+- **A wall key keeps the entity in step.** The module answers no state query, so a zone's state is what was last commanded — but the PC-Link relays the wall press as well, so pressing *Zone 2 on* at the wall updates Home Assistant too. State survives a restart.
+- Thanks to @roswennen, who ran the forensic scans, cross-checked all 35 records against his programmed virtual buttons and confirmed the function map.
+
 ## 3.19.3
 
 - **Repair issues and the legacy-button repair flow now name the bridge buttons exactly as they are labelled**, in English, French and Dutch. Several texts still carried the names these actions had in earlier releases: the reprogrammed-module warning asked for *Scan all module links* while the button reads *2. Load Existing Installation*, the legacy-button flow named *Discover modules & buttons*, the corrupt-module and wrong-type issues dropped the *1.* / *2.* prefixes so the text did not point at one specific button, the French *no PC-Link known* error named a wording that does not exist, and the Dutch backup reference was a bare fragment. Eighteen references realigned across the three languages. The *Reason* column labels in the legacy-button table stay in English, because the repair flow renders them literally. Reported by a user following the Dutch wording.
