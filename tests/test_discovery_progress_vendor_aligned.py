@@ -344,7 +344,9 @@ class _AsyncNoop:
         return _noop()
 
 
-from nikobus_connect.discovery import InventoryQueryType as _IQT  # noqa: E402 - after the stubs above
+from nikobus_connect.discovery import (
+    InventoryQueryType as _IQT,
+)
 
 _PCLINK = _IQT.PC_LINK
 

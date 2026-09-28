@@ -29,9 +29,9 @@ from nikobus_connect.protocol import family_matches, family_name
 from .const import (
     DOMAIN,
     ISSUE_MODULE_CRC_MISMATCH,
-    ISSUE_MODULE_TYPE_MISMATCH,
     ISSUE_MODULE_EEPROM_ERROR,
     ISSUE_MODULE_PROGRAMMING_CHANGED,
+    ISSUE_MODULE_TYPE_MISMATCH,
     PROGRAMMING_STORAGE_KEY,
     PROGRAMMING_STORAGE_VERSION,
     SIGNAL_DISCOVERY_STATE,
@@ -413,7 +413,7 @@ class NikobusProgramming:
             await self.async_check_programming_changes()
         except HomeAssistantError as err:
             _LOGGER.debug("Programming-change check skipped: %s", err)
-        except Exception:  # noqa: BLE001 - a timer callback must never raise into HA
+        except Exception:
             _LOGGER.exception("Programming-change check failed")
 
     # -- status / integrity ------------------------------------------------
