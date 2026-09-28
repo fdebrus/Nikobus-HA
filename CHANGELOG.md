@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.21.0
+
+**Requires `nikobus-connect` 0.40.0.**
+
+- **An RGB controller (340-00112) shows up instead of being dropped.** Its device type, `0x46`, sat in the library as *Reserved* pending evidence, so an install with one lost it from every inventory. A user's project file supplied the evidence — the component at the exact address his PC-Link registry reported the type for — and the module is now recognised, named and registered as a device.
+- **No entities for it yet, on purpose.** Nobody has read the module's registers, so how its output is driven is unknown; creating a light for it would give you a control that does nothing. The device makes the module visible while that is settled. Same treatment the Audio Distribution module had until its link table was decoded.
+
 ## 3.20.1
 
 **Requires `nikobus-connect` 0.39.1.**
