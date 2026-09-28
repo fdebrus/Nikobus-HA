@@ -11,9 +11,10 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from nikobus_connect.api import NikobusAPI
+
 from custom_components.nikobus.const import DEFAULT_PRESS_REPEAT
 from custom_components.nikobus.coordinator import NikobusDataCoordinator
-from nikobus_connect.api import NikobusAPI
 
 
 def _coord(press_repeat=DEFAULT_PRESS_REPEAT, actuator=True):

@@ -51,7 +51,7 @@ class TestConversion(unittest.TestCase):
         self.assertEqual(level_to_percentage(1), 1)
 
     def test_round_trip_is_stable(self):
-        for pct in range(0, 101):
+        for pct in range(101):
             self.assertEqual(level_to_percentage(percentage_to_level(pct)), pct)
 
 

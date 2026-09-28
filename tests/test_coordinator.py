@@ -2265,7 +2265,7 @@ class TestDevicePresenceIssue(unittest.TestCase):
             connection.device_answered = None
             try:
                 coord = NikobusDataCoordinator(hass, entry)
-            except Exception as err:  # pragma: no cover - constructor drift
+            except Exception as err:  # noqa: BLE001 # pragma: no cover - constructor drift
                 self.skipTest(f"coordinator constructor needs more scaffolding: {err}")
         assert connection.on_device_answered == coord._surface_device_probe
         coord.hass = hass
