@@ -223,7 +223,14 @@ def iter_operation_points(
 # media player per zone, built from the triggers discovery reads out of
 # the module (nikobus-connect 0.39.0) rather than from output channels.
 # It stays here because it has no channels for the channel router to map.
-OPAQUE_MODULE_TYPES: frozenset[str] = frozenset({"audio_module"})
+#
+#   * ``rgb_module`` — the 340-00112 RGB controller (device type 0x46),
+#     catalogued in nikobus-connect 0.40.0 from an install's project
+#     file. Identity only: nobody has read its registers, so neither its
+#     programming nor how its output is driven is known, and it declares
+#     no channels. The device is registered so the install shows what is
+#     on the bus; entities wait for a register dump.
+OPAQUE_MODULE_TYPES: frozenset[str] = frozenset({"audio_module", "rgb_module"})
 
 # Audio functions a zone's media player drives, by the library's label.
 AUDIO_FUNCTION_ON = "M16 (On)"
