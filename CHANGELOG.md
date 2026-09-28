@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.20.1
+
+**Requires `nikobus-connect` 0.39.1.**
+
+- **The audio media players actually appear.** 3.20.0 read a real 05-205's link table correctly — all 35 records, every zone and function — and then created nothing at all. The triggers never reached the button store: the library dropped each one on the step between decoding it and filing it, because a record with no key is discarded there and an audio trigger, belonging to no keypad, had none. Fixed in `nikobus-connect` 0.39.1; the zones now turn into media players as 3.20.0 intended.
+- **An audio module keeps its device.** Its triggers are filed under the module they drive instead of among the wall buttons, which is where they belong and also what stops Home Assistant pruning the module's own device for having no entities — the "no device for 8334" in the field report.
+- **The module's power key is named correctly.** The fifth byte of a record is the object the function acts on, not a zone, and `0x08` is the module's own Power object rather than "every zone at once". Power keys were showing up as *All zones source toggle*; they now read *Audio Power*, and appear as buttons rather than being counted as a zone.
+- Thanks again to @roswennen, who tested 3.20.0 on his install within hours, and settled both points against his project file.
+
 ## 3.20.0
 
 **Requires `nikobus-connect` 0.39.0.**

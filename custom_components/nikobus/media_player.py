@@ -55,7 +55,7 @@ async def async_setup_entry(
     entities = [
         NikobusAudioZone(coordinator, module, zone, functions)
         for (module, zone), functions in sorted(audio_zones(buttons).items())
-        if zone  # zone 0 collects the all-zones triggers; not a player
+        if zone  # zone 0 is the module's Power object, not a player
     ]
     async_add_entities(entities)
 
@@ -183,7 +183,7 @@ class NikobusAudioZone(NikobusEntity, MediaPlayerEntity, RestoreEntity):
             raise command_error(RuntimeError(f"{function} is not programmed on this zone"))
         try:
             await self.coordinator.async_send_button_press(address)
-        except Exception as err:  # noqa: BLE001 - surfaced as an HA error
+        except Exception as err:  # any failure is surfaced as an HA error
             raise command_error(err) from err
         self._apply(address)
         self.async_write_ha_state()

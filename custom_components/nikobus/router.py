@@ -138,6 +138,28 @@ def calendar_channel_naming(
     return f"PC-Link calendar {label}", (DOMAIN, HUB_IDENTIFIER)
 
 
+def audio_trigger_naming(
+    phys: Mapping[str, Any],
+) -> tuple[str, tuple[str, str]] | None:
+    """``(device_name, via_device_identifier)`` if ``phys`` is an audio
+    trigger the library read out of an Audio Distribution module; else
+    ``None``.
+
+    A 05-205 is driven by virtual buttons no wall plate owns, so the
+    trigger's device belongs under the module it drives rather than
+    among the wall buttons — which is also what keeps the module's own
+    device alive: Home Assistant drops a device that ends up with no
+    entities, and until 3.20.1 the audio module had none.
+    """
+    if not isinstance(phys, Mapping) or not phys.get("audio_function"):
+        return None
+    module = str(phys.get("audio_module_address") or "").upper()
+    if not module:
+        return None
+    description = str(phys.get("description") or "Audio trigger")
+    return description, (DOMAIN, module)
+
+
 def is_input_module_child(phys: Any) -> bool:
     """True if a button-store entry is a synthesized PC-Logic / Modular
     Interface input child (vs a real wall button / remote)."""
@@ -225,8 +247,9 @@ def audio_zones(buttons: Mapping[str, Any] | None) -> dict[tuple[str, int], dict
 
     Built from the audio triggers discovery filed in the button store:
     each entry carries the address the module listens for, its zone and
-    the function it drives. Triggers that address every zone at once
-    (no zone) are returned under zone ``0``.
+    the function it drives. A trigger that drives no zone — the module's
+    Power object — is returned under zone ``0``; it is a button, not a
+    player, so the media-player platform skips it.
     """
     zones: dict[tuple[str, int], dict[str, str]] = {}
     for address, entry in (buttons or {}).items():

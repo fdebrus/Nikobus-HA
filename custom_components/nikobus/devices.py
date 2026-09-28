@@ -30,6 +30,7 @@ from .nkbdevices import parent_device_id
 from .router import (
     INPUT_MODULE_TYPES,
     OPAQUE_MODULE_TYPES,
+    audio_trigger_naming,
     calendar_channel_naming,
     input_label_prefix,
     pc_logic_input_naming,
@@ -112,6 +113,7 @@ def register_wall_button_devices(
     device_registry = dr.async_get(hass)
     pc_logic_parents_registered: set[str] = set()
     remote_transmitter_parents_registered: set[str] = set()
+    audio_parents_registered: set[str] = set()
     for physical_addr, phys in buttons.items():
         if not isinstance(phys, dict):
             continue
@@ -149,6 +151,28 @@ def register_wall_button_devices(
                 manufacturer=BRAND,
                 name=name,
                 model=str(phys.get("model") or "PC-Logic Logical Input"),
+                via_device_id=parent_device_id(device_registry, entry.entry_id, via_device),
+            )
+            continue
+
+        audio_naming = audio_trigger_naming(phys)
+        if audio_naming is not None:
+            name, via_device = audio_naming
+            parent_addr = via_device[1]
+            # Same reason as the PC-Logic parent above: HA 2025.12 wants
+            # via_device to name a device that already exists, and the
+            # audio module is registered from another call site.
+            if parent_addr not in audio_parents_registered:
+                _ensure_audio_parent_device(
+                    device_registry, entry, parent_addr, dict_module_data
+                )
+                audio_parents_registered.add(parent_addr)
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, physical_addr)},
+                manufacturer=BRAND,
+                name=str(phys.get("nkb_name") or name),
+                model=str(phys.get("model") or "Audio Trigger"),
                 via_device_id=parent_device_id(device_registry, entry.entry_id, via_device),
             )
             continue
@@ -280,6 +304,35 @@ def _ensure_pc_logic_parent_device(
     )
 
 
+def _ensure_audio_parent_device(
+    device_registry: dr.DeviceRegistry,
+    entry: NikobusConfigEntry,
+    parent_addr: str,
+    dict_module_data: dict[str, Any] | None,
+) -> None:
+    """Register the Audio Distribution module a trigger points at.
+
+    ``register_opaque_module_devices`` registers the same identifier
+    from another call site (and possibly later), so this only has to get
+    there first; the fields are re-asserted there from module data.
+    """
+    bucket = (dict_module_data or {}).get("audio_module") or {}
+    module_data: dict[str, Any] = {}
+    if isinstance(bucket, dict):
+        for addr, data in bucket.items():
+            if str(addr).upper() == parent_addr and isinstance(data, dict):
+                module_data = data
+                break
+    device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, parent_addr)},
+        manufacturer=BRAND,
+        name=str(module_data.get("description") or f"Audio Distribution ({parent_addr})"),
+        model=str(module_data.get("model") or "05-205"),
+        via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, CATEGORY_SYSTEM_MODULES)),
+    )
+
+
 def _iter_module_records(
     dict_module_data: dict[str, Any], module_types: frozenset[str]
 ) -> Iterator[tuple[str, str, dict[str, Any]]]:
@@ -327,11 +380,12 @@ def register_opaque_module_devices(
     entry: NikobusConfigEntry,
     dict_module_data: dict[str, Any],
 ) -> None:
-    """Register a placeholder device per Audio Distribution module.
+    """Register one device per Audio Distribution module.
 
-    Audio modules surface no entities yet (input/output schema not
-    validated), but registering the device keeps them visible in the HA
-    device registry so users can confirm discovery saw them.
+    The module's zones surface as media players and its triggers as
+    buttons, both of which land on this device; registering it here
+    keeps a module whose table discovery has not read yet visible in the
+    device registry all the same.
     """
     device_registry = dr.async_get(hass)
     for module_type, address, module_data in _iter_module_records(

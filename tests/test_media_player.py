@@ -71,11 +71,13 @@ class TestGrouping(unittest.TestCase):
         self.assertEqual(list(grouped), [("8334", 2)])
         self.assertEqual(grouped[("8334", 2)], ZONE_2)
 
-    def test_all_zone_triggers_land_under_zone_zero(self):
+    def test_the_power_trigger_lands_under_zone_zero(self):
+        # The module's Power object is not a zone, so it gets no player.
         store = {
             "8483CF": {
-                "audio_function": "M11 (Source toggle)",
+                "audio_function": "M01 (Power)",
                 "audio_zone": None,
+                "audio_power": True,
                 "operation_points": {
                     "AUD": {"linked_modules": [{"module_address": "8334"}]}
                 },
@@ -171,13 +173,14 @@ class TestZoneEntity(unittest.TestCase):
 
 
 class TestPlatformSetup(unittest.TestCase):
-    def test_one_entity_per_zone_and_none_for_the_all_zones_bucket(self):
+    def test_one_entity_per_zone_and_none_for_the_power_object(self):
         from custom_components.nikobus import media_player as platform
 
         store = _button_store()
         store["8483CF"] = {
-            "audio_function": "M11 (Source toggle)",
+            "audio_function": "M01 (Power)",
             "audio_zone": None,
+            "audio_power": True,
             "operation_points": {"AUD": {"linked_modules": [{"module_address": "8334"}]}},
         }
         coordinator = MagicMock()
