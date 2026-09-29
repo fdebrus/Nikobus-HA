@@ -1517,11 +1517,17 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         from .router import (
             build_routing,
             build_unique_id,
+            enabled_button_classes,
             input_latch_switch_unique_id,
             iter_input_module_children,
             iter_operation_points,
         )
         known: set[str] = set()
+        # A press-entity class the user switched off is not "known", so
+        # the orphan cleanup removes what it had created.
+        classes = enabled_button_classes(
+            getattr(getattr(self, "config_entry", None), "options", None)
+        )
         routing = build_routing(self.dict_module_data)
         for specs in routing.values():
             for spec in specs:
@@ -1529,13 +1535,13 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         buttons = self.dict_button_data.get("nikobus_button", {})
         # Button + push-button ids, via the shared op-point enumerator
         # (same guard ladder the button/binary-sensor platforms use).
-        for _addr, _key, op_point, _phys in iter_operation_points(buttons):
+        for _addr, _key, op_point, _phys in iter_operation_points(buttons, classes):
             bus_addr = op_point["bus_address"]
             known.add(f"{DOMAIN}_button_{bus_addr}")
             known.add(f"{DOMAIN}_push_button_{bus_addr}")
         # Stateful A/B latch switch ids for PC-Logic / Modular-Interface
         # inputs — same enumerator the switch platform creates from.
-        for in_addr, _phys in iter_input_module_children(buttons):
+        for in_addr, _phys in iter_input_module_children(buttons, classes):
             known.add(input_latch_switch_unique_id(in_addr))
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):

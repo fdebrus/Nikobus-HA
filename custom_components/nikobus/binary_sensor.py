@@ -20,6 +20,7 @@ from .entity import NikobusEntity
 from .router import (
     audio_trigger_naming,
     calendar_channel_naming,
+    enabled_button_classes,
     iter_operation_points,
     op_point_parent_device,
 )
@@ -41,13 +42,18 @@ async def async_setup_entry(
     coordinator: NikobusDataCoordinator = entry.runtime_data
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-    register_wall_button_devices(hass, entry, buttons, coordinator.dict_module_data)
+    classes = enabled_button_classes(entry.options)
+    register_wall_button_devices(
+        hass, entry, buttons, coordinator.dict_module_data, classes=classes
+    )
 
     entities: list[NikobusButtonBinarySensor] = [
         NikobusButtonBinarySensor(
             coordinator, physical_addr, key_label, op_point, parent_phys=phys
         )
-        for physical_addr, key_label, op_point, phys in iter_operation_points(buttons)
+        for physical_addr, key_label, op_point, phys in iter_operation_points(
+            buttons, classes
+        )
         if calendar_channel_naming(phys) is None  # never pressed on the bus
     ]
     async_add_entities(entities)

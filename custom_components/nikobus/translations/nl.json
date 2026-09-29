@@ -70,7 +70,8 @@
           "configure_modules": "Module aanpassen (beschrijving, entiteitstype, LED-triggers, looptijd)",
           "upload_nkb": "Projectbestand .nkb uploaden",
           "import_nkb": "Importeren uit .nkb (kiezen)",
-          "manage_scenes": "Scènes beheren (aanmaken / bewerken / verwijderen)"
+          "manage_scenes": "Scènes beheren (aanmaken / bewerken / verwijderen)",
+          "button_entities": "Kies welke drukknoppen en druksensoren bestaan"
         }
       },
       "hardware": {
@@ -173,6 +174,16 @@
         "title": "Kanaal verwijderen",
         "data": {
           "member": "Te verwijderen kanaal"
+        }
+      },
+      "button_entities": {
+        "title": "Drukentiteiten",
+        "description": "Een drukknop stuurt een toetsdruk naar de bus; een druksensor toont dat er een plaatsvond. Je lichten, rolluiken en schakelaars hebben ze niet nodig, je automatiseringen ook niet: de `nikobus_button_pressed`-events worden hoe dan ook gestuurd. Vink de gewenste klassen aan. Een klasse die je uitvinkt verliest haar entiteiten **en haar apparaten** bij de herlaad die volgt — hun namen en ruimtes blijven bewaard en komen terug als je ze opnieuw aanvinkt.",
+        "data": {
+          "button_classes": "Drukknoppen en druksensoren aanmaken voor"
+        },
+        "data_description": {
+          "button_classes": "Laat alles uitgevinkt voor de schoonste apparaat- en entiteitenlijsten."
         }
       }
     },
@@ -395,6 +406,16 @@
         "remove_member": "Kanaal verwijderen",
         "save": "Scène opslaan",
         "delete": "Scène verwijderen"
+      }
+    },
+    "button_classes": {
+      "options": {
+        "wall_buttons": "Wandknoppen",
+        "interfaces": "Interfaces (schakelaar / drukknop / universeel)",
+        "remotes": "Afstandsbedieningen en IR-codes",
+        "input_modules": "Ingangsmodules (PC-Logic, Modulaire interface)",
+        "audio_triggers": "Audiotriggers",
+        "virtual_buttons": "Virtuele knoppen"
       }
     }
   },

@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.22.0
+
+- **You choose which press entities exist.** Options → *Press entities* lists six classes — wall buttons, interfaces, remotes and IR codes, input modules, audio triggers, virtual buttons — and creates press buttons and press sensors only for the ones you tick. An unticked class gets no entities and **no devices**: what it had is removed on the reload that follows, so the device list shows only what you use. Nothing else changes — the `nikobus_button_pressed` events still fire for every key, `controlled by` and shutter travel times still come from the modules, and `nikobus.send_button_press` still works on any address. Most installations run on outputs and their feedback; this makes the entity and device lists look like it.
+- **Nothing disappears on upgrade.** An existing installation keeps every class ticked. A fresh installation starts with none.
+- **Switching a class off and on again loses nothing.** Before an entity or device of an unticked class is removed, its entity id, name, icon and area are kept in the button store, and put back when the class is ticked again and it exists once more. Renamed 108 press sensors by hand? They come back as you named them.
+- **Fixed: saving hardware or polling options no longer discards the others.** The hardware form replaced the options wholesale, so saving it dropped the .nkb import choices; it now saves over the current options.
+
 ## 3.21.1
 
 - **The audio trigger buttons and sensors are created.** 3.21.0 filed the triggers in the store and then lost every entity on them, logging *A device can not be its own via device* 70 times per start — 35 buttons and 35 press sensors on the validating install. The entity platforms hang an op point's device under the store entry's address, which is right for a wall key (the key's device under the plate's) and wrong for an audio trigger, whose op point *is* the store entry: its device was told to hang under itself, and Home Assistant refuses that. A trigger's entities now hang under the audio module that drives them, and carry the *Audio Trigger* model. The media players were never affected. Reported by @roswennen within hours, again.

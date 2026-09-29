@@ -15,7 +15,32 @@ HUB_IDENTIFIER: Final[str] = "nikobus_hub"
 # ``async_migrate_entry``). Bump on any breaking change to the entry's
 # ``data`` / ``options`` shape, and add the migration step in
 # ``__init__.async_migrate_entry``.
-CONFIG_ENTRY_VERSION: Final[int] = 1
+CONFIG_ENTRY_VERSION: Final[int] = 2
+
+# Which classes of press entities (a button that sends a press, a sensor
+# that shows one) the integration creates, stored as a list in the
+# entry's options. A class that is not selected gets no entities and no
+# devices, and any it had are removed on the next reload. Absent from an
+# entry's options means every class — the behaviour of every release
+# before 3.22.0, which the config-entry migration pins for existing
+# installs. A fresh install starts with none: outputs and their feedback
+# are what most people use, and a press entity is one click away in
+# Options for whoever wants it.
+CONF_BUTTON_CLASSES: Final[str] = "button_classes"
+BUTTON_CLASS_WALL_BUTTONS: Final[str] = "wall_buttons"
+BUTTON_CLASS_INTERFACES: Final[str] = "interfaces"
+BUTTON_CLASS_REMOTES: Final[str] = "remotes"
+BUTTON_CLASS_INPUT_MODULES: Final[str] = "input_modules"
+BUTTON_CLASS_AUDIO_TRIGGERS: Final[str] = "audio_triggers"
+BUTTON_CLASS_VIRTUAL_BUTTONS: Final[str] = "virtual_buttons"
+BUTTON_CLASSES: Final[tuple[str, ...]] = (
+    BUTTON_CLASS_WALL_BUTTONS,
+    BUTTON_CLASS_INTERFACES,
+    BUTTON_CLASS_REMOTES,
+    BUTTON_CLASS_INPUT_MODULES,
+    BUTTON_CLASS_AUDIO_TRIGGERS,
+    BUTTON_CLASS_VIRTUAL_BUTTONS,
+)
 
 # =============================================================================
 # Device-registry category groupings

@@ -32,6 +32,8 @@ from homeassistant.helpers.event import async_call_later, async_track_time_inter
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
+    BUTTON_CLASSES,
+    CONF_BUTTON_CLASSES,
     CONFIG_ENTRY_VERSION,
     DOMAIN,
     HUB_IDENTIFIER,
@@ -42,6 +44,14 @@ from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import hub_device_info
 from .exceptions import NikobusConnectionError, NikobusDataError, NikobusError
 from .nkbdevices import parent_device_id
+from .nkbsnapshot import (
+    restore_devices,
+    restore_entities,
+    snapshot_device,
+    snapshot_entity,
+    unique_id_index,
+)
+from .router import enabled_button_classes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -422,9 +432,20 @@ async def async_migrate_entry(
             CONFIG_ENTRY_VERSION,
         )
         return False
-    # Future migrations go here, e.g.:
-    # if entry.version == 1:
-    #     hass.config_entries.async_update_entry(entry, data={...}, version=2)
+    if entry.version == 1:
+        # 3.22.0 made the press-entity classes a choice. An entry from
+        # before then keeps everything it had: every class selected, so
+        # nothing disappears on upgrade. A fresh entry starts with none.
+        options = dict(entry.options)
+        options.setdefault(CONF_BUTTON_CLASSES, list(BUTTON_CLASSES))
+        hass.config_entries.async_update_entry(
+            entry, options=options, version=CONFIG_ENTRY_VERSION
+        )
+        _LOGGER.info(
+            "Migrated Nikobus config entry to version %s — press-entity "
+            "classes kept as they were (all selected)",
+            CONFIG_ENTRY_VERSION,
+        )
     return True
 
 
@@ -480,13 +501,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     _LOGGER.debug("Performing initial Nikobus data synchronization")
     await coordinator.async_config_entry_first_refresh()
 
-    # 6. Clean up stale entities
+    # 6. Give back the names and areas a press-entity class had before
+    #    it was switched off, now that it is back and its entities exist.
+    await _async_restore_button_customisations(hass, entry, coordinator)
+
+    # 7. Clean up stale entities
     await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
-    # 7. Surface repair issues for actionable misconfigurations.
+    # 8. Surface repair issues for actionable misconfigurations.
     coordinator.refresh_repair_issues()
 
-    # 8. Programming-change watch: one read-only CRC frame per output
+    # 9. Programming-change watch: one read-only CRC frame per output
     # module, a few minutes after setup and then once a day. A module
     # reprogrammed with the Nikobus PC software raises a Repair issue
     # asking for a link rescan.
@@ -568,14 +593,20 @@ async def _async_cleanup_orphan_entities(
     dev_reg = dr.async_get(hass)
 
     valid_entity_ids = coordinator.get_known_entity_unique_ids()
+    buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
+    index = unique_id_index(buttons)
+    kept = 0
 
-    # Remove orphan entities
+    # Remove orphan entities. One whose op point is still in the store is
+    # a press-entity class the user switched off, not lost hardware: keep
+    # its name, icon, area and entity id for the day the class comes back.
     entities = [
         entity for entity in ent_reg.entities.values()
         if entity.config_entry_id == entry.entry_id and entity.platform == DOMAIN
     ]
     for entity in entities:
         if entity.unique_id not in valid_entity_ids:
+            kept += snapshot_entity(index, entity)
             ent_reg.async_remove(entity.entity_id)
 
     # Remove orphan devices (except the hub). A device is kept when it either
@@ -596,7 +627,32 @@ async def _async_cleanup_orphan_entities(
         if hub_identifier not in device.identifiers:
             if device.id in devices_with_entities or device.id in via_parent_ids:
                 continue
+            kept += snapshot_device(buttons, device)
             dev_reg.async_remove_device(device.id)
+
+    if kept:
+        await coordinator.button_storage.async_save()
+        _LOGGER.debug("Kept the customisations of %d removed press entities / devices", kept)
+
+
+async def _async_restore_button_customisations(
+    hass: HomeAssistant, entry: NikobusConfigEntry, coordinator: NikobusDataCoordinator
+) -> None:
+    """Restore saved names, icons, areas and entity ids on a class that is back."""
+    buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
+    if not buttons:
+        return
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    if ent_reg is None or dev_reg is None:
+        return
+    classes = enabled_button_classes(entry.options)
+    restored = restore_entities(ent_reg, buttons, classes) + restore_devices(
+        dev_reg, buttons, classes
+    )
+    if restored:
+        await coordinator.button_storage.async_save()
+        _LOGGER.info("Restored the customisations of %d press entities / devices", restored)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> bool:

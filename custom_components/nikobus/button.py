@@ -32,6 +32,7 @@ from .entity import NikobusEntity, hub_device_info
 from .router import (
     audio_trigger_naming,
     calendar_channel_naming,
+    enabled_button_classes,
     iter_operation_points,
     op_point_parent_device,
 )
@@ -59,8 +60,13 @@ async def async_setup_entry(
     ]
 
     buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-    register_wall_button_devices(hass, entry, buttons, coordinator.dict_module_data)
-    entities.extend(_iter_button_entities(coordinator, buttons))
+    # Only the press-entity classes the user selected get devices and
+    # entities; the rest leave no trace (see CONF_BUTTON_CLASSES).
+    classes = enabled_button_classes(entry.options)
+    register_wall_button_devices(
+        hass, entry, buttons, coordinator.dict_module_data, classes=classes
+    )
+    entities.extend(_iter_button_entities(coordinator, buttons, classes))
 
     # Input-class modules (PC-Logic, Modular Interface) — register one
     # device per module address. Their inputs are surfaced as synthesized
@@ -79,9 +85,12 @@ async def async_setup_entry(
 def _iter_button_entities(
     coordinator: NikobusDataCoordinator,
     buttons: dict[str, Any],
+    classes: frozenset[str] | None = None,
 ) -> Iterator[NikobusButtonEntity]:
     """Yield one NikobusButtonEntity per discovered operation point."""
-    for physical_addr, key_label, op_point, phys in iter_operation_points(buttons):
+    for physical_addr, key_label, op_point, phys in iter_operation_points(
+        buttons, classes
+    ):
         if calendar_channel_naming(phys) is not None:
             # A PC-Link calendar channel is fired by the PC-Link's own
             # calendar programs; what it puts on the bus is not known,

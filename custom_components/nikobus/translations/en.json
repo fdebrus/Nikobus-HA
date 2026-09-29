@@ -264,7 +264,8 @@
           "hardware": "Change hardware settings",
           "upload_nkb": "Upload .nkb project file",
           "import_nkb": "Import from .nkb (choose what)",
-          "manage_scenes": "Manage scenes (create / edit / delete)"
+          "manage_scenes": "Manage scenes (create / edit / delete)",
+          "button_entities": "Choose which press buttons and press sensors exist"
         },
         "title": "Nikobus"
       },
@@ -354,6 +355,16 @@
         "title": "Remove a channel",
         "data": {
           "member": "Channel to remove"
+        }
+      },
+      "button_entities": {
+        "title": "Press entities",
+        "description": "A press button sends a key press to the bus; a press sensor shows one happening. Your lights, covers and switches do not need them, and neither do your automations: the `nikobus_button_pressed` events fire either way. Tick the classes you want. A class you untick loses its entities **and its devices** on the reload that follows — their names and areas are kept, and come back if you tick it again.",
+        "data": {
+          "button_classes": "Create press buttons and press sensors for"
+        },
+        "data_description": {
+          "button_classes": "Leave everything unticked for the cleanest device and entity lists."
         }
       }
     }
@@ -477,6 +488,16 @@
         "remove_member": "Remove a channel",
         "save": "Save scene",
         "delete": "Delete scene"
+      }
+    },
+    "button_classes": {
+      "options": {
+        "wall_buttons": "Wall buttons",
+        "interfaces": "Interfaces (switch / push-button / universal)",
+        "remotes": "Remotes and IR codes",
+        "input_modules": "Input modules (PC-Logic, Modular Interface)",
+        "audio_triggers": "Audio triggers",
+        "virtual_buttons": "Virtual buttons"
       }
     }
   }
