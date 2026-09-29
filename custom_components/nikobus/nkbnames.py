@@ -16,6 +16,7 @@ from __future__ import annotations
 from nikobus_connect.nkb import (
     CANONICAL_NKB_FILENAME,
     NkbData,
+    RgbLink,
     SceneDef,
     find_nkb_file,
     parse_nkb,
@@ -27,6 +28,7 @@ from nikobus_connect.nkb import (
 __all__ = [
     "CANONICAL_NKB_FILENAME",
     "NkbData",
+    "RgbLink",
     "SceneDef",
     "_mode_code",
     "find_nkb_file",

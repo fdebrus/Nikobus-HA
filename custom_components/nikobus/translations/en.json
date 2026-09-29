@@ -223,6 +223,9 @@
     },
     "no_pc_link_known": {
       "message": "No PC-Link is known yet — run **1. Load Project Overview** first."
+    },
+    "rgb_no_key": {
+      "message": "No key is known that switches the RGB controller {address} {action}. Its links cannot be read from the bus: upload your .nkb project file and run the import so Home Assistant learns which keys drive it."
     }
   },
   "options": {
@@ -317,7 +320,7 @@
       },
       "import_nkb": {
         "title": "Import from .nkb",
-        "description": "Choose what to import from your nikobus.nkb. By default nothing you've renamed by hand is touched — tick **Overwrite** to replace your existing names/Areas with the .nkb ones. Your choices are remembered: the “3. Import Names from .nkb” button on the Nikobus Bridge re-runs the import with these same settings.",
+        "description": "Choose what to import from your nikobus.nkb. By default nothing you've renamed by hand is touched — tick **Overwrite** to replace your existing names/Areas with the .nkb ones. Your choices are remembered: the “3. Import Names from .nkb” button on the Nikobus Bridge re-runs the import with these same settings. Keys linked to an RGB controller are always applied — they are wiring, not names.",
         "data": {
           "device_names": "Device names (modules, buttons, IR receivers)",
           "channel_names": "Channel names (lights, covers, switches)",

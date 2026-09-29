@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.23.0
+
+**Requires `nikobus-connect` 0.41.0.**
+
+- **The RGB controller (340-00112) is a light.** One `light` per controller, on the controller's device: on or off from the state the module answers, and the colour its lit outputs mix to (`colour`, `red`, `green`, `blue` attributes — the controller reports each output as lit or not, never a level, so the readout is coarse by nature). The module is now polled like the output modules, one group per cycle, and re-read after a press on a key that drives it.
+- **Switched by its keys, because that is all the bus offers.** The controller accepts no set-output command; every one of its fifteen modes is a key behaviour. Turning the light on or off presses the linked key whose role fits — the on or off key of a two-key mode, a toggle, the start/stop key of a colour scenario, a preset — chosen best first from the library's table of what each key of each mode does. Nothing is pressed when the light already is what you asked for, so a start/stop key never stops a loop you wanted running. Colour and brightness cannot be set: the bus has no way, and the entity does not pretend otherwise.
+- **The keys come from your `.nkb`.** The controller's link table cannot be read from the bus — not by the integration, and not by the Nikobus software, which only status-polls it and writes a project file with its settings but no link. Your original project file is the only record, so the `.nkb` import now applies the keys it finds linked to a controller: onto the controller (what the light presses) and onto the plate's key (so `controlled_by` lists it and a wall press refreshes the light). Without an import, or without a key of a usable role, the light is a readout and switching it says so, in your language.
+- **Audio media players no longer lose their settings on every restart.** Their unique ids were missing from the set the orphan cleanup keeps, so each setup removed and recreated them — with the entity id, name and area you had given them. They are known now, as is the new light.
+- Reported, calibrated and tested against a real controller by @roswennen on #519: the state image, the vendor software's own behaviour on the bus, and the keys.
+
 ## 3.22.1
 
 - **A press on an audio trigger no longer tries to read the Audio Distribution module.** Every trigger's op point links to the 05-205 that listens for it, so a press — from a media player, a trigger button, or a wall key relayed by the PC-Link — scheduled the same "refresh the impacted module" read that a wall key gets, on a module that never answers a state query: three attempts of five seconds and an error line per press. The refresh now skips any linked module whose stored type is not one whose state is read (switch, dimmer, roller); a module the store has not classified is still read. Reported by @roswennen on #310.

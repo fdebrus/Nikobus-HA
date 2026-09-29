@@ -8,14 +8,23 @@ from typing import Any
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from nikobus_connect.rgb import RGB_OFF_ROLES, RGB_ON_ROLES, RgbState, decode_rgb_state
 
-from .const import operation_signal
+from .const import DOMAIN, operation_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, command_error
-from .router import build_unique_id, get_routing, register_output_module_devices
+from .router import (
+    build_unique_id,
+    choose_rgb_key,
+    get_routing,
+    register_output_module_devices,
+    rgb_light_unique_id,
+    rgb_links_for,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +64,28 @@ async def async_setup_entry(
                 NikobusCoverLightEntity(
                     coordinator, spec.address, spec.channel, 
                     spec.channel_description, spec.module_desc, spec.module_model
+                )
+            )
+
+    # One light per RGB controller. The router skips opaque modules, so
+    # the controller is picked up here from its own bucket; its device is
+    # registered by the button platform with the other opaque modules and
+    # the entity attaches to it by address.
+    rgb_bucket = (coordinator.dict_module_data or {}).get("rgb_module") or {}
+    if isinstance(rgb_bucket, dict):
+        for address, module_data in sorted(rgb_bucket.items()):
+            if not isinstance(module_data, dict):
+                continue
+            entities.append(
+                NikobusRgbLight(
+                    coordinator,
+                    str(address).upper(),
+                    str(
+                        module_data.get("nkb_name")
+                        or module_data.get("description")
+                        or f"RGB controller ({address})"
+                    ),
+                    str(module_data.get("model") or "340-00112"),
                 )
             )
 
@@ -328,3 +359,114 @@ class NikobusCoverLightEntity(NikobusBaseLight):
             self._is_on = None
             self.async_write_ha_state()
             raise command_error(err) from err
+
+class NikobusRgbLight(NikobusBaseLight):
+    """The 340-00112 RGB controller as an on/off light with a colour readout.
+
+    The controller answers the state query with an on flag and one
+    lit-or-not flag per colour output — no levels — and accepts no
+    set-output command: it is driven only by the keys linked to it. So
+    the light shows on/off and the colour the lit outputs mix to, and
+    switches by pressing a linked key: the key whose role is ``on`` or
+    ``off`` in its link's mode, or the best substitute (a toggle, the
+    scenario start/stop, a preset). Which keys are linked is known only
+    from the ``.nkb`` project file; without an import, or without a key
+    of a usable role, the light is a readout and says so when asked to
+    switch. Colour and brightness cannot be set — the bus offers no way.
+    """
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        address: str,
+        module_name: str,
+        module_model: str,
+    ) -> None:
+        """One light per controller, on the controller's device."""
+        super().__init__(coordinator, address, 1, module_name, module_name, module_model)
+        # The device carries the name; the single light takes it.
+        self._attr_name = None
+        self._attr_unique_id = rgb_light_unique_id(address)
+        self._attr_supported_color_modes = {ColorMode.ONOFF}
+        self._attr_color_mode = ColorMode.ONOFF
+
+    def _state(self) -> RgbState:
+        """The controller's last polled image, decoded."""
+        return decode_rgb_state(self.coordinator.get_bytearray_group_state(self._address, 1))
+
+    def _links(self) -> list[dict[str, Any]]:
+        return rgb_links_for(self.coordinator.dict_module_data, self._address)
+
+    @property
+    def is_on(self) -> bool:
+        """Optimistic state if set, else the polled on flag."""
+        if self._is_on is not None:
+            return self._is_on
+        return self._state().on
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The colour flags, the colour they mix to, and the keys that drive it."""
+        state = self._state()
+        links = self._links()
+        return {
+            **super().extra_state_attributes,
+            "colour": state.colour_name,
+            "red": state.red,
+            "green": state.green,
+            "blue": state.blue,
+            "linked_keys": [
+                {
+                    "bus_address": link.get("bus_address"),
+                    "wall_button_address": link.get("button_address"),
+                    "wall_button_key": link.get("key"),
+                    "mode": link.get("mode_label"),
+                    "role": link.get("role"),
+                }
+                for link in links
+            ],
+            "on_key": (choose_rgb_key(links, RGB_ON_ROLES) or {}).get("bus_address"),
+            "off_key": (choose_rgb_key(links, RGB_OFF_ROLES) or {}).get("bus_address"),
+        }
+
+    def _render_state(self) -> Any:
+        """Diff on on/off and the colour, which is what the card shows."""
+        return (self.is_on, self._state().colour_name)
+
+    async def _press(self, turn_on: bool) -> None:
+        roles = RGB_ON_ROLES if turn_on else RGB_OFF_ROLES
+        link = choose_rgb_key(self._links(), roles)
+        if link is None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="rgb_no_key",
+                translation_placeholders={
+                    "address": self._address,
+                    "action": "on" if turn_on else "off",
+                },
+            )
+        # A toggle key, or a start/stop key that would stop a running
+        # loop, must not be pressed when the light is already where the
+        # caller wants it: read the hardware state, not the optimistic one.
+        if self._state().on == turn_on:
+            self._is_on = turn_on
+            self.async_write_ha_state()
+            return
+        self._is_on = turn_on
+        self.async_write_ha_state()
+        try:
+            await self.coordinator.async_send_button_press(str(link["bus_address"]))
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            self._is_on = None
+            self.async_write_ha_state()
+            raise command_error(err) from err
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Press the key that switches the controller on."""
+        await self._press(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Press the key that switches the controller off."""
+        await self._press(False)
