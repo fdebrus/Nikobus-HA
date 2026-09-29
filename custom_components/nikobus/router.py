@@ -160,6 +160,30 @@ def audio_trigger_naming(
     return description, (DOMAIN, module)
 
 
+def op_point_parent_device(
+    physical_address: str,
+    bus_address: str,
+    parent_phys: Mapping[str, Any] | None,
+) -> tuple[str, str] | None:
+    """The device an op point's entity hangs under, or ``None`` for none.
+
+    A wall key's entity gets a device of its own, keyed by the key's bus
+    address, parented under the plate (``physical_address``). An audio
+    trigger has no plate: the store entry *is* the bus address, so the
+    plate rule would name the same identifier as both the device and
+    its parent — which Home Assistant refuses ("a device can not be its
+    own via device") and drops the entity with it (3.21.0, #310). Its
+    parent is the audio module the trigger drives; any other entry
+    whose op point is itself gets no parent rather than itself.
+    """
+    audio = audio_trigger_naming(parent_phys) if parent_phys is not None else None
+    if audio is not None:
+        return audio[1]
+    if bus_address.upper() == physical_address.upper():
+        return None
+    return (DOMAIN, physical_address)
+
+
 def is_input_module_child(phys: Any) -> bool:
     """True if a button-store entry is a synthesized PC-Logic / Modular
     Interface input child (vs a real wall button / remote)."""
