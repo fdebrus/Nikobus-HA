@@ -190,6 +190,7 @@ class TestOptionsFlow(unittest.TestCase):
             result["menu_options"],
             [
                 "hardware",
+                "button_entities",
                 "configure_modules",
                 "manage_scenes",
                 "upload_nkb",

@@ -70,7 +70,8 @@
           "configure_modules": "Personnaliser un module (description, type d'entité, déclencheurs LED, temps de course)",
           "upload_nkb": "Téléverser le fichier projet .nkb",
           "import_nkb": "Importer depuis .nkb (choisir)",
-          "manage_scenes": "Gérer les scènes (créer / modifier / supprimer)"
+          "manage_scenes": "Gérer les scènes (créer / modifier / supprimer)",
+          "button_entities": "Choisir quels boutons et capteurs d'appui existent"
         }
       },
       "hardware": {
@@ -173,6 +174,16 @@
         "title": "Retirer un canal",
         "data": {
           "member": "Canal à retirer"
+        }
+      },
+      "button_entities": {
+        "title": "Entités d'appui",
+        "description": "Un bouton d'appui envoie un appui de touche sur le bus ; un capteur d'appui montre qu'il a eu lieu. Vos lumières, volets et interrupteurs n'en ont pas besoin, ni vos automatisations : les événements `nikobus_button_pressed` sont émis dans tous les cas. Cochez les classes voulues. Une classe décochée perd ses entités **et ses appareils** au rechargement qui suit — leurs noms et pièces sont conservés et reviennent si vous la recochez.",
+        "data": {
+          "button_classes": "Créer les boutons et capteurs d'appui pour"
+        },
+        "data_description": {
+          "button_classes": "Laissez tout décoché pour des listes d'appareils et d'entités au plus net."
         }
       }
     },
@@ -395,6 +406,16 @@
         "remove_member": "Retirer un canal",
         "save": "Enregistrer la scène",
         "delete": "Supprimer la scène"
+      }
+    },
+    "button_classes": {
+      "options": {
+        "wall_buttons": "Boutons muraux",
+        "interfaces": "Interfaces (interrupteur / bouton-poussoir / universelle)",
+        "remotes": "Télécommandes et codes IR",
+        "input_modules": "Modules d'entrée (PC-Logic, Interface modulaire)",
+        "audio_triggers": "Déclencheurs audio",
+        "virtual_buttons": "Boutons virtuels"
       }
     }
   },

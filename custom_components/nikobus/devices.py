@@ -17,7 +17,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
-from .const import (
+from .const import (  # noqa: F401 - the CATEGORY_* names stay importable from here
     BRAND,
     CATEGORY_INTERFACES,
     CATEGORY_REMOTES,
@@ -30,35 +30,15 @@ from .nkbdevices import parent_device_id
 from .router import (
     INPUT_MODULE_TYPES,
     OPAQUE_MODULE_TYPES,
+    _category_for_button_type,
     audio_trigger_naming,
     calendar_channel_naming,
+    entry_button_classes,
     input_label_prefix,
     pc_logic_input_naming,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _category_for_button_type(type_str: str) -> str:
-    """Return the category device identifier appropriate for a button's type.
-
-    Classification rule based on the discovery-supplied ``type`` field:
-
-      * ``Interface`` anywhere → Interfaces (push-button / switch /
-        universal input interfaces — non-keypad input sources)
-      * ``RF`` anywhere → Remotes (RF hand-held / RF wall transmitters)
-      * everything else → Wall buttons (physical bus push buttons)
-
-    Interface is matched before RF because ``"rf"`` is a substring of
-    ``"interface"`` — checking RF first would route every Universal /
-    Modular / push-button interface into Remotes.
-    """
-    lowered = type_str.lower()
-    if "interface" in lowered:
-        return CATEGORY_INTERFACES
-    if "rf" in lowered:
-        return CATEGORY_REMOTES
-    return CATEGORY_WALL_BUTTONS
 
 
 def _remote_transmitter_naming(
@@ -89,8 +69,15 @@ def register_wall_button_devices(
     entry: NikobusConfigEntry,
     buttons: dict[str, Any],
     dict_module_data: dict[str, Any] | None = None,
+    *,
+    classes: frozenset[str] | None = None,
 ) -> None:
     """Register one device per physical wall button (top-level address).
+
+    ``classes`` is the entry's selected press-entity classes: an entry
+    none of whose op points fall in a selected class gets no device,
+    so that a class the user switched off leaves no trace in the device
+    list. ``None`` registers everything.
 
     Groups the N operation-points of a keypad/IR remote under a single parent
     device in the device registry. The default name is taken straight from
@@ -116,6 +103,8 @@ def register_wall_button_devices(
     audio_parents_registered: set[str] = set()
     for physical_addr, phys in buttons.items():
         if not isinstance(phys, dict):
+            continue
+        if classes is not None and not (entry_button_classes(phys) & classes):
             continue
 
         calendar_naming = calendar_channel_naming(phys)

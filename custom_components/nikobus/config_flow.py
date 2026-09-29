@@ -28,6 +28,8 @@ from nikobus_connect import NikobusConnect
 from nikobus_connect.discovery import find_module
 
 from .const import (
+    BUTTON_CLASSES,
+    CONF_BUTTON_CLASSES,
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
     CONF_NKB_IMPORT_CATEGORIES,
@@ -47,6 +49,7 @@ from .coordinator import (
     NikobusDataCoordinator,
 )
 from .exceptions import NikobusConnectionError
+from .router import enabled_button_classes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -404,6 +407,9 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_create_entry(
             title=f"Nikobus ({self._data[CONF_CONNECTION_STRING]})",
             data=self._data,
+            # A fresh install creates no press entities; outputs and their
+            # feedback are what most people use. Options turns classes on.
+            options={CONF_BUTTON_CLASSES: []},
         )
 
     # --- Reconfigure (single step, all fields) -----------------------------
@@ -482,6 +488,14 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         """Merge entry data + options so defaults reflect the live settings."""
         return {**self.config_entry.data, **self.config_entry.options}
 
+    def _merged_options(self) -> dict[str, Any]:
+        """What this flow saves: the current options with its changes on top.
+
+        ``async_create_entry`` replaces the options wholesale, so a step
+        that saved only its own fields used to drop every other option.
+        """
+        return {**self.config_entry.options, **self._options}
+
     def _coordinator(self) -> NikobusDataCoordinator | None:
         return self.config_entry.runtime_data
 
@@ -506,6 +520,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         """
         menu_options = [
             "hardware",
+            "button_entities",
             "configure_modules",
             "manage_scenes",
             "upload_nkb",
@@ -525,7 +540,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             self._options.update(user_input)
             if _needs_polling(user_input):
                 return await self.async_step_polling()
-            return self.async_create_entry(data=self._options)
+            return self.async_create_entry(data=self._merged_options())
 
         return self.async_show_form(
             step_id="hardware",
@@ -537,11 +552,44 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.FlowResult:
         if user_input is not None:
             self._options.update(user_input)
-            return self.async_create_entry(data=self._options)
+            return self.async_create_entry(data=self._merged_options())
 
         return self.async_show_form(
             step_id="polling",
             data_schema=_polling_schema(self._current()),
+        )
+
+    # --- Press entities ----------------------------------------------------
+
+    async def async_step_button_entities(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Choose which classes of press buttons and press sensors exist.
+
+        A class that is not selected gets no entities and no devices; the
+        ones it had are removed on the reload that follows, with their
+        names and areas kept in the store for a later re-selection.
+        """
+        if user_input is not None:
+            chosen = [
+                c for c in (user_input.get(CONF_BUTTON_CLASSES) or []) if c in BUTTON_CLASSES
+            ]
+            self._options[CONF_BUTTON_CLASSES] = chosen
+            return self.async_create_entry(data=self._merged_options())
+
+        current = sorted(enabled_button_classes(self.config_entry.options))
+        return self.async_show_form(
+            step_id="button_entities",
+            data_schema=vol.Schema({
+                vol.Optional(CONF_BUTTON_CLASSES, default=current): SelectSelector(
+                    SelectSelectorConfig(
+                        options=list(BUTTON_CLASSES),
+                        multiple=True,
+                        mode=SelectSelectorMode.LIST,
+                        translation_key="button_classes",
+                    )
+                ),
+            }),
         )
 
     # --- Upload the .nkb project file --------------------------------------

@@ -18,6 +18,7 @@ from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
 from .entity import NikobusEntity, command_error
 from .router import (
     build_unique_id,
+    enabled_button_classes,
     get_routing,
     input_latch_switch_unique_id,
     iter_input_module_children,
@@ -127,7 +128,8 @@ async def async_setup_entry(
     # adds a persistent on/off mirror: the 1A signal turns it on, 1B
     # turns it off, and turn_on/off drive the corresponding bus frame.
     for physical_addr, phys in iter_input_module_children(
-        coordinator.dict_button_data.get("nikobus_button", {})
+        coordinator.dict_button_data.get("nikobus_button", {}),
+        enabled_button_classes(entry.options),
     ):
         naming = pc_logic_input_naming(phys)
         ab = input_ab_addresses(phys)

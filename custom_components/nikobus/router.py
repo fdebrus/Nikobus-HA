@@ -11,7 +11,23 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 
-from .const import BRAND, CATEGORY_OUTPUT_MODULES, DOMAIN, HUB_IDENTIFIER
+from .const import (
+    BRAND,
+    BUTTON_CLASS_AUDIO_TRIGGERS,
+    BUTTON_CLASS_INPUT_MODULES,
+    BUTTON_CLASS_INTERFACES,
+    BUTTON_CLASS_REMOTES,
+    BUTTON_CLASS_VIRTUAL_BUTTONS,
+    BUTTON_CLASS_WALL_BUTTONS,
+    BUTTON_CLASSES,
+    CATEGORY_INTERFACES,
+    CATEGORY_OUTPUT_MODULES,
+    CATEGORY_REMOTES,
+    CATEGORY_WALL_BUTTONS,
+    CONF_BUTTON_CLASSES,
+    DOMAIN,
+    HUB_IDENTIFIER,
+)
 from .nkbdevices import parent_device_id
 
 _LOGGER = logging.getLogger(__name__)
@@ -184,6 +200,81 @@ def op_point_parent_device(
     return (DOMAIN, physical_address)
 
 
+def _category_for_button_type(type_str: str) -> str:
+    """Return the category device identifier appropriate for a button's type.
+
+    Classification rule based on the discovery-supplied ``type`` field:
+
+      * ``Interface`` anywhere → Interfaces (push-button / switch /
+        universal input interfaces — non-keypad input sources)
+      * ``RF`` anywhere → Remotes (RF hand-held / RF wall transmitters)
+      * everything else → Wall buttons (physical bus push buttons)
+
+    Interface is matched before RF because ``"rf"`` is a substring of
+    ``"interface"`` — checking RF first would route every Universal /
+    Modular / push-button interface into Remotes.
+    """
+    lowered = type_str.lower()
+    if "interface" in lowered:
+        return CATEGORY_INTERFACES
+    if "rf" in lowered:
+        return CATEGORY_REMOTES
+    return CATEGORY_WALL_BUTTONS
+
+
+_CLASS_BY_CATEGORY = {
+    CATEGORY_REMOTES: BUTTON_CLASS_REMOTES,
+    CATEGORY_INTERFACES: BUTTON_CLASS_INTERFACES,
+}
+
+
+def button_class(phys: Mapping[str, Any] | None, key_label: str = "") -> str:
+    """The class (``BUTTON_CLASSES``) of the press entities for one op point.
+
+    Decided from the store entry, and for one case from the op point:
+    an IR receiver is a wall plate whose ``IR:`` op points are remote
+    codes, so those go with the remotes while its keys stay with the
+    wall buttons.
+    """
+    if not isinstance(phys, Mapping):
+        return BUTTON_CLASS_WALL_BUTTONS
+    if phys.get("audio_function"):
+        return BUTTON_CLASS_AUDIO_TRIGGERS
+    if phys.get("virtual_button"):
+        return BUTTON_CLASS_VIRTUAL_BUTTONS
+    if is_input_module_child(phys):
+        return BUTTON_CLASS_INPUT_MODULES
+    if str(key_label).startswith("IR:") or phys.get("remote_transmitter_address"):
+        return BUTTON_CLASS_REMOTES
+    category = _category_for_button_type(
+        str(phys.get("type") or phys.get("model") or "")
+    )
+    return _CLASS_BY_CATEGORY.get(category, BUTTON_CLASS_WALL_BUTTONS)
+
+
+def entry_button_classes(phys: Mapping[str, Any] | None) -> frozenset[str]:
+    """Every class among a store entry's op points (one plate can span two)."""
+    if not isinstance(phys, Mapping):
+        return frozenset()
+    op_points = phys.get("operation_points")
+    if isinstance(op_points, Mapping) and op_points:
+        return frozenset(button_class(phys, str(key)) for key in op_points)
+    return frozenset({button_class(phys)})
+
+
+def enabled_button_classes(options: Mapping[str, Any] | None) -> frozenset[str]:
+    """The classes the entry's options select.
+
+    No ``button_classes`` key at all means every class — what every
+    release before 3.22.0 did, and what the migration writes out for an
+    existing entry. An empty list means none.
+    """
+    if not isinstance(options, Mapping) or CONF_BUTTON_CLASSES not in options:
+        return frozenset(BUTTON_CLASSES)
+    raw = options.get(CONF_BUTTON_CLASSES) or []
+    return frozenset(str(c) for c in raw if c in BUTTON_CLASSES)
+
+
 def is_input_module_child(phys: Any) -> bool:
     """True if a button-store entry is a synthesized PC-Logic / Modular
     Interface input child (vs a real wall button / remote)."""
@@ -200,10 +291,15 @@ def input_latch_switch_unique_id(physical_addr: str) -> str:
 
 def iter_input_module_children(
     buttons: Mapping[str, Any] | None,
+    classes: frozenset[str] | None = None,
 ) -> Iterator[tuple[str, Mapping[str, Any]]]:
     """Yield ``(physical_addr, phys)`` for every synthesized input child
     in the button store — the single enumerator the switch platform and
-    the known-id set both build on."""
+    the known-id set both build on. ``classes`` (the entry's selected
+    press-entity classes) yields nothing when input modules are not
+    among them; ``None`` means no filtering."""
+    if classes is not None and BUTTON_CLASS_INPUT_MODULES not in classes:
+        return
     for addr, phys in (buttons or {}).items():
         if is_input_module_child(phys):
             yield str(addr), phys
@@ -211,6 +307,7 @@ def iter_input_module_children(
 
 def iter_operation_points(
     buttons: Mapping[str, Any] | None,
+    classes: frozenset[str] | None = None,
 ) -> Iterator[tuple[str, str, dict[str, Any], dict[str, Any]]]:
     """Yield ``(physical_addr, key_label, op_point, phys)`` for every
     button operation point carrying a ``bus_address``.
@@ -231,8 +328,11 @@ def iter_operation_points(
         for key_label, op_point in op_points.items():
             if not isinstance(op_point, dict):
                 continue
-            if op_point.get("bus_address"):
-                yield str(physical_addr), str(key_label), op_point, phys
+            if not op_point.get("bus_address"):
+                continue
+            if classes is not None and button_class(phys, str(key_label)) not in classes:
+                continue
+            yield str(physical_addr), str(key_label), op_point, phys
 
 # Module types we recognise but for which no entity schema is validated
 # yet — the inventory record alone makes the device visible in the HA
