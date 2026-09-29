@@ -29,7 +29,12 @@ from .devices import (  # noqa: F401 - re-exported for the other platforms
     register_wall_button_devices,
 )
 from .entity import NikobusEntity, hub_device_info
-from .router import calendar_channel_naming, iter_operation_points
+from .router import (
+    audio_trigger_naming,
+    calendar_channel_naming,
+    iter_operation_points,
+    op_point_parent_device,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -310,14 +315,19 @@ class NikobusButtonEntity(NikobusEntity, ButtonEntity):
             isinstance(parent_phys, dict)
             and parent_phys.get("pc_logic_parent_address") is not None
         )
-        model = "PC-Logic Key" if is_pc_logic_input else "Push Button"
+        if is_pc_logic_input:
+            model = "PC-Logic Key"
+        elif parent_phys is not None and audio_trigger_naming(parent_phys):
+            model = "Audio Trigger"
+        else:
+            model = "Push Button"
 
         super().__init__(
             coordinator=coordinator,
             address=bus_addr,
             name=name,
             model=model,
-            via_device=(DOMAIN, physical_address),
+            via_device=op_point_parent_device(physical_address, bus_addr, parent_phys),
         )
 
         self._attr_unique_id = f"{DOMAIN}_push_button_{bus_addr}"

@@ -132,3 +132,52 @@ def test_the_parent_module_is_registered_once_for_many_triggers():
     ]
     assert len(parents) == 1
     assert len(dev_reg.async_get_or_create.call_args_list) == 5
+
+
+# --- the entities on a trigger --------------------------------------------
+#
+# 3.21.0 shipped the triggers into the store and then lost every entity on
+# them: the entity platforms parent an op point's device under the store
+# entry's address, and an audio trigger's op point *is* the store entry,
+# so its device was told to hang under itself. Home Assistant refuses
+# that ("a device can not be its own via device") and drops the entity —
+# 35 buttons and 35 sensors per setup on the validating install.
+
+
+def _entity(cls, physical, op_point, parent_phys):
+    from unittest.mock import MagicMock
+
+    coordinator = MagicMock()
+    coordinator.hass = None  # no registry: via_device_id stays unresolved
+    return cls(coordinator, physical, "AUD", op_point, parent_phys=parent_phys)
+
+
+def test_a_trigger_entity_hangs_under_the_audio_module_not_itself():
+    from custom_components.nikobus.binary_sensor import NikobusButtonBinarySensor
+    from custom_components.nikobus.button import NikobusButtonEntity
+
+    for cls in (NikobusButtonEntity, NikobusButtonBinarySensor):
+        entity = _entity(cls, "8083CF", {"bus_address": "8083CF"}, TRIGGER)
+        assert entity._attr_device_info["identifiers"] == {("nikobus", "8083CF")}
+        assert entity._via_device == ("nikobus", "8334")
+        assert entity._attr_device_info["model"] == "Audio Trigger"
+
+
+def test_a_wall_key_still_hangs_under_its_plate():
+    from custom_components.nikobus.button import NikobusButtonEntity
+
+    plate = {"type": "Bus push button, 4 control buttons", "model": "05-064"}
+    entity = _entity(NikobusButtonEntity, "0D1C80", {"bus_address": "804E2C"}, plate)
+    assert entity._attr_device_info["identifiers"] == {("nikobus", "804E2C")}
+    assert entity._via_device == ("nikobus", "0D1C80")
+    assert entity._attr_device_info["model"] == "Push Button"
+
+
+def test_an_entry_that_is_its_own_op_point_never_parents_to_itself():
+    """The guard is general: no marker, same address — no parent, not self."""
+    from custom_components.nikobus.router import op_point_parent_device
+
+    assert op_point_parent_device("ABCDEF", "abcdef", {"type": "Whatever"}) is None
+    assert op_point_parent_device("ABCDEF", "abcdef", None) is None
+    assert op_point_parent_device("0D1C80", "804E2C", None) == ("nikobus", "0D1C80")
+    assert op_point_parent_device("8083CF", "8083CF", TRIGGER) == ("nikobus", "8334")

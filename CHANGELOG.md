@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.21.1
+
+- **The audio trigger buttons and sensors are created.** 3.21.0 filed the triggers in the store and then lost every entity on them, logging *A device can not be its own via device* 70 times per start — 35 buttons and 35 press sensors on the validating install. The entity platforms hang an op point's device under the store entry's address, which is right for a wall key (the key's device under the plate's) and wrong for an audio trigger, whose op point *is* the store entry: its device was told to hang under itself, and Home Assistant refuses that. A trigger's entities now hang under the audio module that drives them, and carry the *Audio Trigger* model. The media players were never affected. Reported by @roswennen within hours, again.
+
 ## 3.21.0
 
 **Requires `nikobus-connect` 0.40.0.**
