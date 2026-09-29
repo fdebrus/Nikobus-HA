@@ -51,6 +51,7 @@ from .const import (
     SIGNAL_DISCOVERY_STATE,
 )
 from .nkbreconcile import (
+    apply_rgb_links,
     cf_member_set,
     classify_button_status,
     flatten_cf_broadcasts,
@@ -1550,10 +1551,32 @@ class NikobusDiscoveryMixin:
                     )
                     labels_set += 1
 
+        # Keys linked to an RGB controller. Its link table cannot be read
+        # from the bus by anyone, so the project file is the only record;
+        # the light entity presses what lands here. Always applied — it
+        # is wiring, not naming — and only for controllers the store has.
+        rgb_links_applied = 0
+        rgb_links = getattr(data, "rgb_links", None) or ()
+        if rgb_links and self.module_storage is not None:
+            modules_store = self.module_storage.data.get("nikobus_module")
+            buttons_store = (self.dict_button_data or {}).get("nikobus_button")
+            if isinstance(modules_store, dict):
+                rgb_links_applied = apply_rgb_links(
+                    modules_store,
+                    buttons_store if isinstance(buttons_store, dict) else {},
+                    rgb_links,
+                )
+            if rgb_links_applied:
+                await self.module_storage.async_save()
+                if self.button_storage is not None:
+                    await self.button_storage.async_save()
+                self._rebuild_dict_module_data()
+                self.invalidate_controlled_by_index()
+
         _LOGGER.info(
             "Imported .nkb from %s (overwrite=%s, categories=%s): %d devices, "
             "%d key devices, %d device-entities, %d channels, %d outputs "
-            "enabled, %d areas, %d scenes named",
+            "enabled, %d areas, %d scenes named, %d RGB controller keys",
             path.name,
             overwrite,
             sorted(cats),
@@ -1564,6 +1587,7 @@ class NikobusDiscoveryMixin:
             outputs_enabled,
             areas_set,
             len(cf_name_by_addr),
+            rgb_links_applied,
         )
 
         # The surfaced entity set changed — reload so platforms rebuild:
@@ -1584,5 +1608,6 @@ class NikobusDiscoveryMixin:
             "areas": areas_set,
             "scenes": len(cf_name_by_addr),
             "labels": labels_set,
+            "rgb_links": rgb_links_applied,
         }
 

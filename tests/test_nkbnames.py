@@ -167,7 +167,7 @@ def test_import_names_areas_and_scene_match():
     # scene.de4e2c (Scene) = 4 labelled entities.
     assert result == {"devices": 3, "keys": 0, "entities": 2, "channels": 0,
                       "outputs_enabled": 0, "areas": 2, "scenes": 1,
-                      "labels": 4}
+                      "labels": 4, "rgb_links": 0}
     names = {c.args[0]: c.kwargs.get("name")
              for c in dev_reg.async_update_device.call_args_list
              if "name" in c.kwargs}
@@ -944,3 +944,72 @@ def test_labels_are_additive_and_idempotent():
     # Already labelled — untouched.
     assert "cover.volet" not in labelled
     assert result["labels"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# RGB controller links — wiring the project file is the only record of
+# --------------------------------------------------------------------------- #
+def test_import_applies_rgb_links_to_both_stores():
+    """The #519 install: plate 124A36 key 1C / 1D drive controller 801D in
+    mode 19. The controller's entry gets the keys with their roles; the
+    plate's op points get a linked_modules block on channel 1."""
+    from custom_components.nikobus.nkbnames import RgbLink
+
+    data = NkbData(
+        addresses={},
+        scenes=[],
+        rgb_links=(
+            RgbLink("801D", "124A36", "1C", "1B1492", 19, "S_DB_DESC_DIMMER_COLOR_M19"),
+            RgbLink("801D", "124A36", "1D", "5B1492", 19, "S_DB_DESC_DIMMER_COLOR_M19"),
+        ),
+    )
+    buttons = {"nikobus_button": {"124A36": {
+        "address": "124A36",
+        "operation_points": {
+            "1C": {"bus_address": "1B1492", "linked_modules": [
+                {"module_address": "2155", "outputs": [{"channel": 6, "mode": "M01 (On / off)"}]}
+            ]},
+            "1D": {"bus_address": "5B1492"},
+        },
+    }}}
+    coord = _coord(cf={}, button_data=buttons,
+                   modules={"801D": {"address": "801D", "module_type": "rgb_module", "model": "340-00112"}})
+    coord._rebuild_dict_module_data = MagicMock()
+    coord.invalidate_controlled_by_index = MagicMock()
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names())
+
+    assert result["rgb_links"] == 2
+    module = coord.module_storage.data["nikobus_module"]["801D"]
+    assert [(l["key"], l["bus_address"], l["role"]) for l in module["rgb_links"]] == [
+        ("1C", "1B1492", "start_stop"),
+        ("1D", "5B1492", "off"),
+    ]
+    assert module["rgb_links"][0]["mode_label"] == "M19 (Start/stop scenario)"
+    op_c = buttons["nikobus_button"]["124A36"]["operation_points"]["1C"]
+    assert op_c["linked_modules"][0]["module_address"] == "2155"  # the existing link is kept
+    assert op_c["linked_modules"][1] == {
+        "module_address": "801D",
+        "outputs": [{"channel": 1, "mode": "M19 (Start/stop scenario)",
+                     "button_address": "1B1492", "record_source": "nkb"}],
+    }
+    assert buttons["nikobus_button"]["124A36"]["operation_points"]["1D"]["linked_modules"][0]["module_address"] == "801D"
+    coord.module_storage.async_save.assert_awaited()
+    coord.button_storage.async_save.assert_awaited()
+    coord.invalidate_controlled_by_index.assert_called_once()
+
+
+def test_rgb_links_to_a_controller_the_store_lacks_are_ignored():
+    from custom_components.nikobus.nkbnames import RgbLink
+
+    data = NkbData(addresses={}, scenes=[],
+                   rgb_links=(RgbLink("801D", "124A36", "1C", "1B1492", 19, "M19"),))
+    coord = _coord(cf={}, button_data={"nikobus_button": {}},
+                   modules={"0E6C": {"address": "0E6C", "module_type": "dimmer_module"}})
+    dev_reg, ent_reg, area_reg = MagicMock(), MagicMock(), MagicMock()
+    with _patches(data, [], [], dev_reg, ent_reg, area_reg):
+        result = _run(coord.async_import_nkb_names())
+    assert result["rgb_links"] == 0
+    assert "rgb_links" not in coord.module_storage.data["nikobus_module"]["0E6C"]
+    coord.module_storage.async_save.assert_not_awaited()

@@ -16,6 +16,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 
 - 🔌 **Automatic discovery** — modules and physical buttons are enumerated straight from the PC-Link; no manual address tables.
 - 🔊 **Audio zones** — an Audio Distribution module (05-205) becomes one media player per zone, with on/off, volume steps and source selection; its trigger keys, Power included, are press buttons under the module.
+- 🌈 **RGB controller** — a 340-00112 becomes a light with a colour readout, switched through the keys your `.nkb` links to it, since the bus offers no direct command.
 - 💡 **Native entities** — switches, dimmers (with brightness), shutters (with simulated position) and, for a dimmer output that drives a variable-speed fan, a `fan` with a speed slider — one entity per channel, type chosen per channel.
 - 🎛️ **Buttons as triggers, and as actuators** — every keypad key, IR code, and input becomes an event source for automations, and a press-simulation button whose press the bus cannot tell from a real one.
 - 🧹 **Only the press entities you want** — press buttons and press sensors come in six classes (wall buttons, interfaces, remotes and IR codes, input modules, audio triggers, virtual buttons); tick the ones you use and the rest get no entities and no devices. Automations keep working either way: the `nikobus_button_pressed` events fire for every key.
@@ -95,7 +96,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 | Modular Interface, 6 inputs | `05-206` | Its 6 inputs surface as `MI-INPUT 1–6` |
 | Feedback Module | `05-207` | Optional; drives plate LEDs and pushes real-time state — through the PC-Link's port. Usable as gateway (polling only) |
 | Audio Distribution Module | `05-205` | One `media_player` per zone: on/off, volume, source select; its trigger keys as press buttons under the module |
-| RGB / LED controller | `340-00112` | Recognised and shown as a device; no entities yet — how its output reads back and is driven is being worked out with a user ([#519](https://github.com/fdebrus/Nikobus-HA/issues/519)) |
+| RGB / LED controller | `340-00112` | One `light`: on/off and the colour its outputs mix to, switched through the keys linked to it (from your `.nkb`); see [RGB controller](#rgb-controller) |
 
 ### Buttons & transmitters
 
@@ -387,6 +388,14 @@ A 05-205 keeps its links in its own memory, and discovery now reads them: for ea
 The module answers no state query, so a zone's state is what was last commanded. It is not guesswork on one side only: a wall key pressing the same function is relayed by the PC-Link, so pressing *Zone 2 on* at the wall updates the entity too.
 
 Each address the module listens for is also a press button and press sensor of its own — *Zone 2 Source 3*, *Audio Power* for the module's own Power object — filed under the module's device rather than under a wall plate, since no plate owns them. They belong to the *Audio triggers* class of [press entities](#choosing-which-press-entities-exist), so they exist only if that class is ticked; the media players do not depend on it.
+
+### RGB controller
+
+A 340-00112 LED / RGB controller becomes one **light** on its own device. The controller answers the ordinary state query with an on flag and one lit-or-not flag per colour output — never a level — so the light shows on or off and, in its attributes, the colour the lit outputs mix to (`colour: magenta`, `red`, `green`, `blue`). It is polled like the output modules and re-read after a press on a key that drives it.
+
+It accepts no command of its own: the bus offers no way to set its output, and every one of its fifteen modes is a key behaviour (the two-key luminance mode, the four-key colour-and-luminance mode, the scenario start/stop modes, a one-key toggle, …). Turning the light on or off therefore **presses a linked key** — the key whose role fits best: the on or off key of a two-key mode, a toggle, the start/stop key of a colour scenario, a preset. Nothing is pressed when the light already is what you asked for. Colour and brightness cannot be set from Home Assistant.
+
+Which keys are linked to the controller is known only from your **`.nkb` project file**: the controller's link table cannot be read from the bus, not by this integration and not by the Nikobus software, which only status-polls it and writes a project file with its settings but no link. [Import your `.nkb`](#importing-from-your-nkb-project) and the keys it holds are applied — the light lists them in `linked_keys`, with the key it will press for on and off in `on_key` / `off_key`, and the plate's key shows the controller in `controlled_by`. Without an import, or with no key of a usable role, the light is a readout and switching it raises an error that says so.
 
 ## Commands on the bus
 
@@ -830,7 +839,7 @@ A second-hand PC-Link (or replaced hardware) can leave records for modules that 
 - **Pushed state needs the PC-Link's port.** On a Feedback Module's or PC-Logic's serial port the integration polls (see [Connectivity](#connectivity)).
 - **Calendar programs stay in the PC-Link.** Calendar channels that drive an output are shown in `controlled_by`, but the programs behind them are neither read nor fired.
 - **A press sent by Home Assistant is invisible to itself.** The PC-Link does not relay the host's own telegram, so no `nikobus_button_*` event is fired for it; the impacted modules are read instead.
-- **The RGB controller (340-00112) is visible but not controllable yet.** It answers no register read, and the layout of its state image is being worked out from a user's samples ([#519](https://github.com/fdebrus/Nikobus-HA/issues/519)); a light entity follows once it is.
+- **The RGB controller's colour and brightness cannot be set.** The bus has no command for it; the light switches by pressing its linked keys, which your `.nkb` must supply (see [RGB controller](#rgb-controller)).
 - **Virtual input banks are not inventoried yet.** Links that output modules hold on the Nikobus software's virtual buttons are decoded but not kept, so they do not appear in `controlled_by` and the *Virtual buttons* class is empty for now.
 
 ---

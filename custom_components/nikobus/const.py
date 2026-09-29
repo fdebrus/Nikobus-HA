@@ -339,8 +339,14 @@ RECONNECT_DELAY_MAX: Final[int] = 60      # Cap on exponential-backoff delay
 
 # The module families whose output state is read with ``$1012`` /
 # ``$1017``: polled on the interval, and re-read after a press on a key
-# that drives them. Anything else in the store — the Audio Distribution
-# module, the RGB controller, input modules — either never answers a
-# state query or has no entity that would consume the answer, so it is
-# never asked.
-POLLED_MODULE_TYPES: tuple[str, ...] = ("switch_module", "dimmer_module", "roller_module")
+# that drives them. The RGB controller answers the query with a six-byte
+# image (one group; the second returns the same) and the light entity
+# consumes it. Anything else in the store — the Audio Distribution
+# module, input modules — either never answers a state query or has no
+# entity that would consume the answer, so it is never asked.
+POLLED_MODULE_TYPES: tuple[str, ...] = (
+    "switch_module",
+    "dimmer_module",
+    "roller_module",
+    "rgb_module",
+)

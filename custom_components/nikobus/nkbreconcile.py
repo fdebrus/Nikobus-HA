@@ -445,3 +445,87 @@ def build_routing_graph(
             entry = graph.setdefault(members, ([], outputs))
             entry[0].append(addr.upper())
     return {m: (sorted(set(a)), o) for m, (a, o) in graph.items()}
+
+
+def apply_rgb_links(
+    modules: dict[str, Any],
+    buttons: dict[str, Any],
+    links: Any,
+) -> int:
+    """Write the ``.nkb``'s colour-controller links into the stores.
+
+    ``modules`` is the module store (``{address: entry}``), ``buttons``
+    the button store (``{physical_address: entry}``), ``links`` the
+    ``RgbLink`` tuples the library read from the project file. Each link
+    to a controller the store knows lands twice: on the controller's
+    entry as ``rgb_links`` (what the light entity presses, with the
+    key's role per its mode) and on the plate key's op point as a
+    ``linked_modules`` block on channel 1 (what ``controlled_by`` and
+    the post-press refresh read). A plate the button store does not
+    know still gives the controller its link. Returns the number of
+    links applied.
+    """
+    from nikobus_connect.rgb import rgb_key_role, rgb_mode_label
+
+    applied = 0
+    by_module: dict[str, list[dict[str, Any]]] = {}
+    for link in links or ():
+        module_address = str(getattr(link, "module_address", "") or "").upper()
+        module = modules.get(module_address)
+        if not isinstance(module, dict) or module.get("module_type") != "rgb_module":
+            continue
+        mode = getattr(link, "mode", None)
+        key = str(getattr(link, "key", "") or "")
+        role = rgb_key_role(mode, key) if isinstance(mode, int) else None
+        mode_label = rgb_mode_label(mode) if isinstance(mode, int) else str(
+            getattr(link, "mode_text", "") or ""
+        )
+        bus_address = str(getattr(link, "bus_address", "") or "").upper()
+        plate_address = str(getattr(link, "button_address", "") or "").upper()
+        record = {
+            "bus_address": bus_address,
+            "button_address": plate_address,
+            "key": key,
+            "mode": mode,
+            "mode_label": mode_label,
+            "role": role,
+        }
+        records = by_module.setdefault(module_address, [])
+        if record not in records:
+            records.append(record)
+
+        phys = buttons.get(plate_address)
+        op_points = phys.get("operation_points") if isinstance(phys, dict) else None
+        op_point = op_points.get(key) if isinstance(op_points, dict) else None
+        if isinstance(op_point, dict):
+            linked = op_point.get("linked_modules")
+            if not isinstance(linked, list):
+                linked = []
+                op_point["linked_modules"] = linked
+            block = next(
+                (
+                    b for b in linked
+                    if isinstance(b, dict)
+                    and str(b.get("module_address") or "").upper() == module_address
+                ),
+                None,
+            )
+            if block is None:
+                block = {"module_address": module_address, "outputs": []}
+                linked.append(block)
+            outputs = block.get("outputs")
+            if not isinstance(outputs, list):
+                outputs = []
+                block["outputs"] = outputs
+            if not any(isinstance(o, dict) and o.get("channel") == 1 for o in outputs):
+                outputs.append({
+                    "channel": 1,
+                    "mode": mode_label,
+                    "button_address": bus_address,
+                    "record_source": "nkb",
+                })
+        applied += 1
+
+    for module_address, records in by_module.items():
+        modules[module_address]["rgb_links"] = records
+    return applied

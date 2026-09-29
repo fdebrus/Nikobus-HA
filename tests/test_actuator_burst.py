@@ -489,3 +489,13 @@ def test_a_module_the_store_does_not_know_is_still_read():
     actuator = _make_actuator_linked_to("4707", None)
     asyncio.run(actuator.refresh_after_host_press("8083CF"))
     assert "4707_1" in actuator._module_refresh_tasks
+
+
+def test_a_press_on_a_key_of_the_rgb_controller_reads_it():
+    """The controller answers the state query, and its light consumes the
+    answer — so a press on its key refreshes it like a switch module."""
+    import asyncio
+
+    actuator = _make_actuator_linked_to("801D", "rgb_module")
+    asyncio.run(actuator.refresh_after_host_press("8083CF"))
+    assert "801D_1" in actuator._module_refresh_tasks

@@ -1516,12 +1516,14 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities."""
         from .router import (
+            audio_zones,
             build_routing,
             build_unique_id,
             enabled_button_classes,
             input_latch_switch_unique_id,
             iter_input_module_children,
             iter_operation_points,
+            rgb_light_unique_id,
         )
         known: set[str] = set()
         # A press-entity class the user switched off is not "known", so
@@ -1533,7 +1535,17 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         for specs in routing.values():
             for spec in specs:
                 known.add(build_unique_id(spec.domain, spec.kind, spec.address, spec.channel))
+        # The RGB controller's light: one per module, outside the routing
+        # (the router skips opaque modules).
+        rgb_bucket = self.dict_module_data.get("rgb_module") or {}
+        if isinstance(rgb_bucket, dict):
+            for address in rgb_bucket:
+                known.add(rgb_light_unique_id(str(address)))
         buttons = self.dict_button_data.get("nikobus_button", {})
+        # The audio zones' media players, keyed like media_player.py keys them.
+        for (module, zone) in audio_zones(buttons):
+            if zone:
+                known.add(f"{DOMAIN}_audio_{str(module).lower()}_zone{zone}")
         # Button + push-button ids, via the shared op-point enumerator
         # (same guard ladder the button/binary-sensor platforms use).
         for _addr, _key, op_point, _phys in iter_operation_points(buttons, classes):

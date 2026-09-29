@@ -136,7 +136,7 @@
       },
       "import_nkb": {
         "title": "Importeren uit .nkb",
-        "description": "Kies wat je wilt importeren uit je nikobus.nkb. Standaard wordt niets aangeraakt wat je handmatig hebt hernoemd — vink **Overschrijven** aan om je bestaande namen/Ruimtes te vervangen door die uit het .nkb-bestand. Je keuzes worden onthouden: de knop “3. Import Names from .nkb” op de Nikobus Bridge voert de import opnieuw uit met dezelfde instellingen.",
+        "description": "Kies wat je wilt importeren uit je nikobus.nkb. Standaard wordt niets aangeraakt wat je handmatig hebt hernoemd — vink **Overschrijven** aan om je bestaande namen/Ruimtes te vervangen door die uit het .nkb-bestand. Je keuzes worden onthouden: de knop “3. Import Names from .nkb” op de Nikobus Bridge voert de import opnieuw uit met dezelfde instellingen. Toetsen die aan een RGB-controller gekoppeld zijn, worden altijd toegepast: dat is bedrading, geen naam.",
         "data": {
           "device_names": "Apparaatnamen (modules, knoppen, IR-ontvangers)",
           "channel_names": "Kanaalnamen (lichten, rolluiken, schakelaars)",
@@ -367,6 +367,9 @@
     },
     "no_pc_link_known": {
       "message": "Er is nog geen PC-Link bekend — voer eerst **1. Projectoverzicht laden** uit."
+    },
+    "rgb_no_key": {
+      "message": "Er is geen toets bekend die de RGB-controller {address} {action} zet. Zijn koppelingen zijn niet van de bus te lezen: upload uw .nkb-projectbestand en voer de import uit zodat Home Assistant leert welke toetsen hem bedienen."
     }
   },
   "selector": {

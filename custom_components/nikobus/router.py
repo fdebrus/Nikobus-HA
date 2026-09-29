@@ -589,3 +589,39 @@ def _map_entity_type(module_type: str, entity_type: str) -> tuple[str, str]:
         return "switch", "relay_switch"
 
     return "switch", "relay_switch"
+
+# ---------------------------------------------------------------------------
+# RGB controller (340-00112): the keys that drive it
+#
+# The controller is driven only by the keys linked to it, and its link
+# table cannot be read from the bus by anyone — the ``.nkb`` import
+# writes the links it finds onto the module's store entry (``rgb_links``)
+# and onto the plate's op point. The light entity picks a key by role.
+# ---------------------------------------------------------------------------
+
+RGB_LIGHT_KIND = "rgb_controller"
+
+
+def rgb_light_unique_id(address: str) -> str:
+    """The light entity of an RGB controller: one per module."""
+    return build_unique_id("light", RGB_LIGHT_KIND, str(address).upper(), 1)
+
+
+def rgb_links_for(dict_module_data: Mapping[str, Any] | None, address: str) -> list[dict[str, Any]]:
+    """The keys the ``.nkb`` import found linked to controller ``address``:
+    ``[{"bus_address", "button_address", "key", "mode", "mode_label", "role"}]``,
+    or ``[]`` when no project file has been imported or none links to it."""
+    bucket = (dict_module_data or {}).get("rgb_module") or {}
+    module = bucket.get(str(address).upper()) if isinstance(bucket, Mapping) else None
+    links = module.get("rgb_links") if isinstance(module, Mapping) else None
+    return [link for link in links if isinstance(link, dict)] if isinstance(links, list) else []
+
+
+def choose_rgb_key(links: list[dict[str, Any]], roles: tuple[str, ...]) -> dict[str, Any] | None:
+    """The first link whose role is earliest in ``roles`` — ``RGB_ON_ROLES``
+    or ``RGB_OFF_ROLES`` from the library — or ``None`` if no key has one."""
+    for role in roles:
+        for link in links:
+            if link.get("role") == role and link.get("bus_address"):
+                return link
+    return None
