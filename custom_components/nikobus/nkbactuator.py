@@ -25,6 +25,7 @@ from .const import (
     EVENT_BUTTON_PRESSED,
     FRAME_CADENCE_S,
     MAX_EXTENDED_RELEASE_MS,
+    POLLED_MODULE_TYPES,
     REFRESH_DELAY,
     RELEASE_THRESHOLD_MS,
     SHORT_PRESS,
@@ -296,6 +297,13 @@ class NikobusActuator:
 
         Derived from ``linked_modules`` — channels 1-6 live in feedback group 1,
         7-12 in group 2.
+
+        Only modules whose state is read at all are returned. An audio
+        trigger's op point links to the Audio Distribution module that
+        listens for it, and that module never answers a state query:
+        reading it after every press was three attempts of five seconds
+        and an error, for nothing. A module the store does not know is
+        kept — it may simply not have been classified yet.
         """
         seen: set[tuple[str, str]] = set()
         for link in op_point.get("linked_modules") or []:
@@ -303,6 +311,15 @@ class NikobusActuator:
                 continue
             module_address = (link.get("module_address") or "").upper()
             if not module_address:
+                continue
+            hit = find_module(self._module_data, module_address)
+            module_type = hit[1].get("module_type") if hit else None
+            if module_type is not None and module_type not in POLLED_MODULE_TYPES:
+                _LOGGER.debug(
+                    "Module %s is a %s — its state is never read, not refreshing it",
+                    module_address,
+                    module_type,
+                )
                 continue
             for out in link.get("outputs") or []:
                 if not isinstance(out, dict):
