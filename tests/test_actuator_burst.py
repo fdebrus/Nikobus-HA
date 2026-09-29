@@ -437,3 +437,55 @@ def test_host_press_of_an_unknown_key_is_a_noop():
     actuator = _make_actuator()
     asyncio.run(actuator.refresh_after_host_press("000000"))
     assert actuator._module_refresh_tasks == {}
+
+
+def _make_actuator_linked_to(module_address: str, module_type: str | None) -> NikobusActuator:
+    """One key whose only link is channel 1 of ``module_address``."""
+    actuator = _make_actuator()
+    actuator._dict_button_data["nikobus_button"] = {
+        "0D1C80": {
+            "address": "0D1C80",
+            "operation_points": {
+                "AUD": {
+                    "bus_address": "8083CF",
+                    "linked_modules": [
+                        {"module_address": module_address, "outputs": [{"channel": 1}]}
+                    ],
+                }
+            },
+        }
+    }
+    if module_type is not None:
+        actuator._module_data["nikobus_module"] = {
+            module_address: {"address": module_address, "module_type": module_type}
+        }
+    return actuator
+
+
+def test_a_press_on_an_audio_trigger_does_not_read_the_audio_module():
+    """The 05-205 never answers $1012: reading it after every press was
+    three timeouts and an error (Nikobus-HA #310)."""
+    import asyncio
+
+    actuator = _make_actuator_linked_to("8334", "audio_module")
+    asyncio.run(actuator.refresh_after_host_press("8083CF"))
+    assert actuator._module_refresh_tasks == {}
+    asyncio.run(actuator.button_discovery("8083CF", press_context={"press_id": "p1", "duration_s": 0.3}))
+    assert actuator._module_refresh_tasks == {}
+
+
+def test_a_press_on_a_key_of_a_switch_module_still_reads_it():
+    import asyncio
+
+    actuator = _make_actuator_linked_to("4707", "switch_module")
+    asyncio.run(actuator.refresh_after_host_press("8083CF"))
+    assert "4707_1" in actuator._module_refresh_tasks
+
+
+def test_a_module_the_store_does_not_know_is_still_read():
+    """Unclassified is not the same as known-silent."""
+    import asyncio
+
+    actuator = _make_actuator_linked_to("4707", None)
+    asyncio.run(actuator.refresh_after_host_press("8083CF"))
+    assert "4707_1" in actuator._module_refresh_tasks

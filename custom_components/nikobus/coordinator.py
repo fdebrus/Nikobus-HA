@@ -62,6 +62,7 @@ from .const import (
     ISSUE_FEEDBACK_MODULE_PORT,
     ISSUE_NO_BUTTONS_CONFIGURED,
     ISSUE_NO_DEVICE_ANSWERED,
+    POLLED_MODULE_TYPES,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
 )
@@ -87,7 +88,7 @@ NikobusConfigEntry = ConfigEntry["NikobusDataCoordinator"]
 _LOGGER = logging.getLogger(__name__)
 
 # Module types supported for polling
-MODULE_TYPES = ("switch_module", "dimmer_module", "roller_module")
+MODULE_TYPES = POLLED_MODULE_TYPES
 
 # Outer-probe parameters passed to nikobus-connect 0.5.20's
 # ``detect_stale_inventory(outer_attempts=N, outer_delay=S)``. The library

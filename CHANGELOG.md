@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.22.1
+
+- **A press on an audio trigger no longer tries to read the Audio Distribution module.** Every trigger's op point links to the 05-205 that listens for it, so a press — from a media player, a trigger button, or a wall key relayed by the PC-Link — scheduled the same "refresh the impacted module" read that a wall key gets, on a module that never answers a state query: three attempts of five seconds and an error line per press. The refresh now skips any linked module whose stored type is not one whose state is read (switch, dimmer, roller); a module the store has not classified is still read. Reported by @roswennen on #310.
+
 ## 3.22.0
 
 - **You choose which press entities exist.** Options → *Press entities* lists six classes — wall buttons, interfaces, remotes and IR codes, input modules, audio triggers, virtual buttons — and creates press buttons and press sensors only for the ones you tick. An unticked class gets no entities and **no devices**: what it had is removed on the reload that follows, so the device list shows only what you use. Nothing else changes — the `nikobus_button_pressed` events still fire for every key, `controlled by` and shutter travel times still come from the modules, and `nikobus.send_button_press` still works on any address. Most installations run on outputs and their feedback; this makes the entity and device lists look like it.
