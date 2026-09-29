@@ -68,8 +68,29 @@ def snapshot_entity(
         value = getattr(entry, field, None)
         if value:
             snapshot[field] = value
+    # An entity the user had switched off comes back switched off; that
+    # was their choice, not the integration's.
+    if _disabled_by_user(getattr(entry, "disabled_by", None)):
+        snapshot["disabled"] = True
     op_point.setdefault(ENTITY_SNAPSHOT_KEY, {})[domain] = snapshot
     return True
+
+
+def _disabled_by_user(disabled_by: Any) -> bool:
+    """Whether a registry ``disabled_by`` value is the user's own doing."""
+    if disabled_by is None:
+        return False
+    value = getattr(disabled_by, "value", disabled_by)
+    return str(value).lower() == "user"
+
+
+def _user_disabler() -> Any:
+    """The registry's ``USER`` disabler, or its plain value outside HA."""
+    try:
+        from homeassistant.helpers.entity_registry import RegistryEntryDisabler
+    except ImportError:  # pragma: no cover - the test stubs have no enum
+        return "user"
+    return getattr(RegistryEntryDisabler, "USER", "user")
 
 
 def snapshot_device(buttons: Mapping[str, Any] | None, device: Any) -> bool:
@@ -123,6 +144,8 @@ def restore_entities(
                 and entity_registry.async_get(wanted) is None
             ):
                 changes["new_entity_id"] = wanted
+            if snapshot.get("disabled"):
+                changes["disabled_by"] = _user_disabler()
             if changes:
                 entity_registry.async_update_entity(current, **changes)
             del saved[domain]

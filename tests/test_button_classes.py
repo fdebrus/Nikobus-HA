@@ -311,3 +311,39 @@ class TestOptionsAndMigration(unittest.TestCase):
         entry.version = CONFIG_ENTRY_VERSION
         self.assertTrue(_run(async_migrate_entry(hass, entry)))
         hass.config_entries.async_update_entry.assert_not_called()
+
+
+class TestDisabledStateSurvives(unittest.TestCase):
+    """An entity the user switched off comes back switched off."""
+
+    def setUp(self):
+        import copy
+
+        self.store = copy.deepcopy(STORE)
+
+    def test_a_user_disabled_entity_is_snapshotted_as_such(self):
+        index = unique_id_index(self.store)
+        entry = _entry("nikobus_push_button_804E2C", "button.canape_1a")
+        entry.disabled_by = MagicMock(value="user")
+        snapshot_entity(index, entry)
+        saved = self.store["0D1C80"]["operation_points"]["1A"][ENTITY_SNAPSHOT_KEY]["button"]
+        self.assertTrue(saved["disabled"])
+
+    def test_an_enabled_entity_carries_no_disabled_flag(self):
+        index = unique_id_index(self.store)
+        entry = _entry("nikobus_push_button_804E2C", "button.canape_1a")
+        entry.disabled_by = None
+        snapshot_entity(index, entry)
+        saved = self.store["0D1C80"]["operation_points"]["1A"][ENTITY_SNAPSHOT_KEY]["button"]
+        self.assertNotIn("disabled", saved)
+
+    def test_restore_switches_it_off_again(self):
+        op = self.store["0D1C80"]["operation_points"]["1A"]
+        op[ENTITY_SNAPSHOT_KEY] = {"button": {"entity_id": "button.canape_1a", "disabled": True}}
+        ent_reg = MagicMock()
+        ent_reg.async_get_entity_id.return_value = "button.canape_1a"  # same id, nothing to rename
+        restore_entities(ent_reg, self.store, frozenset({BUTTON_CLASS_WALL_BUTTONS}))
+        (call,) = ent_reg.async_update_entity.call_args_list
+        self.assertEqual(call.args, ("button.canape_1a",))
+        self.assertEqual(str(getattr(call.kwargs["disabled_by"], "value", call.kwargs["disabled_by"])).lower(), "user")
+        self.assertEqual(set(call.kwargs), {"disabled_by"})
