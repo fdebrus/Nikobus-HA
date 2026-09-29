@@ -15,9 +15,10 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 ### Highlights
 
 - 🔌 **Automatic discovery** — modules and physical buttons are enumerated straight from the PC-Link; no manual address tables.
-- 🔊 **Audio zones** — an Audio Distribution module (05-205) becomes one media player per zone, with on/off, volume steps and source selection.
+- 🔊 **Audio zones** — an Audio Distribution module (05-205) becomes one media player per zone, with on/off, volume steps and source selection; its trigger keys, Power included, are press buttons under the module.
 - 💡 **Native entities** — switches, dimmers (with brightness), shutters (with simulated position) and, for a dimmer output that drives a variable-speed fan, a `fan` with a speed slider — one entity per channel, type chosen per channel.
 - 🎛️ **Buttons as triggers, and as actuators** — every keypad key, IR code, and input becomes an event source for automations, and a press-simulation button whose press the bus cannot tell from a real one.
+- 🧹 **Only the press entities you want** — press buttons and press sensors come in six classes (wall buttons, interfaces, remotes and IR codes, input modules, audio triggers, virtual buttons); tick the ones you use and the rest get no entities and no devices. Automations keep working either way: the `nikobus_button_pressed` events fire for every key.
 - 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names (numbered like in the Nikobus software), **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply. Imported names persist across restarts and re-discovery.
 - 🎬 **Scenes that fire atomically** — Central Function scenes are activated on the bus the same way a physical scene key would, with no per-channel fan-out.
 - ⚡ **Real-time or polled** — instant pushed state with a Feedback Module, or a configurable poll without one.
@@ -93,7 +94,8 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 | PC-Logic | `05-201` | Logic controller; its 6 inputs surface as `LM-INPUT 1–6`; usable as gateway (polling only, no inventory) |
 | Modular Interface, 6 inputs | `05-206` | Its 6 inputs surface as `MI-INPUT 1–6` |
 | Feedback Module | `05-207` | Optional; drives plate LEDs and pushes real-time state — through the PC-Link's port. Usable as gateway (polling only) |
-| Audio Distribution Module | `05-205` | One `media_player` per zone: on/off, volume, source select |
+| Audio Distribution Module | `05-205` | One `media_player` per zone: on/off, volume, source select; its trigger keys as press buttons under the module |
+| RGB / LED controller | `340-00112` | Recognised and shown as a device; no entities yet — how its output reads back and is driven is being worked out with a user ([#519](https://github.com/fdebrus/Nikobus-HA/issues/519)) |
 
 ### Buttons & transmitters
 
@@ -125,8 +127,9 @@ One HA **device** is created per physical button, with one button-entity + binar
 6. **Simulated press repeats** (1–10, default 3): how many times a press sent by Home Assistant is repeated on the bus, back to back in one write. A real key repeats its telegram while held and modules act on a telegram seen at least twice; leave the default unless a press is reliably ignored.
 7. If neither toggle is set, choose a **polling interval** (60–3600 s, default 120).
 8. Finish, then run [discovery](#discovery-workflow).
+9. A fresh installation creates **no press buttons or press sensors**: lights, covers and switches do not need them, and automations trigger on events. If you want them for wall keys, remotes or inputs, tick their classes under *Configure → Choose which press buttons and press sensors exist* (see [Choosing which press entities exist](#choosing-which-press-entities-exist)).
 
-All of this can be changed later under *Configure → Change hardware settings*; the integration reloads with the new values.
+All of this can be changed later under *Configure* (*Change hardware settings*, *Choose which press buttons and press sensors exist*); the integration reloads with the new values.
 
 Module and button data live in Home Assistant's own storage (`.storage/nikobus.modules`, `.storage/nikobus.buttons`, `.storage/nikobus.cfs`). You don't hand-edit these — they're populated by discovery.
 
@@ -292,6 +295,23 @@ Every physical button is one **device**. Each *operation point* on it — a key 
 
 > Binary sensors are **disabled by default** — enable them on the device page if you want to monitor presses.
 
+### Choosing which press entities exist
+
+Most installations run on their outputs and the feedback from the modules; the press entities are there for the few keys you want to press or watch from Home Assistant. *Configure → Choose which press buttons and press sensors exist* lists six classes and creates press buttons and press sensors only for the ones you tick:
+
+| Class | What it covers |
+|---|---|
+| Wall buttons | Bus push buttons of every series, and the keys of IR receivers |
+| Interfaces | Switch, push-button and universal interfaces (`05-056` / `05-057` / `05-058`) |
+| Remotes and IR codes | RF transmitters, clustered remotes, and the IR codes learned by receivers |
+| Input modules | The A / B keys of PC-Logic and Modular Interface inputs |
+| Audio triggers | The keys an Audio Distribution module listens for, Power included |
+| Virtual buttons | The virtual input banks the Nikobus software creates for programs and scenes — empty until discovery inventories them |
+
+An unticked class gets no entities **and no devices**: what it had is removed on the reload that follows, so the device list shows only what you use. Nothing else changes — `nikobus_button_pressed` and the other [events](#events--automations) fire for every key, `controlled_by` and shutter travel times still come from the modules, the A/B latch switches of input modules stay, and `nikobus.send_button_press` works on any address.
+
+A fresh installation starts with nothing ticked; an installation upgraded from a release before 3.22.0 keeps every class ticked, so nothing disappears on upgrade. Ticking a class off and on again loses nothing either: before an entity or device is removed, its entity id, name, icon and area are kept in the button store and put back when it exists again.
+
 ### PC-Logic & Modular Interface inputs
 
 The PC-Logic (`05-201`) and Modular Interface (`05-206`) each expose **6 inputs**. Each input is rendered as its own child device under the owning module:
@@ -350,7 +370,7 @@ When the same IR code is learned by several receivers, each gets its own op-poin
 
 ### Virtual / off-bus buttons
 
-Addresses not present on the physical bus (IR scene triggers, hand-added codes) aren't created as entities. Fire them from scripts:
+Addresses not present on the physical bus (IR scene triggers, hand-added codes, the virtual input banks the Nikobus software creates for programs and scenes) aren't created as entities. Fire them from scripts:
 
 ```yaml
 service: nikobus.send_button_press
@@ -365,6 +385,8 @@ data:
 A 05-205 keeps its links in its own memory, and discovery now reads them: for each zone, the bus address that switches it on or off, steps the volume, and selects each source. Every zone becomes a **media player** with those controls, and the trigger addresses are listed in its attributes.
 
 The module answers no state query, so a zone's state is what was last commanded. It is not guesswork on one side only: a wall key pressing the same function is relayed by the PC-Link, so pressing *Zone 2 on* at the wall updates the entity too.
+
+Each address the module listens for is also a press button and press sensor of its own — *Zone 2 Source 3*, *Audio Power* for the module's own Power object — filed under the module's device rather than under a wall plate, since no plate owns them. They belong to the *Audio triggers* class of [press entities](#choosing-which-press-entities-exist), so they exist only if that class is ticked; the media players do not depend on it.
 
 ## Commands on the bus
 
@@ -808,6 +830,8 @@ A second-hand PC-Link (or replaced hardware) can leave records for modules that 
 - **Pushed state needs the PC-Link's port.** On a Feedback Module's or PC-Logic's serial port the integration polls (see [Connectivity](#connectivity)).
 - **Calendar programs stay in the PC-Link.** Calendar channels that drive an output are shown in `controlled_by`, but the programs behind them are neither read nor fired.
 - **A press sent by Home Assistant is invisible to itself.** The PC-Link does not relay the host's own telegram, so no `nikobus_button_*` event is fired for it; the impacted modules are read instead.
+- **The RGB controller (340-00112) is visible but not controllable yet.** It answers no register read, and the layout of its state image is being worked out from a user's samples ([#519](https://github.com/fdebrus/Nikobus-HA/issues/519)); a light entity follows once it is.
+- **Virtual input banks are not inventoried yet.** Links that output modules hold on the Nikobus software's virtual buttons are decoded but not kept, so they do not appear in `controlled_by` and the *Virtual buttons* class is empty for now.
 
 ---
 
@@ -821,12 +845,13 @@ The code is split into two packages.
 - `NikobusEventListener` — parses CR-terminated ASCII frames, validates both checksums (the PC-Link's CRC-8 and the module's CRC-16), dispatches presses and feedback.
 - `NikobusCommandHandler` — queued, retrying command processor that owns the bus lock every exchange takes, merges set-output requests per module group, and ignores a state answer that arrives before its own acknowledgement (a Feedback Module's, not ours).
 - `NikobusAPI` — high-level operations (read/set output state, cover start/stop, key press as one back-to-back burst, module status / checksum / memory image, PC-Link clock).
-- `NikobusDiscovery` — PC-Link inventory + module register scan; reads the PC-Link's registry header to bound the sweep and filter its diagnostic filler pages, reverse-engineers button→output mappings, recognises the PC-Link's calendar channels, and classifies CF broadcasts.
+- `NikobusDiscovery` — PC-Link inventory + module register scan; reads the PC-Link's registry header to bound the sweep and filter its diagnostic filler pages, reverse-engineers button→output mappings, decodes the Audio Distribution module's own link table, recognises the PC-Link's calendar channels, and classifies CF broadcasts.
 
 **This integration (`custom_components/nikobus/`)** — the Home Assistant glue:
 
 - `coordinator.py` — wires the library together; owns polling, discovery lifecycle, state signals, and the `.nkb` name/Area/scene apply.
 - `nkbstorage.py` — the three HA Stores (`nikobus.modules`, `nikobus.buttons`, `nikobus.cfs`).
+- `nkbsnapshot.py` — keeps the entity ids, names, icons and areas of press entities and devices that a class change removes, and puts them back when the class returns.
 - `nkbnames.py` — reads names, rooms, per-channel names, and scene groups from a `.nkb` project (Access database in a ZIP, parsed with a vendored pure-Python reader).
 - `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs (inventory source only).
 - `nkbprogramming.py` — the read-only maintenance layer: module status and checksum checks, memory backups, the reprogramming watch, the PC-Link clock.
@@ -835,9 +860,9 @@ The code is split into two packages.
 - `nkbactuator.py` — turns incoming button frames into HA events with debounce + duration tracking.
 - `nkbconfig.py` — scene-file loader/writer.
 - `nkbtravelcalculator.py` — virtual cover-position tracking.
-- `devices.py` — registers the HA devices: one per wall button, input module, opaque module, and the synthesized children (PC-Logic inputs, remote codes, PC-Link calendar channels).
-- `router.py` — maps module channels to HA entity types; builds the `controlled_by` reverse index.
-- `config_flow.py` — config flow (connection → hardware → polling) and the Configure options menu (customize, upload `.nkb`, import `.nkb`).
+- `devices.py` — registers the HA devices: one per wall button, input module, opaque module, and the synthesized children (PC-Logic inputs, remote codes, PC-Link calendar channels, audio triggers under their module) — for the press-entity classes that are ticked.
+- `router.py` — maps module channels to HA entity types, decides the press-entity class and the parent device of every op point, and builds the `controlled_by` reverse index.
+- `config_flow.py` — config flow (connection → hardware → polling) and the Configure options menu (customize, upload `.nkb`, import `.nkb`, scenes, press entities).
 - `repairs.py` — the "No Nikobus buttons configured" repair flow.
 - `diagnostics.py` — the diagnostics download for bug reports.
 - `entity.py` + the platforms (`light` / `switch` / `cover` / `fan` / `button` / `binary_sensor` / `sensor` / `scene`).
