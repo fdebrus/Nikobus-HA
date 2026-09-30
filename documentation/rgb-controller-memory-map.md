@@ -135,11 +135,61 @@ been tied down.
 `D%d_correction`, `Freq`) plus six 3-value entries per component. Not
 decoded further; nothing in it is a link.
 
+## The bus side, from nikobus.exe
+
+`nikobus.exe` 4.3.1 (2010, Dekimo for Niko) is the main executable; it
+builds every frame itself and hands it to `serial.dll`. Its programming
+routine is logged step by step (`SERIAL:Setting the module in Link
+Mode`, `SERIAL:Asking for EEPROM info`, …) and the decompile confirms
+each step's frame. Frames are `func, addr_lo, addr_hi, args…` plus the
+CRC-CCITT the library already computes.
+
+| Function | Meaning | Args |
+|---|---|---|
+| `0x11` | module status: EEPROM-error flag, type, record counts | none |
+| `0x10` / `0x22` | read a 16- / 8-byte block | block index, LE |
+| `0x14` / `0x21` | **write** a 16- / 8-byte block | block index, LE, then the data |
+| `0x13` | module CRC16 over its whole image | `00` |
+| `0x18` / `0x19` | link (programming) mode on / off | none |
+| `0x1B` / `0x1C` | memory valid / invalid (dimmers only) | none |
+| `0x23` | clear EEPROM | none |
+
+**Writing a module**, in the software's order: link mode on (skipped for
+EEPROM types 4 and 5, the dimmers, which get memory-invalid instead),
+clear EEPROM, then each block of the image whose 16 bytes are not all
+`FF`, with block index = byte address / 16; a first or last block the
+image only partly covers is read back first and merged. Then link mode
+on again, CRC fetched and compared with the CRC16 of the image, link
+mode off (dimmers: memory-valid). Between blocks the software drops and
+re-enters link mode — **except for EEPROM types 10, 11 and 12** (wall
+buttons, the 340-00111, the 340-00112), which stay in link mode for the
+whole write.
+
+**Reading a module** (the installation read): the upload routine
+**skips EEPROM types 10, 11 and 12 before asking the module anything**.
+Independently, the plugin's read-back lengths would have ended the read
+loop at block 0. Both agree with the capture on a real install: every
+other module memory-read, the controller only status-polled.
+
+**EEPROMtype is the memory class.** The product table column is named
+`EEPROMtype`; the software dispatches on it, excludes type 10 (buttons)
+from its module queries, and keeps a per-type message pair for
+`COLORPLINT` and `COLORCTRL`, which fit 11 and 12.
+
+So the only read the vendor ever makes of this family is the CRC, and
+it makes it inside link mode. The controller answering no block read
+*outside* link mode (the forensic scans on #519) says nothing about
+inside. The experiment that follows: `0x18` to the controller, one
+`0x10` read of block `0x19`, `0x19`. The frames are known; what the
+module answers to `0x18` is not, so the first attempt has to be
+captured rather than automated.
+
 ## Open questions, in order of value
 
-1. The function code and frame the software writes the image with, and
-   whether it opens a programming session first. Only a serial capture of
-   the software programming a controller answers this.
-2. Whether the module addresses its memory in 16-byte blocks at these
-   byte addresses (register `0x19` for the first link record).
-3. Whether the address bytes are the physical or the wire form.
+1. Whether the controller answers block reads inside link mode. One
+   bus experiment, above.
+2. Whether the address bytes are the physical or the wire form. A serial
+   capture of the software programming a controller settles it; the
+   expected first data block is `14 1D80 1900 124A36 98 000F 012C FF…`.
+3. What the module answers to `0x18` and `0x19`, needed before any
+   automation of 1.
