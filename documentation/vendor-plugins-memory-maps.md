@@ -36,15 +36,25 @@ One block: byte 0x100, 6-byte records, read back count-driven (the
 status query's record count × 6), in 16-byte blocks. This is the
 library's plan for both families.
 
-Record, as written: `[addr 23:16] [addr 15:8] [addr 7:0 & ~3 | p4 bits]
-[T1 << 4 | link_id] [p4 << 6 | key << 4 | channel] [check]`. The
-library decodes the reversed block, so it sees the check byte first
-(its unused T2 nibble), then key and channel, then T1 and mode, then the
-address — every field where the plugin puts it. `link_id` is
-`product.mdb`'s `LinkIDNumber`: M01–M08 are 0–7, M11 8, M12 9, **M13 10**
-(sequencer, which the plugin's own upload decoder flags), **M14 11, M15
-12**. The library's switch table had 10 = M14 and 11 = M15; corrected in
-nikobus-connect PR #160, pending a real scene link to confirm.
+Record, as the plugin composes it: `[addr 23:16] [addr 15:8]
+[addr 7:2 << 2 | p4 bits 3:2] [T1 << 4 | link_id] [p4 bits 1:0 << 6 |
+addr 1:0 << 4 | channel] [chain]`, where `addr` is `plate << 2 |
+key_code` and `p4` the link's fourth parameter, which selects the key
+half. The plugin also computes the byte sum of the three address bytes:
+that is the hash the image's index at `0x000` is keyed by, and the
+sixth byte is the index of the next record with the same hash, filled
+when the table is built (not a check byte, as an earlier revision of
+this page said). The library decodes the reversed block, so it sees
+the chain byte first (its unused T2 nibble), then key and channel, then
+T1 and mode, then the address — every field where the plugin puts it.
+`link_id` is `product.mdb`'s `LinkIDNumber`: M01–M08 are 0–7, M11 8,
+M12 9, **M13 10**, **M14 11, M15 12**. M13 is the sequencer: in the
+database it is a link to the module's sequencer object rather than to
+an output channel, and the plugin's upload decoder flags a record as a
+sequencer exactly when its mode nibble is 10; what the channel nibble
+of such a record designates has not been seen on a real module. The
+library's switch table had 10 = M14 and 11 = M15; corrected in
+nikobus-connect 0.43.0.
 
 ## Dimmer, `Niko_05_007`
 
