@@ -67,7 +67,7 @@ over; it cannot decode the 18-byte records this plugin writes.
 
 | Byte | Content |
 |---|---|
-| 0–2 | Button address, 24-bit big-endian. The plugin computes it from the project database: the plate's physical address plus 4 × the key object's address on the plate (an explicit `PhysicalObjectAddress` wins; PC-Link / PC-Logic virtual channels use `((ObjectAddress + 0x60000) << 5) + PhysicalAddress`; a group input keeps the low two bits and takes the group's address). Parameter 4 of the link, when nonzero, adds 4. |
+| 0–2 | Button address, 24-bit big-endian, in the software's form: the plate's project address shifted left by two with the key's 3-bit code in the low bits — the bit-reversal of the `#N` address the key puts on the bus (see *The bus side*). An explicit `PhysicalObjectAddress` wins; a group input keeps the low two bits and takes the group's address; link parameter 4, when nonzero, adds 4. |
 | 3 | `mode << 3 \| output channel` (mode 0–31, channel 0–7) |
 | 4–5 | Parameter 1, 16-bit BE. Overridden to 15 for modes 3, 7, 9, 10 and 14 and up. For modes 6 and 12 a value 0–15 is replaced by timer table T1. |
 | 6–7 | Parameter 2, 16-bit BE; a value 0–15 (default 15) is replaced by timer table T2. |
@@ -83,22 +83,17 @@ T2, seconds: 1, 2, 4, 6, 8, 10, 15, 20, 30, 40, 50, 60, 120, 180, 240, 300.
 ### The one link we can check against
 
 The validating install has a single link on its controller: plate
-`124A36`, key 1C (key index 0), mode M19, output 1, wire address
-`#N1B1492`. The plugin writes for it:
+`124A36`, key 1C (code 0), mode M19, output 1, wire address `#N1B1492`.
+The plugin writes for it:
 
 ```
-12 4A 36  98  00 0F  01 2C  FF FF FF FF  FF FF  FF FF  FF  FF
+49 28 D8  98  00 0F  01 2C  FF FF FF FF  FF FF  FF FF  FF  FF
 ```
 
-`98` is M19 on channel 0, `000F` the forced parameter 1, `012C` = 300 s
-from T2's default. The address bytes are the least certain part: the
-plugin stores the plate's *physical* address `124A36`, where the switch,
-roller and dimmer modules store the bit-reversed *wire* form (`1B1492`).
-Whether the controller reverses it itself has not been observed. A
-serial capture of the software programming the controller would settle
-it: the write frames should carry either `124A3698000F012C` or
-`1B149298000F012C`, and their function code and address bytes would
-give the rest.
+`4928D8` is `124A36 << 2 | 0`, whose bit-reversal is `1B1492`; `98` is
+M19 on channel 0, `000F` the forced parameter 1, `012C` = 300 s from
+T2's default. Key 1D of the same plate has code 2, `4928DA`, and was
+seen on the bus as `#N5B1492` — the same reversal.
 
 ## Block 2: colour paths
 
@@ -151,16 +146,17 @@ CRC-CCITT the library already computes.
 | `0x14` / `0x21` | **write** a 16- / 8-byte block | block index, LE, then the data |
 | `0x13` | module CRC16 over its whole image | `00` |
 | `0x18` / `0x19` | link (programming) mode on / off | none |
-| `0x1B` / `0x1C` | memory valid / invalid (dimmers only) | none |
+| `0x1B` / `0x1C` | memory valid / invalid (PC-Logic and PC-Link only) | none |
 | `0x23` | clear EEPROM | none |
 
 **Writing a module**, in the software's order: link mode on (skipped for
-EEPROM types 4 and 5, the dimmers, which get memory-invalid instead),
-clear EEPROM, then each block of the image whose 16 bytes are not all
+EEPROM types 4 and 5, the PC-Logic and PC-Link, which get memory-invalid
+instead), clear EEPROM, then each block of the image whose 16 bytes are not all
 `FF`, with block index = byte address / 16; a first or last block the
 image only partly covers is read back first and merged. Then link mode
 on again, CRC fetched and compared with the CRC16 of the image, link
-mode off (dimmers: memory-valid). Between blocks the software drops and
+mode off (PC-Logic and PC-Link: memory-valid and no CRC check; the audio
+module skips the CRC check too). Between blocks the software drops and
 re-enters link mode — **except for EEPROM types 10, 11 and 12** (wall
 buttons, the 340-00111, the 340-00112), which stay in link mode for the
 whole write.
@@ -172,24 +168,36 @@ loop at block 0. Both agree with the capture on a real install: every
 other module memory-read, the controller only status-polled.
 
 **EEPROMtype is the memory class.** The product table column is named
-`EEPROMtype`; the software dispatches on it, excludes type 10 (buttons)
-from its module queries, and keeps a per-type message pair for
-`COLORPLINT` and `COLORCTRL`, which fit 11 and 12.
+`EEPROMtype`; the software dispatches on it and excludes type 10
+(buttons) from its module queries. Its own message table gives the
+numbering: 1 switch, 9 compact switch, 2 roller, 3 dimmer, 8 compact
+dimmer, 4 PC-Logic, 5 PC-Link, 6 feedback, 7 audio, 10 buttons,
+**11 colour plinth light, 12 colour controller**, 13 sensor.
+
+**The software has no direct colour command either.** Its simulation
+mode drives switch and roller outputs with the set-output functions
+(`0x15` / `0x16`, the frames the integration already uses), but for an
+output of object type 10 (dimmer) or 34 (colour) it simulates by
+pressing the linked key on the bus — a `#N` frame every 200 ms while
+the mouse is held — exactly what the integration does. The `#N` frame
+it builds is the 24-bit bit-reversal of `plate_address << 2 | key_code`,
+which is also the address form a link record holds.
 
 So the only read the vendor ever makes of this family is the CRC, and
 it makes it inside link mode. The controller answering no block read
 *outside* link mode (the forensic scans on #519) says nothing about
-inside. The experiment that follows: `0x18` to the controller, one
-`0x10` read of block `0x19`, `0x19`. The frames are known; what the
-module answers to `0x18` is not, so the first attempt has to be
-captured rather than automated.
+inside. The bench experiment that would tell: `0x18` to the controller,
+one `0x10` read of block `0x19`, `0x19`. It is not for the integration,
+which never sends a programming function; what the module answers to
+`0x18` has never been seen.
 
-## Open questions, in order of value
+## Open questions
 
-1. Whether the controller answers block reads inside link mode. One
-   bus experiment, above.
-2. Whether the address bytes are the physical or the wire form. A serial
-   capture of the software programming a controller settles it; the
-   expected first data block is `14 1D80 1900 124A36 98 000F 012C FF…`.
-3. What the module answers to `0x18` and `0x19`, needed before any
-   automation of 1.
+1. Whether the controller answers block reads inside link mode, and what
+   it answers to `0x18`. Bench questions; not for the integration.
+2. The exact meaning of the settings bytes and the LED profile block.
+   Nothing in either is a link.
+
+For the integration the picture is closed: state comes from the state
+query the controller answers, control goes through the keys the `.nkb`
+names, and the vendor software does the same.
