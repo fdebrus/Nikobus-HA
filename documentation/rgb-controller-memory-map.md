@@ -5,7 +5,7 @@ from its own plugin for this product family, `Niko_05_010.dll` in this
 folder (version 21.0.0.2, "Written by www.dekimo.com", Niko Belgium
 2001–2007), decompiled in September 2026 for
 [Nikobus-HA #519](https://github.com/fdebrus/Nikobus-HA/issues/519).
-The library carries it as `nikobus_connect.rgb_memory`.
+The library carries none of it: it reads state and presses keys, and nothing in it writes to a module or enters link mode.
 
 ## What the plugin is, and is not
 
