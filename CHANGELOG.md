@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.23.1
+
+**Requires `nikobus-connect` 0.44.0.**
+
+- **The library floor moves to 0.44.0** so existing installs pick up its two discovery reads on their next restart: the Audio Distribution module's link table is read to its record count instead of a fixed band of about 105 records (the vendor allows 1864), and the PC-Logic's own input table — the keys that feed its logic — is read in full and reported in the log for validation, not yet turned into entities. No change in the integration itself.
+
 ## 3.23.0
 
 **Requires `nikobus-connect` 0.41.0.**
