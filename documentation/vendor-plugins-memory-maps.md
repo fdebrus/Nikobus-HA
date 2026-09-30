@@ -113,6 +113,38 @@ read outside link mode and the library does not read it, by decision
 The write path keeps EEPROMtype 10 in link mode for the whole write,
 like the two colour products.
 
+## Audio distribution, `Niko_05_202`
+
+| Block | Byte | Length | Content | Library plan |
+|---|---|---|---|---|
+| 0 | 998 | 2 | link count | sub 00 0x3E |
+| 1 | 1000 | count × 2 | an index table, entry n = n | |
+| 2 | 5000 | count × 6, up to 11184 | **link records** | sub 01 0x38–0x5F |
+| 3 | 4998 | 2 | link count again | sub 01 0x38 |
+| 4 | 100 | 241 | settings; byte 240 a flag | sub 00 0x06 |
+
+Byte 4998 is sub 01 register 0x38, offset 6: the `<count> 00` header the
+library looks for, followed by the records, exactly as the validating
+module's dump has it. The plugin's upload decoder takes a record only
+when its sixth byte is 1, the address from bytes 0–2 as stored, the
+function from byte 3 and the object from the low nibble of byte 4 —
+the library's layout. The one difference is capacity: the plugin
+allows 1864 records, the library's fixed band about 106; the count at
+the head of the band is what would size a longer read.
+
+## The serial layer, `serial.dll`
+
+The executable hands `serial.dll` binary frames (function, address,
+arguments, CRC-16) and the DLL wraps them for the PC-Link: a `$`
+prefix, a length byte as two hex digits, the payload as hex, a CRC-8
+over the frame text with polynomial 0x99, and a carriage return. That
+CRC-8 is the library's `calc_crc2`, and the CRC-16 the executable
+computes first, polynomial 0x1021 from 0xFFFF, is its `calc_crc1`. The
+retries are the executable's, not the DLL's: up to five sends per
+attempt, a wait of 50 ms × 5 × the caller's factor with a floor of one
+second, and up to the caller's number of attempts with a growing pause
+between them.
+
 ## What the database adds
 
 `product.mdb` (`DatabaseVersion` 21008, the version the library's
