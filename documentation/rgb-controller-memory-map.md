@@ -186,15 +186,21 @@ which is also the address form a link record holds.
 So the only read the vendor ever makes of this family is the CRC, and
 it makes it inside link mode. The controller answering no block read
 *outside* link mode (the forensic scans on #519) says nothing about
-inside. The bench experiment that would tell: `0x18` to the controller,
-one `0x10` read of block `0x19`, `0x19`. It is not for the integration,
-which never sends a programming function; what the module answers to
-`0x18` has never been seen.
+inside — and there is a precedent that it may answer there: the
+feedback module (05-207) behaves the same way, status query answered,
+every block read ignored, and nikobus-connect 0.36.1 found that it does
+answer block reads once put in link mode, unreliably (it falls silent
+mid-read). That read was removed in 0.37.0 on principle: link mode is
+the mode that gates clearing and writing a module, and the library and
+the integration send no programming function. The same rule applies
+here. The controller's link table therefore stays unread by design, not
+for lack of a path.
 
 ## Open questions
 
-1. Whether the controller answers block reads inside link mode, and what
-   it answers to `0x18`. Bench questions; not for the integration.
+1. Whether the controller answers block reads inside link mode, as the
+   feedback module does. A bench question with a likely yes; not for the
+   integration, by the rule above.
 2. The exact meaning of the settings bytes and the LED profile block.
    Nothing in either is a link.
 
