@@ -167,12 +167,23 @@ between them.
 ## What the database adds
 
 `product.mdb` (`DatabaseVersion` 21008, the version the library's
-parameter fixture came from) carries no bus device-type byte; its
-`TypeInfo` is a UI class. The catalogue's gaps can only be filled by
-observing a module. Products in the database with no catalogue entry:
-the SMS module 05-203, the remotes 05-081 and 05-085, the RF plates
-05-305 (410-00003), 05-310 and 05-313, the RF boxes 05-315, the modular
-interface 05-055, the old PIR 05-045, the outdoor sensor 430-00502 and
-the smoke detector 420-00005, and the plinth light 340-00111. The
-340-00112's mono variant is the same product row family and is covered
-by device type 0x46.
+parameter fixture came from) carries the bus device-type byte as the
+primary key of its `ProductBase` table: the type a component is filed
+under in the PC-Link registry is `KeyProductBase`. Checked over the
+library's whole catalogue on 2026-09-30, 28 of 33 bytes name the
+product row with that key, the five others being the library's own
+aliases. (An earlier revision of this page said the database carried no
+such byte, and that the 340-00112's mono variant was covered by 0x46;
+both were wrong.) So the colour family is keys 69, 70 and 71: **0x45
+the RGB plinth light 340-00111** (`S_DB_DIM_PLINT`, first reported the
+same day at a 16-bit address), 0x46 the colour controller, **0x47 the
+same controller in its mono profile** (`S_DB_DIM_MONOCTRL`). Both new
+bytes are catalogued in nikobus-connect as modules, inventory only,
+until a state reply from one is captured. The other products with no
+catalogue entry now have a known byte too — the outdoor sensor
+430-00502 is 0x48, the smoke detector 420-00005 0x49, the SMS module
+05-203 0x2E, the RF plates 05-310 0x24 and 05-305 0x36, the RF boxes
+05-315 0x38 and 0x3C, the remotes 05-313 0x3E and 05-081 0x27, the
+modular interface 05-055 0x29, the old PIR 05-045 0x20 — and wait for a
+real install to supply a channel count or a state reply. The table is
+in nikobus-connect's `PROTOCOL.md` §11. `TypeInfo` is a UI class.
