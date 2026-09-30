@@ -78,14 +78,21 @@ library has.
 | Block | Byte | Length | Content | Library plan |
 |---|---|---|---|---|
 | 0 | 99 | 385 fixed | logic programme | sub 00 0x06–0x3F covers 0x06–0x1E |
-| 1, 2 | 998 | 2 + count × 6 | links whose output is the PC-Logic, one 24-bit address each, `IsFiltered = NO` | block 0x3E only: four records at most |
-| 3 | 11000 | 640 fixed | | sub 02 0xAF–0xEE covers 0xAF–0xD7 |
+| 1, 2 | 998 | 2 + count × 6 | **input table**: the links whose output is the PC-Logic, `[addr 3] [input] [slot] [mode]` each — the address in the software's record form (`plate << 2 \| key_code`, link parameter 4 adding 4), then the link's input index written one less than the software counts it, a slot in a twelve-wide grid, and a mode byte; sorted; room for 1536 | block 0x3E, then to the last record (nikobus-connect, unreleased after 0.43.0: `PcLogicDecoder.extension_passes`) |
+| 3 | 11000 | 640 fixed | the CF trigger-address grid the library recognises (`is_cf_address_table_chunk`) | sub 02 0xAF–0xEE covers 0xAF–0xD7 |
 | 4 | 16000 | 192 fixed | | sub 03 0xE8–0xF4, exact |
 | 5, 6 | 12000 | 2 + count × 5 | up to 64 `PhysicalObjectAddressOut` entries, one 24-bit address each | block 0x2ED–0x2EE only |
 
-The fixed blocks are all inside the library's plan. The two count-driven
-tables are the PC-Logic's own link lists; the plan reads their first
-block only. Nothing the integration builds today needs them.
+The fixed blocks are all inside the library's plan. Of the two
+count-driven tables, the input table is now read in full and decoded —
+the address as stored, as the plate address the library files buttons
+under, and as the key's `#N` frame, with the input index, slot and mode
+byte — and reported (`NikobusDiscovery.pc_logic_input_links`, one INFO
+line per module). Bytes 3–5 are read from the plugin's composer alone,
+no programmed table having been captured, so the records are not merged
+into the button store until one install confirms them. The output list
+at 12000 is still read to its first block only; nothing the integration
+builds needs it.
 
 ## PC-Link, `Niko_05_100`
 
@@ -133,14 +140,17 @@ like the two colour products.
 | 3 | 4998 | 2 | link count again | sub 01 0x38 |
 | 4 | 100 | 241 | settings; byte 240 a flag | sub 00 0x06 |
 
-Byte 4998 is sub 01 register 0x38, offset 6: the `<count> 00` header the
-library looks for, followed by the records, exactly as the validating
-module's dump has it. The plugin's upload decoder takes a record only
-when its sixth byte is 1, the address from bytes 0–2 as stored, the
-function from byte 3 and the object from the low nibble of byte 4 —
-the library's layout. The one difference is capacity: the plugin
-allows 1864 records, the library's fixed band about 106; the count at
-the head of the band is what would size a longer read.
+Byte 4998 is sub 01 register 0x38, offset 6: the two-byte little-endian
+count the library looks for (the validating module's `23 00` is 35),
+followed by the records, exactly as the validating module's dump has
+it. The plugin's upload decoder takes a record only when its sixth byte
+is 1, the address from bytes 0–2 as stored, the function from byte 3
+and the object from the low nibble of byte 4 — the library's layout.
+The plugin allows 1864 records; the library's fixed band holds about
+105, and since nikobus-connect's next release after 0.43.0 the decoder
+takes the count from the head of the band and reads on to the last
+record (`AudioDecoder.extension_passes`), where before it silently
+stopped at the band's end.
 
 ## The serial layer, `serial.dll`
 
