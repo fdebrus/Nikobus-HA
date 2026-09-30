@@ -68,9 +68,9 @@ over; it cannot decode the 18-byte records this plugin writes.
 | Byte | Content |
 |---|---|
 | 0–2 | Button address, 24-bit big-endian, in the software's form: the plate's project address shifted left by two with the key's 3-bit code in the low bits — the bit-reversal of the `#N` address the key puts on the bus (see *The bus side*). An explicit `PhysicalObjectAddress` wins; a group input keeps the low two bits and takes the group's address; link parameter 4, when nonzero, adds 4. |
-| 3 | `mode << 3 \| output channel` (mode 0–31, channel 0–7) |
-| 4–5 | Parameter 1, 16-bit BE. Overridden to 15 for modes 3, 7, 9, 10 and 14 and up. For modes 6 and 12 a value 0–15 is replaced by timer table T1. |
-| 6–7 | Parameter 2, 16-bit BE; a value 0–15 (default 15) is replaced by timer table T2. |
+| 3 | `link_id << 3 \| output channel` (channel 0–7). `link_id` is the software's mode index (`LinkModeBase.LinkIDNumber` in `product.mdb`), not the M number: M01–M08 are 0–7, M11 8, M12 9, M13 10, M14 11, M15 12, M16 13, M17 14, M18 15, M19 16, M20 17, M21 18. |
+| 4–5 | Parameter 1, 16-bit BE. Overridden to 15 for link ids 3, 7, 9, 10 and 14 up (M04, M08, M12, M13, M17–M21). For link ids 6 and 12 (M07 and M15, the delayed-off modes) a value 0–15 is replaced by timer table T1, which is `product.mdb`'s `S_DB_DIMMER_T1_3`. |
+| 6–7 | Parameter 2, 16-bit BE; a value 0–15 (default 15) is replaced by timer table T2, `product.mdb`'s `S_DB_DIMMER_T2`. |
 | 8–11 | Parameter 3, 32-bit BE: the colour as CIE x and y, 16 bits each over 65535. A mode-3 link without a colour stores `50 0D 54 3A`, D65 white (0.3127, 0.3290). Otherwise `FF FF FF FF` when absent. |
 | 12–13 | Parameter 5 as `((p5 >> 16) × 2) & 0xFFFF`; `FF FE` in the mode-3 default, `FF FF` when absent. |
 | 14–15 | Parameter 7, 16-bit BE; `(p7 \| 0x20000) >> 2` when above `0x7FFF`; `00 00` in the mode-3 default, `FF FF` when absent. |
@@ -87,12 +87,12 @@ The validating install has a single link on its controller: plate
 The plugin writes for it:
 
 ```
-49 28 D8  98  00 0F  01 2C  FF FF FF FF  FF FF  FF FF  FF  FF
+49 28 D8  80  00 0F  01 2C  FF FF FF FF  FF FF  FF FF  FF  FF
 ```
 
-`4928D8` is `124A36 << 2 | 0`, whose bit-reversal is `1B1492`; `98` is
-M19 on channel 0, `000F` the forced parameter 1, `012C` = 300 s from
-T2's default. Key 1D of the same plate has code 2, `4928DA`, and was
+`4928D8` is `124A36 << 2 | 0`, whose bit-reversal is `1B1492`; `80` is
+link id 16 (M19) on channel 0, `000F` the forced parameter 1, `012C` =
+300 s from T2's default. Key 1D of the same plate has code 2, `4928DA`, and was
 seen on the bus as `#N5B1492` — the same reversal.
 
 ## Block 2: colour paths
@@ -109,19 +109,19 @@ one per colour path used by a link; at most 512 points in all. The
 
 | Byte | Content |
 |---|---|
-| 0–1 | Component parameter 10001, 16-bit BE |
-| 2–3 | Component parameter 10002, 16-bit BE |
+| 0–1 | Parameter 10001, `S_DB_COLORMETHOD`, 16-bit BE (`FFFF` = default) |
+| 2–3 | Parameter 10002, `S_DB_LUMINANCEMETHOD`, 16-bit BE (`FFFF` = default) |
 | 4 | `FF` |
-| 5 | parameter 10005 ≠ 0 |
+| 5 | Parameter 10005, `S_DB_COLORMODE`: 1 colour, 0 mono |
 | 6 | `00` |
-| 7 | 1 when the address derived from parameter 10003 differs from the component's |
+| 7 | 1 when the master address derived from parameter 10003 differs from the component's own |
 | 8 | `00` |
-| 9 | parameter 10003's low two bits (0–3) |
+| 9 | Parameter 10003, `S_DB_MASTERMODE`, low two bits: stand-alone, master, follows another |
 | 10–15 | `FF` |
 
-The software shows threshold, DMAX, DMIN, stand-alone / follows another
-module and the LED profile for this record; which byte is which has not
-been tied down.
+The parameter names come from `product.mdb`'s `LinkModeBase` rows 10001
+to 10005 for the 340-00112. Parameter 10004, the LED profile, selects
+block 0's contents and is not stored here.
 
 ## Block 0: LED profile
 
@@ -157,22 +157,29 @@ image only partly covers is read back first and merged. Then link mode
 on again, CRC fetched and compared with the CRC16 of the image, link
 mode off (PC-Logic and PC-Link: memory-valid and no CRC check; the audio
 module skips the CRC check too). Between blocks the software drops and
-re-enters link mode — **except for EEPROM types 10, 11 and 12** (wall
-buttons, the 340-00111, the 340-00112), which stay in link mode for the
-whole write.
+re-enters link mode — **except for EEPROM types 10, 11 and 12** (the
+feedback module, the 340-00111, the 340-00112), which stay in link mode
+for the whole write.
 
 **Reading a module** (the installation read): the upload routine
-**skips EEPROM types 10, 11 and 12 before asking the module anything**.
+**skips EEPROM types 10, 11 and 12 — the feedback module and the two
+colour products — before asking the module anything**.
 Independently, the plugin's read-back lengths would have ended the read
 loop at block 0. Both agree with the capture on a real install: every
 other module memory-read, the controller only status-polled.
 
-**EEPROMtype is the memory class.** The product table column is named
-`EEPROMtype`; the software dispatches on it and excludes type 10
-(buttons) from its module queries. Its own message table gives the
-numbering: 1 switch, 9 compact switch, 2 roller, 3 dimmer, 8 compact
-dimmer, 4 PC-Logic, 5 PC-Link, 6 feedback, 7 audio, 10 buttons,
-**11 colour plinth light, 12 colour controller**, 13 sensor.
+**EEPROMtype is the memory class.** `product.mdb`'s `ProductBase` gives
+it per product, with the plugin that programs it: 1 switch 05-000-02 and
+9 compact switch 05-002-02 and 2 roller 05-001-02 (`Niko_05_000_01`),
+3 dimmer 05-007-02 and 8 compact dimmer 05-008-02 (`Niko_05_007`),
+4 PC-Logic 05-201 (`Niko_05_200`) and the SMS module 05-203
+(`Niko_05_201a`), 5 PC-Link 05-200 (`Niko_05_100`), 7 audio 05-205
+(`Niko_05_202`), **10 feedback module 05-207** (`Niko_05_207`), **11
+colour plinth light 340-00111 and 12 colour controller 340-00112**, both
+its colour and its mono profile (`Niko_05_010`). Wall buttons have no
+EEPROM type at all: nothing is programmed into them. The executable's
+message table adds 6 feedback and 13 sensor, for which the database has
+no product.
 
 **The software has no direct colour command either.** Its simulation
 mode drives switch and roller outputs with the set-output functions
