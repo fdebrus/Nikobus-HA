@@ -78,7 +78,7 @@ library has.
 | Block | Byte | Length | Content | Library plan |
 |---|---|---|---|---|
 | 0 | 99 | 385 fixed | logic programme | sub 00 0x06–0x3F covers 0x06–0x1E |
-| 1, 2 | 998 | 2 + count × 6 | **input table**: the links whose output is the PC-Logic, `[addr 3] [input] [slot] [mode]` each — the address in the software's record form (`plate << 2 \| key_code`, link parameter 4 adding 4), then the link's input index written one less than the software counts it, a slot in a twelve-wide grid, and a mode byte; sorted; room for 1536 | block 0x3E, then to the last record (nikobus-connect, unreleased after 0.43.0: `PcLogicDecoder.extension_passes`) |
+| 1, 2 | 998 | 2 + count × 6 | **input table**: the links whose output is the PC-Logic, `[addr 3] [input] [slot] [mode]` each — the address in the software's record form (`plate << 2 \| key_code`, link parameter 4 adding 4), then the link's input index written one less than the software counts it, a slot in a twelve-wide grid, and a mode byte; sorted; room for 1536 | block 0x3E, then to the last record (nikobus-connect 0.44.0: `PcLogicDecoder.extension_passes`) |
 | 3 | 11000 | 640 fixed | the CF trigger-address grid the library recognises (`is_cf_address_table_chunk`) | sub 02 0xAF–0xEE covers 0xAF–0xD7 |
 | 4 | 16000 | 192 fixed | | sub 03 0xE8–0xF4, exact |
 | 5, 6 | 12000 | 2 + count × 5 | up to 64 `PhysicalObjectAddressOut` entries, one 24-bit address each | block 0x2ED–0x2EE only |
@@ -147,8 +147,7 @@ it. The plugin's upload decoder takes a record only when its sixth byte
 is 1, the address from bytes 0–2 as stored, the function from byte 3
 and the object from the low nibble of byte 4 — the library's layout.
 The plugin allows 1864 records; the library's fixed band holds about
-105, and since nikobus-connect's next release after 0.43.0 the decoder
-takes the count from the head of the band and reads on to the last
+105, and since nikobus-connect 0.44.0 the decoder takes the count from the head of the band and reads on to the last
 record (`AudioDecoder.extension_passes`), where before it silently
 stopped at the band's end.
 
