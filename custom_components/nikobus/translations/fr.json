@@ -370,6 +370,9 @@
     },
     "rgb_no_key": {
       "message": "Aucune touche connue n'allume ou n'éteint ({action}) le contrôleur RGB {address}. Ses liaisons ne peuvent pas être lues sur le bus : téléversez votre fichier projet .nkb et lancez l'import pour que Home Assistant apprenne quelles touches le pilotent."
+    },
+    "backup_write_failed": {
+      "message": "Impossible d'écrire la sauvegarde de la programmation dans {path} : {error}"
     }
   },
   "selector": {

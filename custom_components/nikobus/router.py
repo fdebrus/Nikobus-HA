@@ -384,15 +384,37 @@ def audio_zones(buttons: Mapping[str, Any] | None) -> dict[tuple[str, int], dict
     """
     zones: dict[tuple[str, int], dict[str, str]] = {}
     for address, entry in (buttons or {}).items():
-        if not isinstance(entry, dict) or not entry.get("audio_function"):
+        if not isinstance(entry, dict):
             continue
-        zone = entry.get("audio_zone") or 0
-        for link in entry.get("operation_points", {}).get("AUD", {}).get("linked_modules", []):
-            module = str(link.get("module_address") or "").upper()
-            if module:
-                zones.setdefault((module, int(zone)), {})[
-                    str(entry["audio_function"])
-                ] = str(address).upper()
+        op_points = entry.get("operation_points")
+        if not isinstance(op_points, dict):
+            continue
+        for op_key, op_point in op_points.items():
+            if not isinstance(op_point, dict):
+                continue
+            # A virtual trigger's frame is the entry's address; a wall
+            # key's is its own bus address.
+            bus_address = str(op_point.get("bus_address") or address).upper()
+            for link in op_point.get("linked_modules") or []:
+                if not isinstance(link, dict):
+                    continue
+                module = str(link.get("module_address") or "").upper()
+                if not module:
+                    continue
+                # Every record of the link counts: a key programmed to
+                # drive several zones carries one output per zone, and
+                # the entry-level fields hold only the last of them. A
+                # trigger entry whose link carries no audio outputs (an
+                # older store) counts once, from the entry's own fields.
+                records = [
+                    (output.get("audio_function"), output.get("audio_zone"))
+                    for output in link.get("outputs") or []
+                    if isinstance(output, dict) and output.get("audio_function")
+                ]
+                if not records and op_key == "AUD" and entry.get("audio_function"):
+                    records = [(entry.get("audio_function"), entry.get("audio_zone"))]
+                for function, zone in records:
+                    zones.setdefault((module, int(zone or 0)), {})[str(function)] = bus_address
     return zones
 
 

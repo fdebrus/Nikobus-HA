@@ -98,14 +98,32 @@ class TestSwitching(unittest.TestCase):
 
     def test_no_press_when_already_in_the_asked_state(self):
         """A start/stop key would stop a running loop; a toggle would
-        switch off. Nothing is pressed when the light already is what
-        the caller asked for."""
+        switch off. Neither is pressed when the light already is what
+        the caller asked for. A dedicated off (or on) key is idempotent
+        and is pressed regardless — the polled image it would be checked
+        against can be stale for as long as nothing refreshes it."""
         light, c = _light("FFFFFFFF0000", LINKS_M19)
         _run(light.async_turn_on())
         c.async_send_button_press.assert_not_awaited()
         light, c = _light("00" * 6, LINKS_M19)
         _run(light.async_turn_off())
+        c.async_send_button_press.assert_awaited_once()
+
+    def test_the_guard_reads_the_state_the_entity_shows(self):
+        """Push mode, image never refreshed: after an optimistic turn-on
+        the start/stop key must still be pressed for turn-off's toggle
+        partner, and a toggle key must not be pressed twice."""
+        toggle = [{"bus_address": "1B1492", "button_address": "124A36", "key": "1A", "mode": 13,
+                   "mode_label": "M13 (Dim on/off (1 button))", "role": "toggle"}]
+        light, c = _light("00" * 6, toggle)
+        _run(light.async_turn_on())
+        c.async_send_button_press.assert_awaited_once_with("1B1492")
+        c.async_send_button_press.reset_mock()
+        # The image still says off; the entity knows it is on.
+        _run(light.async_turn_on())
         c.async_send_button_press.assert_not_awaited()
+        _run(light.async_turn_off())
+        c.async_send_button_press.assert_awaited_once_with("1B1492")
 
     def test_a_toggle_key_serves_both_ways(self):
         toggle = [{"bus_address": "1B1492", "button_address": "124A36", "key": "1A", "mode": 13,

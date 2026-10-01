@@ -11,7 +11,7 @@ the button platform so that module holds entities only.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -277,8 +277,8 @@ def _ensure_pc_logic_parent_device(
             if found_module_type == "pc_logic"
             else f"Modular Interface ({parent_addr})"
         )
-        name = str(module_data.get("description") or default_name)
-        model = str(module_data.get("model") or found_module_type)
+        name = _module_display_name(module_data, default_name)
+        model = _module_model(module_data, found_module_type or "input_module")
     else:
         name = f"Input Module ({parent_addr})"
         model = "input_module"
@@ -316,9 +316,32 @@ def _ensure_audio_parent_device(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, parent_addr)},
         manufacturer=BRAND,
-        name=str(module_data.get("description") or f"Audio Distribution ({parent_addr})"),
-        model=str(module_data.get("model") or "05-205"),
+        name=_module_display_name(module_data, f"Audio Distribution ({parent_addr})"),
+        model=_module_model(module_data, "audio_module"),
         via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, CATEGORY_SYSTEM_MODULES)),
+    )
+
+
+#: Catalogue models for modules whose store entry carries none.
+_MODULE_MODEL_FALLBACK: dict[str, str] = {
+    "audio_module": "05-205",
+    "rgb_module": "340-00112",
+}
+
+
+def _module_display_name(module_data: Mapping[str, Any], fallback: str) -> str:
+    """The name a module device shows: the ``.nkb`` name the import
+    persisted, else discovery's description, else ``fallback``.
+
+    Every registration path must use this, or a restart re-asserts the
+    discovery description over the imported name (HA keeps the last
+    integration-provided name)."""
+    return str(module_data.get("nkb_name") or module_data.get("description") or fallback)
+
+
+def _module_model(module_data: Mapping[str, Any], module_type: str) -> str:
+    return str(
+        module_data.get("model") or _MODULE_MODEL_FALLBACK.get(module_type) or module_type
     )
 
 
@@ -350,10 +373,8 @@ def register_input_module_devices(
     for module_type, address, module_data in _iter_module_records(
         dict_module_data, INPUT_MODULE_TYPES
     ):
-        description = str(
-            module_data.get("description") or f"{module_type} ({address})"
-        )
-        model = str(module_data.get("model") or module_type)
+        description = _module_display_name(module_data, f"{module_type} ({address})")
+        model = _module_model(module_data, module_type)
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, address)},
@@ -369,21 +390,22 @@ def register_opaque_module_devices(
     entry: NikobusConfigEntry,
     dict_module_data: dict[str, Any],
 ) -> None:
-    """Register one device per Audio Distribution module.
+    """Register one device per module that builds no channel entities.
 
-    The module's zones surface as media players and its triggers as
-    buttons, both of which land on this device; registering it here
-    keeps a module whose table discovery has not read yet visible in the
-    device registry all the same.
+    Audio Distribution modules (their zones surface as media players and
+    their triggers as buttons, both landing on this device), RGB
+    controllers, and every module the inventory filed as
+    ``other_module`` — the RGB plinth light, the mono controller, any
+    type the catalogue knows but nothing drives yet. Registering them
+    here keeps a module visible in the device registry under its name,
+    whether or not anything else is built for it.
     """
     device_registry = dr.async_get(hass)
     for module_type, address, module_data in _iter_module_records(
-        dict_module_data, OPAQUE_MODULE_TYPES
+        dict_module_data, OPAQUE_MODULE_TYPES | {"other_module"}
     ):
-        description = str(
-            module_data.get("description") or f"{module_type} ({address})"
-        )
-        model = str(module_data.get("model") or module_type)
+        description = _module_display_name(module_data, f"{module_type} ({address})")
+        model = _module_model(module_data, module_type)
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, address)},

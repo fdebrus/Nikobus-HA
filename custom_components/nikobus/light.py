@@ -12,7 +12,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
-from nikobus_connect.rgb import RGB_OFF_ROLES, RGB_ON_ROLES, RgbState, decode_rgb_state
+from nikobus_connect.rgb import (
+    RGB_OFF_ROLES,
+    RGB_ON_ROLES,
+    ROLE_OFF,
+    ROLE_ON,
+    RgbState,
+    decode_rgb_state,
+)
 
 from .const import DOMAIN, operation_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
@@ -445,10 +452,16 @@ class NikobusRgbLight(NikobusBaseLight):
                     "action": "on" if turn_on else "off",
                 },
             )
+        # A dedicated on or off key is idempotent and is always pressed.
         # A toggle key, or a start/stop key that would stop a running
         # loop, must not be pressed when the light is already where the
-        # caller wants it: read the hardware state, not the optimistic one.
-        if self._state().on == turn_on:
+        # caller wants it. The check reads the state the entity shows —
+        # the optimistic value when one is set, the polled image
+        # otherwise — because the polled image alone can be stale for
+        # as long as nothing refreshes it (push mode, or a linked plate
+        # the button store does not know), and a stale image turned
+        # "off" into a no-op and "on" into a toggle to off.
+        if link.get("role") not in (ROLE_ON, ROLE_OFF) and self.is_on == turn_on:
             self._is_on = turn_on
             self.async_write_ha_state()
             return

@@ -54,7 +54,9 @@ def test_the_device_survives_a_module_record_with_no_model():
     bare = {"rgb_module": {"801D": {"module_type": "rgb_module"}}}
     devices = _register(bare)
     assert devices["801D"]["name"] == "rgb_module (801D)"
-    assert devices["801D"]["model"] == "rgb_module"
+    # The catalogue model stands in, the same one the light's device info
+    # carries, so the two registrations of this device agree.
+    assert devices["801D"]["model"] == "340-00112"
 
 
 def test_no_channel_entities_are_built_for_it():
