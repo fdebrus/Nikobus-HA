@@ -24,6 +24,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from nikobus_connect.api import MODULE_IMAGE_SIZES
+from nikobus_connect.exceptions import NikobusError
 from nikobus_connect.protocol import family_matches, family_name
 
 from .const import (
@@ -279,6 +280,12 @@ class NikobusProgramming:
         address = self._require_pc_link()
         try:
             naive = await api.get_pc_link_time(address)
+        except (NikobusError, TimeoutError, OSError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="communication_error",
+                translation_placeholders={"error": str(err) or err.__class__.__name__},
+            ) from err
         except ValueError:
             # The controller answered but its clock was never set.
             _LOGGER.warning("PC-Link %s reports an unset clock", address)
@@ -297,7 +304,14 @@ class NikobusProgramming:
         api = self._api()
         address = self._require_pc_link()
         now = dt_util.now()
-        await api.set_pc_link_time(address, now.replace(tzinfo=None, microsecond=0))
+        try:
+            await api.set_pc_link_time(address, now.replace(tzinfo=None, microsecond=0))
+        except (NikobusError, TimeoutError, OSError) as err:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="communication_error",
+                translation_placeholders={"error": str(err) or err.__class__.__name__},
+            ) from err
         _LOGGER.info("PC-Link %s clock set to %s", address, now.isoformat(timespec="seconds"))
         clock = await self.async_read_clock()
         return clock or now
@@ -494,6 +508,7 @@ class NikobusProgramming:
         api = self._api()
         wanted = {a.upper() for a in addresses} if addresses else None
         self._set_running(True)
+        checked: set[str] = set()
         try:
             async with self._lock:
                 for address, module_type, description in self.output_modules():
@@ -503,19 +518,41 @@ class NikobusProgramming:
                         api, address, module_type, description, image=image
                     )
                     self.checks[address] = check
+                    checked.add(address)
                     self._apply_issues(check)
                 self.last_check_at = dt_util.now()
+                # A verified image is the new known programming: persist
+                # it, or the next restart reloads the old baseline and
+                # re-raises the Repair issue this run just cleared.
+                await self._async_save_baseline()
         finally:
             self._set_running(False)
             self._coordinator.async_update_listeners()
-        return self.check_report()
+        return self.check_report(checked, wanted)
 
-    def check_report(self) -> dict[str, Any]:
-        return {
+    def check_report(
+        self, only: set[str] | None = None, wanted: set[str] | None = None
+    ) -> dict[str, Any]:
+        """The result of the last run.
+
+        ``only`` limits the modules listed to the ones a run checked —
+        results from earlier runs stay stored but are not reported as if
+        they were this run's. ``wanted`` adds the addresses a caller
+        asked for that are not output modules in the inventory.
+        """
+        modules = {
+            addr: check.as_dict()
+            for addr, check in self.checks.items()
+            if only is None or addr in only
+        }
+        report: dict[str, Any] = {
             "health": self.health,
             "checked_at": self.last_check_at.isoformat() if self.last_check_at else None,
-            "modules": {addr: check.as_dict() for addr, check in self.checks.items()},
+            "modules": modules,
         }
+        if wanted is not None:
+            report["not_found"] = sorted(wanted - set(modules))
+        return report
 
     # -- backup --------------------------------------------------------------
 
@@ -532,6 +569,7 @@ class NikobusProgramming:
         stamp = dt_util.now().strftime("%Y%m%d-%H%M%S")
         folder = Path(self._hass.config.path(BACKUP_DIR, stamp))
         self._set_running(True)
+        checked: set[str] = set()
         try:
             async with self._lock:
                 images: dict[str, bytes] = {}
@@ -542,12 +580,21 @@ class NikobusProgramming:
                         api, address, module_type, description, image=True
                     )
                     self.checks[address] = check
+                    checked.add(address)
                     self._apply_issues(check)
                     if data is not None:
                         images[f"{address}_{module_type}.nkm"] = data
                 self.last_check_at = dt_util.now()
-                summary = self.check_report()
-                await self._hass.async_add_executor_job(_write_backup, folder, images, summary)
+                await self._async_save_baseline()
+                summary = self.check_report(checked, wanted)
+                try:
+                    await self._hass.async_add_executor_job(_write_backup, folder, images, summary)
+                except OSError as err:
+                    raise HomeAssistantError(
+                        translation_domain=DOMAIN,
+                        translation_key="backup_write_failed",
+                        translation_placeholders={"path": str(folder), "error": str(err)},
+                    ) from err
                 self.last_backup_path = str(folder)
                 self.last_backup_at = self.last_check_at
         finally:
@@ -558,7 +605,16 @@ class NikobusProgramming:
 
 
 def _write_backup(folder: Path, images: dict[str, bytes], summary: dict[str, Any]) -> None:
+    """Write the images and the summary, each through a temporary name.
+
+    A failure part-way leaves no half-written file behind: every file is
+    written under ``.tmp`` and renamed into place once complete.
+    """
     folder.mkdir(parents=True, exist_ok=True)
     for name, data in images.items():
-        (folder / name).write_bytes(data)
-    (folder / "summary.json").write_text(json.dumps(summary, indent=2))
+        tmp = folder / f"{name}.tmp"
+        tmp.write_bytes(data)
+        tmp.replace(folder / name)
+    tmp = folder / "summary.json.tmp"
+    tmp.write_text(json.dumps(summary, indent=2))
+    tmp.replace(folder / "summary.json")

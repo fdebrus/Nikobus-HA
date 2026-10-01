@@ -88,10 +88,13 @@ class TestCoverSwitch(unittest.TestCase):
         _run(e.async_turn_on())
         c.api.open_cover.assert_awaited_once_with("9105", 1)
 
-    def test_turn_off_stops_closing(self):
+    def test_turn_off_stops_the_opening_cover(self):
+        # The entity is "on" while the cover opens; stopping it presses
+        # the key of the running direction (or writes 0x00), not the
+        # close key, which would reverse a moving shutter.
         e, c = self._make()
         _run(e.async_turn_off())
-        c.api.stop_cover.assert_awaited_once_with("9105", 1, direction="closing")
+        c.api.stop_cover.assert_awaited_once_with("9105", 1, direction="opening")
 
     def test_turn_off_reverts_on_error(self):
         e, c = self._make()

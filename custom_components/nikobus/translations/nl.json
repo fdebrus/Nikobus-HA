@@ -370,6 +370,9 @@
     },
     "rgb_no_key": {
       "message": "Er is geen toets bekend die de RGB-controller {address} {action} zet. Zijn koppelingen zijn niet van de bus te lezen: upload uw .nkb-projectbestand en voer de import uit zodat Home Assistant leert welke toetsen hem bedienen."
+    },
+    "backup_write_failed": {
+      "message": "Kon de programmeerback-up niet schrijven naar {path}: {error}"
     }
   },
   "selector": {

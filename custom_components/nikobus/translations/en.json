@@ -226,6 +226,9 @@
     },
     "rgb_no_key": {
       "message": "No key is known that switches the RGB controller {address} {action}. Its links cannot be read from the bus: upload your .nkb project file and run the import so Home Assistant learns which keys drive it."
+    },
+    "backup_write_failed": {
+      "message": "Could not write the programming backup to {path}: {error}"
     }
   },
   "options": {

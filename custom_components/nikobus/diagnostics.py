@@ -98,7 +98,12 @@ def _per_module_decode_metrics(
         for addr, meta in modules.items():
             if not isinstance(meta, dict):
                 continue
-            cnt = meta.get("channel_count") or meta.get("channels")
+            cnt = meta.get("channel_count")
+            if cnt is None:
+                channels = meta.get("channels")
+                # The store keeps the channels as a list; the count is
+                # its length (an int here is a legacy count field).
+                cnt = len(channels) if isinstance(channels, (list, tuple)) else channels
             try:
                 channel_counts[addr.upper()] = int(cnt) if cnt is not None else 0
             except (TypeError, ValueError):

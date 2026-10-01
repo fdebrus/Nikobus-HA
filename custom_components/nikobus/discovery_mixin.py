@@ -26,6 +26,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from nikobus_connect.discovery import InventoryQueryType
+from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
 
 from .const import (
     DISCOVERY_PHASE_ERROR,
@@ -1043,7 +1044,11 @@ class NikobusDiscoveryMixin:
             # that have only a PC-Link.
             self._discovery_module_order = []
             for m_type, modules in self.dict_module_data.items():
-                if m_type in ("feedback_module", "other_module"):
+                # The same set the library's ALL queue skips: an install
+                # whose only modules are an interface or an RGB
+                # controller has nothing to scan, and must not wait on a
+                # finished callback for a scan that never starts.
+                if m_type in NON_OUTPUT_MODULE_TYPES:
                     continue
                 if isinstance(modules, dict):
                     self._discovery_module_order.extend(
@@ -1136,7 +1141,9 @@ class NikobusDiscoveryMixin:
 
         cats = set(categories) if categories else set(NKB_IMPORT_CATEGORIES)
 
-        path = find_nkb_file(self.hass.config.config_dir)
+        path = await self.hass.async_add_executor_job(
+            find_nkb_file, self.hass.config.config_dir
+        )
         if path is None:
             raise HomeAssistantError(
                 translation_domain=DOMAIN, translation_key="nkb_not_found"

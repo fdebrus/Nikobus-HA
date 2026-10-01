@@ -129,8 +129,13 @@ class _ConfigFlow(_FlowHandlerBase):
     def _get_reconfigure_entry(self):
         return self._reconfigure_entry
 
-    def async_update_reload_and_abort(self, entry, *, data=None, **kw):
-        entry.data = data
+    def async_update_reload_and_abort(self, entry, *, data=None, options=None, **kw):
+        # Mirrors HA: each of ``data`` / ``options`` replaces the entry's
+        # mapping when given and is left alone when not.
+        if data is not None:
+            entry.data = data
+        if options is not None:
+            entry.options = options
         return {"type": "abort", "reason": "reconfigure_successful"}
 
 

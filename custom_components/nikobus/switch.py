@@ -306,7 +306,9 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+            # The entity is "on" while the cover opens; stopping it means
+            # the key of the running direction, or the 0x00 write.
+            await self.coordinator.api.stop_cover(self._address, self._channel, direction="opening")
         except asyncio.CancelledError:
             raise
         except Exception as err:

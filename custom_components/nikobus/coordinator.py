@@ -28,6 +28,7 @@ from nikobus_connect.discovery import (
     find_module,
     find_operation_point,
 )
+from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
 from nikobus_connect.exceptions import (
     NikobusConnectionError,
     NikobusDataError,
@@ -60,6 +61,10 @@ from .const import (
     DOMAIN,
     FEEDBACK_PORT_ANSWERS_THRESHOLD,
     ISSUE_FEEDBACK_MODULE_PORT,
+    ISSUE_MODULE_CRC_MISMATCH,
+    ISSUE_MODULE_EEPROM_ERROR,
+    ISSUE_MODULE_PROGRAMMING_CHANGED,
+    ISSUE_MODULE_TYPE_MISMATCH,
     ISSUE_NO_BUTTONS_CONFIGURED,
     ISSUE_NO_DEVICE_ANSWERED,
     POLLED_MODULE_TYPES,
@@ -1043,7 +1048,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         return any(
             isinstance(mods, dict) and mods
             for m_type, mods in self.dict_module_data.items()
-            if m_type in MODULE_TYPES
+            if m_type in MODULE_TYPES and m_type not in NON_OUTPUT_MODULE_TYPES
         )
 
     def get_module_type(self, module_id: str) -> str | None:
@@ -1286,6 +1291,17 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             await self.button_storage.async_save()
             self._rebuild_dict_module_data()
             self._invalidate_routing_cache()
+            # The programming checks raise per-module Repair issues and
+            # clear them only for modules they still check; a purged
+            # module would keep its issues until the next restart.
+            for addr in removed_modules:
+                for key in (
+                    ISSUE_MODULE_EEPROM_ERROR,
+                    ISSUE_MODULE_CRC_MISMATCH,
+                    ISSUE_MODULE_TYPE_MISMATCH,
+                    ISSUE_MODULE_PROGRAMMING_CHANGED,
+                ):
+                    ir.async_delete_issue(self.hass, DOMAIN, f"{key}_{addr.lower()}")
             # Reload so platforms drop entities for the purged addresses.
             # Schedule rather than await — matches ``_async_options_updated``.
             self.hass.async_create_task(

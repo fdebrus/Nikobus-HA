@@ -433,7 +433,18 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected error during Nikobus reconfigure test")
                 errors["base"] = "unknown"
             else:
-                return self.async_update_reload_and_abort(entry, data=user_input)
+                # The coordinator reads the hardware and polling settings
+                # from options first (Options writes them there), so the
+                # reconfigure form writes them there too; only the
+                # connection string belongs to the entry data. Keys the
+                # form does not show (press_repeat) are left as they are.
+                connection = user_input[CONF_CONNECTION_STRING].strip()
+                settings = {k: v for k, v in user_input.items() if k != CONF_CONNECTION_STRING}
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data={**entry.data, CONF_CONNECTION_STRING: connection},
+                    options={**entry.options, **settings},
+                )
 
         return self.async_show_form(
             step_id="reconfigure",

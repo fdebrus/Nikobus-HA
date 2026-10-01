@@ -19,10 +19,12 @@ from custom_components.nikobus.config_flow import (
     NikobusOptionsFlow,
 )
 from custom_components.nikobus.const import (
+    CONF_BUTTON_CLASSES,
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
     CONF_NKB_IMPORT_CATEGORIES,
     CONF_NKB_IMPORT_OVERWRITE,
+    CONF_PRESS_REPEAT,
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
 )
@@ -153,7 +155,33 @@ class TestReconfigureFlow(unittest.TestCase):
             result = _run(flow.async_step_reconfigure(new_input))
         self.assertEqual(result["type"], "abort")
         self.assertEqual(result["reason"], "reconfigure_successful")
-        self.assertEqual(entry.data, new_input)
+        # The connection string lives in the entry data; the hardware and
+        # polling settings go to options, where the coordinator reads
+        # them first (and where the Options flow writes them).
+        self.assertEqual(entry.data, {CONF_CONNECTION_STRING: "new:5678"})
+        self.assertEqual(
+            entry.options,
+            {
+                CONF_HAS_FEEDBACK_MODULE: True,
+                CONF_PRIOR_GEN3: False,
+                CONF_REFRESH_INTERVAL: 120,
+            },
+        )
+
+    def test_reconfigure_keeps_settings_it_does_not_show(self):
+        flow, entry = self._flow_with_entry()
+        entry.options = {CONF_PRESS_REPEAT: 5, CONF_BUTTON_CLASSES: []}
+        new_input = {
+            CONF_CONNECTION_STRING: "new:5678",
+            CONF_HAS_FEEDBACK_MODULE: False,
+            CONF_PRIOR_GEN3: False,
+            CONF_REFRESH_INTERVAL: 60,
+        }
+        with patch(_TEST_CONN, new=AsyncMock()):
+            _run(flow.async_step_reconfigure(new_input))
+        self.assertEqual(entry.options[CONF_PRESS_REPEAT], 5)
+        self.assertEqual(entry.options[CONF_BUTTON_CLASSES], [])
+        self.assertEqual(entry.options[CONF_REFRESH_INTERVAL], 60)
 
     def test_cannot_connect_keeps_form(self):
         flow, entry = self._flow_with_entry()
