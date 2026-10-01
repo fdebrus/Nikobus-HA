@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.23.3
+
+**Requires `nikobus-connect` 0.46.0.**
+
+- **The RGB plinth light (340-00111) and the mono RGB controller are lights.** 3.23.2 left them as devices with no entity; the library now routes device types 0x45 and 0x47 to the RGB module bucket, so each gets the same light as the 340-00112 controller: on and off by pressing the keys the `.nkb` import links to it, state from the same query the controller answers. The plinth light's state image has not been captured yet — the entity shows the on flag of byte 1, and its colour flags may read differently; the first install with one (reported 2026-10-01) is where that gets confirmed. No change in the integration itself.
+
 ## 3.23.2
 
 **Requires `nikobus-connect` 0.45.0.** The library floor moves so existing installs pick up its audit fixes on the next restart: a set-output command can no longer be lost to a state read landing on the shared buffer, a deduplicated state read is answered instead of timing out (and no longer triggers a spurious reconnect on one-module installs), a reconnect closes the previous transport first, the PC-Logic input table is actually read, the audio count header is read where the vendor writes it, and a wall key programmed to drive an audio zone stays a wall key.
