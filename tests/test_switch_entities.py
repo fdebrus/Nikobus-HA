@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -56,10 +56,10 @@ class TestRelaySwitch(unittest.TestCase):
         e, c = self._make()
         _run(e.async_turn_on())
         self.assertTrue(e._is_on)
-        c.api.turn_on_switch.assert_awaited_once_with("3851", 3)
+        c.api.turn_on_switch.assert_awaited_once_with("3851", 3, failure_handler=ANY)
         _run(e.async_turn_off())
         self.assertFalse(e._is_on)
-        c.api.turn_off_switch.assert_awaited_once_with("3851", 3)
+        c.api.turn_off_switch.assert_awaited_once_with("3851", 3, failure_handler=ANY)
 
     def test_turn_on_reverts_on_error(self):
         e, c = self._make()
@@ -86,7 +86,7 @@ class TestCoverSwitch(unittest.TestCase):
     def test_turn_on_opens(self):
         e, c = self._make()
         _run(e.async_turn_on())
-        c.api.open_cover.assert_awaited_once_with("9105", 1)
+        c.api.open_cover.assert_awaited_once_with("9105", 1, failure_handler=ANY)
 
     def test_turn_off_stops_the_opening_cover(self):
         # The entity is "on" while the cover opens; stopping it presses
@@ -94,7 +94,7 @@ class TestCoverSwitch(unittest.TestCase):
         # close key, which would reverse a moving shutter.
         e, c = self._make()
         _run(e.async_turn_off())
-        c.api.stop_cover.assert_awaited_once_with("9105", 1, direction="opening")
+        c.api.stop_cover.assert_awaited_once_with("9105", 1, direction="opening", failure_handler=ANY)
 
     def test_turn_off_reverts_on_error(self):
         e, c = self._make()

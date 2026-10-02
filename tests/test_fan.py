@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -119,7 +119,7 @@ class TestDimmerFan(unittest.TestCase):
         _run(e.async_turn_on())
         self.assertTrue(e._is_on)
         self.assertEqual(e.percentage, 100)
-        c.api.turn_on_light.assert_awaited_once_with("0E6C", 5, 255, current_brightness=40)
+        c.api.turn_on_light.assert_awaited_once_with("0E6C", 5, 255, current_brightness=40, failure_handler=ANY)
 
     def test_set_percentage_maps_to_a_level(self):
         e, c = self._make()
@@ -132,7 +132,7 @@ class TestDimmerFan(unittest.TestCase):
         c.get_light_brightness.return_value = 128
         _run(e.async_set_percentage(0))
         c.api.turn_on_light.assert_not_awaited()
-        c.api.turn_off_light.assert_awaited_once_with("0E6C", 5, current_brightness=128)
+        c.api.turn_off_light.assert_awaited_once_with("0E6C", 5, current_brightness=128, failure_handler=ANY)
         self.assertFalse(e.is_on)
 
     def test_turn_on_reverts_on_error(self):

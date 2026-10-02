@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -73,7 +73,7 @@ class TestDimmer(unittest.TestCase):
         self.assertTrue(e._is_on)
         self.assertEqual(e._optimistic_brightness, 255)
         c.api.turn_on_light.assert_awaited_once_with(
-            "0E6C", 1, 255, current_brightness=40
+            "0E6C", 1, 255, current_brightness=40, failure_handler=ANY
         )
 
     def test_turn_on_with_brightness(self):
@@ -98,7 +98,7 @@ class TestDimmer(unittest.TestCase):
         _run(e.async_turn_off())
         self.assertFalse(e._is_on)
         self.assertIsNone(e._optimistic_brightness)
-        c.api.turn_off_light.assert_awaited_once_with("0E6C", 1, current_brightness=90)
+        c.api.turn_off_light.assert_awaited_once_with("0E6C", 1, current_brightness=90, failure_handler=ANY)
 
     def test_button_operation_clears_optimistic_state(self):
         # The signal is per-module, so any delivery is for this dimmer.
@@ -139,10 +139,10 @@ class TestRelayLight(unittest.TestCase):
         e, c = self._make()
         _run(e.async_turn_on())
         self.assertTrue(e._is_on)
-        c.api.turn_on_switch.assert_awaited_once_with("3851", 2)
+        c.api.turn_on_switch.assert_awaited_once_with("3851", 2, failure_handler=ANY)
         _run(e.async_turn_off())
         self.assertFalse(e._is_on)
-        c.api.turn_off_switch.assert_awaited_once_with("3851", 2)
+        c.api.turn_off_switch.assert_awaited_once_with("3851", 2, failure_handler=ANY)
 
     def test_turn_on_reverts_on_error(self):
         e, c = self._make()
@@ -168,12 +168,14 @@ class TestCoverLight(unittest.TestCase):
     def test_turn_on_opens_cover(self):
         e, c = self._make()
         _run(e.async_turn_on())
-        c.api.open_cover.assert_awaited_once_with("9105", 1)
+        c.api.open_cover.assert_awaited_once_with("9105", 1, failure_handler=ANY)
 
-    def test_turn_off_stops_cover_closing(self):
+    def test_turn_off_stops_the_opening_cover(self):
+        # The entity is "on" while the cover opens (state 0x01); stopping
+        # it presses the key of the running direction, not the close key.
         e, c = self._make()
         _run(e.async_turn_off())
-        c.api.stop_cover.assert_awaited_once_with("9105", 1, direction="closing")
+        c.api.stop_cover.assert_awaited_once_with("9105", 1, direction="opening", failure_handler=ANY)
 
 
 if __name__ == "__main__":

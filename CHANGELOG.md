@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.23.4
+
+**Requires `nikobus-connect` 0.47.0.**
+
+- **A command the module never acknowledges is reported, and the entity stops pretending.** A switch, light, fan or cover command returned as soon as the library queued it; when the exchange then failed after its last attempt, the only trace was a library log line and the entity kept the state it had asked for until the next poll — forever in push-only mode. Every output command now passes the library a failure handler: the optimistic state is dropped so the entity shows what the module last reported, and a warning names the entity and the error. The cover also drops the target position it was heading for.
+- **Stopping a cover-as-light presses the key of the running direction** (the entity is "on" while the cover opens), as the cover-as-switch does since 3.23.2.
+- **Discovery and maintenance runs started from a button end with the config entry.** They lived on the hass-wide task list, which an entry unload does not cancel; a run finishing after the unload saved storage and reloaded an entry that was gone. They are created on the config entry's own task list now.
+- From the library floor: one attempt on the bus fits the caller's wait (a dead module no longer holds the bus lock for 45 s and fails a whole poll cycle), and switch and roller records report their hash-chain byte as such.
+
 ## 3.23.3
 
 **Requires `nikobus-connect` 0.46.0.**

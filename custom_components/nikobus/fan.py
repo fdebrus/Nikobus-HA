@@ -168,6 +168,7 @@ class NikobusDimmerFanEntity(NikobusEntity, FanEntity, RestoreEntity):
         try:
             await self.coordinator.api.turn_on_light(
                 self._address, self._channel, target, current_brightness=previous,
+                failure_handler=self._command_failed,
             )
         except asyncio.CancelledError:
             raise
@@ -185,6 +186,7 @@ class NikobusDimmerFanEntity(NikobusEntity, FanEntity, RestoreEntity):
         try:
             await self.coordinator.api.turn_off_light(
                 self._address, self._channel, current_brightness=previous,
+                failure_handler=self._command_failed,
             )
         except asyncio.CancelledError:
             raise
