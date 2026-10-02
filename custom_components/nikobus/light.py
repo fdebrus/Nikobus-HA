@@ -238,6 +238,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
                 self._channel,
                 target_brightness,
                 current_brightness=prev_brightness,
+                failure_handler=self._command_failed,
             )
         except asyncio.CancelledError:
             raise
@@ -259,6 +260,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
                 self._address,
                 self._channel,
                 current_brightness=prev_brightness,
+                failure_handler=self._command_failed,
             )
         except asyncio.CancelledError:
             raise
@@ -296,7 +298,9 @@ class NikobusRelayEntity(NikobusBaseLight):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.turn_on_switch(self._address, self._channel)
+            await self.coordinator.api.turn_on_switch(
+                self._address, self._channel, failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -310,7 +314,9 @@ class NikobusRelayEntity(NikobusBaseLight):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.turn_off_switch(self._address, self._channel)
+            await self.coordinator.api.turn_off_switch(
+                self._address, self._channel, failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -345,7 +351,9 @@ class NikobusCoverLightEntity(NikobusBaseLight):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.open_cover(self._address, self._channel)
+            await self.coordinator.api.open_cover(
+                self._address, self._channel, failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -359,7 +367,9 @@ class NikobusCoverLightEntity(NikobusBaseLight):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.stop_cover(self._address, self._channel, direction="closing")
+            await self.coordinator.api.stop_cover(
+                self._address, self._channel, direction="opening", failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:

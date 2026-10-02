@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from custom_components.nikobus.const import CATEGORY_CENTRAL_FUNCTIONS, DOMAIN
 from custom_components.nikobus.cover import (
@@ -310,7 +310,7 @@ class TestDeferredEndStop(unittest.TestCase):
         with patch("custom_components.nikobus.cover.asyncio.sleep", new=sleep):
             _run(captured["coro"])
         sleep.assert_awaited_once_with(7.0)
-        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening")
+        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening", failure_handler=ANY)
 
     def test_new_ha_command_cancels_pending_stop(self):
         ent, _ = _make_cover(margin=10.0)
@@ -374,7 +374,7 @@ class TestStop(unittest.TestCase):
         ent, coord = _make_cover()
         ent._state = STATE_OPENING
         _run(ent._stop(send_stop=True))
-        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening")
+        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening", failure_handler=ANY)
 
     def test_send_stop_when_already_stopped_skips_api(self):
         ent, coord = _make_cover()
@@ -571,7 +571,7 @@ class TestStopFromMotionLoopSendsBusStop(unittest.TestCase):
             ent, coord = _make_cover()
             sent = []
 
-            async def real_stop(*args):
+            async def real_stop(*args, **_kwargs):
                 await asyncio.sleep(0)  # genuine suspension point
                 sent.append(args)
 
@@ -664,7 +664,7 @@ class TestErrorClearEpisode(unittest.TestCase):
         ent._state = STATE_STOPPED
         ent._last_motion_direction = "opening"
         _run(ent._stop(send_stop=True, force_api=True))
-        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening")
+        coord.api.stop_cover.assert_awaited_once_with("9105", 1, "opening", failure_handler=ANY)
 
 
 # ---------------------------------------------------------------------------

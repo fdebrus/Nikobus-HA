@@ -245,7 +245,9 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.turn_on_switch(self._address, self._channel)
+            await self.coordinator.api.turn_on_switch(
+                self._address, self._channel, failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -259,7 +261,9 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.turn_off_switch(self._address, self._channel)
+            await self.coordinator.api.turn_off_switch(
+                self._address, self._channel, failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -292,7 +296,9 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
         self.async_write_ha_state()
         
         try:
-            await self.coordinator.api.open_cover(self._address, self._channel)
+            await self.coordinator.api.open_cover(
+                self._address, self._channel, failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -308,7 +314,9 @@ class NikobusCoverSwitchEntity(NikobusBaseSwitch):
         try:
             # The entity is "on" while the cover opens; stopping it means
             # the key of the running direction, or the 0x00 write.
-            await self.coordinator.api.stop_cover(self._address, self._channel, direction="opening")
+            await self.coordinator.api.stop_cover(
+                self._address, self._channel, direction="opening", failure_handler=self._command_failed
+            )
         except asyncio.CancelledError:
             raise
         except Exception as err:

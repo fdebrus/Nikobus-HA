@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from homeassistant.core import callback
@@ -16,6 +17,7 @@ from .nkbdevices import parent_device_id
 
 # Sentinel return for ``_render_state``: this entity opts out of
 # write-diffing and writes on every coordinator update (the default).
+_LOGGER = logging.getLogger(__name__)
 _NO_DIFF = object()
 
 
@@ -107,6 +109,23 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
 
     def _invalidate_optimistic(self) -> None:
         """Drop optimistic caches before the real state is read (override)."""
+
+    def _command_failed(self, err: BaseException) -> None:
+        """A set-output the module never acknowledged.
+
+        The library reports it through the ``failure_handler`` the
+        entity passed with the command, after the call itself returned
+        (the request was queued, the exchange failed later). The
+        optimistic state is dropped so the entity shows what the module
+        last reported, and the failure is logged where the user looks.
+        """
+        _LOGGER.warning(
+            "Nikobus command for %s was not acknowledged by the module: %s",
+            self.entity_id or self.name,
+            err,
+        )
+        self._invalidate_optimistic()
+        self.async_write_ha_state()
 
     def _render_state(self) -> Any:
         """Return the displayed state used to skip redundant writes.

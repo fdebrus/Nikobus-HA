@@ -493,9 +493,20 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
             self._start_motion_logic(direction)
 
         if direction == "opening":
-            await self.coordinator.api.open_cover(self._address, self._channel, on_sent)
+            await self.coordinator.api.open_cover(
+                self._address, self._channel, on_sent, failure_handler=self._command_failed
+            )
         else:
-            await self.coordinator.api.close_cover(self._address, self._channel, on_sent)
+            await self.coordinator.api.close_cover(
+                self._address, self._channel, on_sent, failure_handler=self._command_failed
+            )
+
+    def _command_failed(self, err: BaseException) -> None:
+        """A move the module never acknowledged: no motion started, so the
+        target it was meant to reach is dropped before the base handler
+        writes the state."""
+        self._target_position = None
+        super()._command_failed(err)
 
     def _start_motion_logic(
         self,
@@ -658,7 +669,9 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
                 # 0x03 protection clear) — use the direction the motion
                 # actually ran in instead of an arbitrary "closing".
                 dir_cmd = self._last_motion_direction
-            await self.coordinator.api.stop_cover(self._address, self._channel, dir_cmd)
+            await self.coordinator.api.stop_cover(
+                self._address, self._channel, dir_cmd, failure_handler=self._command_failed
+            )
 
         self.async_write_ha_state()
 

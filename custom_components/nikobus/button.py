@@ -82,6 +82,22 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
+def _entry_background_task(hass: Any, coordinator: Any, coro: Any, name: str) -> None:
+    """Run ``coro`` as a background task that ends with the config entry.
+
+    A discovery or maintenance run started from a button used to live on
+    the hass-wide task list, which an entry unload does not cancel: a run
+    finishing after the unload saved storage and reloaded an entry that
+    was gone. The config entry's own task list is cancelled on unload.
+    """
+    entry = getattr(coordinator, "config_entry", None)
+    create = getattr(entry, "async_create_background_task", None)
+    if create is not None:
+        create(hass, coro, name=name)
+    else:
+        hass.async_create_background_task(coro, name=name)
+
+
 def _iter_button_entities(
     coordinator: NikobusDataCoordinator,
     buttons: dict[str, Any],
@@ -172,9 +188,11 @@ class NikobusPcLinkInventoryButton(_NikobusBridgeButton):
                 translation_domain=DOMAIN,
                 translation_key="discovery_already_running",
             )
-        self.hass.async_create_background_task(
+        _entry_background_task(
+            self.hass,
+            self._coordinator,
             self._coordinator.start_pc_link_inventory(),
-            name="nikobus_pc_link_inventory_discovery",
+            "nikobus_pc_link_inventory_discovery",
         )
 
 
@@ -220,9 +238,11 @@ class NikobusModuleScanButton(_NikobusBridgeButton):
                 translation_domain=DOMAIN,
                 translation_key="maintenance_running",
             )
-        self.hass.async_create_background_task(
+        _entry_background_task(
+            self.hass,
+            self._coordinator,
             self._coordinator.start_module_scan(),
-            name="nikobus_module_scan_discovery",
+            "nikobus_module_scan_discovery",
         )
 
 
@@ -408,7 +428,7 @@ class _NikobusMaintenanceButton(_NikobusBridgeButton):
             except Exception:  # a failed run is reported, not lost
                 _LOGGER.exception("%s failed", name)
 
-        self.hass.async_create_background_task(_run(), name=name)
+        _entry_background_task(self.hass, self._coordinator, _run(), name)
 
 
 class NikobusSyncClockButton(_NikobusMaintenanceButton):
