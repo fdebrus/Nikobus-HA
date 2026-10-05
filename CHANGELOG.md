@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.23.5
+
+- **Fixed: the legacy-buttons repair closed itself without showing anything.** Clicking *N Nikobus button(s) flagged as legacy* went straight to "The issue is repaired!": Home Assistant starts a repair flow by passing `{"issue_id": …}` to its first step, and the flow read that as a submission with nothing selected — so it purged nothing, Home Assistant deleted the issue, and the next full scan raised it again. The review form now lives in a step of its own, which the first step opens without input. Diagnosed to the line by @roswennen (#540).
+- **You can keep a legacy button for good.** The review has a second list, *Buttons to keep*, next to *Buttons to remove*. A key used only for Home Assistant automations, or an interface you have not wired, is meant to have no links; ticking it there stops later scans from flagging it. Kept buttons stay in the review, pre-ticked, so unticking one undoes it, and a kept button that later gains links loses the keep by itself, so a relapse is asked about again. A button in neither list is left as it is, as before. Ticking the same button in both lists is refused with a message, and nothing changes.
+
 ## 3.23.4
 
 **Requires `nikobus-connect` 0.47.0.**

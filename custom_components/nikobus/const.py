@@ -190,6 +190,12 @@ ISSUE_NO_BUTTONS_CONFIGURED: Final[str] = "no_buttons_configured"
 # previous owner" — both look identical from the bus signal. Push the
 # decision to the user via a Repairs flow.
 ISSUE_LEGACY_UNDECODED_BUTTONS: Final[str] = "legacy_undecoded_buttons"
+#: The button statuses the legacy-buttons Repairs issue reviews.
+LEGACY_BUTTON_STATUSES: Final[tuple[str, ...]] = ("legacy_undecoded", "legacy_orphan")
+#: Set on a button-store entry the user chose to keep in that review, so
+#: the next full scan does not flag it again. Dropped when the button
+#: stops being legacy (it gained links), so a later relapse asks again.
+BUTTON_LEGACY_KEEP_KEY: Final[str] = "legacy_keep"
 # A module whose link table the library could not align with the scanned
 # register window — genuine flash corruption (the Nikobus PC software
 # reports the same and asks for reprogramming). Informational only; the

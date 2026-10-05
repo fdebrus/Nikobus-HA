@@ -276,17 +276,25 @@
       "title": "{count} bouton(s) Nikobus signalé(s) comme hérité(s)",
       "fix_flow": {
         "step": {
-          "init": {
+          "select": {
             "title": "Examiner les boutons Nikobus hérités",
-            "description": "Ces {count} bouton(s) sont signalés comme hérités après un scan complet de phase 2. La colonne Raison explique pourquoi :\n\n  - **no decoded links** — aucun module de sortie ne référence ce bouton. Soit un bouton mural utilisé uniquement pour des automatisations Home Assistant (à conserver), soit un résidu d'un précédent propriétaire (à purger).\n  - **residue / stale links** — les liens du bouton existent uniquement dans la mémoire de registre PC-Link / PC-Logic sans qu'aucun module de sortie actuel ne les enregistre, ou tous les modules liés ont été évincés. Typiquement une programmation résiduelle d'un précédent propriétaire que l'appairage DIN-button n'a pas effacée (à purger).\n\nPour récupérer un bouton purgé, relancez **1. Charger l'aperçu du projet** puis **2. Charger l'installation existante** — la bibliothèque réinsère tout ce qui figure encore dans le projet.\n\n{candidates}\n\nLaissez la liste vide et soumettez pour tout conserver.",
+            "description": "Ces {count} bouton(s) sont signalés comme hérités après un scan complet de phase 2. La colonne Raison explique pourquoi :\n\n  - **no decoded links** — aucun module de sortie ne référence ce bouton. Soit un bouton mural utilisé uniquement pour des automatisations Home Assistant (à conserver), soit un résidu d'un précédent propriétaire (à purger).\n  - **residue / stale links** — les liens du bouton existent uniquement dans la mémoire de registre PC-Link / PC-Logic sans qu'aucun module de sortie actuel ne les enregistre, ou tous les modules liés ont été évincés. Typiquement une programmation résiduelle d'un précédent propriétaire que l'appairage DIN-button n'a pas effacée (à purger).\n\nPour récupérer un bouton purgé, relancez **1. Charger l'aperçu du projet** puis **2. Charger l'installation existante** — la bibliothèque réinsère tout ce qui figure encore dans le projet.\n\n{candidates}\n\nCochez un bouton sous **Boutons à supprimer** pour le purger maintenant, ou sous **Boutons à conserver** s'il ne doit avoir aucun lien (une touche utilisée uniquement pour des automatisations Home Assistant, une interface inutilisée) : un bouton conservé n'est plus signalé par les scans suivants. Un bouton présent dans aucune des deux listes reste tel quel et sera de nouveau signalé après le prochain scan complet. Décochez une conservation pour l'annuler.",
             "data": {
-              "addresses": "Boutons à supprimer"
+              "addresses": "Boutons à supprimer",
+              "keep": "Boutons à conserver (plus signalés)"
+            },
+            "data_description": {
+              "addresses": "Purgés immédiatement. Récupérable : un nouveau **1. Charger l'aperçu du projet** puis **2. Charger l'installation existante** réinsère tout ce qui figure encore dans le projet.",
+              "keep": "Mémorisé dans le stockage des boutons. La conservation est levée d'elle-même si le bouton obtient des liens par la suite."
             }
           }
         },
         "abort": {
           "not_loaded": "L'intégration Nikobus n'est pas chargée ; rechargez l'entrée puis réessayez.",
           "no_candidates": "Aucun bouton hérité ne reste — rien à faire."
+        },
+        "error": {
+          "remove_and_keep": "Un bouton ne peut pas être à la fois supprimé et conservé — décochez-le dans l'une des deux listes."
         }
       }
     },

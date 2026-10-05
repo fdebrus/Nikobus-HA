@@ -29,6 +29,7 @@ from nikobus_connect.discovery import InventoryQueryType
 from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
 
 from .const import (
+    BUTTON_LEGACY_KEEP_KEY,
     DISCOVERY_PHASE_ERROR,
     DISCOVERY_PHASE_FINISHED,
     DISCOVERY_PHASE_MODULE_SCAN,
@@ -48,6 +49,7 @@ from .const import (
     DOMAIN,
     ISSUE_CORRUPT_MODULES,
     ISSUE_LEGACY_UNDECODED_BUTTONS,
+    LEGACY_BUTTON_STATUSES,
     NKB_IMPORT_CATEGORIES,
     SIGNAL_DISCOVERY_STATE,
 )
@@ -207,11 +209,14 @@ class NikobusDiscoveryMixin:
         scan-all). Recoverable: purged buttons reappear on the next
         PC-Link inventory if they're still in the project.
         """
+        # A button the user chose to keep in an earlier review is not
+        # raised again: an HA-only trigger stays unlinked by design.
         legacy_addrs = sorted(
             str(addr).upper()
             for addr, phys in buttons.items()
             if isinstance(phys, dict)
-            and phys.get("status") in ("legacy_undecoded", "legacy_orphan")
+            and phys.get("status") in LEGACY_BUTTON_STATUSES
+            and not phys.get(BUTTON_LEGACY_KEEP_KEY)
         )
         issue_id = (
             f"{ISSUE_LEGACY_UNDECODED_BUTTONS}_{self.config_entry.entry_id}"
@@ -500,6 +505,10 @@ class NikobusDiscoveryMixin:
             status = classify_button_status(phys, remaining, has_pc_logic)
             phys["status"] = status
             bucket_counts[status] += 1
+            # A kept button that gained links is no longer legacy; drop
+            # the keep so a later relapse is reviewed again.
+            if status not in LEGACY_BUTTON_STATUSES:
+                phys.pop(BUTTON_LEGACY_KEEP_KEY, None)
 
         # Surface the legacy-undecoded Repairs issue only after a
         # Stage-2 scan-all, when the verdict is meaningful (every
