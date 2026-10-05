@@ -132,17 +132,25 @@
       "title": "{count} Nikobus button(s) flagged as legacy",
       "fix_flow": {
         "step": {
-          "init": {
+          "select": {
             "title": "Review legacy Nikobus buttons",
-            "description": "These {count} button(s) are flagged as legacy after a full Stage-2 scan. The Reason column explains why each one was flagged:\n\n  - **no decoded links** — no output module references this button. Either a wall button used only for Home Assistant automations (KEEP), or residue from a previous owner (PURGE).\n  - **residue / stale links** — the button's links live only in PC-Link / PC-Logic registry memory with no current output module recording them, or every linked module was evicted. Typically residue programming from a previous owner that DIN-button re-pairing didn't clear (PURGE).\n\nTo recover any purged button, re-run **1. Load Project Overview** and then **2. Load Existing Installation** — the library re-adds anything currently in the project.\n\n{candidates}\n\nLeave the list empty and submit to keep everything.",
+            "description": "These {count} button(s) are flagged as legacy after a full Stage-2 scan. The Reason column explains why each one was flagged:\n\n  - **no decoded links** — no output module references this button. Either a wall button used only for Home Assistant automations (KEEP), or residue from a previous owner (PURGE).\n  - **residue / stale links** — the button's links live only in PC-Link / PC-Logic registry memory with no current output module recording them, or every linked module was evicted. Typically residue programming from a previous owner that DIN-button re-pairing didn't clear (PURGE).\n\nTo recover any purged button, re-run **1. Load Project Overview** and then **2. Load Existing Installation** — the library re-adds anything currently in the project.\n\n{candidates}\n\nTick a button under **Buttons to remove** to purge it now, or under **Buttons to keep** if it is meant to have no links (a key used only for Home Assistant automations, an unused interface): a kept button is not flagged again by later scans. A button in neither list stays as it is and is flagged again after the next full scan. Untick a keep to undo it.",
             "data": {
-              "addresses": "Buttons to remove"
+              "addresses": "Buttons to remove",
+              "keep": "Buttons to keep (not flagged again)"
+            },
+            "data_description": {
+              "addresses": "Purged now. Recoverable: a new **1. Load Project Overview** and **2. Load Existing Installation** re-add anything still in the project.",
+              "keep": "Remembered in the button store. The keep is dropped by itself if the button later gains links."
             }
           }
         },
         "abort": {
           "not_loaded": "The Nikobus integration is not loaded; reload the entry and retry.",
           "no_candidates": "No legacy buttons remain — nothing to do."
+        },
+        "error": {
+          "remove_and_keep": "A button cannot be both removed and kept — untick it in one of the two lists."
         }
       }
     },

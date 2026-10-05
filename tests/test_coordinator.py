@@ -822,6 +822,32 @@ class TestReconcilePostDiscovery(unittest.IsolatedAsyncioTestCase):
             "legacy_undecoded",
         )
 
+    async def test_a_kept_button_that_gained_links_loses_its_keep(self):
+        """#540: the keep set in the legacy review holds only while the
+        button stays legacy, so a later relapse is reviewed again."""
+        kept_active = self._button("AABB")
+        kept_active["legacy_keep"] = True
+        kept_legacy = self._button()
+        kept_legacy["legacy_keep"] = True
+        coord = self._make_coordinator_stub(
+            modules={"AABB": {"module_type": "switch_module"}},
+            buttons={"112233": kept_active, "445566": kept_legacy},
+            manifest={
+                "checked": ["AABB"],
+                "present_modules": ["AABB"],
+                "absent_modules": [],
+                "orphaned_buttons": [],
+            },
+        )
+
+        await coord._reconcile_post_discovery()
+
+        buttons = coord.dict_button_data["nikobus_button"]
+        self.assertEqual(buttons["112233"]["status"], "active")
+        self.assertNotIn("legacy_keep", buttons["112233"])
+        self.assertEqual(buttons["445566"]["status"], "legacy_undecoded")
+        self.assertTrue(buttons["445566"]["legacy_keep"])
+
     async def test_synthesized_pc_logic_input_is_not_flagged_as_legacy(self):
         """PC-Logic (05-201) and Modular Interface (05-206) synthesized
         inputs carry ``pc_logic_parent_address`` set by the library's

@@ -740,7 +740,7 @@ Every condition the integration can diagnose is a Repair issue (*Settings → Sy
 | Repair issue | Meaning | What to do |
 |---|---|---|
 | No Nikobus buttons configured | Discovery has never run | Press *1.* then *2.* on the Bridge device |
-| *N* button(s) flagged as legacy | Buttons with no decodable links, or links only to modules that are gone | Review them; a rescan or a purge clears it |
+| *N* button(s) flagged as legacy | Buttons with no decodable links, or links only to modules that are gone | Review them: remove the residue, and keep the ones meant to have no links (HA-only keys, unwired interfaces) so later scans stop flagging them |
 | Module needs reprogramming | A module's link table read as corrupt and was skipped | Reprogram it with the Nikobus PC software, rescan |
 | Module reports an EEPROM error | The module flags its own memory | Reprogram it with the Nikobus PC software |
 | Programming checksum mismatch | The image read back differs from the module's checksum | Re-run *Verify*; if it persists, reprogram |

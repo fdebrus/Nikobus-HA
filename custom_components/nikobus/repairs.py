@@ -16,7 +16,11 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
 )
 
-from .const import ISSUE_LEGACY_UNDECODED_BUTTONS
+from .const import (
+    BUTTON_LEGACY_KEEP_KEY,
+    ISSUE_LEGACY_UNDECODED_BUTTONS,
+    LEGACY_BUTTON_STATUSES,
+)
 from .coordinator import NikobusDataCoordinator
 
 
@@ -71,65 +75,116 @@ class LegacyUndecodedButtonsRepairFlow(RepairsFlow):
     """
 
     def __init__(self, entry_id: str, addresses: list[str]) -> None:
-        """Store the entry id and the candidate addresses surfaced by the issue."""
+        """Store the entry id and the addresses the issue was raised for."""
         self._entry_id = entry_id
         self._candidates = [str(a).upper() for a in addresses]
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show the candidate list with a multi-select."""
+        """Open the review form.
+
+        Home Assistant passes ``{"issue_id": ...}`` to a repair flow's
+        first step as its input, a compatibility fallback, so ``init``
+        never sees ``None``. Reading that as a submission closed the
+        issue at once with nothing chosen (#540). The form lives in its
+        own step, reached here with no input.
+        """
+        return await self.async_step_select()
+
+    async def async_step_select(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show the candidates with a remove list and a keep list."""
         coordinator = _coordinator(self.hass, self._entry_id)
         if coordinator is None:
             return self.async_abort(reason="not_loaded")
 
         buttons = (coordinator.dict_button_data or {}).get("nikobus_button", {})
-        # Filter candidates to those still in the store AND still in
-        # one of the legacy buckets — the user may have manually purged
-        # some via the service in the meantime, or another scan may
-        # have decoded their links.
-        still_legacy = [
-            addr
-            for addr in self._candidates
-            if isinstance(buttons.get(addr), dict)
-            and buttons[addr].get("status") in ("legacy_undecoded", "legacy_orphan")
-        ]
-        if not still_legacy:
+        # Every button still in a legacy bucket, read from the store now:
+        # the user may have purged some via the service, another scan may
+        # have decoded their links, and buttons kept in an earlier review
+        # are listed too (their keep pre-ticked) so a keep can be undone.
+        candidates = sorted(
+            str(addr).upper()
+            for addr, phys in buttons.items()
+            if isinstance(phys, dict) and phys.get("status") in LEGACY_BUTTON_STATUSES
+        )
+        if not candidates:
             return self.async_abort(reason="no_candidates")
 
+        errors: dict[str, str] = {}
+        remove: list[str] = []
+        keep: list[str] = [
+            addr for addr in candidates if buttons[addr].get(BUTTON_LEGACY_KEEP_KEY)
+        ]
         if user_input is not None:
-            selected = [
-                str(addr).upper() for addr in (user_input.get("addresses") or [])
-            ]
-            if selected:
-                await coordinator.purge_inventory_addresses(selected)
-            return self.async_create_entry(title="", data={})
+            remove = _chosen(user_input.get("addresses"), candidates)
+            keep = _chosen(user_input.get("keep"), candidates)
+            if set(remove) & set(keep):
+                errors["base"] = "remove_and_keep"
+            else:
+                await self._apply(coordinator, buttons, candidates, remove, keep)
+                return self.async_create_entry(title="", data={})
 
         options = [
-            SelectOptionDict(
-                value=addr, label=self._format_label(addr, buttons[addr])
-            )
-            for addr in still_legacy
+            SelectOptionDict(value=addr, label=self._format_label(addr, buttons[addr]))
+            for addr in candidates
         ]
+
+        def _list() -> SelectSelector:
+            return SelectSelector(
+                SelectSelectorConfig(
+                    multiple=True, mode=SelectSelectorMode.LIST, options=options
+                )
+            )
+
         schema = vol.Schema(
             {
-                vol.Optional("addresses", default=[]): SelectSelector(
-                    SelectSelectorConfig(
-                        multiple=True,
-                        mode=SelectSelectorMode.LIST,
-                        options=options,
-                    )
-                ),
+                vol.Optional("addresses", default=remove): _list(),
+                vol.Optional("keep", default=keep): _list(),
             }
         )
         return self.async_show_form(
-            step_id="init",
+            step_id="select",
             data_schema=schema,
+            errors=errors,
             description_placeholders={
-                "count": str(len(still_legacy)),
-                "candidates": self._render_table(still_legacy, buttons),
+                "count": str(len(candidates)),
+                "candidates": self._render_table(candidates, buttons),
             },
         )
+
+    @staticmethod
+    async def _apply(
+        coordinator: NikobusDataCoordinator,
+        buttons: dict[str, Any],
+        candidates: list[str],
+        remove: list[str],
+        keep: list[str],
+    ) -> None:
+        """Record the keeps, then purge the removals.
+
+        A candidate in neither list loses any earlier keep: unticking a
+        keep is how it is undone.
+        """
+        kept = set(keep)
+        changed = False
+        for addr in candidates:
+            if addr in remove:
+                continue
+            phys = buttons[addr]
+            if addr in kept and not phys.get(BUTTON_LEGACY_KEEP_KEY):
+                phys[BUTTON_LEGACY_KEEP_KEY] = True
+                changed = True
+            elif addr not in kept and BUTTON_LEGACY_KEEP_KEY in phys:
+                phys.pop(BUTTON_LEGACY_KEEP_KEY, None)
+                changed = True
+        if remove:
+            # Saves the button store as well, keeps included.
+            await coordinator.purge_inventory_addresses(remove)
+        elif changed:
+            await coordinator.button_storage.async_save()
 
     @staticmethod
     def _format_label(address: str, phys: dict[str, Any]) -> str:
@@ -185,6 +240,12 @@ async def async_create_fix_flow(
         addresses = (data or {}).get("addresses") or []
         return LegacyUndecodedButtonsRepairFlow(entry_id, addresses)
     return NoButtonsConfiguredRepairFlow(entry_id)
+
+
+def _chosen(raw: Any, candidates: list[str]) -> list[str]:
+    """The submitted addresses that are candidates, upper-cased, in order."""
+    picked = {str(addr).upper() for addr in (raw or [])} if isinstance(raw, list) else set()
+    return [addr for addr in candidates if addr in picked]
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str) -> NikobusDataCoordinator | None:
