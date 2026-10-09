@@ -1,299 +1,38 @@
-"""Pure post-discovery reconciliation helpers.
+"""Post-discovery reconciliation: the library's store helpers, plus the
+one rule that is Home Assistant's — which central functions become
+scene entities.
 
-Stateless data-crunching extracted from ``coordinator.py``: member-set
-keys (used to match ``.nkb`` scene groups, classified CF entries and
-routing-graph op-points against each other), the ``controlled_by``
-index, and the registry-only-residue checks. None of these touch Home
-Assistant — they take the integration's button/module store dicts and
-return plain data — so they live here, away from the coordinator's HA
-lifecycle, and are unit-tested in isolation.
+Member sets, the ``controlled_by`` index, button status, central
+function classification, the routing graph and the project file's
+colour-controller links are questions about the shape of the library's
+own records, and since nikobus-connect 0.49.0 they are answered in
+``nikobus_connect.discovery.store``. The names are re-exported here so
+the platforms and tests keep their imports.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .const import INPUT_ONLY_BUTTON_TYPES
-
-# ``_mode_code`` extracts the leading ``M<n>`` from a mode label. It's
-# re-exported by the integration's ``nkbnames`` module (which since
-# nikobus-connect 0.26.0 is a thin shim over ``nikobus_connect.nkb``),
-# so this stays correct whether the parser is local or library-provided.
-from .nkbnames import _mode_code as mode_code
-
-# A button whose every output record is registry-sourced (read from a
-# PC-Link / PC-Logic register table rather than an output module's own
-# link table) is residue from a previous owner's programming — *unless*
-# the install has a PC-Logic, where it may be a legitimate scene trigger.
-REGISTRY_SOURCES = frozenset({"pc_link_registry", "pc_logic_registry"})
-
-
-def member_set_from_outputs(outputs: Any) -> frozenset[tuple[str, int, str]]:
-    """Frozenset of ``(module_upper, channel, mode_code)`` for an output
-    list — the canonical key for matching a scene/CF by its members, used
-    identically on ``.nkb`` groups, CF entries and routing-graph op-points
-    so the three are directly comparable."""
-    out: set[tuple[str, int, str]] = set()
-    for o in outputs or []:
-        if not isinstance(o, dict):
-            continue
-        mod = o.get("module_address")
-        ch = o.get("channel")
-        code = mode_code(o.get("mode"))
-        if isinstance(mod, str) and isinstance(ch, int) and code:
-            out.add((mod.upper(), ch, code))
-    return frozenset(out)
-
-
-def cf_member_set(cf: dict[str, Any]) -> frozenset[tuple[str, int, str]]:
-    """Member-set key for a stored ``nikobus_cf`` entry."""
-    return member_set_from_outputs((cf or {}).get("outputs"))
-
-
-def collect_button_linked_modules(phys: dict[str, Any]) -> set[str]:
-    """Union of every module address referenced by any of a button's op-points."""
-    linked: set[str] = set()
-    op_points = phys.get("operation_points") or {}
-    if not isinstance(op_points, dict):
-        return linked
-    for op_point in op_points.values():
-        if not isinstance(op_point, dict):
-            continue
-        for link in op_point.get("linked_modules") or []:
-            if not isinstance(link, dict):
-                continue
-            addr = link.get("module_address")
-            if addr:
-                linked.add(str(addr).upper())
-    return linked
-
-
-def collect_button_outputs(phys: dict[str, Any]) -> list[dict[str, Any]]:
-    """Flatten every output record under every op-point of a button.
-
-    Returned dicts are the decoder's per-output records (channel, mode,
-    payload, button_address, plus nikobus-connect 0.5.22+'s
-    ``record_source``). Used by the registry-only residue check.
-    """
-    outputs: list[dict[str, Any]] = []
-    op_points = phys.get("operation_points") or {}
-    if not isinstance(op_points, dict):
-        return outputs
-    for op_point in op_points.values():
-        if not isinstance(op_point, dict):
-            continue
-        for link in op_point.get("linked_modules") or []:
-            if not isinstance(link, dict):
-                continue
-            for out in link.get("outputs") or []:
-                if isinstance(out, dict):
-                    outputs.append(out)
-    return outputs
-
-
-def all_outputs_registry_sourced(outputs: list[dict[str, Any]]) -> bool:
-    """True iff every output has ``record_source`` in the registry set.
-
-    Returns False if ``outputs`` is empty, or if any output is missing
-    the field. Pre-0.5.22 records (no ``record_source``) are treated as
-    source-unknown and fall through to the existing classifier —
-    backward compat without data migration.
-    """
-    if not outputs:
-        return False
-    return all(out.get("record_source") in REGISTRY_SOURCES for out in outputs)
-
-
-def has_pc_logic_module(module_data: dict[str, Any] | None) -> bool:
-    """True if the install has at least one PC-Logic module in the store.
-
-    Gates the registry-only residue verdict: with PC-Logic absent, a
-    button whose every output is registry-sourced is unambiguous residue
-    (no real button-to-output link exists anywhere). With PC-Logic
-    present, the same shape could be a legitimate PC-Logic-only scene
-    trigger — fall through to the existing classifier and let the user
-    adjudicate.
-    """
-    modules = (module_data or {}).get("nikobus_module", {})
-    if not isinstance(modules, dict):
-        return False
-    return any(
-        isinstance(m, dict) and m.get("module_type") == "pc_logic"
-        for m in modules.values()
-    )
-
-
-def build_controlled_by_index(
-    button_data: dict[str, Any] | None,
-) -> dict[tuple[str, int], list[dict[str, Any]]]:
-    """Build a ``(module_address_upper, channel) -> [button record]`` index."""
-    index: dict[tuple[str, int], list[dict[str, Any]]] = {}
-    buttons = (button_data or {}).get("nikobus_button", {})
-    if not isinstance(buttons, dict):
-        return index
-    for physical_addr, phys in buttons.items():
-        if not isinstance(phys, dict):
-            continue
-        op_points = phys.get("operation_points") or {}
-        if not isinstance(op_points, dict):
-            continue
-        for key_label, op_point in op_points.items():
-            if not isinstance(op_point, dict):
-                continue
-            bus_addr = op_point.get("bus_address") or ""
-            description = op_point.get("description") or f"Button {bus_addr}"
-            for link in op_point.get("linked_modules") or []:
-                if not isinstance(link, dict):
-                    continue
-                module_address = link.get("module_address")
-                if not module_address:
-                    continue
-                module_key = str(module_address).upper()
-                for out in link.get("outputs") or []:
-                    if not isinstance(out, dict):
-                        continue
-                    channel = out.get("channel")
-                    if not isinstance(channel, int):
-                        continue
-                    index.setdefault((module_key, channel), []).append({
-                        "bus_address": bus_addr,
-                        "description": description,
-                        "mode": out.get("mode"),
-                        "t1": out.get("t1"),
-                        "t2": out.get("t2"),
-                        "wall_button_address": physical_addr,
-                        "wall_button_key": key_label,
-                    })
-    return index
-
-
-def classify_button_status(
-    phys: dict[str, Any],
-    remaining_modules: set[str],
-    has_pc_logic: bool,
-) -> str:
-    """Return the post-discovery reconciliation bucket for one button.
-
-    ``remaining_modules`` is the set of surviving (non-evicted) module
-    addresses (upper-case); ``has_pc_logic`` is the install's topology
-    gate. One of:
-
-      * ``synthesized_input`` — a library-synthesized PC-Logic (05-201) /
-        Modular-Interface (05-206) input child (``pc_logic_parent_address``
-        set). Models a bus-event source the parent listens to internally;
-        empty ``linked_modules`` is its steady state, not residue.
-      * ``input_only`` — a Universal Interface (05-058) and friends
-        (``type`` in ``INPUT_ONLY_BUTTON_TYPES``): emits press telegrams
-        but never writes output-module link tables. Empty links is normal.
-      * ``legacy_undecoded`` — no decoded outputs anywhere (pre-Stage-2
-        default, or an intentionally-unwired HA-trigger button).
-      * ``legacy_orphan`` — has decoded outputs but either every output is
-        registry-sourced with no PC-Logic to justify it (residue from a
-        previous owner), or every decoded-target module was evicted.
-      * ``active`` — at least one linked module survived the scan.
-    """
-    if phys.get("pc_logic_parent_address"):
-        return "synthesized_input"
-    if phys.get("type") in INPUT_ONLY_BUTTON_TYPES or phys.get("calendar_channel"):
-        return "input_only"
-    linked = collect_button_linked_modules(phys)
-    outputs = collect_button_outputs(phys)
-    if not outputs:
-        return "legacy_undecoded"
-    if not has_pc_logic and all_outputs_registry_sourced(outputs):
-        return "legacy_orphan"
-    if not (linked & remaining_modules):
-        return "legacy_orphan"
-    return "active"
-
-
-def flatten_cf_broadcasts(broadcasts: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Convert the library's ``CFBroadcast`` objects to the JSON-safe
-    ``nikobus_cf`` store shape.
-
-    ``{addr: {bus_address, pattern, outputs, triggered_by}}`` — ``outputs``
-    is a list of ``{module_address, channel, mode, t1, t2}`` dicts, keyed
-    addresses upper-cased.
-    """
-    flat: dict[str, dict[str, Any]] = {}
-    for addr, cf in broadcasts.items():
-        outputs = [
-            {
-                "module_address": str(m.module_address).upper(),
-                "channel": int(m.channel),
-                "mode": str(m.mode),
-                "t1": getattr(m, "t1", None),
-                "t2": getattr(m, "t2", None),
-            }
-            for m in getattr(cf, "outputs", [])
-        ]
-        bus_address = str(getattr(cf, "bus_address", addr)).upper()
-        triggered_by = [
-            str(t).upper()
-            for t in (getattr(cf, "triggered_by", None) or [bus_address])
-        ]
-        flat[str(addr).upper()] = {
-            "bus_address": bus_address,
-            "pattern": str(getattr(cf, "pattern", "unknown")),
-            "outputs": outputs,
-            "triggered_by": triggered_by,
-        }
-    return flat
-
-
-def _is_roller_member(mode: Any) -> bool:
-    """True if an output's *mode wording* makes it a roller (shutter) member.
-
-    Detection is by WORDING, not mode code: a roller member's mode label
-    contains ``open``, ``close`` or ``stop`` (case-insensitive) — e.g.
-    ``"M01 (Open - stop - close)"``, ``"M02 (Open)"``, ``"M03 (Close)"``.
-    The ``M02`` / ``M03`` *codes* are shared with switch modules
-    (``"M02 (On + Operating time)"``, ``"M03 (Off + Operating time)"``),
-    so keying off the code would misclassify a switch member as a roller.
-    Dimmer / switch modes like ``"M12 (Preset on)"`` or
-    ``"M04 (Light scene on)"`` carry none of those words and so are not
-    roller members.
-    """
-    if not isinstance(mode, str):
-        return False
-    text = mode.lower()
-    return ("open" in text) or ("close" in text) or ("stop" in text)
-
-
-def is_pure_roller_cf(cf: dict[str, Any]) -> bool:
-    """True iff a CF has at least one member and *every* member is a roller.
-
-    A pure-roller CF (all shutter members, by mode wording) becomes a
-    member-driving grouped cover (open/close/stop). A CF with a non-roller
-    member — a light scene, preset or switch action, e.g. one carrying an
-    ``"M04 (Light scene on)"`` member — is mixed (or a light CF) and stays
-    a scene/broadcast.
-    """
-    outputs = (cf or {}).get("outputs")
-    if not isinstance(outputs, list):
-        return False
-    members = [o for o in outputs if isinstance(o, dict)]
-    if not members:
-        return False
-    return all(_is_roller_member(o.get("mode")) for o in members)
-
-
-# CF patterns whose activation address is a real wall button / IR input,
-# as opposed to the bare ``38xx`` PC-Logic central-function broadcasts.
-# The library emits these for op-points it read out of the button store,
-# so there is always a physical control behind them.
-_BUTTON_BACKED_SCENE_PATTERNS: tuple[str, ...] = ("light_scene", "nkb_scene")
-
-
-def is_button_backed_cf(cf: dict[str, Any]) -> bool:
-    """True if this CF is a light-scene fired by a real button / IR input.
-
-    These carry a bus trigger address (a wall button or IR code); the
-    bare ``38xx`` central functions (``switch_pair`` / ``roller_pair`` /
-    ``cf_other``) do not. In Nikobus such a button is an ordinary control
-    that happens to drive several outputs — not a distinct "scene" object.
-    """
-    return str((cf or {}).get("pattern") or "") in _BUTTON_BACKED_SCENE_PATTERNS
+from nikobus_connect.discovery.store import (
+    INPUT_ONLY_BUTTON_TYPES,
+    REGISTRY_SOURCES,
+    all_outputs_registry_sourced,
+    apply_rgb_links,
+    build_controlled_by_index,
+    build_routing_graph,
+    cf_cover_members,
+    cf_member_set,
+    classify_button_status,
+    collect_button_linked_modules,
+    collect_button_outputs,
+    flatten_cf_broadcasts,
+    has_pc_logic_module,
+    is_button_backed_cf,
+    is_pure_roller_cf,
+    member_set_from_outputs,
+)
+from nikobus_connect.nkb import mode_code
 
 
 def is_surfaced_cf_scene(cf: dict[str, Any]) -> bool:
@@ -319,213 +58,23 @@ def is_surfaced_cf_scene(cf: dict[str, Any]) -> bool:
     return True
 
 
-def cf_cover_members(cf: dict[str, Any]) -> list[dict[str, Any]]:
-    """Collapse a roller CF's outputs into distinct grouped-cover members.
-
-    A roller central function bundles the roller link records for its
-    channels; a ``(module, channel)`` may appear more than once (e.g. a
-    2-button CF carrying both an open ``M02`` and a close ``M03`` record).
-    Returns one entry per distinct ``(module_address, channel)`` —
-    preserving first-sighting order — with the open / close timing strings
-    (``t1``) pulled from the matching mode::
-
-        [{"module_address", "channel", "open_time", "close_time"}, ...]
-
-    Direction comes from mode wording (not code, which is shared with
-    switch modules):
-
-    * ``M01`` ("Open - stop - close"): contains both *open* and
-      *close*/*stop* → both ``open_time`` and ``close_time`` get its ``t1``.
-    * *open*-only (``M02`` / ``M06`` with control time): ``open_time = t1``.
-    * *close*-only (``M03`` / ``M07`` with control time): ``close_time = t1``.
-
-    Non-roller members (no open/close/stop wording) are skipped: without a
-    decoded direction there is nothing for a cover to drive.
-    """
-    members: dict[tuple[str, int], dict[str, Any]] = {}
-    order: list[tuple[str, int]] = []
-    for o in (cf or {}).get("outputs") or []:
-        if not isinstance(o, dict):
-            continue
-        mod = o.get("module_address")
-        ch = o.get("channel")
-        if not (isinstance(mod, str) and isinstance(ch, int)):
-            continue
-        mode = o.get("mode")
-        if not _is_roller_member(mode):
-            continue
-        text = str(mode).lower()
-        has_open = "open" in text
-        has_close = ("close" in text) or ("stop" in text)
-        key = (mod.upper(), ch)
-        if key not in members:
-            members[key] = {
-                "module_address": mod.upper(),
-                "channel": ch,
-                "open_time": None,
-                "close_time": None,
-            }
-            order.append(key)
-        t1 = o.get("t1")
-        if has_open and has_close:
-            # M01 "open - stop - close": one time for both directions.
-            if members[key]["open_time"] is None:
-                members[key]["open_time"] = t1
-            if members[key]["close_time"] is None:
-                members[key]["close_time"] = t1
-        elif has_open:
-            if members[key]["open_time"] is None:
-                members[key]["open_time"] = t1
-        elif has_close:
-            if members[key]["close_time"] is None:
-                members[key]["close_time"] = t1
-    return [members[k] for k in order]
-
-
-def build_routing_graph(
-    button_data: dict[str, Any] | None,
-) -> dict[frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]]:
-    """Map every op-point's member set -> ``(firing addresses, outputs)``.
-
-    The routing graph is the full set of ``trigger -> linked outputs``
-    relations from the button store — the same data discovery decodes.
-    Used to find the on-bus address that fires a named ``.nkb`` scene
-    group (matched by member set), including the shutter / master groups
-    that have no light-scene mode and so never become CF entities on
-    their own. Addresses driving an identical output set (one scene,
-    several triggers) are grouped; the sorted-first is the canonical
-    activation address.
-    """
-    graph: dict[
-        frozenset[tuple[str, int, str]], tuple[list[str], list[dict[str, Any]]]
-    ] = {}
-    buttons = (button_data or {}).get("nikobus_button", {})
-    if not isinstance(buttons, dict):
-        return {}
-    for phys in buttons.values():
-        if not isinstance(phys, dict):
-            continue
-        for op in (phys.get("operation_points") or {}).values():
-            if not isinstance(op, dict):
-                continue
-            addr = op.get("bus_address")
-            if not isinstance(addr, str) or not addr:
-                continue
-            outputs: list[dict[str, Any]] = []
-            seen: set[tuple[str, int, str]] = set()
-            for link in op.get("linked_modules") or []:
-                if not isinstance(link, dict):
-                    continue
-                mod = link.get("module_address")
-                if not isinstance(mod, str):
-                    continue
-                for o in link.get("outputs") or []:
-                    if not isinstance(o, dict):
-                        continue
-                    ch = o.get("channel")
-                    mode = o.get("mode")
-                    if not (isinstance(ch, int) and isinstance(mode, str)):
-                        continue
-                    dedupe = (mod.upper(), ch, mode)
-                    if dedupe in seen:
-                        continue
-                    seen.add(dedupe)
-                    outputs.append(
-                        {
-                            "module_address": mod.upper(),
-                            "channel": ch,
-                            "mode": mode,
-                            "t1": o.get("t1") if isinstance(o.get("t1"), str) else None,
-                            "t2": o.get("t2") if isinstance(o.get("t2"), str) else None,
-                        }
-                    )
-            members = member_set_from_outputs(outputs)
-            if not members:
-                continue
-            entry = graph.setdefault(members, ([], outputs))
-            entry[0].append(addr.upper())
-    return {m: (sorted(set(a)), o) for m, (a, o) in graph.items()}
-
-
-def apply_rgb_links(
-    modules: dict[str, Any],
-    buttons: dict[str, Any],
-    links: Any,
-) -> int:
-    """Write the ``.nkb``'s colour-controller links into the stores.
-
-    ``modules`` is the module store (``{address: entry}``), ``buttons``
-    the button store (``{physical_address: entry}``), ``links`` the
-    ``RgbLink`` tuples the library read from the project file. Each link
-    to a controller the store knows lands twice: on the controller's
-    entry as ``rgb_links`` (what the light entity presses, with the
-    key's role per its mode) and on the plate key's op point as a
-    ``linked_modules`` block on channel 1 (what ``controlled_by`` and
-    the post-press refresh read). A plate the button store does not
-    know still gives the controller its link. Returns the number of
-    links applied.
-    """
-    from nikobus_connect.rgb import rgb_key_role, rgb_mode_label
-
-    applied = 0
-    by_module: dict[str, list[dict[str, Any]]] = {}
-    for link in links or ():
-        module_address = str(getattr(link, "module_address", "") or "").upper()
-        module = modules.get(module_address)
-        if not isinstance(module, dict) or module.get("module_type") != "rgb_module":
-            continue
-        mode = getattr(link, "mode", None)
-        key = str(getattr(link, "key", "") or "")
-        role = rgb_key_role(mode, key) if isinstance(mode, int) else None
-        mode_label = rgb_mode_label(mode) if isinstance(mode, int) else str(
-            getattr(link, "mode_text", "") or ""
-        )
-        bus_address = str(getattr(link, "bus_address", "") or "").upper()
-        plate_address = str(getattr(link, "button_address", "") or "").upper()
-        record = {
-            "bus_address": bus_address,
-            "button_address": plate_address,
-            "key": key,
-            "mode": mode,
-            "mode_label": mode_label,
-            "role": role,
-        }
-        records = by_module.setdefault(module_address, [])
-        if record not in records:
-            records.append(record)
-
-        phys = buttons.get(plate_address)
-        op_points = phys.get("operation_points") if isinstance(phys, dict) else None
-        op_point = op_points.get(key) if isinstance(op_points, dict) else None
-        if isinstance(op_point, dict):
-            linked = op_point.get("linked_modules")
-            if not isinstance(linked, list):
-                linked = []
-                op_point["linked_modules"] = linked
-            block = next(
-                (
-                    b for b in linked
-                    if isinstance(b, dict)
-                    and str(b.get("module_address") or "").upper() == module_address
-                ),
-                None,
-            )
-            if block is None:
-                block = {"module_address": module_address, "outputs": []}
-                linked.append(block)
-            outputs = block.get("outputs")
-            if not isinstance(outputs, list):
-                outputs = []
-                block["outputs"] = outputs
-            if not any(isinstance(o, dict) and o.get("channel") == 1 for o in outputs):
-                outputs.append({
-                    "channel": 1,
-                    "mode": mode_label,
-                    "button_address": bus_address,
-                    "record_source": "nkb",
-                })
-        applied += 1
-
-    for module_address, records in by_module.items():
-        modules[module_address]["rgb_links"] = records
-    return applied
+__all__ = [
+    "INPUT_ONLY_BUTTON_TYPES",
+    "REGISTRY_SOURCES",
+    "all_outputs_registry_sourced",
+    "apply_rgb_links",
+    "build_controlled_by_index",
+    "build_routing_graph",
+    "cf_cover_members",
+    "cf_member_set",
+    "classify_button_status",
+    "collect_button_linked_modules",
+    "collect_button_outputs",
+    "flatten_cf_broadcasts",
+    "has_pc_logic_module",
+    "is_button_backed_cf",
+    "is_pure_roller_cf",
+    "is_surfaced_cf_scene",
+    "member_set_from_outputs",
+    "mode_code",
+]

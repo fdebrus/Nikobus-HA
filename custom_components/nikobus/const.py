@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Final
 
+from nikobus_connect.discovery.store import (
+    INPUT_ONLY_BUTTON_TYPES as _INPUT_ONLY_BUTTON_TYPES,
+)
 from nikobus_connect.press import SHORT_PRESS_S, TIMER_THRESHOLDS_S
 
 # =============================================================================
@@ -249,11 +252,9 @@ PROGRAMMING_STORAGE_VERSION: Final[int] = 1
 #
 # Match is by the human-readable ``type`` string discovery writes into
 # each button entry, which already reflects device_type 0x43 vs 0x44
-# for the two 05-058 modes.
-INPUT_ONLY_BUTTON_TYPES: Final[frozenset[str]] = frozenset({
-    "Universal interface, switch mode",        # Niko 05-058, dtype 0x44 (8-ch)
-    "Universal interface, push-button mode",   # Niko 05-058, dtype 0x43 (4-ch)
-})
+# for the two 05-058 modes. The set is the library's, built from its
+# own catalogue names, so it cannot drift from what the inventory writes.
+INPUT_ONLY_BUTTON_TYPES: Final[frozenset[str]] = _INPUT_ONLY_BUTTON_TYPES
 
 # =============================================================================
 # Configuration Keys
