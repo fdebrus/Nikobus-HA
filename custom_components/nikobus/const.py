@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
+from nikobus_connect.discovery import progress, store
 from nikobus_connect.discovery.store import (
     INPUT_ONLY_BUTTON_TYPES as _INPUT_ONLY_BUTTON_TYPES,
 )
@@ -144,26 +145,27 @@ DISCOVERY_PHASE_ERROR: Final[str] = "error"
 # ``discovery_phase`` stays on the legacy enum so existing automations keep
 # working: ``inventory`` + ``identity`` map back to ``pc_link``;
 # ``register_scan`` + ``finalizing`` map back to ``module_scan``.
-DISCOVERY_SUB_PHASE_IDLE: Final[str] = "idle"
-DISCOVERY_SUB_PHASE_INVENTORY: Final[str] = "inventory"
-DISCOVERY_SUB_PHASE_IDENTITY: Final[str] = "identity"
-DISCOVERY_SUB_PHASE_REGISTER_SCAN: Final[str] = "register_scan"
-DISCOVERY_SUB_PHASE_FINALIZING: Final[str] = "finalizing"
+DISCOVERY_SUB_PHASE_IDLE: Final[str] = progress.STAGE_IDLE
+DISCOVERY_SUB_PHASE_INVENTORY: Final[str] = progress.STAGE_INVENTORY
+DISCOVERY_SUB_PHASE_IDENTITY: Final[str] = progress.STAGE_IDENTITY
+DISCOVERY_SUB_PHASE_REGISTER_SCAN: Final[str] = progress.STAGE_REGISTER_SCAN
+DISCOVERY_SUB_PHASE_FINALIZING: Final[str] = progress.STAGE_FINALIZING
 # Post-discovery residue probe + eviction (HA-side, fires from
 # ``_reconcile_post_discovery``). The library's discovery itself is
 # done by this point, but the integration still has 5-15 s of work
 # (bus probe + retries + eviction); a distinct sub-phase keeps the
 # diagnostic status meaningful rather than freezing on the last
 # inventory frame.
-DISCOVERY_SUB_PHASE_PROBING: Final[str] = "probing"
-DISCOVERY_SUB_PHASE_FINISHED: Final[str] = "finished"
-DISCOVERY_SUB_PHASE_ERROR: Final[str] = "error"
+DISCOVERY_SUB_PHASE_PROBING: Final[str] = progress.STAGE_PROBING
+DISCOVERY_SUB_PHASE_FINISHED: Final[str] = progress.STAGE_FINISHED
+DISCOVERY_SUB_PHASE_ERROR: Final[str] = progress.STAGE_ERROR
 
-# Weighting for the 0-100 progress sensor. Must sum to 100.
-DISCOVERY_WEIGHT_INVENTORY: Final[int] = 10
-DISCOVERY_WEIGHT_IDENTITY: Final[int] = 20
-DISCOVERY_WEIGHT_REGISTER_SCAN: Final[int] = 65
-DISCOVERY_WEIGHT_FINALIZING: Final[int] = 5
+# Weighting for the 0-100 progress sensor: the library's, so every host
+# draws the same bar (``nikobus_connect.discovery.progress``).
+DISCOVERY_WEIGHT_INVENTORY: Final[int] = progress.WEIGHT_INVENTORY
+DISCOVERY_WEIGHT_IDENTITY: Final[int] = progress.WEIGHT_IDENTITY
+DISCOVERY_WEIGHT_REGISTER_SCAN: Final[int] = progress.WEIGHT_REGISTER_SCAN
+DISCOVERY_WEIGHT_FINALIZING: Final[int] = progress.WEIGHT_FINALIZING
 
 #: The selectable ``.nkb`` import categories (all applied by default).
 #: ``labels`` isn't .nkb data — it applies the integration's own
@@ -195,12 +197,12 @@ ISSUE_NO_BUTTONS_CONFIGURED: Final[str] = "no_buttons_configured"
 # previous owner" — both look identical from the bus signal. Push the
 # decision to the user via a Repairs flow.
 ISSUE_LEGACY_UNDECODED_BUTTONS: Final[str] = "legacy_undecoded_buttons"
-#: The button statuses the legacy-buttons Repairs issue reviews.
-LEGACY_BUTTON_STATUSES: Final[tuple[str, ...]] = ("legacy_undecoded", "legacy_orphan")
-#: Set on a button-store entry the user chose to keep in that review, so
-#: the next full scan does not flag it again. Dropped when the button
-#: stops being legacy (it gained links), so a later relapse asks again.
-BUTTON_LEGACY_KEEP_KEY: Final[str] = "legacy_keep"
+#: The button statuses the legacy-buttons Repairs issue reviews, and the
+#: flag set on an entry the user chose to keep in that review. Both the
+#: library's: its reconciliation drops the flag when the button stops
+#: being legacy, so a later relapse asks again.
+LEGACY_BUTTON_STATUSES: Final[tuple[str, ...]] = store.LEGACY_STATUSES
+BUTTON_LEGACY_KEEP_KEY: Final[str] = store.LEGACY_KEEP_KEY
 # A module whose link table the library could not align with the scanned
 # register window — genuine flash corruption (the Nikobus PC software
 # reports the same and asks for reprogramming). Informational only; the

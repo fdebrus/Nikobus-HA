@@ -27,6 +27,8 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from nikobus_connect.discovery import InventoryQueryType
 from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
+from nikobus_connect.discovery.progress import ProgressCounters, progress_percent
+from nikobus_connect.discovery.store import reconcile_inventory
 
 from .const import (
     BUTTON_LEGACY_KEEP_KEY,
@@ -34,18 +36,9 @@ from .const import (
     DISCOVERY_PHASE_FINISHED,
     DISCOVERY_PHASE_MODULE_SCAN,
     DISCOVERY_PHASE_PC_LINK,
-    DISCOVERY_SUB_PHASE_ERROR,
     DISCOVERY_SUB_PHASE_FINALIZING,
     DISCOVERY_SUB_PHASE_FINISHED,
-    DISCOVERY_SUB_PHASE_IDENTITY,
-    DISCOVERY_SUB_PHASE_IDLE,
-    DISCOVERY_SUB_PHASE_INVENTORY,
     DISCOVERY_SUB_PHASE_PROBING,
-    DISCOVERY_SUB_PHASE_REGISTER_SCAN,
-    DISCOVERY_WEIGHT_FINALIZING,
-    DISCOVERY_WEIGHT_IDENTITY,
-    DISCOVERY_WEIGHT_INVENTORY,
-    DISCOVERY_WEIGHT_REGISTER_SCAN,
     DOMAIN,
     ISSUE_CORRUPT_MODULES,
     ISSUE_LEGACY_UNDECODED_BUTTONS,
@@ -56,9 +49,7 @@ from .const import (
 from .nkbreconcile import (
     apply_rgb_links,
     cf_member_set,
-    classify_button_status,
     flatten_cf_broadcasts,
-    has_pc_logic_module,
 )
 
 if TYPE_CHECKING:
@@ -473,42 +464,19 @@ class NikobusDiscoveryMixin:
             message="Reconciling discovered inventory…",
         )
         modules = self.module_storage.data.setdefault("nikobus_module", {})
-        evicted: list[str] = []
-        if currently_swept:
-            for addr in list(modules.keys()):
-                if str(addr).upper() in absent:
-                    modules.pop(addr, None)
-                    evicted.append(str(addr).upper())
+        buttons = self.dict_button_data.setdefault("nikobus_button", {})
+        # Eviction and button bucketing are the library's: absent modules
+        # leave the store only after a full sweep, every button gets its
+        # status against what remains (with the PC-Logic gate for the
+        # registry-residue verdict), and a kept button that gained links
+        # loses its keep.
+        outcome = reconcile_inventory(modules, buttons, absent, evict=bool(currently_swept))
+        evicted = outcome.evicted
+        bucket_counts = outcome.counts
         if evicted:
             self._update_discovery_state(
                 message=f"Evicted {len(evicted)} stale module(s); finalizing…",
             )
-
-        # --- Button bucketing ----------------------------------------
-        remaining = {str(a).upper() for a in modules}
-        bucket_counts = {
-            "active": 0,
-            "legacy_orphan": 0,
-            "legacy_undecoded": 0,
-            "synthesized_input": 0,
-            "input_only": 0,
-        }
-        buttons = self.dict_button_data.setdefault("nikobus_button", {})
-        # Topology gate for the registry-only residue check (see
-        # ``classify_button_status``): with no PC-Logic in the install, a
-        # button whose every output record is registry-sourced has no
-        # output module recording the link — a strong residue signal.
-        has_pc_logic = has_pc_logic_module(self.module_storage.data)
-        for phys in buttons.values():
-            if not isinstance(phys, dict):
-                continue
-            status = classify_button_status(phys, remaining, has_pc_logic)
-            phys["status"] = status
-            bucket_counts[status] += 1
-            # A kept button that gained links is no longer legacy; drop
-            # the keep so a later relapse is reviewed again.
-            if status not in LEGACY_BUTTON_STATUSES:
-                phys.pop(BUTTON_LEGACY_KEEP_KEY, None)
 
         # Surface the legacy-undecoded Repairs issue only after a
         # Stage-2 scan-all, when the verdict is meaningful (every
@@ -656,119 +624,25 @@ class NikobusDiscoveryMixin:
     def discovery_progress_percent(self) -> float:
         """Overall progress estimate (0-100) across all discovery sub-phases.
 
-        Phases are stacked by weight (see const.DISCOVERY_WEIGHT_*):
-        inventory → identity → register_scan → finalizing. Within
-        register_scan, progress is (completed_modules + partial_current) /
-        total_modules. Returned as a float with ~0.1 resolution so the UI
-        can show sub-percent movement — each of the 240 register ticks in
-        a module only advances the bar by a fraction of a percent, so an
-        integer-rounded value looks frozen for tens of seconds at a time.
+        The arithmetic — stage weights, response-driven identity, the
+        probe sitting near the end so the bar never falls back, the
+        rescaling of a partial run to span the bar — is the library's
+        (``nikobus_connect.discovery.progress``); this hands it the
+        counters the coordinator keeps.
         """
-        if self.discovery_sub_phase in (DISCOVERY_SUB_PHASE_IDLE, DISCOVERY_SUB_PHASE_ERROR):
-            return 0.0
-        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_FINISHED:
-            return 100.0
-
-        # Cumulative floor — everything before the current phase is "done".
-        floor = 0
-        if self.discovery_sub_phase == DISCOVERY_SUB_PHASE_INVENTORY:
-            floor = 0
-            phase_weight = DISCOVERY_WEIGHT_INVENTORY
-            # 2.11.2: ``parse_inventory_response`` counts each PC-Link
-            # inventory frame into ``discovery_registers_done``, so the
-            # bar can track real progress rather than parking at the
-            # midpoint of the inventory weight. Fall back to 0.5 only
-            # when the total isn't set yet (transition window).
-            if self.discovery_registers_total:
-                phase_frac = min(
-                    1.0,
-                    self.discovery_registers_done / self.discovery_registers_total,
-                )
-            else:
-                phase_frac = 0.5
-        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_IDENTITY:
-            floor = DISCOVERY_WEIGHT_INVENTORY
-            phase_weight = DISCOVERY_WEIGHT_IDENTITY
-            if self.discovery_identity_expected:
-                # Response-driven: the library queues all N×96 identity
-                # reads up front and emits progress per QUEUED command
-                # (racing to ~100 % in <1 s while the bus scan takes
-                # ~25 s). The frame callback counts the $2E answers as
-                # they actually arrive — that's the real progress.
-                phase_frac = min(
-                    1.0,
-                    self.discovery_identity_responses
-                    / self.discovery_identity_expected,
-                )
-            else:
-                # Fallback for older libraries that don't surface the
-                # per-address total: the old module-index estimate.
-                total = self.discovery_modules_total or 1
-                done = self.discovery_modules_done
-                per_module = 0.0
-                if self.discovery_registers_total:
-                    per_module = min(
-                        1.0,
-                        self.discovery_registers_done
-                        / self.discovery_registers_total,
-                    )
-                phase_frac = min(1.0, (done + per_module) / total)
-        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_REGISTER_SCAN:
-            floor = DISCOVERY_WEIGHT_INVENTORY + DISCOVERY_WEIGHT_IDENTITY
-            phase_weight = DISCOVERY_WEIGHT_REGISTER_SCAN
-            total = self.discovery_modules_total or 1
-            done = self.discovery_modules_done
-            per_module = 0.0
-            if self.discovery_registers_total:
-                per_module = min(
-                    1.0,
-                    self.discovery_registers_done / self.discovery_registers_total,
-                )
-            phase_frac = min(1.0, (done + per_module) / total)
-        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_FINALIZING:
-            floor = (
-                DISCOVERY_WEIGHT_INVENTORY
-                + DISCOVERY_WEIGHT_IDENTITY
-                + DISCOVERY_WEIGHT_REGISTER_SCAN
-            )
-            phase_weight = DISCOVERY_WEIGHT_FINALIZING
-            phase_frac = 0.5
-        elif self.discovery_sub_phase == DISCOVERY_SUB_PHASE_PROBING:
-            # Post-discovery residue probe + eviction (reconciliation).
-            # Sits AFTER finalizing's midpoint: without this branch the
-            # property fell through to the legacy fallback and the bar
-            # DROPPED from ~97% to 10% for the 5-15 s the probe takes,
-            # then jumped to 100 — the single most visible progress
-            # glitch, present at the end of every discovery run.
-            floor = (
-                DISCOVERY_WEIGHT_INVENTORY
-                + DISCOVERY_WEIGHT_IDENTITY
-                + DISCOVERY_WEIGHT_REGISTER_SCAN
-            )
-            phase_weight = DISCOVERY_WEIGHT_FINALIZING
-            phase_frac = 0.75
-        else:
-            # Older libraries may still drive the legacy-phase field only.
-            if self.discovery_phase == DISCOVERY_PHASE_PC_LINK:
-                return 10.0
-            if self.discovery_phase == DISCOVERY_PHASE_MODULE_SCAN:
-                return 40.0
-            return 0.0
-
-        raw = floor + phase_frac * phase_weight
-
-        # Each discovery button runs only one slice of the full pipeline.
-        # Rescale that slice to span the whole bar so a standalone scan
-        # reads 0→100 instead of, e.g., Load Existing Installation opening
-        # at 30 % — the cumulative weight of the inventory+identity phases
-        # it skips. ``"full"`` (a combined run) keeps the raw stacked value.
-        overview_span = DISCOVERY_WEIGHT_INVENTORY + DISCOVERY_WEIGHT_IDENTITY
-        if self._discovery_scope == "module_scan":
-            raw = (raw - overview_span) / (100 - overview_span) * 100
-        elif self._discovery_scope == "inventory":
-            raw = raw / overview_span * 100
-
-        return min(99.9, round(max(0.0, raw), 1))
+        return progress_percent(
+            self.discovery_sub_phase,
+            ProgressCounters(
+                registers_done=self.discovery_registers_done,
+                registers_total=self.discovery_registers_total,
+                modules_done=self.discovery_modules_done,
+                modules_total=self.discovery_modules_total,
+                identity_responses=self.discovery_identity_responses,
+                identity_expected=self.discovery_identity_expected,
+            ),
+            self._discovery_scope,
+            coarse_phase=self.discovery_phase,
+        )
 
     def _update_discovery_state(
         self,

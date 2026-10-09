@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.26.0
+
+**Requires `nikobus-connect` 0.50.0.**
+
+- **The discovery arithmetic moved to the library.** The progress percentage — stage weights, response-driven identity, the probe sitting near the end, the rescaling of a partial run — is `nikobus_connect.discovery.progress` now; the coordinator hands it its counters. The post-scan reconciliation — eviction of the modules the probe found silent after a full sweep, the status of every button, the clearing of a keep on a button that gained links — is `discovery.store.reconcile_inventory()`. What stays here is what is Home Assistant's: the probe call, the status messages, the Repairs issues, the saves. The sub-phase names, the weights and the legacy-keep flag in `const.py` are the library's values now. No behaviour change. Third step of moving protocol knowledge down to the library.
+
 ## 3.25.0
 
 **Requires `nikobus-connect` 0.49.0.**
