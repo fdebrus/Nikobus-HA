@@ -865,7 +865,7 @@ The code is split into two packages.
 - `nkbnames.py` — reads names, rooms, per-channel names, and scene groups from a `.nkb` project (Access database in a ZIP, parsed with a vendored pure-Python reader).
 - `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs (inventory source only).
 - `nkbprogramming.py` — the read-only maintenance layer: module status and checksum checks, memory backups, the reprogramming watch, the PC-Link clock.
-- `nkbreconcile.py` — reconciles the links read from the bus with the `.nkb` project.
+- `nkbreconcile.py` — decides which central functions become scenes; the store helpers it used to hold (controlled-by, button status, member sets) are the library's `discovery.store` now.
 - `discovery_mixin.py` — the discovery lifecycle on the HA side (inventory, link scan, post-scan reconciliation, `.nkb` import).
 - `nkbactuator.py` — feeds button frames to the library's press tracker, fires the `nikobus_button_*` events and signals, and reads the modules a key drives.
 - `nkbconfig.py` — scene-file loader/writer.
