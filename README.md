@@ -866,7 +866,7 @@ The code is split into two packages.
 - `nkbmanual.py` — optional fallback import of `nikobus_*_config.json` for no-PC-Link installs (inventory source only).
 - `nkbprogramming.py` — the read-only maintenance layer: module status and checksum checks, memory backups, the reprogramming watch, the PC-Link clock.
 - `nkbreconcile.py` — decides which central functions become scenes; the store helpers it used to hold (controlled-by, button status, member sets) are the library's `discovery.store` now.
-- `discovery_mixin.py` — the discovery lifecycle on the HA side (inventory, link scan, post-scan reconciliation, `.nkb` import).
+- `discovery_mixin.py` — the discovery lifecycle on the HA side (inventory, link scan, the residue probe and its Repairs issues, `.nkb` import); the progress arithmetic and the post-scan reconciliation are the library's.
 - `nkbactuator.py` — feeds button frames to the library's press tracker, fires the `nikobus_button_*` events and signals, and reads the modules a key drives.
 - `nkbconfig.py` — scene-file loader/writer.
 - `nkbtravelcalculator.py` — virtual cover-position tracking.

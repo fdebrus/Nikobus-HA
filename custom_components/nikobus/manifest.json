@@ -20,7 +20,7 @@
   "requirements": [
     "aiofiles>=25.1.0",
     "pyserial-asyncio-fast>=0.16",
-    "nikobus-connect>=0.49.0"
+    "nikobus-connect>=0.50.0"
   ],
-  "version": "3.25.0"
+  "version": "3.26.0"
 }
