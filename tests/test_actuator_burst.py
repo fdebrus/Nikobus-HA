@@ -1,36 +1,39 @@
-"""Tests for the frame-count-anchored press state machine.
+"""Tests for the actuator around the library's press tracker.
 
-Pins:
-
-  * Each received frame counts as one ``FRAME_CADENCE_S`` quantum of
-    held time, regardless of when it actually arrived in our process.
-  * Timer events (``nikobus_button_timer_1/2/3``) fire when
-    ``frame_count`` crosses their threshold — synchronously, so a
-    burst-flush triggers them all even though wall-clock barely
-    advanced.
-  * The release-detection threshold extends in burst mode (last few
-    inter-frame gaps below ``BURST_GAP_THRESHOLD_S``), capped at
-    ``MAX_EXTENDED_RELEASE_MS``.
-  * On release, ``duration_s`` and the bucket classification come
-    from ``frame_count * FRAME_CADENCE_S`` — so a 97-frame burst
-    that all arrives in 12 ms is correctly classified as a 3.88 s
-    long press, not a 12 ms tap.
+What a press *is* — wire-time duration, hold milestones, burst patience
+of the release detector — lives in ``nikobus_connect.press`` and is
+tested there. These pin what the integration adds: the events fired,
+the per-address signals, the release watcher, the refreshes of the
+modules a key drives, and teardown.
 """
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
-from custom_components.nikobus.const import (
-    BURST_RECENT_GAPS_WINDOW,
+from nikobus_connect.press import (
     FRAME_CADENCE_S,
     MAX_EXTENDED_RELEASE_MS,
     RELEASE_THRESHOLD_MS,
-    SHORT_PRESS,
+    PressState,
+    PressTracker,
 )
-from custom_components.nikobus.nkbactuator import NikobusActuator, PressState
+
+from custom_components.nikobus.const import SHORT_PRESS
+from custom_components.nikobus.nkbactuator import NikobusActuator
+
+
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def tick(self, seconds: float) -> None:
+        self.now += seconds
 
 
 class _FakeBus:
@@ -62,7 +65,7 @@ class _FakeHass:
         return _DummyTask()
 
 
-def _make_actuator() -> NikobusActuator:
+def _make_actuator(clock: _Clock | None = None) -> NikobusActuator:
     hass = _FakeHass()
     coordinator = MagicMock()
     coordinator.nikobus_command = MagicMock()
@@ -72,8 +75,15 @@ def _make_actuator() -> NikobusActuator:
         coordinator=coordinator,
         dict_button_data={"nikobus_button": {}},
         module_data={"nikobus_module": {}},
+        tracker=PressTracker(clock=clock or _Clock()),
     )
     return actuator
+
+
+def _state(address: str = "C5E952", frame_count: int = 1) -> PressState:
+    state = PressState(address=address, press_id="pid", started_at=0.0, last_frame_at=0.0)
+    state.frame_count = frame_count
+    return state
 
 
 def _events_of(actuator: NikobusActuator, event_type: str) -> list[dict]:
@@ -83,317 +93,6 @@ def _events_of(actuator: NikobusActuator, event_type: str) -> list[dict]:
         if et == event_type
     ]
 
-
-def test_stop_cancels_inflight_tasks():
-    """stop() cancels in-flight release + refresh tasks and clears the maps."""
-    actuator = _make_actuator()
-
-    release = MagicMock()
-    release.done.return_value = False
-    actuator._press_states["AA0000"] = PressState(
-        address="AA0000", press_start=0.0, last_press_time=0.0,
-        press_id="x", module_address=None, channel=None, release_task=release,
-    )
-    refresh = MagicMock()
-    refresh.done.return_value = False
-    actuator._module_refresh_tasks["BB00_1"] = refresh
-
-    actuator.stop()
-
-    release.cancel.assert_called_once()
-    refresh.cancel.assert_called_once()
-    assert actuator._press_states == {}
-    assert actuator._module_refresh_tasks == {}
-
-
-# ---------------------------------------------------------------------------
-# Frame-count duration
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_first_frame_creates_press_state_with_frame_count_1():
-    actuator = _make_actuator()
-    await actuator.handle_button_press("C5E952")
-
-    state = actuator._press_states["C5E952"]
-    assert state.frame_count == 1
-    assert state.current_release_threshold_ms == float(RELEASE_THRESHOLD_MS)
-
-
-@pytest.mark.asyncio
-async def test_subsequent_frames_increment_frame_count():
-    actuator = _make_actuator()
-    for _ in range(5):
-        await actuator.handle_button_press("C5E952")
-
-    state = actuator._press_states["C5E952"]
-    assert state.frame_count == 5
-
-
-# ---------------------------------------------------------------------------
-# Timer events fire from frame-count crossings (synchronous, burst-safe)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_timer_events_fire_when_frame_count_crosses_thresholds():
-    """25 frames = 1.0 s of wire time → timer_1.
-    50 frames = 2.0 s → timer_2.
-    75 frames = 3.0 s → timer_3.
-    All must fire synchronously even when frames arrive in a single
-    burst (no wall-clock delay between calls).
-    """
-    actuator = _make_actuator()
-
-    # Push 80 frames as fast as possible — simulates a buffered burst
-    # flushing into the actuator.
-    for _ in range(80):
-        await actuator.handle_button_press("C5E952")
-
-    timer_1 = _events_of(actuator, "nikobus_button_timer_1")
-    timer_2 = _events_of(actuator, "nikobus_button_timer_2")
-    timer_3 = _events_of(actuator, "nikobus_button_timer_3")
-
-    assert len(timer_1) == 1
-    assert len(timer_2) == 1
-    assert len(timer_3) == 1
-
-    # Duration in payload uses frame_count anchor: at the moment
-    # timer_1 fires, frame_count just crossed 25, so duration ~= 1.0 s.
-    assert timer_1[0]["duration_s"] == pytest.approx(25 * FRAME_CADENCE_S, abs=0.05)
-    assert timer_2[0]["duration_s"] == pytest.approx(50 * FRAME_CADENCE_S, abs=0.05)
-    assert timer_3[0]["duration_s"] == pytest.approx(75 * FRAME_CADENCE_S, abs=0.05)
-
-
-@pytest.mark.asyncio
-async def test_timer_events_only_fire_once_per_threshold():
-    """Continuing frames after a timer threshold has been crossed
-    must not refire the same timer event."""
-    actuator = _make_actuator()
-    for _ in range(40):
-        await actuator.handle_button_press("C5E952")
-
-    assert len(_events_of(actuator, "nikobus_button_timer_1")) == 1
-    # We haven't reached timer_2 yet (50 frames):
-    assert len(_events_of(actuator, "nikobus_button_timer_2")) == 0
-
-
-@pytest.mark.asyncio
-async def test_short_tap_fires_no_timer_events():
-    """A 5-frame tap (= 200 ms wire-time) must not trigger any
-    long-press timer events."""
-    actuator = _make_actuator()
-    for _ in range(5):
-        await actuator.handle_button_press("C5E952")
-
-    assert _events_of(actuator, "nikobus_button_timer_1") == []
-    assert _events_of(actuator, "nikobus_button_timer_2") == []
-    assert _events_of(actuator, "nikobus_button_timer_3") == []
-
-
-# ---------------------------------------------------------------------------
-# Burst-aware release threshold
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_release_threshold_stays_at_baseline_for_normal_cadence():
-    """Frames at normal ~40 ms cadence (no burst gaps) keep the
-    release threshold at ``RELEASE_THRESHOLD_MS``."""
-    actuator = _make_actuator()
-
-    # Simulate normal cadence by manually populating the gap deque
-    # — handle_button_press uses time.monotonic() so we'd otherwise
-    # have to sleep. Drive the threshold-update logic directly.
-    actuator._press_states["C5E952"] = PressState(
-        address="C5E952",
-        press_start=0.0,
-        last_press_time=0.0,
-        press_id="pid",
-        module_address=None,
-        channel=None,
-    )
-    state = actuator._press_states["C5E952"]
-    state.frame_count = 10
-    for _ in range(BURST_RECENT_GAPS_WINDOW):
-        state.recent_gaps.append(0.040)
-
-    actuator._update_release_threshold(state)
-    assert state.current_release_threshold_ms == float(RELEASE_THRESHOLD_MS)
-
-
-@pytest.mark.asyncio
-async def test_burst_window_extends_release_threshold():
-    """When the recent-gap window is full of burst-flush gaps
-    (< 5 ms), the release threshold scales to the implied stall
-    (frame_count * cadence ms), capped at the maximum."""
-    actuator = _make_actuator()
-    actuator._press_states["C5E952"] = PressState(
-        address="C5E952",
-        press_start=0.0,
-        last_press_time=0.0,
-        press_id="pid",
-        module_address=None,
-        channel=None,
-    )
-    state = actuator._press_states["C5E952"]
-    state.frame_count = 50  # implies ~2 s of wire-time hold
-    for _ in range(BURST_RECENT_GAPS_WINDOW):
-        state.recent_gaps.append(0.0005)  # well under burst threshold
-
-    actuator._update_release_threshold(state)
-    # 50 frames * 40 ms = 2000 ms — bigger than the 300 ms baseline,
-    # smaller than the 5 s cap, so we expect exactly that.
-    assert state.current_release_threshold_ms == 2000.0
-
-
-@pytest.mark.asyncio
-async def test_burst_extended_threshold_caps_at_max():
-    """A very long burst (300 frames = 12 s implied) gets clamped to
-    ``MAX_EXTENDED_RELEASE_MS`` so release latency stays bounded."""
-    actuator = _make_actuator()
-    actuator._press_states["C5E952"] = PressState(
-        address="C5E952",
-        press_start=0.0,
-        last_press_time=0.0,
-        press_id="pid",
-        module_address=None,
-        channel=None,
-    )
-    state = actuator._press_states["C5E952"]
-    state.frame_count = 300
-    for _ in range(BURST_RECENT_GAPS_WINDOW):
-        state.recent_gaps.append(0.0005)
-
-    actuator._update_release_threshold(state)
-    assert state.current_release_threshold_ms == float(MAX_EXTENDED_RELEASE_MS)
-
-
-@pytest.mark.asyncio
-async def test_threshold_does_not_shrink_within_burst_mode():
-    """While the recent-gap window still shows burst signal, the
-    threshold may only grow — once we've credited X ms of patience,
-    a single subsequent burst-marker frame mustn't undo it."""
-    actuator = _make_actuator()
-    actuator._press_states["C5E952"] = PressState(
-        address="C5E952",
-        press_start=0.0,
-        last_press_time=0.0,
-        press_id="pid",
-        module_address=None,
-        channel=None,
-    )
-    state = actuator._press_states["C5E952"]
-    state.frame_count = 100  # 4 s implied
-    for _ in range(BURST_RECENT_GAPS_WINDOW):
-        state.recent_gaps.append(0.0005)
-    actuator._update_release_threshold(state)
-    assert state.current_release_threshold_ms == 4000.0
-
-    # A subsequent same-burst frame with frame_count still in the
-    # burst window mustn't lower the threshold.
-    state.frame_count = 50  # hypothetical recount
-    actuator._update_release_threshold(state)
-    assert state.current_release_threshold_ms >= 4000.0
-
-
-@pytest.mark.asyncio
-async def test_normal_cadence_window_relaxes_threshold():
-    """After the recent-gap window fills with normal-cadence gaps,
-    the threshold relaxes back to baseline so a real release on a
-    healthy bridge isn't held up by stale burst state."""
-    actuator = _make_actuator()
-    actuator._press_states["C5E952"] = PressState(
-        address="C5E952",
-        press_start=0.0,
-        last_press_time=0.0,
-        press_id="pid",
-        module_address=None,
-        channel=None,
-    )
-    state = actuator._press_states["C5E952"]
-    state.frame_count = 100
-    state.current_release_threshold_ms = 4000.0  # was extended
-    for _ in range(BURST_RECENT_GAPS_WINDOW):
-        state.recent_gaps.append(0.040)  # all normal
-
-    actuator._update_release_threshold(state)
-    assert state.current_release_threshold_ms == float(RELEASE_THRESHOLD_MS)
-
-
-# ---------------------------------------------------------------------------
-# End-to-end: 97-frame burst classified correctly via frame count
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_handle_release_uses_frame_count_for_duration_and_bucket():
-    """The release event payload must report ``duration_s`` as
-    ``frame_count * FRAME_CADENCE_S``, and the bucket must reflect
-    that. A 97-frame burst (= 3.88 s wire-time) is bucket 3 / long
-    press, not bucket 0 / short tap — exactly the misclassification
-    we're fixing.
-    """
-    actuator = _make_actuator()
-    actuator._press_states["C5E952"] = PressState(
-        address="C5E952",
-        press_start=0.0,
-        last_press_time=0.0,
-        press_id="pid",
-        module_address=None,
-        channel=None,
-    )
-    state = actuator._press_states["C5E952"]
-    state.frame_count = 97
-
-    duration = state.frame_count * FRAME_CADENCE_S
-    await actuator._handle_release(state, duration)
-
-    released = _events_of(actuator, "nikobus_button_released")
-    long_press = _events_of(actuator, "nikobus_long_button_pressed")
-    bucket_3 = _events_of(actuator, "nikobus_button_pressed_3")
-    short_press = _events_of(actuator, "nikobus_short_button_pressed")
-
-    assert len(released) == 1
-    assert released[0]["duration_s"] == pytest.approx(97 * FRAME_CADENCE_S)
-    assert released[0]["bucket"] == 3
-    assert len(long_press) == 1
-    assert len(bucket_3) == 1
-    # Most importantly: the broken-bridge case must NOT fire the
-    # short-press event that today's wall-clock logic produces.
-    assert short_press == []
-
-
-@pytest.mark.asyncio
-async def test_short_tap_still_classified_as_short_press():
-    """A genuine 5-frame tap (= 200 ms wire-time) keeps producing
-    a short-press event — no regression on the working case."""
-    actuator = _make_actuator()
-    actuator._press_states["C5E952"] = PressState(
-        address="C5E952",
-        press_start=0.0,
-        last_press_time=0.0,
-        press_id="pid",
-        module_address=None,
-        channel=None,
-    )
-    state = actuator._press_states["C5E952"]
-    state.frame_count = 5
-
-    duration = state.frame_count * FRAME_CADENCE_S
-    assert duration < SHORT_PRESS
-
-    await actuator._handle_release(state, duration)
-
-    assert len(_events_of(actuator, "nikobus_short_button_pressed")) == 1
-    assert _events_of(actuator, "nikobus_long_button_pressed") == []
-    assert _events_of(actuator, "nikobus_button_pressed_0")[0]["bucket"] == 0
-
-
-# ---------------------------------------------------------------------------
-# A press sent by Home Assistant refreshes what it impacts, silently
-# ---------------------------------------------------------------------------
 
 def _make_actuator_with_link() -> NikobusActuator:
     actuator = _make_actuator()
@@ -410,11 +109,206 @@ def _make_actuator_with_link() -> NikobusActuator:
     return actuator
 
 
+def test_stop_cancels_inflight_tasks():
+    """stop() cancels in-flight release + refresh tasks and clears the maps."""
+
+    actuator = _make_actuator()
+    asyncio.run(actuator.handle_button_press("AA0000"))
+    release = MagicMock()
+    release.done.return_value = False
+    actuator._contexts["AA0000"].release_task = release
+    refresh = MagicMock()
+    refresh.done.return_value = False
+    actuator._module_refresh_tasks["BB00_1"] = refresh
+
+    actuator.stop()
+
+    release.cancel.assert_called_once()
+    refresh.cancel.assert_called_once()
+    assert actuator._contexts == {}
+    assert "AA0000" not in actuator.tracker
+    assert actuator._module_refresh_tasks == {}
+
+
+# ---------------------------------------------------------------------------
+# Frames feed the tracker; the first one fires the press event
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_first_frame_starts_the_press_and_fires_pressed():
+    actuator = _make_actuator()
+    await actuator.handle_button_press("c5e952")
+
+    state = actuator.tracker.active("C5E952")
+    assert state is not None and state.frame_count == 1
+    assert state.release_threshold_ms == float(RELEASE_THRESHOLD_MS)
+    pressed = _events_of(actuator, "nikobus_button_pressed")
+    assert len(pressed) == 1
+    assert pressed[0]["address"] == "C5E952"
+    assert pressed[0]["state"] == "pressed" and pressed[0]["duration_s"] is None
+    assert pressed[0]["press_id"] == state.press_id
+
+
+@pytest.mark.asyncio
+async def test_subsequent_frames_extend_the_press_without_a_second_pressed_event():
+    actuator = _make_actuator()
+    for _ in range(5):
+        await actuator.handle_button_press("C5E952")
+
+    assert actuator.tracker.active("C5E952").frame_count == 5
+    assert len(_events_of(actuator, "nikobus_button_pressed")) == 1
+
+
+@pytest.mark.asyncio
+async def test_the_pressed_event_names_the_module_the_key_drives():
+    actuator = _make_actuator_with_link()
+    await actuator.handle_button_press("295682")
+    pressed = _events_of(actuator, "nikobus_button_pressed")[0]
+    assert (pressed["module_address"], pressed["channel"]) == ("81F6", 7)
+
+
+# ---------------------------------------------------------------------------
+# Timer events fire from wire-time crossings (synchronous, burst-safe)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_timer_events_fire_when_frame_count_crosses_thresholds():
+    """25 frames = 1.0 s of wire time → timer_1, 50 → timer_2, 75 →
+    timer_3, all synchronously even when the frames arrive as a burst."""
+    actuator = _make_actuator()
+    for _ in range(80):
+        await actuator.handle_button_press("C5E952")
+
+    timer_1 = _events_of(actuator, "nikobus_button_timer_1")
+    timer_2 = _events_of(actuator, "nikobus_button_timer_2")
+    timer_3 = _events_of(actuator, "nikobus_button_timer_3")
+    assert (len(timer_1), len(timer_2), len(timer_3)) == (1, 1, 1)
+    assert timer_1[0]["duration_s"] == pytest.approx(25 * FRAME_CADENCE_S, abs=0.05)
+    assert timer_2[0]["duration_s"] == pytest.approx(50 * FRAME_CADENCE_S, abs=0.05)
+    assert timer_3[0]["duration_s"] == pytest.approx(75 * FRAME_CADENCE_S, abs=0.05)
+    assert timer_1[0]["threshold_s"] == 1 and timer_1[0]["state"] == "timer"
+
+
+@pytest.mark.asyncio
+async def test_timer_events_only_fire_once_per_threshold():
+    actuator = _make_actuator()
+    for _ in range(40):
+        await actuator.handle_button_press("C5E952")
+    assert len(_events_of(actuator, "nikobus_button_timer_1")) == 1
+    assert _events_of(actuator, "nikobus_button_timer_2") == []
+
+
+@pytest.mark.asyncio
+async def test_short_tap_fires_no_timer_events():
+    actuator = _make_actuator()
+    for _ in range(5):
+        await actuator.handle_button_press("C5E952")
+    for threshold in (1, 2, 3):
+        assert _events_of(actuator, f"nikobus_button_timer_{threshold}") == []
+
+
+# ---------------------------------------------------------------------------
+# Release: the watcher asks the tracker, then fires the classification
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_release_waits_out_the_patience_then_classifies():
+    clock = _Clock()
+    actuator = _make_actuator(clock)
+    for _ in range(5):
+        await actuator.handle_button_press("C5E952")
+    state = actuator.tracker.active("C5E952")
+
+    clock.tick(0.2)
+    assert await actuator._release_if_due(state) is False
+    assert _events_of(actuator, "nikobus_button_released") == []
+
+    clock.tick(0.15)
+    assert await actuator._release_if_due(state) is True
+    released = _events_of(actuator, "nikobus_button_released")
+    assert len(released) == 1
+    assert released[0]["duration_s"] == pytest.approx(5 * FRAME_CADENCE_S)
+    assert released[0]["bucket"] == 0
+    assert len(_events_of(actuator, "nikobus_short_button_pressed")) == 1
+    assert _events_of(actuator, "nikobus_long_button_pressed") == []
+    assert len(_events_of(actuator, "nikobus_button_pressed_0")) == 1
+    assert "C5E952" not in actuator.tracker and "C5E952" not in actuator._contexts
+
+
+@pytest.mark.asyncio
+async def test_a_burst_extends_the_patience_before_release():
+    """97 frames flushed at once: the tracker waits for the implied stall
+    (3.88 s, under the cap) before the release, and then files the
+    press as a 3.88 s long press in bucket 3 — not a 12 ms tap."""
+    clock = _Clock()
+    actuator = _make_actuator(clock)
+    for _ in range(97):
+        await actuator.handle_button_press("C5E952")
+        clock.tick(0.0001)
+    state = actuator.tracker.active("C5E952")
+    assert state.release_threshold_ms == pytest.approx(97 * FRAME_CADENCE_S * 1000)
+
+    clock.tick(RELEASE_THRESHOLD_MS / 1000 + 0.1)
+    assert await actuator._release_if_due(state) is False
+    clock.tick(MAX_EXTENDED_RELEASE_MS / 1000)
+    assert await actuator._release_if_due(state) is True
+
+    released = _events_of(actuator, "nikobus_button_released")
+    assert released[0]["duration_s"] == pytest.approx(97 * FRAME_CADENCE_S)
+    assert released[0]["bucket"] == 3
+    assert len(_events_of(actuator, "nikobus_long_button_pressed")) == 1
+    assert len(_events_of(actuator, "nikobus_button_pressed_3")) == 1
+    assert _events_of(actuator, "nikobus_short_button_pressed") == []
+
+
+@pytest.mark.asyncio
+async def test_handle_release_uses_wire_time_for_duration_and_bucket():
+    actuator = _make_actuator()
+    await actuator._handle_release(_state(frame_count=97))
+    released = _events_of(actuator, "nikobus_button_released")
+    assert released[0]["duration_s"] == pytest.approx(97 * FRAME_CADENCE_S)
+    assert released[0]["bucket"] == 3
+    assert _events_of(actuator, "nikobus_short_button_pressed") == []
+
+
+@pytest.mark.asyncio
+async def test_short_tap_still_classified_as_short_press():
+    actuator = _make_actuator()
+    state = _state(frame_count=5)
+    assert state.duration_s < SHORT_PRESS
+    await actuator._handle_release(state)
+    assert len(_events_of(actuator, "nikobus_short_button_pressed")) == 1
+    assert _events_of(actuator, "nikobus_long_button_pressed") == []
+    assert _events_of(actuator, "nikobus_button_pressed_0")[0]["bucket"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_watcher_stops_when_its_press_is_gone():
+    """A release watcher outlives nothing: once the tracker no longer
+    holds its press, it returns without touching a successor."""
+    clock = _Clock()
+    actuator = _make_actuator(clock)
+    await actuator.handle_button_press("C5E952")
+    first = actuator.tracker.active("C5E952")
+    actuator.tracker.end("C5E952")
+    clock.tick(0.5)
+    await actuator.handle_button_press("C5E952")
+    clock.tick(5.0)
+    assert await actuator._release_if_due(first) is False
+    assert _events_of(actuator, "nikobus_button_released") == []
+
+
+# ---------------------------------------------------------------------------
+# A press sent by Home Assistant refreshes what it impacts, silently
+# ---------------------------------------------------------------------------
+
 def test_host_press_schedules_the_refresh_without_an_event():
     """The PC-Link never relays the host's own #N: the refresh must be
     scheduled explicitly, and no nikobus_button_operation event fired —
     nobody pressed a key."""
-    import asyncio
 
     actuator = _make_actuator_with_link()
     asyncio.run(actuator.refresh_after_host_press("295682"))
@@ -423,7 +317,6 @@ def test_host_press_schedules_the_refresh_without_an_event():
 
 
 def test_inbound_press_still_fires_the_event():
-    import asyncio
 
     actuator = _make_actuator_with_link()
     asyncio.run(actuator.button_discovery("295682", press_context={"press_id": "p1", "duration_s": 0.3}))
@@ -432,7 +325,6 @@ def test_inbound_press_still_fires_the_event():
 
 
 def test_host_press_of_an_unknown_key_is_a_noop():
-    import asyncio
 
     actuator = _make_actuator()
     asyncio.run(actuator.refresh_after_host_press("000000"))
@@ -465,7 +357,6 @@ def _make_actuator_linked_to(module_address: str, module_type: str | None) -> Ni
 def test_a_press_on_an_audio_trigger_does_not_read_the_audio_module():
     """The 05-205 never answers $1012: reading it after every press was
     three timeouts and an error (Nikobus-HA #310)."""
-    import asyncio
 
     actuator = _make_actuator_linked_to("8334", "audio_module")
     asyncio.run(actuator.refresh_after_host_press("8083CF"))
@@ -475,7 +366,6 @@ def test_a_press_on_an_audio_trigger_does_not_read_the_audio_module():
 
 
 def test_a_press_on_a_key_of_a_switch_module_still_reads_it():
-    import asyncio
 
     actuator = _make_actuator_linked_to("4707", "switch_module")
     asyncio.run(actuator.refresh_after_host_press("8083CF"))
@@ -484,7 +374,6 @@ def test_a_press_on_a_key_of_a_switch_module_still_reads_it():
 
 def test_a_module_the_store_does_not_know_is_still_read():
     """Unclassified is not the same as known-silent."""
-    import asyncio
 
     actuator = _make_actuator_linked_to("4707", None)
     asyncio.run(actuator.refresh_after_host_press("8083CF"))
@@ -494,7 +383,6 @@ def test_a_module_the_store_does_not_know_is_still_read():
 def test_a_press_on_a_key_of_the_rgb_controller_reads_it():
     """The controller answers the state query, and its light consumes the
     answer — so a press on its key refreshes it like a switch module."""
-    import asyncio
 
     actuator = _make_actuator_linked_to("801D", "rgb_module")
     asyncio.run(actuator.refresh_after_host_press("8083CF"))
