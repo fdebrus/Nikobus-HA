@@ -869,7 +869,7 @@ The code is split into two packages.
 - `discovery_mixin.py` — the discovery lifecycle on the HA side (inventory, link scan, the residue probe and its Repairs issues, `.nkb` import); the progress arithmetic and the post-scan reconciliation are the library's.
 - `nkbactuator.py` — feeds button frames to the library's press tracker, fires the `nikobus_button_*` events and signals, and reads the modules a key drives.
 - `nkbconfig.py` — scene-file loader/writer.
-- `nkbtravelcalculator.py` — virtual cover-position tracking.
+- `nkbtravelcalculator.py` — the library's cover travel model on the integration's clock.
 - `devices.py` — registers the HA devices: one per wall button, input module, opaque module, and the synthesized children (PC-Logic inputs, remote codes, PC-Link calendar channels, audio triggers under their module) — for the press-entity classes that are ticked.
 - `router.py` — maps module channels to HA entity types, decides the press-entity class and the parent device of every op point, and builds the `controlled_by` reverse index.
 - `config_flow.py` — config flow (connection → hardware → polling) and the Configure options menu (customize, upload `.nkb`, import `.nkb`, scenes, press entities).
