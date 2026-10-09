@@ -1,65 +1,23 @@
-"""Position calculator for time-based Nikobus covers."""
+"""Position calculator for time-based Nikobus covers.
+
+The model is the library's (``nikobus_connect.travel.TravelCalculator``,
+since 0.51.0). This keeps the integration's name for it and binds the
+clock late, through this module's ``time``, so a test can still patch
+``nkbtravelcalculator.time.monotonic`` to drive a cover entity.
+"""
 
 from __future__ import annotations
 
 import time
 
+from nikobus_connect.travel import TravelCalculator
 
-class NikobusTravelCalculator:
-    """Calculates cover position based on travel time."""
+
+class NikobusTravelCalculator(TravelCalculator):
+    """The library's travel model, on the integration's clock."""
 
     def __init__(self, time_up: float, time_down: float) -> None:
-        """Initialize the calculator."""
-        self.time_up = time_up
-        self.time_down = time_down
-        self.position: float = 100.0
-        self._start_time: float | None = None
-        self._start_pos: float | None = None
-        self._direction: int | None = None  # 1 for up, -1 for down
+        super().__init__(time_up, time_down, clock=lambda: time.monotonic())
 
-    def set_position(self, position: float) -> None:
-        """Manually set the current known position."""
-        self.position = max(0.0, min(100.0, position))
 
-    def start_travel(self, direction: str, latency: float = 0.0) -> None:
-        """Mark the start of travel and record start position/time.
-
-        ``latency`` is how many seconds the cover has *already* been moving
-        before this method is called (e.g. actuator detection delay for
-        Nikobus-initiated moves).  The start time is backdated so that
-        ``current_position()`` immediately returns the correct in-transit
-        position rather than the stale pre-move position.
-
-        Latency must be non-negative; negative values are clamped to zero.
-
-        Anchors on the *in-flight* position: when called while a travel
-        is already running (re-target in the same direction), the
-        committed ``self.position`` is stale — using it would snap the
-        simulated position back to the pre-move value and make the new
-        run start from the wrong base.
-        """
-        self.position = self.current_position()
-        self._start_pos = self.position
-        self._start_time = time.monotonic() - max(0.0, latency)
-        self._direction = 1 if direction == "opening" else -1
-
-    def stop(self) -> None:
-        """Stop traveling and lock in the calculated position."""
-        self.position = self.current_position()
-        self._direction = None
-
-    def current_position(self) -> float:
-        """Calculate the exact current position based on elapsed time."""
-        if self._direction is None or self._start_time is None or self._start_pos is None:
-            return self.position
-
-        elapsed = time.monotonic() - self._start_time
-        active_time = self.time_up if self._direction == 1 else self.time_down
-        if active_time <= 0:
-            return self.position
-
-        progress = (elapsed / active_time) * 100.0
-
-        if self._direction == 1:
-            return min(100.0, self._start_pos + progress)
-        return max(0.0, self._start_pos - progress)
+__all__ = ["NikobusTravelCalculator"]

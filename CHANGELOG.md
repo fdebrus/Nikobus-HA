@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.27.0
+
+**Requires `nikobus-connect` 0.51.0.**
+
+- **The cover travel model moved to the library.** The arithmetic that turns run times and elapsed time into a shutter position — backdated starts, re-targets in flight, the clamp at both ends — is `nikobus_connect.travel.TravelCalculator` now; `nkbtravelcalculator.py` keeps the integration's name for it on the integration's clock. No behaviour change. Last of the four moves that started with 3.24.0: the press state machine, the store helpers, the discovery arithmetic and the travel model are the library's, and what the integration keeps is Home Assistant's.
+
 ## 3.26.0
 
 **Requires `nikobus-connect` 0.50.0.**
