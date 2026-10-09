@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.25.0
+
+**Requires `nikobus-connect` 0.49.0.**
+
+- **The store helpers moved to the library.** Member sets, the `controlled_by` index, the button status after a scan (active, residue, input-only), whether a central function is a shutter group or a light scene, the routing graph, and the project file's colour-controller links are questions about the shape of the library's own records; they are answered in `nikobus_connect.discovery.store` now. `nkbreconcile.py` keeps one rule, which central functions become scene entities, and re-exports the rest, so every platform keeps its imports. `INPUT_ONLY_BUTTON_TYPES` is built from the library's catalogue names instead of being spelled out here. No behaviour change. Second step of moving protocol knowledge down to the library.
+
 ## 3.24.0
 
 **Requires `nikobus-connect` 0.48.0.**
