@@ -1,34 +1,39 @@
-"""Nikobus Button Press Events Handling"""
+"""Key presses seen on the bus, turned into Home Assistant events and refreshes.
+
+What a press *is* — frames, wire-time duration, hold milestones, burst
+patience, release — is the library's business: ``nikobus_connect.press``
+infers it from the ``#N`` frames and knows nothing of Home Assistant.
+This module is the glue around it: it feeds the tracker, watches for
+release from the event loop, fires the ``nikobus_button_*`` events and
+per-address signals, and reads the modules a key drives once the
+outputs have had time to move.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import time
 import uuid
-from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from nikobus_connect.discovery import find_module, find_operation_point
+from nikobus_connect.press import (
+    PressState,
+    PressTracker,
+    impacted_groups,
+    primary_link,
+)
 
 from .const import (
-    BURST_DETECT_GAP_COUNT,
-    BURST_GAP_THRESHOLD_S,
-    BURST_RECENT_GAPS_WINDOW,
-    BUTTON_TIMER_THRESHOLDS,
     DIMMER_DELAY,
     EVENT_BUTTON_OPERATION,
     EVENT_BUTTON_PRESSED,
-    FRAME_CADENCE_S,
-    MAX_EXTENDED_RELEASE_MS,
     POLLED_MODULE_TYPES,
     REFRESH_DELAY,
-    RELEASE_THRESHOLD_MS,
-    SHORT_PRESS,
     operation_signal,
     press_signal,
 )
@@ -38,33 +43,17 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+#: How often the release watcher asks the tracker whether a press ended.
+RELEASE_POLL_S = 0.05
+
 
 @dataclass
-class PressState:
-    """Track the state of an in-flight button press.
+class _PressContext:
+    """What Home Assistant adds to a press the tracker follows."""
 
-    Duration is anchored to ``frame_count`` (each received frame
-    represents ``FRAME_CADENCE_S`` of held time on the wire), not
-    wall-clock — that's the only invariant that survives upstream
-    buffering. ``recent_gaps`` and ``current_release_threshold_ms``
-    drive burst-aware release patience: when frames arrive faster
-    than the wire could deliver them (gap < ``BURST_GAP_THRESHOLD_S``),
-    we know a bridge stall just drained into us and extend the
-    release threshold to absorb the next likely stall.
-    """
-    address: str
-    press_start: float
-    last_press_time: float
-    press_id: str
     module_address: str | None
     channel: int | None
     release_task: asyncio.Task[None] | None = None
-    last_timer_threshold: int = 0
-    frame_count: int = 1
-    recent_gaps: deque[float] = field(
-        default_factory=lambda: deque(maxlen=BURST_RECENT_GAPS_WINDOW)
-    )
-    current_release_threshold_ms: float = float(RELEASE_THRESHOLD_MS)
 
 
 class NikobusActuator:
@@ -76,18 +65,22 @@ class NikobusActuator:
         coordinator: NikobusDataCoordinator,
         dict_button_data: dict[str, Any],
         module_data: dict[str, Any],
+        *,
+        tracker: PressTracker | None = None,
     ) -> None:
         """Initialize the Nikobus actuator.
 
         ``module_data`` is the live caller-owned dict wrapped by the Store
         (``{"nikobus_module": {addr: entry}}``). We hold a reference rather
         than a copy so ``on_module_save`` mutations are visible immediately.
+        ``tracker`` is injectable for tests that drive the clock.
         """
         self._hass = hass
         self._coordinator = coordinator
         self._dict_button_data = dict_button_data
         self._module_data = module_data
-        self._press_states: dict[str, PressState] = {}
+        self.tracker = tracker or PressTracker()
+        self._contexts: dict[str, _PressContext] = {}
         self._module_refresh_tasks: dict[str, asyncio.Task[None]] = {}
 
     def stop(self) -> None:
@@ -98,170 +91,99 @@ class NikobusActuator:
         a torn-down command handler / connection. Tasks self-terminate in
         a few seconds anyway, but cancelling makes teardown deterministic.
         """
-        for state in self._press_states.values():
-            if state.release_task and not state.release_task.done():
-                state.release_task.cancel()
-        self._press_states.clear()
+        for context in self._contexts.values():
+            if context.release_task and not context.release_task.done():
+                context.release_task.cancel()
+        self._contexts.clear()
+        self.tracker.clear()
         for task in self._module_refresh_tasks.values():
             if not task.done():
                 task.cancel()
         self._module_refresh_tasks.clear()
 
+    # ------------------------------------------------------------------
+    # Inbound frames
+    # ------------------------------------------------------------------
+
     async def handle_button_press(self, address: str) -> None:
-        """Handle incoming button frames with frame-count duration tracking.
-
-        Each frame is treated as ``FRAME_CADENCE_S`` (40 ms) of held
-        time on the wire — the only quantity that survives upstream
-        buffering correctly. Burst-flushed frames update the burst
-        window so the release detector can extend its patience.
-        """
-        normalized_address = address.upper()
-        current_time = time.monotonic()
-
-        if normalized_address in self._press_states:
-            state = self._press_states[normalized_address]
-            gap = current_time - state.last_press_time
-            state.last_press_time = current_time
-            state.frame_count += 1
-            state.recent_gaps.append(gap)
-            self._update_release_threshold(state)
-            self._maybe_fire_frame_count_timers(state)
-            return
-
-        module_address, channel = self._derive_button_context(normalized_address)
-        press_id = f"{normalized_address}-{current_time:.3f}-{uuid.uuid4().hex[:8]}"
-
-        state = PressState(
-            address=normalized_address,
-            press_start=current_time,
-            last_press_time=current_time,
-            press_id=press_id,
-            module_address=module_address,
-            channel=channel,
-        )
-        self._press_states[normalized_address] = state
-
-        # Start background task for release detection. Timer events
-        # are now fired synchronously inside handle_button_press as
-        # frame_count crosses each threshold (see
-        # _maybe_fire_frame_count_timers) — no async sleeps needed.
-        state.release_task = self._hass.async_create_task(self._wait_for_release(state))
-
-        # Fire immediate press event for Binary Sensors
-        self._fire_event(EVENT_BUTTON_PRESSED, state, state_value="pressed", duration=None)
-
-        # Trigger module state synchronization IMMEDIATELY upon press
-        press_context = {
-            "press_id": state.press_id,
-            "duration_s": 0.0,
-            "module_address": state.module_address,
-            "channel": state.channel,
-            "bucket": 0,
-        }
-        self._hass.async_create_task(self.button_discovery(state.address, press_context=press_context))
-
-    def _maybe_fire_frame_count_timers(self, state: PressState) -> None:
-        """Fire ``nikobus_button_timer_N`` events when frame_count
-        crosses each long-press threshold.
-
-        Anchored to ``frame_count * FRAME_CADENCE_S`` so timers fire
-        correctly even when frames arrive in a buffered burst (where
-        wall-clock would never reach the threshold within the press
-        window). Idempotent via ``last_timer_threshold``.
-        """
-        elapsed_s = state.frame_count * FRAME_CADENCE_S
-        for threshold in BUTTON_TIMER_THRESHOLDS:
-            if state.last_timer_threshold >= threshold:
-                continue
-            if elapsed_s < threshold:
-                continue
-            state.last_timer_threshold = threshold
+        """Account for one ``#N`` frame: start a press, or extend it."""
+        state, started, timers = self.tracker.frame(address)
+        if started:
+            module_address, channel = self._derive_button_context(state.address)
+            context = _PressContext(module_address, channel)
+            self._contexts[state.address] = context
+            context.release_task = self._hass.async_create_task(
+                self._wait_for_release(state)
+            )
+            self._fire_event(
+                EVENT_BUTTON_PRESSED, state, context, state_value="pressed", duration=None
+            )
+            # Read the impacted modules right away; the release re-reads.
+            self._hass.async_create_task(
+                self.button_discovery(
+                    state.address,
+                    press_context={
+                        "press_id": state.press_id,
+                        "duration_s": 0.0,
+                        "module_address": module_address,
+                        "channel": channel,
+                        "bucket": 0,
+                    },
+                )
+            )
+        for threshold in timers:
             self._fire_event(
                 f"nikobus_button_timer_{threshold}",
                 state,
+                self._contexts.get(state.address),
                 state_value="timer",
-                duration=elapsed_s,
+                duration=state.duration_s,
                 threshold=threshold,
             )
 
-    def _update_release_threshold(self, state: PressState) -> None:
-        """Adjust the per-press release threshold based on burst signal.
-
-        When several recent inter-frame gaps are below
-        ``BURST_GAP_THRESHOLD_S``, frames are arriving faster than the
-        wire can deliver them — a bridge stall has just drained into
-        us. Extend the release threshold to absorb the likely next
-        stall, scaled to the implied bridge buffer (frame_count *
-        cadence ≈ ms of wire time the bridge withheld). Cap at
-        ``MAX_EXTENDED_RELEASE_MS`` to keep release latency bounded.
-
-        When recent gaps look normal again (no burst markers in the
-        window), the threshold relaxes back to ``RELEASE_THRESHOLD_MS``
-        so a real release on a healthy bridge is detected promptly.
-        """
-        burst_gap_count = sum(
-            1 for g in state.recent_gaps if g < BURST_GAP_THRESHOLD_S
-        )
-        if burst_gap_count >= BURST_DETECT_GAP_COUNT:
-            implied_stall_ms = state.frame_count * FRAME_CADENCE_S * 1000.0
-            state.current_release_threshold_ms = min(
-                float(MAX_EXTENDED_RELEASE_MS),
-                max(state.current_release_threshold_ms, implied_stall_ms),
-            )
-        elif burst_gap_count == 0 and len(state.recent_gaps) >= BURST_RECENT_GAPS_WINDOW:
-            # The full recent-gap window is clean — bridge is back to
-            # normal cadence. Relax patience back to baseline so a
-            # real release isn't held up by stale burst state.
-            state.current_release_threshold_ms = float(RELEASE_THRESHOLD_MS)
-
     async def _wait_for_release(self, state: PressState) -> None:
-        """Monitor for the absence of button frames to detect a release.
-
-        Uses the per-press adaptive release threshold so a burst-flush
-        followed by silence isn't misclassified as a release. Press
-        duration is computed from frame_count (wire-time anchor)
-        rather than wall-clock — see ``PressState`` docstring.
-        """
+        """Watch for the silence that ends this press, then release it."""
         try:
             while True:
-                await asyncio.sleep(0.05)
-                active_state = self._press_states.get(state.address)
-                if not active_state or active_state.press_id != state.press_id:
+                await asyncio.sleep(RELEASE_POLL_S)
+                if self.tracker.active(state.address) is not state:
                     return
-
-                silence_ms = (time.monotonic() - active_state.last_press_time) * 1000
-                if silence_ms >= active_state.current_release_threshold_ms:
-                    duration = active_state.frame_count * FRAME_CADENCE_S
-                    await self._handle_release(active_state, duration)
+                if await self._release_if_due(state):
                     return
         except asyncio.CancelledError:
             pass
 
-    async def _handle_release(self, state: PressState, press_duration: float) -> None:
-        """Cleanup and process module updates upon button release."""
-        bucket = self._get_bucket(press_duration)
+    async def _release_if_due(self, state: PressState) -> bool:
+        """Release ``state`` if its silence has outlasted its patience."""
+        if self.tracker.release_due(state.address, state.press_id) is None:
+            return False
+        await self._handle_release(state)
+        return True
 
-        # 1. Base Release Event
-        self._fire_event("nikobus_button_released", state, state_value="released", duration=press_duration, bucket=bucket)
-
-        # 2. Classification Event (Short vs Long)
-        event_name = "nikobus_short_button_pressed" if press_duration < SHORT_PRESS else "nikobus_long_button_pressed"
-        self._fire_event(event_name, state, state_value="released", duration=press_duration, bucket=bucket)
-
-        # 3. Explicit Bucket Event (0, 1, 2, 3)
-        self._fire_event(f"nikobus_button_pressed_{bucket}", state, state_value="released", duration=press_duration, bucket=bucket)
+    async def _handle_release(self, state: PressState) -> None:
+        """Fire the release events and schedule the settled read."""
+        context = self._contexts.get(state.address)
+        duration = state.duration_s
+        bucket = state.bucket
+        self._fire_event("nikobus_button_released", state, context, state_value="released", duration=duration, bucket=bucket)
+        event_name = "nikobus_short_button_pressed" if state.is_short else "nikobus_long_button_pressed"
+        self._fire_event(event_name, state, context, state_value="released", duration=duration, bucket=bucket)
+        self._fire_event(f"nikobus_button_pressed_{bucket}", state, context, state_value="released", duration=duration, bucket=bucket)
 
         press_context = {
             "press_id": state.press_id,
-            "duration_s": press_duration,
-            "module_address": state.module_address,
-            "channel": state.channel,
+            "duration_s": duration,
+            "module_address": context.module_address if context else None,
+            "channel": context.channel if context else None,
             "bucket": bucket,
         }
-
-        # Trigger module state synchronization
+        self.tracker.end(state.address, state.press_id)
+        self._contexts.pop(state.address, None)
         self._hass.async_create_task(self.button_discovery(state.address, press_context=press_context))
-        self._press_states.pop(state.address, None)
+
+    # ------------------------------------------------------------------
+    # What a press reaches
+    # ------------------------------------------------------------------
 
     async def button_discovery(self, address: str, press_context: dict[str, Any] | None = None) -> None:
         """Identify impacted modules and trigger targeted refreshes."""
@@ -293,25 +215,19 @@ class NikobusActuator:
         )
 
     def _derive_impacted_modules(self, op_point: dict[str, Any]) -> list[tuple[str, str]]:
-        """Return the unique (module_address, group) pairs this op-point affects.
+        """The ``(module_address, group)`` pairs this op-point affects and
+        whose state is read at all.
 
-        Derived from ``linked_modules`` — channels 1-6 live in feedback group 1,
-        7-12 in group 2.
-
-        Only modules whose state is read at all are returned. An audio
-        trigger's op point links to the Audio Distribution module that
-        listens for it, and that module never answers a state query:
-        reading it after every press was three attempts of five seconds
-        and an error, for nothing. A module the store does not know is
-        kept — it may simply not have been classified yet.
+        The library lists what the links drive; this keeps only modules
+        of a polled type. An audio trigger's op point links to the Audio
+        Distribution module that listens for it, and that module never
+        answers a state query: reading it after every press was three
+        attempts of five seconds and an error, for nothing. A module the
+        store does not know is kept — it may simply not have been
+        classified yet.
         """
-        seen: set[tuple[str, str]] = set()
-        for link in op_point.get("linked_modules") or []:
-            if not isinstance(link, dict):
-                continue
-            module_address = (link.get("module_address") or "").upper()
-            if not module_address:
-                continue
+        impacted: list[tuple[str, str]] = []
+        for module_address, group in impacted_groups(op_point):
             hit = find_module(self._module_data, module_address)
             module_type = hit[1].get("module_type") if hit else None
             if module_type is not None and module_type not in POLLED_MODULE_TYPES:
@@ -321,15 +237,8 @@ class NikobusActuator:
                     module_type,
                 )
                 continue
-            for out in link.get("outputs") or []:
-                if not isinstance(out, dict):
-                    continue
-                channel = out.get("channel")
-                if not isinstance(channel, int):
-                    continue
-                group = "1" if channel <= 6 else "2"
-                seen.add((module_address, group))
-        return list(seen)
+            impacted.append((module_address, str(group)))
+        return impacted
 
     async def process_button_modules(
         self,
@@ -346,50 +255,40 @@ class NikobusActuator:
         reads.
         """
         press_id = (press_context or {}).get("press_id") or f"{button_address}-{uuid.uuid4().hex[:8]}"
+        button_address = button_address.upper()
 
         impacted = self._derive_impacted_modules(op_point)
         _LOGGER.debug("[%s] Button %s impacts %d module(s)", press_id, button_address, len(impacted))
 
         for addr, group in impacted:
-
-            # Determine if this specific module is a dimmer BEFORE debouncing.
+            # A dimmer moves while the key is held: read it on release only.
             hit = find_module(self._module_data, addr)
-            is_dimmer = hit is not None and hit[1].get("module_type") == "dimmer_module"
-            requires_long_press = is_dimmer
+            requires_long_press = hit is not None and hit[1].get("module_type") == "dimmer_module"
             is_initial_press = press_context is not None and press_context.get("duration_s") == 0.0
-
             if requires_long_press and is_initial_press:
                 _LOGGER.debug("[%s] Dimmer %s group %s — ignoring initial press, waiting for release", press_id, addr, group)
                 continue
 
-            # ==========================================
-            # 1. Fire Event IMMEDIATELY for HA Automations
-            # ==========================================
-            # 4. Post-refresh notification (nikobus_button_operation)
             if fire_event:
                 self._fire_event(
                     EVENT_BUTTON_OPERATION,
-                    PressState(button_address.upper(), 0, 0, press_id, addr, None),
+                    PressState(address=button_address, press_id=press_id, started_at=0.0, last_frame_at=0.0),
+                    _PressContext(addr, None),
                     state_value="released",
                     duration=(press_context or {}).get("duration_s"),
                     bucket=(press_context or {}).get("bucket"),
                     extra={
                         "impacted_module_address": addr,
                         "impacted_module_group": group,
-                    }
+                    },
                 )
 
-            # ==========================================
-            # 2. Strict Module Debouncer (Prevents UI Jumps)
-            # ==========================================
+            # One pending refresh per module group: a newer press replaces it.
             cache_key = f"{addr}_{group}"
             if cache_key in self._module_refresh_tasks:
                 _LOGGER.debug("[%s] Cancelling pending refresh for module %s group %s", press_id, addr, group)
                 self._module_refresh_tasks[cache_key].cancel()
 
-            # ==========================================
-            # 3. Delayed State Fetch Task (UI Update Only)
-            # ==========================================
             async def _refresh_task(
                 m_addr: str = addr,
                 m_group: str = group,
@@ -402,14 +301,14 @@ class NikobusActuator:
                 m_cache_key: str = cache_key,
             ) -> None:
                 try:
-                    # STEP 1: Immediate UI Update (Skip for dimmers)
+                    # An immediate read for the relay modules; a dimmer waits.
                     if not m_requires_long_press:
                         _LOGGER.debug("[%s] Immediate refresh of module %s group %s", m_press_id, m_addr, m_group)
                         await asyncio.sleep(0.3)
 
                         # Skip while the button is still held — a read now
                         # would collide on the bus; defer to the release.
-                        if button_address.upper() in self._press_states:
+                        if button_address in self.tracker:
                             _LOGGER.debug("[%s] Button still held — deferring refresh to release", m_press_id)
                             return
 
@@ -427,12 +326,10 @@ class NikobusActuator:
                     # Read again once the outputs have settled.
                     delay = DIMMER_DELAY if m_requires_long_press else max(0, REFRESH_DELAY - 0.3)
                     _LOGGER.debug("[%s] Waiting %.1fs for module %s to settle", m_press_id, delay, m_addr)
-
                     await asyncio.sleep(delay)
 
                     _LOGGER.debug("[%s] Reading settled state of module %s group %s", m_press_id, m_addr, m_group)
                     new_state = await self._coordinator.nikobus_command.get_output_state(m_addr, m_group)
-
                     if new_state:
                         _LOGGER.debug("[%s] Module %s settled at %s", m_press_id, m_addr, new_state)
                         self._coordinator.set_bytearray_group_state(m_addr, m_group, new_state)
@@ -446,19 +343,27 @@ class NikobusActuator:
                 except Exception as err:  # noqa: BLE001 - defensive: keep the refresh loop alive
                     _LOGGER.error("[%s] Failed to refresh module %s group %s: %s", m_press_id, m_addr, m_group, err)
                 finally:
-                    # Clean up the task reference when done
                     if self._module_refresh_tasks.get(m_cache_key) == asyncio.current_task():
                         self._module_refresh_tasks.pop(m_cache_key, None)
 
-            # Schedule the newly requested refresh
             self._module_refresh_tasks[cache_key] = self._hass.async_create_task(_refresh_task())
 
-    def _fire_event(self, event_type: str, state: PressState, **kwargs: Any) -> None:
-        """Helper to fire standardized Nikobus events and log them."""
+    # ------------------------------------------------------------------
+    # Events
+    # ------------------------------------------------------------------
+
+    def _fire_event(
+        self,
+        event_type: str,
+        state: PressState,
+        context: _PressContext | None,
+        **kwargs: Any,
+    ) -> None:
+        """Fire one ``nikobus_button_*`` event with the shared payload."""
         payload: dict[str, Any] = {
             "address": state.address,
-            "module_address": state.module_address,
-            "channel": state.channel,
+            "module_address": context.module_address if context else None,
+            "channel": context.channel if context else None,
             "ts": datetime.now(timezone.utc).isoformat(),
             "press_id": state.press_id,
             "state": kwargs.get("state_value"),
@@ -472,7 +377,6 @@ class NikobusActuator:
 
         # Log the event exactly as it is fired to the Home Assistant bus
         _LOGGER.debug("[%s] Fire %s — %s", state.press_id, event_type, payload)
-
         self._hass.bus.async_fire(event_type, payload)
 
         # Internal per-address wake alongside the public bus event, so a
@@ -492,26 +396,9 @@ class NikobusActuator:
                     async_dispatcher_send(self._hass, press_signal(addr), payload)
 
     def _derive_button_context(self, address: str) -> tuple[str | None, int | None]:
-        """Determine the primary (module_address, channel) link from discovery."""
+        """The primary ``(module_address, channel)`` a key drives, for the events."""
         hit = find_operation_point(self._dict_button_data, address)
         if hit is None:
             return (None, None)
         _physical_addr, _key_label, op_point = hit
-        for link in op_point.get("linked_modules") or []:
-            if not isinstance(link, dict):
-                continue
-            module_addr = link.get("module_address")
-            if not module_addr:
-                continue
-            channel: int | None = None
-            outputs = link.get("outputs")
-            if isinstance(outputs, list) and outputs:
-                ch_val = outputs[0].get("channel")
-                if isinstance(ch_val, int):
-                    channel = ch_val
-            return (module_addr.upper(), channel)
-        return (None, None)
-
-    def _get_bucket(self, duration: float) -> int:
-        """Map press duration to a discrete bucket (0-3)."""
-        return min(int(duration), 3)
+        return primary_link(op_point)

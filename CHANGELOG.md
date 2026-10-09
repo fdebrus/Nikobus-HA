@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.24.0
+
+**Requires `nikobus-connect` 0.48.0.**
+
+- **The press state machine moved to the library.** How a key press is inferred from its frames — wire-time duration, the 1/2/3 s hold milestones, the burst-tolerant release patience — is bus knowledge, and it now lives in `nikobus_connect.press`. The integration keeps what is Home Assistant's: the `nikobus_button_*` events and their payload, the per-address signals, the release watcher on the event loop, and the reads of the modules a key drives. No behaviour changes: every event, payload field, threshold and delay is the same; `SHORT_PRESS` and `BUTTON_TIMER_THRESHOLDS` in `const.py` now re-export the library's values. First step of moving protocol knowledge down to the library.
+
 ## 3.23.5
 
 - **Fixed: the legacy-buttons repair closed itself without showing anything.** Clicking *N Nikobus button(s) flagged as legacy* went straight to "The issue is repaired!": Home Assistant starts a repair flow by passing `{"issue_id": …}` to its first step, and the flow read that as a submission with nothing selected — so it purged nothing, Home Assistant deleted the issue, and the next full scan raised it again. The review form now lives in a step of its own, which the first step opens without input. Diagnosed to the line by @roswennen (#540).

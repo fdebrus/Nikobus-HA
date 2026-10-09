@@ -433,7 +433,7 @@ actions:
 The integration fires structured HA bus events for the full press lifecycle:
 
 - **Base**: `nikobus_button_pressed`, `nikobus_button_released`.
-- **Classified**: `nikobus_short_button_pressed` (< 1 s), `nikobus_long_button_pressed` (≥ 1 s). The threshold is `SHORT_PRESS` in `const.py`.
+- **Classified**: `nikobus_short_button_pressed` (< 1 s), `nikobus_long_button_pressed` (≥ 1 s). The threshold is `SHORT_PRESS_S` in the library's `nikobus_connect.press`, which also holds the frame cadence and the release patience.
 - **Release buckets**: `nikobus_button_pressed_0` (< 1 s) … `_3` (≥ 3 s).
 - **Hold milestones** (while still held): `nikobus_button_timer_1` / `_2` / `_3` at 1/2/3 s. These count wire frames (40 ms cadence), not wall-clock, so a bridge that buffers and bursts frames still classifies correctly.
 - **Post-refresh**: `nikobus_button_operation` after impacted modules are refreshed — for presses seen on the bus only, never for a press Home Assistant sent itself.
@@ -852,6 +852,7 @@ The code is split into two packages.
 
 - `NikobusConnect` — serial/TCP transport, PC-Link handshake and the presence probe.
 - `NikobusEventListener` — parses CR-terminated ASCII frames, validates both checksums (the PC-Link's CRC-8 and the module's CRC-16), dispatches presses and feedback.
+- `nikobus_connect.press` — infers a press from its `#N` frames: wire-time duration, hold milestones, burst-tolerant release.
 - `NikobusCommandHandler` — queued, retrying command processor that owns the bus lock every exchange takes, merges set-output requests per module group, and ignores a state answer that arrives before its own acknowledgement (a Feedback Module's, not ours).
 - `NikobusAPI` — high-level operations (read/set output state, cover start/stop, key press as one back-to-back burst, module status / checksum / memory image, PC-Link clock).
 - `NikobusDiscovery` — PC-Link inventory + module register scan; reads the PC-Link's registry header to bound the sweep and filter its diagnostic filler pages, reverse-engineers button→output mappings, decodes the Audio Distribution module's own link table, recognises the PC-Link's calendar channels, and classifies CF broadcasts.
@@ -866,7 +867,7 @@ The code is split into two packages.
 - `nkbprogramming.py` — the read-only maintenance layer: module status and checksum checks, memory backups, the reprogramming watch, the PC-Link clock.
 - `nkbreconcile.py` — reconciles the links read from the bus with the `.nkb` project.
 - `discovery_mixin.py` — the discovery lifecycle on the HA side (inventory, link scan, post-scan reconciliation, `.nkb` import).
-- `nkbactuator.py` — turns incoming button frames into HA events with debounce + duration tracking.
+- `nkbactuator.py` — feeds button frames to the library's press tracker, fires the `nikobus_button_*` events and signals, and reads the modules a key drives.
 - `nkbconfig.py` — scene-file loader/writer.
 - `nkbtravelcalculator.py` — virtual cover-position tracking.
 - `devices.py` — registers the HA devices: one per wall button, input module, opaque module, and the synthesized children (PC-Logic inputs, remote codes, PC-Link calendar channels, audio triggers under their module) — for the press-entity classes that are ticked.
