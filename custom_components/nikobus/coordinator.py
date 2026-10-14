@@ -183,10 +183,12 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
         # Shared module state buffer — owned here, passed to NikobusCommandHandler
         self._module_states: dict[str, bytearray] = {}
-        # When each module's state was last heard — pushed, polled or read
-        # after a press — on the monotonic clock. The Feedback-Module
-        # safety poll reads only the modules this says are silent.
-        self._state_seen_at: dict[str, float] = {}
+        # When each module group's state was last heard — pushed, polled
+        # or read after a press — on the monotonic clock, keyed
+        # ``(address, group)``: a Feedback Module pushes one group at a
+        # time, so a module can be heard on channels 7–12 and never on
+        # 1–6. The safety poll reads only the groups this says are silent.
+        self._state_seen_at: dict[tuple[str, int], float] = {}
 
         self.discovery_running = False
         # ``discovery_module`` / ``discovery_module_address`` /
@@ -400,19 +402,63 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             return timedelta(seconds=FEEDBACK_SAFETY_POLL_S)
         return timedelta(seconds=self._refresh_interval)
 
-    def _note_state_seen(self, address: str) -> None:
-        """Record that ``address`` just reported its state."""
-        self._state_seen_at[address.upper()] = time.monotonic()
+    def _note_state_seen(self, address: str, group: int) -> None:
+        """Record that ``address`` just reported the state of ``group``."""
+        self._state_seen_at[(address.upper(), int(group))] = time.monotonic()
 
-    def _silent_modules(
+    @staticmethod
+    def _module_groups(module_data: Any) -> tuple[int, ...]:
+        """The output groups a module answers for: 1, and 2 past six channels."""
+        channels = module_data.get("channels", []) if isinstance(module_data, dict) else []
+        return (1,) if len(channels) <= 6 else (1, 2)
+
+    def _silent_groups(
         self, modules_dict: dict[str, Any], since: float
-    ) -> dict[str, Any]:
-        """The modules of ``modules_dict`` not heard from since ``since``."""
-        return {
-            address: module_data
-            for address, module_data in modules_dict.items()
-            if self._state_seen_at.get(str(address).upper(), float("-inf")) <= since
-        }
+    ) -> dict[str, tuple[int, ...]]:
+        """``address -> groups`` of ``modules_dict`` not heard from since ``since``."""
+        silent: dict[str, tuple[int, ...]] = {}
+        for address, module_data in modules_dict.items():
+            normalized = str(address).upper()
+            groups = tuple(
+                g
+                for g in self._module_groups(module_data)
+                if self._state_seen_at.get((normalized, g), float("-inf")) <= since
+            )
+            if groups:
+                silent[normalized] = groups
+        return silent
+
+    async def async_refresh_module(
+        self, address: str, group: int | None = None, *, channel: int | None = None
+    ) -> bool:
+        """Read one output module's state now: one group, or all of them.
+
+        ``group`` names it directly; ``channel`` picks the group that
+        channel is in. Returns ``False`` when ``address`` is not a polled
+        output module (a button, an audio module), and nothing is sent.
+        """
+        normalized = str(address or "").upper()
+        if not normalized or self.nikobus_command is None:
+            return False
+        for module_type in MODULE_TYPES:
+            modules = self.dict_module_data.get(module_type) or {}
+            for stored, module_data in modules.items():
+                if str(stored).upper() != normalized:
+                    continue
+                groups = self._module_groups(module_data)
+                wanted: int | None = None
+                if group is not None:
+                    wanted = int(group)
+                elif channel is not None:
+                    wanted = 1 if int(channel) <= 6 else 2
+                if wanted is not None:
+                    groups = tuple(g for g in groups if g == wanted) or groups[:1]
+                _LOGGER.debug("Reading module %s group(s) %s on request", normalized, groups)
+                await self._refresh_module_type(
+                    {normalized: module_data}, groups_by_address={normalized: groups}
+                )
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Connect / setup
@@ -568,7 +614,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 else:
                     state_bytes = bytes.fromhex(state_hex)
                     buf[start : start + 6] = state_bytes
-                self._note_state_seen(address)
+                self._note_state_seen(address, group)
 
                 # Resolve any pending get_output_state future immediately
                 if self.nikobus_command:
@@ -884,11 +930,12 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         if self.discovery_running:
             return
         # With a Feedback Module this runs on the safety-poll timer and
-        # reads only what has been silent for a whole interval: an
-        # output the Feedback Module does not track, or one a PC-Logic
-        # switched without a press the integration could attribute. A
-        # tracked module reports on the Feedback Module's own rhythm and
-        # is never asked. The first refresh, with nothing heard yet,
+        # reads only the module groups that have been silent for a whole
+        # interval: an output the Feedback Module does not track, or one
+        # a PC-Logic switched without a press the integration could
+        # attribute. A tracked group reports on the Feedback Module's own
+        # rhythm and is never asked — per group, since the module pushes
+        # one group at a time. The first refresh, with nothing heard yet,
         # reads everything — the initial sync as before.
         silent_since: float | None = None
         if self._has_feedback_module:
@@ -900,18 +947,24 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 modules = self.dict_module_data.get(module_type)
                 if not modules:
                     continue
+                groups_by_address: dict[str, tuple[int, ...]] | None = None
                 if silent_since is not None:
-                    modules = self._silent_modules(modules, silent_since)
-                    if not modules:
+                    groups_by_address = self._silent_groups(modules, silent_since)
+                    if not groups_by_address:
                         continue
                     _LOGGER.debug(
                         "Feedback-Module safety poll — %d %s silent for %ds: %s",
-                        len(modules),
+                        len(groups_by_address),
                         module_type,
                         FEEDBACK_SAFETY_POLL_S,
-                        ", ".join(sorted(str(a).upper() for a in modules)),
+                        ", ".join(
+                            f"{a} g{'+'.join(str(g) for g in gs)}"
+                            for a, gs in sorted(groups_by_address.items())
+                        ),
                     )
-                polled_n, failed_n = await self._refresh_module_type(modules)
+                polled_n, failed_n = await self._refresh_module_type(
+                    modules, groups_by_address=groups_by_address
+                )
                 polled += polled_n
                 failures += failed_n
             return
@@ -940,9 +993,15 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 )
 
     async def _refresh_module_type(
-        self, modules_dict: dict[str, Any]
+        self,
+        modules_dict: dict[str, Any],
+        groups_by_address: dict[str, tuple[int, ...]] | None = None,
     ) -> tuple[int, int]:
         """Poll each module, return (polled, failed) counts.
+
+        ``groups_by_address`` restricts the read to those modules and
+        those groups (the safety poll's silent ones); ``None`` reads
+        every group of every module.
 
         Per-module / per-group timeouts are still swallowed (logged
         as ERROR) so a single transient failure doesn't block other
@@ -954,9 +1013,12 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         failed = 0
         for address, module_data in modules_dict.items():
             normalized = str(address).upper()
-            channels = module_data.get("channels", [])
-            chan_count = len(channels)
-            groups = (1,) if chan_count <= 6 else (1, 2)
+            groups = self._module_groups(module_data)
+            if groups_by_address is not None:
+                wanted = groups_by_address.get(normalized)
+                if not wanted:
+                    continue
+                groups = tuple(g for g in groups if g in wanted)
 
             changed = False
             for g in groups:
@@ -973,7 +1035,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                         if buf[start : start + 6] != new_bytes:
                             buf[start : start + 6] = new_bytes
                             changed = True
-                        self._note_state_seen(normalized)
+                        self._note_state_seen(normalized, g)
                     else:
                         failed += 1
                 except asyncio.CancelledError:
@@ -1072,7 +1134,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             buf[start : start + 6] = state_bytes[:6]
         except (ValueError, IndexError):
             return
-        self._note_state_seen(addr_upper)
+        self._note_state_seen(addr_upper, int(group))
 
     # ------------------------------------------------------------------
     # Module metadata helpers

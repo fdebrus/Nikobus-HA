@@ -69,6 +69,7 @@ PLATFORMS: Final[list[str]] = [
 
 SERVICE_QUERY_MODULE_INVENTORY: Final = "query_module_inventory"
 SERVICE_SEND_BUTTON_PRESS: Final = "send_button_press"
+SERVICE_REFRESH_MODULE: Final = "refresh_module"
 SERVICE_DETECT_STALE_INVENTORY: Final = "detect_stale_inventory"
 SERVICE_PURGE_STALE_INVENTORY: Final = "purge_stale_inventory"
 SERVICE_SYNC_PC_LINK_CLOCK: Final = "sync_pc_link_clock"
@@ -139,6 +140,10 @@ SCAN_MODULE_SCHEMA = vol.Schema({
 })
 SEND_BUTTON_PRESS_SCHEMA = vol.Schema({
     vol.Required("address"): cv.string,
+})
+REFRESH_MODULE_SCHEMA = vol.Schema({
+    vol.Required("address"): cv.string,
+    vol.Optional("group"): vol.All(vol.Coerce(int), vol.In((1, 2))),
 })
 DETECT_STALE_INVENTORY_SCHEMA = vol.Schema({
     # nikobus-connect 0.5.21 removed the per-probe ``timeout`` kwarg in
@@ -258,6 +263,43 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_SEND_BUTTON_PRESS,
         handle_send_button_press,
         SEND_BUTTON_PRESS_SCHEMA,
+    )
+
+    async def handle_refresh_module(call: ServiceCall) -> None:
+        """Read one output module's state from the bus now.
+
+        One group when ``group`` is given, every group otherwise. The
+        way to re-read an output nothing else refreshes: one a
+        Feedback Module does not track, or one switched by a PC-Logic
+        logic function the integration cannot attribute.
+        """
+        address = (call.data.get("address", "") or "").strip().upper()
+        if not address:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="missing_module_address",
+            )
+        coordinator = _loaded_coordinator(hass)
+        if coordinator is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="no_loaded_entry",
+            )
+        group = call.data.get("group")
+        if not await coordinator.async_refresh_module(
+            address, int(group) if group is not None else None
+        ):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_output_module",
+                translation_placeholders={"address": address},
+            )
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_REFRESH_MODULE,
+        handle_refresh_module,
+        REFRESH_MODULE_SCHEMA,
     )
 
     async def handle_detect_stale_inventory(call: ServiceCall) -> ServiceResponse:

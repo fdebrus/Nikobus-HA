@@ -37,6 +37,22 @@ send_button_press:
       selector:
         text:
 
+refresh_module:
+  fields:
+    address:
+      example: "81F6"
+      required: true
+      selector:
+        text:
+    group:
+      example: 1
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 2
+          mode: box
+
 detect_stale_inventory:
   fields:
     outer_attempts:

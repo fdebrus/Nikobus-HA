@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.29.0
+
+**Requires `nikobus-connect` 0.53.0.**
+
+- **PC-Logic logic outputs, take two.** 3.28.0 looked for them in the vendor's spelling of the address and lost them to the Central Function classifier, so a logic function became a scene and its frames stayed unknown presses. The library now reads the PC-Logic's own table of the frames it can emit, and files each logic output under the PC-Logic with the software's number: *PC-Logic 8DC8 L01*. The two frames of a function (on, and the plate's second key for off) are known presses that refresh the outputs they drive, and the links show in `controlled_by`. What no PC-Logic lists stays a Central Function.
+- **The safety poll judges silence per module group.** A Feedback Module pushes one group of six outputs at a time, so a module heard on channels 7–12 can still be silent on 1–6. The five-minute safety poll in Feedback-Module mode now reads the silent groups, not whole modules.
+- **Reading a module on demand.** `homeassistant.update_entity` on an output entity reads that entity's module group whatever the mode (3.28.0 had reduced it to the safety-poll filter), and the new `nikobus.refresh_module` service reads one module, one group or both, by address. An address that is not an output module is a validation error.
+- **A broadcast Central Function fires the frame the modules listen for.** A scene of the PC-Logic / PC-Link address class is stored by the canonical address its link records decode to; activating it sent that address as the frame, which no module listens for. It now sends the conversion (`384100` fires as `#N002087`) and watches it for `nikobus_scene_activated` too. Light-scene CFs on real buttons are unchanged. Reported against a PC-Logic output; the PC-Link case follows the same arithmetic and still wants a confirmation.
+
 ## 3.28.0
 
 **Requires `nikobus-connect` 0.52.0.**

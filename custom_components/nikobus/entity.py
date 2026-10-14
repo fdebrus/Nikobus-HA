@@ -107,6 +107,22 @@ class NikobusEntity(CoordinatorEntity[NikobusDataCoordinator]):
         #: Last ``(available, render_state)`` actually written, for diffing.
         self._last_render: tuple[bool, Any] | None = None
 
+    async def async_update(self) -> None:
+        """``homeassistant.update_entity``: read this entity's module group now.
+
+        The coordinator's own refresh is the poll cycle, which in
+        Feedback-Module mode reads only what has been silent; a request
+        aimed at one entity reads that entity's module group whatever
+        the mode. An entity that is not an output (a button, a scene)
+        falls back to the coordinator refresh.
+        """
+        channel = getattr(self, "_channel", None)
+        refreshed = await self.coordinator.async_refresh_module(
+            self._address, channel=channel if isinstance(channel, int) else None
+        )
+        if not refreshed:
+            await self.coordinator.async_request_refresh()
+
     def _invalidate_optimistic(self) -> None:
         """Drop optimistic caches before the real state is read (override)."""
 

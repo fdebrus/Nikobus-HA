@@ -11,6 +11,7 @@ from homeassistant.components.scene import Scene
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from nikobus_connect.discovery.protocol import convert_nikobus_address
 
 from .button import op_point_display_name
 from .const import (
@@ -163,6 +164,16 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
         )
         self._bus_address = addr
         self._pattern = pattern
+        # A broadcast CF (the PC-Logic / PC-Link address class) is stored
+        # by the canonical address the decoders give its link records;
+        # the frame the modules listen for is its conversion — ``384100``
+        # fires as ``#N002087``. A light scene's address is already the
+        # real trigger's frame.
+        self._frame = (
+            convert_nikobus_address(addr)
+            if pattern in ("switch_pair", "roller_pair", "cf_other")
+            else addr
+        )
         self._outputs = outputs if isinstance(outputs, list) else []
         # Every address that fires this scene (one CF, many triggers).
         # Falls back to the canonical address for older stored records.
@@ -243,7 +254,8 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
         fires an event. One per-address signal per trigger (one Central
         Function, many triggers) wakes only this scene, not every scene."""
         await super().async_added_to_hass()
-        for addr in self._triggered_by:
+        watched = dict.fromkeys([*self._triggered_by, self._frame])
+        for addr in watched:
             self.async_on_remove(
                 async_dispatcher_connect(
                     self.hass, press_signal(addr), self._handle_trigger
@@ -271,7 +283,7 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Send the CF activation broadcast on the bus."""
-        await self.coordinator.async_activate_cf_broadcast(self._bus_address)
+        await self.coordinator.async_activate_cf_broadcast(self._frame)
 
 
 class NikobusSceneEntity(NikobusEntity, Scene):
