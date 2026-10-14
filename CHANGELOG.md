@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.28.0
+
+**Requires `nikobus-connect` 0.52.0.**
+
+- **An output switched by a PC-Logic logic function is refreshed.** A logic output fires like a key — PC-Logic `8DC8` puts `#N002087` / `#N402087` on the bus for L01 on / off, 0.6 s after the key that triggered it — but no plate owns that address, so the link the switch module held on it was dropped at discovery, the frame was logged as `Press from unknown button`, and in Feedback-Module mode the output it switched was never read again. The library now inventories such buttons from the output modules' link tables (PC-Logic logic outputs, and the software's virtual input banks); the integration shows a logic output as *PC-Logic virtual output 684100* under the PC-Logic's device, next to its inputs, and a bank key as *Virtual button 3CF006* under a new *Virtual buttons* category. Their links appear in `controlled_by`, the frame is a known press that refreshes the outputs it drives, and the *Virtual buttons* class, empty until now, gives them press entities when ticked.
+- **A safety poll in Feedback-Module mode.** With the Feedback Module option on, the integration ran no poll timer at all: a module the Feedback Module does not track, or one switched without a press the integration could attribute, kept the state of the initial sync. It now reads, every five minutes, the modules it has heard nothing from in that long — pushed, polled or read after a press — and only those, so a tracked module costs nothing on the bus and a fully tracked install sees no query. Old PC-Links (`prior_gen3`) stay push-only.
+
 ## 3.27.0
 
 **Requires `nikobus-connect` 0.51.0.**

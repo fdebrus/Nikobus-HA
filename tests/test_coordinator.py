@@ -36,6 +36,7 @@ class _FakeCoord:
         # either name see the same data.
         self._module_states: dict = states or {}
         self.nikobus_module_states = self._module_states
+        self._state_seen_at: dict[str, float] = {}
         self.dict_module_data: dict = module_data or {}
         # ``module_storage.data`` is the 0.4.0 flat store. Build it from the
         # legacy nested ``module_data`` when the caller provides one, so
@@ -73,6 +74,8 @@ class _FakeCoord:
     resolve_cover_operation_time = NikobusDataCoordinator.resolve_cover_operation_time
     get_cover_operation_time = NikobusDataCoordinator.get_cover_operation_time
     _refresh_module_type = NikobusDataCoordinator._refresh_module_type
+    _note_state_seen = NikobusDataCoordinator._note_state_seen
+    _silent_modules = NikobusDataCoordinator._silent_modules
 
 
 def _coord(states=None, module_data=None):
@@ -1883,6 +1886,16 @@ class TestBlackoutAutoRecovery(unittest.IsolatedAsyncioTestCase):
         coord._stopping = False
         coord.dict_module_data = modules
         coord._module_states = {}
+        coord._state_seen_at = {}
+        coord._has_feedback_module = False
+        coord._note_state_seen = (
+            lambda address, _coord=coord:
+            NikobusDataCoordinator._note_state_seen(_coord, address)
+        )
+        coord._silent_modules = (
+            lambda md, since, _coord=coord:
+            NikobusDataCoordinator._silent_modules(_coord, md, since)
+        )
         coord.nikobus_command = MagicMock()
         coord.nikobus_command.get_output_state = AsyncMock(
             side_effect=get_output_state_side_effect
@@ -2354,3 +2367,139 @@ class TestFeedbackPortIssue(unittest.TestCase):
         with patch("custom_components.nikobus.coordinator.ir") as ir:
             NikobusDataCoordinator._surface_feedback_port(coord)
         ir.async_create_issue.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Feedback-Module safety poll
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateInterval(unittest.TestCase):
+    """``_get_update_interval``: the timer each hardware setting runs on."""
+
+    def _coord(self, *, feedback=False, prior_gen3=False, refresh=120):
+        c = MagicMock()
+        c._has_feedback_module = feedback
+        c._prior_gen3 = prior_gen3
+        c._refresh_interval = refresh
+        return c
+
+    def test_plain_pc_link_polls_on_the_configured_interval(self):
+        from datetime import timedelta
+        self.assertEqual(
+            NikobusDataCoordinator._get_update_interval(self._coord(refresh=45)),
+            timedelta(seconds=45),
+        )
+
+    def test_feedback_module_runs_the_safety_poll(self):
+        from datetime import timedelta
+
+        from custom_components.nikobus.const import FEEDBACK_SAFETY_POLL_S
+        self.assertEqual(
+            NikobusDataCoordinator._get_update_interval(self._coord(feedback=True)),
+            timedelta(seconds=FEEDBACK_SAFETY_POLL_S),
+        )
+
+    def test_prior_gen3_stays_push_only(self):
+        self.assertIsNone(NikobusDataCoordinator._get_update_interval(self._coord(prior_gen3=True)))
+        self.assertIsNone(
+            NikobusDataCoordinator._get_update_interval(self._coord(prior_gen3=True, feedback=True))
+        )
+
+
+class TestFeedbackSafetyPoll(unittest.IsolatedAsyncioTestCase):
+    """With a Feedback Module, ``_async_update_data`` reads only the
+    modules nothing has been heard from for a whole safety interval."""
+
+    def _fm_coord(self, modules, seen: dict[str, float]):
+        import time as _time
+
+        from custom_components.nikobus.const import FEEDBACK_SAFETY_POLL_S
+        coord = TestBlackoutAutoRecovery._make_coord(
+            self, modules=modules, get_output_state_side_effect=lambda *_a, **_k: "00" * 6
+        )
+        coord._has_feedback_module = True
+        now = _time.monotonic()
+        # ``seen`` is "how many seconds ago", relative to the interval.
+        coord._state_seen_at = {
+            addr: now - ago for addr, ago in seen.items()
+        }
+        self._interval = FEEDBACK_SAFETY_POLL_S
+        return coord
+
+    async def test_first_refresh_reads_everything(self):
+        coord = self._fm_coord(
+            {"switch_module": {"81F6": {"channels": [{}] * 12}, "4707": {"channels": [{}] * 4}}},
+            seen={},
+        )
+        await NikobusDataCoordinator._async_update_data(coord)
+        polled = {c.args[0] for c in coord.nikobus_command.get_output_state.call_args_list}
+        self.assertEqual(polled, {"81F6", "4707"})
+
+    async def test_only_silent_modules_are_read(self):
+        coord = self._fm_coord(
+            {
+                "switch_module": {"81F6": {"channels": [{}] * 12}},
+                "dimmer_module": {"4707": {"channels": [{}] * 4}},
+            },
+            seen={"4707": 10.0},  # the Feedback Module reported it 10 s ago
+        )
+        await NikobusDataCoordinator._async_update_data(coord)
+        polled = [c.args[0] for c in coord.nikobus_command.get_output_state.call_args_list]
+        self.assertEqual(polled, ["81F6", "81F6"])  # two groups, nothing else
+
+    async def test_a_module_heard_a_whole_interval_ago_is_read_again(self):
+        coord = self._fm_coord(
+            {"switch_module": {"81F6": {"channels": [{}] * 4}}},
+            seen={"81F6": 0.0},
+        )
+        coord._state_seen_at["81F6"] -= self._interval + 1
+        await NikobusDataCoordinator._async_update_data(coord)
+        coord.nikobus_command.get_output_state.assert_called_once()
+
+    async def test_nothing_silent_means_no_bus_traffic_and_no_blackout(self):
+        coord = self._fm_coord(
+            {"switch_module": {"81F6": {"channels": [{}] * 4}}},
+            seen={"81F6": 1.0},
+        )
+        await NikobusDataCoordinator._async_update_data(coord)
+        coord.nikobus_command.get_output_state.assert_not_called()
+        coord.hass.async_create_background_task.assert_not_called()
+
+    async def test_a_poll_answer_marks_the_module_heard(self):
+        coord = self._fm_coord(
+            {"switch_module": {"81F6": {"channels": [{}] * 4}}}, seen={}
+        )
+        await NikobusDataCoordinator._async_update_data(coord)
+        self.assertIn("81F6", coord._state_seen_at)
+        # The next cycle, inside the interval, leaves it alone.
+        coord.nikobus_command.get_output_state.reset_mock()
+        await NikobusDataCoordinator._async_update_data(coord)
+        coord.nikobus_command.get_output_state.assert_not_called()
+
+    async def test_without_feedback_module_everything_is_still_polled(self):
+        coord = self._fm_coord(
+            {"switch_module": {"81F6": {"channels": [{}] * 4}}},
+            seen={"81F6": 1.0},
+        )
+        coord._has_feedback_module = False
+        await NikobusDataCoordinator._async_update_data(coord)
+        coord.nikobus_command.get_output_state.assert_called_once()
+
+
+class TestStateSeen(unittest.IsolatedAsyncioTestCase):
+    async def test_pushed_frame_marks_the_module_heard(self):
+        c = _coord(states={"C1C7": bytearray(12)})
+        await c._feedback_callback(1, _feedback_frame("C7C1", "AABBCCDDEEFF"))
+        self.assertIn("C1C7", c._state_seen_at)
+
+    async def test_press_refresh_write_marks_the_module_heard(self):
+        c = _coord(states={"C1C7": bytearray(12)})
+        c.set_bytearray_group_state("c1c7", 1, "AABBCCDDEEFF")
+        self.assertIn("C1C7", c._state_seen_at)
+
+    async def test_a_rejected_write_does_not(self):
+        c = _coord(states={"C1C7": bytearray(6)})
+        c.set_bytearray_group_state("C1C7", 2, "AABBCCDDEEFF")  # out of range
+        c.set_bytearray_group_state("C1C7", 1, "zz")  # not hex
+        self.assertEqual(c._state_seen_at, {})

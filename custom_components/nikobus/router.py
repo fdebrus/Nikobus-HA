@@ -23,6 +23,7 @@ from .const import (
     CATEGORY_INTERFACES,
     CATEGORY_OUTPUT_MODULES,
     CATEGORY_REMOTES,
+    CATEGORY_VIRTUAL_BUTTONS,
     CATEGORY_WALL_BUTTONS,
     CONF_BUTTON_CLASSES,
     DOMAIN,
@@ -174,6 +175,31 @@ def audio_trigger_naming(
         return None
     description = str(phys.get("description") or "Audio trigger")
     return description, (DOMAIN, module)
+
+
+def virtual_button_naming(
+    phys: Mapping[str, Any],
+) -> tuple[str, tuple[str, str]] | None:
+    """``(device_name, via_device_identifier)`` if ``phys`` is a button
+    that exists only in programming — a PC-Logic logic output, or a key
+    of the software's virtual input banks — synthesized by the library
+    from an output module's link records (0.52.0); else ``None``.
+
+    The library flags such an entry ``virtual_button`` with its
+    ``virtual_class`` and, for a logic output on an install with one
+    PC-Logic, ``virtual_parent_address``. A logic output's device hangs
+    under that PC-Logic, next to its inputs; anything else goes under
+    the *Virtual buttons* category. The name is the library's
+    description (``PC-Logic virtual output 684100``), unless a project
+    file named the entry.
+    """
+    if not isinstance(phys, Mapping) or not phys.get("virtual_button"):
+        return None
+    name = str(phys.get("nkb_name") or phys.get("description") or "Virtual button")
+    parent = phys.get("virtual_parent_address")
+    if isinstance(parent, str) and parent:
+        return name, (DOMAIN, parent.upper())
+    return name, (DOMAIN, CATEGORY_VIRTUAL_BUTTONS)
 
 
 def op_point_parent_device(
