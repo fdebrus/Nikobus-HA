@@ -307,7 +307,7 @@ Most installations run on their outputs and the feedback from the modules; the p
 | Remotes and IR codes | RF transmitters, clustered remotes, and the IR codes learned by receivers |
 | Input modules | The A / B keys of PC-Logic and Modular Interface inputs |
 | Audio triggers | The keys an Audio Distribution module listens for, Power included |
-| Virtual buttons | The virtual input banks the Nikobus software creates for programs and scenes — empty until discovery inventories them |
+| Virtual buttons | Buttons that exist only in programming: the logic outputs of a PC-Logic, and the virtual input banks the Nikobus software creates for programs and scenes — inventoried from the output modules' link tables |
 
 An unticked class gets no entities **and no devices**: what it had is removed on the reload that follows, so the device list shows only what you use. Nothing else changes — `nikobus_button_pressed` and the other [events](#events--automations) fire for every key, `controlled_by` and shutter travel times still come from the modules, the A/B latch switches of input modules stay, and `nikobus.send_button_press` works on any address.
 
@@ -371,7 +371,7 @@ When the same IR code is learned by several receivers, each gets its own op-poin
 
 ### Virtual / off-bus buttons
 
-Addresses not present on the physical bus (IR scene triggers, hand-added codes, the virtual input banks the Nikobus software creates for programs and scenes) aren't created as entities. Fire them from scripts:
+Discovery inventories the buttons that exist only in programming from the output modules' link tables: a PC-Logic **logic output** (the frame the PC-Logic puts on the bus when a logic function fires, shown as *PC-Logic virtual output 684100* under the PC-Logic's device) and the keys of the software's **virtual input banks** (*Virtual button 3CF006*, under *Virtual buttons*). Their links appear in `controlled_by` like any key's, a logic output's frame is a known press that refreshes the outputs it drives, and with the *Virtual buttons* class ticked they get press entities. Addresses outside those classes that are not on the physical bus (IR scene triggers, hand-added codes) aren't created as entities. Fire them from scripts:
 
 ```yaml
 service: nikobus.send_button_press
@@ -818,7 +818,7 @@ Fixed in 3.18.3: requests for the same module group made together are merged int
 
 Without a Feedback Module, external changes (a wall press on a key Home Assistant does not know, another client) are only seen on the next poll. Physical button presses and presses sent by Home Assistant both trigger a read of the impacted modules within about a second. Add a 05-207 Feedback Module for real-time updates, or lower the polling interval.
 
-With a Feedback Module, the module itself polls the output modules it is configured to track and the integration listens to the answers; with debug logging you see each one as `Feedback frame for module 4707 group 2 — outputs …`. If those lines never appear, the Feedback Module is not tracking that module: add the output to its configuration in the Nikobus PC software and download the module again. If the lines appear but the wrong lamps change, read the Repair issue about the Feedback Module's port above.
+With a Feedback Module, the module itself polls the output modules it is configured to track and the integration listens to the answers; with debug logging you see each one as `Feedback frame for module 4707 group 2 — outputs …`. If those lines never appear, the Feedback Module is not tracking that module: add the output to its configuration in the Nikobus PC software and download the module again. A module the Feedback Module does not track is not lost either: every five minutes the integration reads the modules it has heard nothing from in that long (a safety poll, logged at debug level as `Feedback-Module safety poll`), and only those, so a tracked module costs nothing on the bus. If the lines appear but the wrong lamps change, read the Repair issue about the Feedback Module's port above.
 
 ### Stale records from a previous install
 
@@ -840,7 +840,6 @@ A second-hand PC-Link (or replaced hardware) can leave records for modules that 
 - **Calendar programs stay in the PC-Link.** Calendar channels that drive an output are shown in `controlled_by`, but the programs behind them are neither read nor fired.
 - **A press sent by Home Assistant is invisible to itself.** The PC-Link does not relay the host's own telegram, so no `nikobus_button_*` event is fired for it; the impacted modules are read instead.
 - **The RGB controller's colour and brightness cannot be set.** The bus has no command for it; the light switches by pressing its linked keys, which your `.nkb` must supply (see [RGB controller](#rgb-controller)).
-- **Virtual input banks are not inventoried yet.** Links that output modules hold on the Nikobus software's virtual buttons are decoded but not kept, so they do not appear in `controlled_by` and the *Virtual buttons* class is empty for now.
 
 ---
 

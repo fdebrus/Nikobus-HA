@@ -67,6 +67,7 @@ CATEGORY_REMOTES: Final[str] = "category_remotes"
 CATEGORY_INTERFACES: Final[str] = "category_interfaces"
 CATEGORY_SCENES: Final[str] = "category_scenes"
 CATEGORY_CENTRAL_FUNCTIONS: Final[str] = "category_central_functions"
+CATEGORY_VIRTUAL_BUTTONS: Final[str] = "category_virtual_buttons"
 
 # Display metadata for each category device (identifier → (name, model)).
 # Order is the order they get registered in; HA preserves it in the device
@@ -82,6 +83,8 @@ CATEGORY_DEVICES: Final[tuple[tuple[str, str, str], ...]] = (
      "RF transmitters"),
     (CATEGORY_INTERFACES, "Interfaces",
      "Push-button / switch / universal interfaces"),
+    (CATEGORY_VIRTUAL_BUTTONS, "Virtual buttons",
+     "Software input banks"),
     (CATEGORY_SCENES, "Scenes", "Software scenes"),
     (CATEGORY_CENTRAL_FUNCTIONS, "Central functions", "Roller / shutter groups"),
 )
@@ -332,3 +335,11 @@ POLLED_MODULE_TYPES: tuple[str, ...] = (
     "roller_module",
     "rgb_module",
 )
+
+# With a Feedback Module the module itself polls the outputs it was
+# configured to track and the integration listens to the answers; an
+# output it does not track, or one switched by a PC-Logic logic function
+# the integration could not attribute, is never heard from. The safety
+# poll reads any module that has not reported for this long — only
+# those, so a tracked module costs nothing on the bus.
+FEEDBACK_SAFETY_POLL_S: Final[int] = 300

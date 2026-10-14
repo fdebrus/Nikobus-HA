@@ -22,6 +22,7 @@ from .const import (  # noqa: F401 - the CATEGORY_* names stay importable from h
     CATEGORY_INTERFACES,
     CATEGORY_REMOTES,
     CATEGORY_SYSTEM_MODULES,
+    CATEGORY_VIRTUAL_BUTTONS,
     CATEGORY_WALL_BUTTONS,
     DOMAIN,
 )
@@ -36,6 +37,7 @@ from .router import (
     entry_button_classes,
     input_label_prefix,
     pc_logic_input_naming,
+    virtual_button_naming,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -140,6 +142,30 @@ def register_wall_button_devices(
                 manufacturer=BRAND,
                 name=name,
                 model=str(phys.get("model") or "PC-Logic Logical Input"),
+                via_device_id=parent_device_id(device_registry, entry.entry_id, via_device),
+            )
+            continue
+
+        virtual_naming = virtual_button_naming(phys)
+        if virtual_naming is not None:
+            name, via_device = virtual_naming
+            parent_addr = via_device[1]
+            # A logic output hangs under its PC-Logic, which may not be
+            # registered yet (same call-order reason as the inputs above).
+            if (
+                parent_addr != CATEGORY_VIRTUAL_BUTTONS
+                and parent_addr not in pc_logic_parents_registered
+            ):
+                _ensure_pc_logic_parent_device(
+                    device_registry, entry, parent_addr, dict_module_data
+                )
+                pc_logic_parents_registered.add(parent_addr)
+            device_registry.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, physical_addr)},
+                manufacturer=BRAND,
+                name=name,
+                model=str(phys.get("model") or "Virtual"),
                 via_device_id=parent_device_id(device_registry, entry.entry_id, via_device),
             )
             continue

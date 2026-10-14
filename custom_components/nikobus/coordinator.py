@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar
 
@@ -60,6 +61,7 @@ from .const import (
     DISCOVERY_SUB_PHASE_REGISTER_SCAN,
     DOMAIN,
     FEEDBACK_PORT_ANSWERS_THRESHOLD,
+    FEEDBACK_SAFETY_POLL_S,
     ISSUE_FEEDBACK_MODULE_PORT,
     ISSUE_MODULE_CRC_MISMATCH,
     ISSUE_MODULE_EEPROM_ERROR,
@@ -181,6 +183,10 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
         # Shared module state buffer — owned here, passed to NikobusCommandHandler
         self._module_states: dict[str, bytearray] = {}
+        # When each module's state was last heard — pushed, polled or read
+        # after a press — on the monotonic clock. The Feedback-Module
+        # safety poll reads only the modules this says are silent.
+        self._state_seen_at: dict[str, float] = {}
 
         self.discovery_running = False
         # ``discovery_module`` / ``discovery_module_address`` /
@@ -381,13 +387,32 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         return self._reconnect_attempts
 
     def _get_update_interval(self) -> timedelta | None:
-        # No poll timer in push mode. A feedback module pushes state
-        # unprompted; older PC-Links (prior_gen3) can't sustain the poll
-        # cadence, so they run push-only too (button presses + feedback
-        # frames drive refreshes). Everything else polls on the interval.
-        if self._has_feedback_module or self._prior_gen3:
+        # Older PC-Links (prior_gen3) can't sustain a poll cadence, so
+        # they run push-only (button presses + feedback frames drive
+        # refreshes). With a Feedback Module, state is pushed unprompted
+        # and the timer is only the safety poll: ``_async_update_data``
+        # reads the modules nothing has been heard from in that long,
+        # which on a fully tracked install is none of them. Everything
+        # else polls on the interval.
+        if self._prior_gen3:
             return None
+        if self._has_feedback_module:
+            return timedelta(seconds=FEEDBACK_SAFETY_POLL_S)
         return timedelta(seconds=self._refresh_interval)
+
+    def _note_state_seen(self, address: str) -> None:
+        """Record that ``address`` just reported its state."""
+        self._state_seen_at[address.upper()] = time.monotonic()
+
+    def _silent_modules(
+        self, modules_dict: dict[str, Any], since: float
+    ) -> dict[str, Any]:
+        """The modules of ``modules_dict`` not heard from since ``since``."""
+        return {
+            address: module_data
+            for address, module_data in modules_dict.items()
+            if self._state_seen_at.get(str(address).upper(), float("-inf")) <= since
+        }
 
     # ------------------------------------------------------------------
     # Connect / setup
@@ -543,6 +568,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 else:
                     state_bytes = bytes.fromhex(state_hex)
                     buf[start : start + 6] = state_bytes
+                self._note_state_seen(address)
 
                 # Resolve any pending get_output_state future immediately
                 if self.nikobus_command:
@@ -857,16 +883,37 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         """
         if self.discovery_running:
             return
+        # With a Feedback Module this runs on the safety-poll timer and
+        # reads only what has been silent for a whole interval: an
+        # output the Feedback Module does not track, or one a PC-Logic
+        # switched without a press the integration could attribute. A
+        # tracked module reports on the Feedback Module's own rhythm and
+        # is never asked. The first refresh, with nothing heard yet,
+        # reads everything — the initial sync as before.
+        silent_since: float | None = None
+        if self._has_feedback_module:
+            silent_since = time.monotonic() - FEEDBACK_SAFETY_POLL_S
         polled = 0
         failures = 0
         try:
             for module_type in MODULE_TYPES:
-                if module_type in self.dict_module_data:
-                    polled_n, failed_n = await self._refresh_module_type(
-                        self.dict_module_data[module_type]
+                modules = self.dict_module_data.get(module_type)
+                if not modules:
+                    continue
+                if silent_since is not None:
+                    modules = self._silent_modules(modules, silent_since)
+                    if not modules:
+                        continue
+                    _LOGGER.debug(
+                        "Feedback-Module safety poll — %d %s silent for %ds: %s",
+                        len(modules),
+                        module_type,
+                        FEEDBACK_SAFETY_POLL_S,
+                        ", ".join(sorted(str(a).upper() for a in modules)),
                     )
-                    polled += polled_n
-                    failures += failed_n
+                polled_n, failed_n = await self._refresh_module_type(modules)
+                polled += polled_n
+                failures += failed_n
             return
         except NikobusDataError as err:
             _LOGGER.error("Failed to fetch Nikobus data: %s", err)
@@ -926,6 +973,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                         if buf[start : start + 6] != new_bytes:
                             buf[start : start + 6] = new_bytes
                             changed = True
+                        self._note_state_seen(normalized)
                     else:
                         failed += 1
                 except asyncio.CancelledError:
@@ -1023,7 +1071,8 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             state_bytes = bytes.fromhex(value[:12].ljust(12, "0"))
             buf[start : start + 6] = state_bytes[:6]
         except (ValueError, IndexError):
-            pass
+            return
+        self._note_state_seen(addr_upper)
 
     # ------------------------------------------------------------------
     # Module metadata helpers
