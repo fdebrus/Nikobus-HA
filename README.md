@@ -371,7 +371,7 @@ When the same IR code is learned by several receivers, each gets its own op-poin
 
 ### Virtual / off-bus buttons
 
-Discovery inventories the buttons that exist only in programming from the output modules' link tables: a PC-Logic **logic output** (the frame the PC-Logic puts on the bus when a logic function fires, shown as *PC-Logic virtual output 684100* under the PC-Logic's device) and the keys of the software's **virtual input banks** (*Virtual button 3CF006*, under *Virtual buttons*). Their links appear in `controlled_by` like any key's, a logic output's frame is a known press that refreshes the outputs it drives, and with the *Virtual buttons* class ticked they get press entities. Addresses outside those classes that are not on the physical bus (IR scene triggers, hand-added codes) aren't created as entities. Fire them from scripts:
+Discovery inventories the buttons that exist only in programming from the output modules' link tables: a PC-Logic **logic output** (the frame the PC-Logic puts on the bus when a logic function fires; the module's own memory lists them in order, so each is shown as *PC-Logic 8DC8 L01* under the PC-Logic's device, numbered as the Nikobus software numbers the logic functions) and the keys of the software's **virtual input banks** (*Virtual button 3CF006*, under *Virtual buttons*). Their links appear in `controlled_by` like any key's, a logic output's frame is a known press that refreshes the outputs it drives, and with the *Virtual buttons* class ticked they get press entities. Addresses outside those classes that are not on the physical bus (IR scene triggers, hand-added codes) aren't created as entities. Fire them from scripts:
 
 ```yaml
 service: nikobus.send_button_press
@@ -669,6 +669,24 @@ data:
   address: "84DFFC"
 ```
 
+### `nikobus.refresh_module`
+
+Reads one output module's state from the bus now: one group, or both. For an output nothing else refreshes: one a Feedback Module does not track, or one switched by a PC-Logic logic function the integration cannot attribute to a press. `homeassistant.update_entity` on one of the module's entities does the same for that entity's group.
+
+| Field | Required | Example | Description |
+|---|---|---|---|
+| `address` | **yes** | `"81F6"` | Address of a switch, dimmer, roller or RGB module. Not a button. |
+| `group` | no | `1` | `1` for channels 1–6, `2` for channels 7–12. Omitted: both. |
+
+No response value. An address that is not a known output module is a validation error.
+
+```yaml
+action: nikobus.refresh_module
+data:
+  address: "81F6"
+  group: 1
+```
+
 ### `nikobus.detect_stale_inventory`
 
 Probes every known output module for **bus presence** and returns which respond and which don't — useful after replacing hardware, or with a second-hand PC-Link that still carries the previous install's records. **Read-only**: it never modifies storage (pair it with `purge_stale_inventory`).
@@ -818,7 +836,7 @@ Fixed in 3.18.3: requests for the same module group made together are merged int
 
 Without a Feedback Module, external changes (a wall press on a key Home Assistant does not know, another client) are only seen on the next poll. Physical button presses and presses sent by Home Assistant both trigger a read of the impacted modules within about a second. Add a 05-207 Feedback Module for real-time updates, or lower the polling interval.
 
-With a Feedback Module, the module itself polls the output modules it is configured to track and the integration listens to the answers; with debug logging you see each one as `Feedback frame for module 4707 group 2 — outputs …`. If those lines never appear, the Feedback Module is not tracking that module: add the output to its configuration in the Nikobus PC software and download the module again. A module the Feedback Module does not track is not lost either: every five minutes the integration reads the modules it has heard nothing from in that long (a safety poll, logged at debug level as `Feedback-Module safety poll`), and only those, so a tracked module costs nothing on the bus. If the lines appear but the wrong lamps change, read the Repair issue about the Feedback Module's port above.
+With a Feedback Module, the module itself polls the output modules it is configured to track and the integration listens to the answers; with debug logging you see each one as `Feedback frame for module 4707 group 2 — outputs …`. If those lines never appear, the Feedback Module is not tracking that module: add the output to its configuration in the Nikobus PC software and download the module again. An output the Feedback Module does not track is not lost either: every five minutes the integration reads the module groups (channels 1–6, 7–12) it has heard nothing from in that long (a safety poll, logged at debug level as `Feedback-Module safety poll`), and only those, so a tracked group costs nothing on the bus. To read one module right now, call `homeassistant.update_entity` on one of its entities, which reads that entity's group whatever the mode, or [`nikobus.refresh_module`](#nikobusrefresh_module). If the lines appear but the wrong lamps change, read the Repair issue about the Feedback Module's port above.
 
 ### Stale records from a previous install
 

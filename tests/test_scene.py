@@ -126,6 +126,21 @@ class TestCFSceneActivation(unittest.TestCase):
         _run(e.async_activate())
         coord.async_activate_cf_broadcast.assert_awaited_once_with("DE4E2C")
 
+    def test_a_broadcast_cf_fires_the_frame_the_modules_listen_for(self):
+        """A PC-Logic / PC-Link broadcast CF is stored by the canonical
+        address its link records decode to; the bus frame is its
+        conversion (384100 -> #N002087, as seen on a real install)."""
+        coord = MagicMock()
+        coord.async_activate_cf_broadcast = AsyncMock()
+        e = NikobusCFSceneEntity(
+            coord,
+            bus_address="384100",
+            cf_config={"pattern": "switch_pair", "outputs": []},
+        )
+        _run(e.async_activate())
+        coord.async_activate_cf_broadcast.assert_awaited_once_with("002087")
+        self.assertEqual(e._frame, "002087")
+
     def test_scene_gets_own_device_named_by_cf(self):
         """A CF scene whose address is also a physical button must not be
         merged into that button's device — it gets its own ``cf_<addr>``
