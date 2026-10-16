@@ -23,7 +23,7 @@ from nikobus_connect.rgb import (
 
 from .const import DOMAIN, operation_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity, command_error
+from .entity import FeedbackKeySwitchMixin, NikobusEntity, command_error
 from .router import (
     build_unique_id,
     choose_rgb_key,
@@ -272,7 +272,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
             raise command_error(err) from err
 
 
-class NikobusRelayEntity(NikobusBaseLight):
+class NikobusRelayEntity(FeedbackKeySwitchMixin, NikobusBaseLight):
     """Nikobus relay-based on/off light."""
 
     def __init__(
@@ -301,6 +301,7 @@ class NikobusRelayEntity(NikobusBaseLight):
             await self.coordinator.api.turn_on_switch(
                 self._address, self._channel, failure_handler=self._command_failed
             )
+            self._after_switch_command()
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -317,6 +318,7 @@ class NikobusRelayEntity(NikobusBaseLight):
             await self.coordinator.api.turn_off_switch(
                 self._address, self._channel, failure_handler=self._command_failed
             )
+            self._after_switch_command()
         except asyncio.CancelledError:
             raise
         except Exception as err:
