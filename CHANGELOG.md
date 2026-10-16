@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.30.0
+
+**Requires `nikobus-connect` 0.54.0.**
+
+- **Links that were never there are cleaned up.** The button store only ever added links, so it kept what older versions had filed: on an 8-key feedback button, every first-row link appeared a second time on the key below it, some links twice under an older mode label or timer, and a link the PC-Link still remembers but no module executes. They showed in `controlled_by`, and a press read module groups it does not drive. Discovery now replaces the stored links of every output module whose own table it reads in full with what that table holds; modules it cannot read in full keep theirs. Run *2. Load Existing Installation* once after updating.
+- **A light or switch driven by its feedback key is read before and after the press.** With an address in the *LED on / off key* fields, Home Assistant pressed that key blindly: with a toggle key (impulse mode), `light.turn_off` on a light already off switched it on, and a lost press left the entity showing the requested state until the next poll. The channel is now read first and the key left alone when nothing needs to change; after the press it is read again, an output that did not move is set directly with a warning in the log, and the entity shows what the module reported. `light.toggle` and `switch.toggle` decide from the module's state.
+- *Simulated press repeats* applies to every press from startup, the feedback keys included; it used to take effect from the first press Home Assistant sent itself.
+
 ## 3.29.0
 
 **Requires `nikobus-connect` 0.53.0.**

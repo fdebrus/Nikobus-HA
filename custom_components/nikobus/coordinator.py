@@ -72,6 +72,7 @@ from .const import (
     POLLED_MODULE_TYPES,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
+    operation_signal,
 )
 from .discovery_mixin import NikobusDiscoveryMixin
 from .nkbactuator import NikobusActuator
@@ -428,6 +429,22 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 silent[normalized] = groups
         return silent
 
+    def has_feedback_key(self, address: str, channel: int) -> bool:
+        """Whether a switch channel is driven by pressing its feedback key."""
+        api = self.api
+        return bool(api is not None and api.has_feedback_key("switch_module", address, channel))
+
+    @callback
+    def async_module_state_read(self, address: str, channel: int) -> None:
+        """The library has just read this channel's group into the buffer.
+
+        Marks the group heard (the safety poll then leaves it alone) and
+        wakes the module's entities, which drop their optimistic state
+        and show what the module reported.
+        """
+        self._note_state_seen(address, 1 if int(channel) <= 6 else 2)
+        async_dispatcher_send(self.hass, operation_signal(address))
+
     async def async_refresh_module(
         self, address: str, group: int | None = None, *, channel: int | None = None
     ) -> bool:
@@ -536,6 +553,13 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
             # 4. Create the high-level API
             self.api = NikobusAPI(self.nikobus_command, self.dict_module_data)
+            # The configured repeat count applies to every press the API
+            # sends — a feedback key included — not only from the first
+            # press Home Assistant sends itself.
+            try:
+                self.api.press_repeat = max(1, int(self._press_repeat))
+            except (TypeError, ValueError):
+                self.api.press_repeat = DEFAULT_PRESS_REPEAT
 
             await self.nikobus_command.start()
             await self.nikobus_listener.start()

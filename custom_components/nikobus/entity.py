@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -228,3 +229,43 @@ def device_entry_diagnostics(device: dr.DeviceEntry) -> dict[str, Any]:
         "manufacturer": device.manufacturer,
         "identifiers": sorted(device.identifiers),
     }
+
+
+class FeedbackKeySwitchMixin:
+    """On/off of a switch channel that may be driven by its feedback key.
+
+    With a key configured the library reads the channel, presses the key
+    only when the output must change, and reads it again (nikobus-connect
+    0.54.0); the entity then shows what the module reported. A toggle is
+    decided from the module's state, not from what Home Assistant shows,
+    which is exactly what can be stale here. Without a key nothing
+    changes. Mixed into the relay light and the relay switch, ahead of
+    the Home Assistant entity class.
+    """
+
+    coordinator: NikobusDataCoordinator
+    _address: str
+    _channel: int
+    _is_on: bool | None
+
+    def _after_switch_command(self) -> None:
+        """Show the read state once a key-driven command has completed."""
+        if self.coordinator.has_feedback_key(self._address, self._channel):
+            self.coordinator.async_module_state_read(self._address, self._channel)
+
+    async def async_toggle(self, **kwargs: Any) -> None:
+        """Toggle from the module's state when the channel has a feedback key."""
+        if not self.coordinator.has_feedback_key(self._address, self._channel):
+            await super().async_toggle(**kwargs)  # type: ignore[misc]
+            return
+        try:
+            await self.coordinator.api.toggle_switch(
+                self._address,
+                self._channel,
+                failure_handler=getattr(self, "_command_failed", None),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            raise command_error(err) from err
+        self.coordinator.async_module_state_read(self._address, self._channel)

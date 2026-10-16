@@ -15,7 +15,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import operation_signal, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity, command_error
+from .entity import FeedbackKeySwitchMixin, NikobusEntity, command_error
 from .router import (
     build_unique_id,
     enabled_button_classes,
@@ -221,7 +221,7 @@ class NikobusBaseSwitch(NikobusEntity, SwitchEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-class NikobusRelaySwitchEntity(NikobusBaseSwitch):
+class NikobusRelaySwitchEntity(FeedbackKeySwitchMixin, NikobusBaseSwitch):
     """Standard Nikobus relay-based on/off switch."""
 
     def __init__(
@@ -248,6 +248,7 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
             await self.coordinator.api.turn_on_switch(
                 self._address, self._channel, failure_handler=self._command_failed
             )
+            self._after_switch_command()
         except asyncio.CancelledError:
             raise
         except Exception as err:
@@ -264,6 +265,7 @@ class NikobusRelaySwitchEntity(NikobusBaseSwitch):
             await self.coordinator.api.turn_off_switch(
                 self._address, self._channel, failure_handler=self._command_failed
             )
+            self._after_switch_command()
         except asyncio.CancelledError:
             raise
         except Exception as err:
