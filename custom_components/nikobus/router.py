@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -458,6 +459,43 @@ class EntitySpec:
     operation_time_up: str | None = None
     operation_time_down: str | None = None
     end_stop_margin: str | None = None
+
+
+#: unique_id shapes of 0.6.x / 0.7.x, replaced by ``build_unique_id`` in 0.8.0.
+_LEGACY_CHANNEL_ID = re.compile(r"^nikobus_([0-9A-Fa-f]{4})_(\d{1,2})$")
+_LEGACY_ROLLER_SWITCH_ID = re.compile(r"^nikobus_switch_([0-9A-Fa-f]{4})_(\d{1,2})$")
+_LEGACY_BUTTON_SENSOR_ID = re.compile(r"^nikobus_button_sensor_([0-9A-Fa-f]{6})$")
+#: In 0.6.x a ``nikobus_<addr>_<ch>`` id was a dimmer channel on the light
+#: platform, a switch-module channel on the switch platform and a roller
+#: on the cover platform, so the platform says which it was.
+_LEGACY_CHANNEL_KINDS: dict[str, tuple[str, str]] = {
+    "light": ("light", "dimmer_light"),
+    "switch": ("switch", "relay_switch"),
+    "cover": ("cover", "cover"),
+}
+
+
+def legacy_unique_id_replacement(platform: str, unique_id: str) -> str | None:
+    """The current unique_id of an entity registered by 0.6.x / 0.7.x, or ``None``.
+
+    Those releases keyed entities ``nikobus_<addr>_<ch>`` (dimmer light,
+    relay switch, cover — told apart by the platform),
+    ``nikobus_switch_<addr>_<ch>`` (a roller channel used as a switch)
+    and ``nikobus_button_sensor_<addr>``; 0.8.0 moved to
+    ``build_unique_id`` and nothing re-keyed the old entries, so an
+    upgrade lost them. ``None`` for anything that is not one of those
+    exact shapes, current ids included.
+    """
+    if match := _LEGACY_CHANNEL_ID.match(unique_id):
+        kind = _LEGACY_CHANNEL_KINDS.get(platform)
+        if kind is None:
+            return None
+        return build_unique_id(kind[0], kind[1], match[1].upper(), int(match[2]))
+    if platform == "switch" and (match := _LEGACY_ROLLER_SWITCH_ID.match(unique_id)):
+        return build_unique_id("switch", "cover_binary", match[1].upper(), int(match[2]))
+    if platform == "binary_sensor" and (match := _LEGACY_BUTTON_SENSOR_ID.match(unique_id)):
+        return f"{DOMAIN}_button_{match[1].upper()}"
+    return None
 
 
 def build_unique_id(domain: str, kind: str, address: str, channel: int) -> str:
