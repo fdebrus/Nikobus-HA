@@ -639,6 +639,17 @@ async def _async_cleanup_orphan_entities(
     index = unique_id_index(buttons)
     kept = 0
 
+    # No output module known means the inventory was never loaded (a first
+    # start after an upgrade, a step 1 that found nothing), not that every
+    # device is gone. Removing entities then also makes Home Assistant
+    # delete what was built on them (switch_as_x helpers and the like).
+    if not coordinator.has_known_output_modules:
+        _LOGGER.info(
+            "No Nikobus output module known yet — orphan cleanup skipped until "
+            "the inventory is loaded"
+        )
+        return
+
     # Remove orphan entities. One whose op point is still in the store is
     # a press-entity class the user switched off, not lost hardware: keep
     # its name, icon, area and entity id for the day the class comes back.

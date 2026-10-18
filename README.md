@@ -186,7 +186,7 @@ Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 
 ### Installs without a PC-Link
 
-If no PC-Link answers the discovery probe, the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config` (Feedback-module-only installs). These files are **only** consulted by the *Load Project Overview* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory.
+If no PC-Link inventory comes out of the discovery probe — no PC-Link on the bus, Home Assistant connected through a Feedback Module's or PC-Logic's port (these answer the probe but hold no project), or a PC-Link the Nikobus software never stored the project in — the integration falls back to importing inventory from optional `nikobus_module_config.json` / `nikobus_button_config.json` files in `/config`, or generates them from a `.nkb` export placed there. These files are **only** consulted by the *Load Project Overview* action as a fallback — they are never imported automatically at startup, and never overwrite a PC-Link-discovered inventory.
 
 **Connected to the Feedback Module's port:** leave the **Feedback Module** option off and let Home Assistant poll — see [Which port is Home Assistant connected to?](#which-port-is-home-assistant-connected-to) for why.
 
@@ -762,7 +762,8 @@ Every condition the integration can diagnose is a Repair issue (*Settings → Sy
 | Module needs reprogramming | A module's link table read as corrupt and was skipped | Reprogram it with the Nikobus PC software, rescan |
 | Module reports an EEPROM error | The module flags its own memory | Reprogram it with the Nikobus PC software |
 | Programming checksum mismatch | The image read back differs from the module's checksum | Re-run *Verify*; if it persists, reprogram |
-| Module was reprogrammed | Its checksum moved since its links were last read | Run *2. Load Existing Installation* |
+| Module was reprogrammed | Its checksum moved since its links were last read (a dimmer's power-loss memory alone does not count) | Run *2. Load Existing Installation* |
+| Module does not answer | A stored module has never answered a state read while the others do; it is now read once an hour | If it no longer exists, remove it with `nikobus.purge_stale_inventory` and from your Nikobus project; otherwise check its power and wiring |
 | Module is not a *type* | It answers as another family than the inventory says | Run *1. Load Project Overview*; correct the type under *Customize a module* if it stays wrong |
 | No Nikobus device answered on *port* | Nothing answered the presence probe | Cable, PC-Link power, other software on the port; clears on the first frame |
 | Connected to the Feedback Module's port | Pushed answers arrive without their queries | Turn the Feedback Module option off |
@@ -811,6 +812,10 @@ Up to 3.17.0 a poll already in flight when the scan started could be sent in the
 ### Repair issue: "Nikobus module … was reprogrammed"
 
 The module's checksum no longer matches the one recorded when its links were last read, so its programming changed — usually the Nikobus PC software. Run **2. Load Existing Installation** (or *Verify* / *Backup*); the issue clears once the module is read again. See [Maintenance](#maintenance-backup-verify--clock).
+
+### Setup fails with "Could not exclusively lock port"
+
+The integration opens the serial port exclusively, so nothing else may use it: another integration, an add-on, or a leftover `platform: serial` sensor on the same device (`/dev/ttyUSB0`, …). Remove the other user of the port and restart Home Assistant.
 
 ### Repair issue: "No Nikobus device answered on …"
 
