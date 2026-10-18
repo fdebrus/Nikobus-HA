@@ -23,7 +23,11 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
-from nikobus_connect.api import MODULE_IMAGE_SIZES
+from nikobus_connect.api import (
+    MODULE_IMAGE_SIZES,
+    MODULE_VOLATILE_RANGES,
+    predict_module_crc,
+)
 from nikobus_connect.exceptions import NikobusError
 from nikobus_connect.protocol import family_matches, family_name
 
@@ -341,18 +345,53 @@ class NikobusProgramming:
     def crc_baseline(self) -> dict[str, dict[str, Any]]:
         return self._crc_baseline
 
-    def _record_baseline(self, address: str, crc: int, description: str) -> None:
-        """Take ``crc`` as the known programming of ``address``; clears its issue."""
-        self._crc_baseline[address.upper()] = {
+    def _record_baseline(
+        self,
+        address: str,
+        crc: int,
+        description: str,
+        volatile: dict[int, bytes] | None = None,
+    ) -> None:
+        """Take ``crc`` as the known programming of ``address``; clears its issue.
+
+        ``volatile`` — the bytes the module rewrites by itself (a dimmer's
+        power-loss memory) as read with ``crc``, kept so a later CRC move
+        they alone explain is not taken for a reprogramming.
+        """
+        entry: dict[str, Any] = {
             "crc": crc,
             "description": description,
             "recorded_at": dt_util.now().isoformat(),
         }
+        if volatile:
+            entry["volatile"] = {f"{offset:04X}": data.hex().upper() for offset, data in volatile.items()}
+        self._crc_baseline[address.upper()] = entry
         if address.upper() in self.programming_changed:
             self.programming_changed.remove(address.upper())
         ir.async_delete_issue(
             self._hass, DOMAIN, f"{ISSUE_MODULE_PROGRAMMING_CHANGED}_{address.lower()}"
         )
+
+    @staticmethod
+    async def _read_volatile(api: Any, address: str, module_type: str) -> dict[int, bytes] | None:
+        """The module's self-written bytes now, or ``None`` (none, or unanswered)."""
+        if module_type not in MODULE_VOLATILE_RANGES:
+            return None
+        try:
+            return dict(await api.read_module_volatile(address, module_type))
+        except Exception as err:  # noqa: BLE001 - a missing read only loses the power-cut tolerance
+            _LOGGER.debug("Power-loss memory of module %s not read: %s", address, err)
+            return None
+
+    @staticmethod
+    def _stored_volatile(baseline: dict[str, Any]) -> dict[int, bytes] | None:
+        raw = baseline.get("volatile")
+        if not isinstance(raw, dict) or not raw:
+            return None
+        try:
+            return {int(offset, 16): bytes.fromhex(data) for offset, data in raw.items()}
+        except (TypeError, ValueError):
+            return None
 
     async def async_check_programming_changes(
         self, *, record: bool = False, force: bool = False
@@ -372,7 +411,7 @@ class NikobusProgramming:
         api = self._api()
         changed: list[str] = []
         async with self._lock:
-            for address, _module_type, description in self.output_modules():
+            for address, module_type, description in self.output_modules():
                 try:
                     crc = await api.get_module_crc(address)
                 except Exception as err:  # noqa: BLE001 - one module's silence must not abort the pass
@@ -382,8 +421,31 @@ class NikobusProgramming:
                     continue
                 baseline = self._crc_baseline.get(address)
                 if record or baseline is None:
-                    self._record_baseline(address, crc, description)
+                    self._record_baseline(
+                        address, crc, description,
+                        await self._read_volatile(api, address, module_type),
+                    )
                     continue
+                if baseline.get("crc") != crc:
+                    # A dimmer rewrites part of its checksummed memory
+                    # when power drops. If the bytes it rewrites explain
+                    # the new CRC exactly, nothing was reprogrammed.
+                    old_volatile = self._stored_volatile(baseline)
+                    if old_volatile is not None:
+                        new_volatile = await self._read_volatile(api, address, module_type)
+                        if new_volatile is not None and predict_module_crc(
+                            module_type, int(baseline.get("crc") or 0), old_volatile, new_volatile
+                        ) == crc:
+                            _LOGGER.info(
+                                "Nikobus module %s (%s): CRC 0x%04X moved from 0x%04X by its "
+                                "power-loss memory alone — not a reprogramming, baseline updated",
+                                address,
+                                description,
+                                crc,
+                                baseline.get("crc"),
+                            )
+                            self._record_baseline(address, crc, description, new_volatile)
+                            continue
                 if baseline.get("crc") == crc:
                     if address in self.programming_changed:
                         ir.async_delete_issue(
@@ -444,6 +506,14 @@ class NikobusProgramming:
             if isinstance(signature, int):
                 check.family = family_name(signature)
                 check.family_ok = family_matches(module_type, signature)
+                if check.family is None:
+                    _LOGGER.info(
+                        "Module %s (%s) answers with family byte 0x%02X, which the integration "
+                        "does not know yet — please report it with the module's model",
+                        address,
+                        description,
+                        signature,
+                    )
                 if check.family_ok is False:
                     _LOGGER.warning(
                         "Module %s (%s) is stored as %s but answers as %s (family byte 0x%02X): "

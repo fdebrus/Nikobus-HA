@@ -310,6 +310,10 @@
       "title": "Checksum van de programmering van Nikobus-module {description} ({address}) klopt niet",
       "description": "De checksum die de module over zijn programmeergeheugen berekent, verschilt van het geheugenbeeld dat Home Assistant zojuist heeft teruggelezen, wat wijst op een beschadigde of onderbroken overdracht. Voer **Moduleprogrammering controleren** opnieuw uit; blijft het probleem, programmeer de module dan opnieuw met de Nikobus-pc-software."
     },
+    "module_not_answering": {
+      "title": "Nikobus-module {description} ({address}) antwoordt niet",
+      "description": "Deze uitgangsmodule staat in de integratie maar heeft sinds het starten van Home Assistant op geen enkele statusvraag geantwoord, terwijl de andere modules dat wel doen. Waarschijnlijk zit ze niet op de bus: een testmodule aangemaakt in de Nikobus-software, of een module die verwijderd of vervangen is. Om de bus te sparen wordt ze nu nog maar één keer per uur gelezen. Bestaat de module niet meer, verwijder ze dan met de actie **nikobus.purge_stale_inventory** (adres {address}) en haal ze uit je Nikobus-project, anders brengt een latere `.nkb`-import ze terug. Bestaat ze wel, controleer dan haar voeding en busbekabeling; deze waarschuwing verdwijnt vanzelf zodra ze antwoordt."
+    },
     "module_programming_changed": {
       "title": "Nikobus-module {description} ({address}) is opnieuw geprogrammeerd",
       "description": "De checksum die de module over zijn programmering rapporteert, verschilt van de checksum die op {recorded_at} is vastgelegd, toen Home Assistant zijn koppelingen voor het laatst heeft gelezen. De module is sindsdien opnieuw geprogrammeerd, waarschijnlijk met de Nikobus-pc-software, dus de knopkoppelingen die Home Assistant kent, kloppen mogelijk niet meer. Voer **2. Bestaande installatie laden** uit (of **Moduleprogrammering controleren** / **Moduleprogrammering back-uppen**) om de module opnieuw te lezen; deze waarschuwing verdwijnt daarna vanzelf."

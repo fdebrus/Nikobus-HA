@@ -37,6 +37,7 @@ from nikobus_connect.exceptions import (
 )
 
 from .const import (
+    BUS_ALIVE_WINDOW_S,
     CONF_CONNECTION_STRING,
     CONF_HAS_FEEDBACK_MODULE,
     CONF_PRESS_REPEAT,
@@ -65,10 +66,13 @@ from .const import (
     ISSUE_FEEDBACK_MODULE_PORT,
     ISSUE_MODULE_CRC_MISMATCH,
     ISSUE_MODULE_EEPROM_ERROR,
+    ISSUE_MODULE_NOT_ANSWERING,
     ISSUE_MODULE_PROGRAMMING_CHANGED,
     ISSUE_MODULE_TYPE_MISMATCH,
     ISSUE_NO_BUTTONS_CONFIGURED,
     ISSUE_NO_DEVICE_ANSWERED,
+    NOT_ANSWERING_LIMIT,
+    NOT_ANSWERING_RETRY_S,
     POLLED_MODULE_TYPES,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
@@ -190,6 +194,11 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         # time, so a module can be heard on channels 7–12 and never on
         # 1–6. The safety poll reads only the groups this says are silent.
         self._state_seen_at: dict[tuple[str, int], float] = {}
+        # Stored output modules that have never answered: failed cycles in
+        # a row while the rest of the bus answered, and — once backed off
+        # — when each was last tried.
+        self._unanswered_cycles: dict[str, int] = {}
+        self._not_answering: dict[str, float] = {}
 
         self.discovery_running = False
         # ``discovery_module`` / ``discovery_module_address`` /
@@ -405,7 +414,89 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
     def _note_state_seen(self, address: str, group: int) -> None:
         """Record that ``address`` just reported the state of ``group``."""
-        self._state_seen_at[(address.upper(), int(group))] = time.monotonic()
+        normalized = address.upper()
+        self._state_seen_at[(normalized, int(group))] = time.monotonic()
+        self._unanswered_cycles.pop(normalized, None)
+        if self._not_answering.pop(normalized, None) is not None:
+            _LOGGER.info("Nikobus module %s answers again — polled normally", normalized)
+            ir.async_delete_issue(
+                self.hass, DOMAIN, f"{ISSUE_MODULE_NOT_ANSWERING}_{normalized.lower()}"
+            )
+
+    def _module_heard(self, address: str) -> bool:
+        """Whether ``address`` has reported a state since Home Assistant started."""
+        normalized = address.upper()
+        return any(key[0] == normalized for key in self._state_seen_at)
+
+    def _bus_alive(self, besides: set[str]) -> bool:
+        """Whether a module other than ``besides`` was heard recently."""
+        since = time.monotonic() - BUS_ALIVE_WINDOW_S
+        return any(
+            seen >= since and key[0] not in besides
+            for key, seen in self._state_seen_at.items()
+        )
+
+    def _skip_backed_off(self, modules: dict[str, Any]) -> dict[str, Any]:
+        """Leave out the modules that never answer, unless their hourly try is due."""
+        if not self._not_answering:
+            return modules
+        now = time.monotonic()
+        kept: dict[str, Any] = {}
+        for address, module_data in modules.items():
+            normalized = str(address).upper()
+            last_try = self._not_answering.get(normalized)
+            if last_try is not None:
+                if now - last_try < NOT_ANSWERING_RETRY_S:
+                    continue
+                self._not_answering[normalized] = now
+            kept[address] = module_data
+        return kept
+
+    def _account_unanswered(self, failed: set[str]) -> None:
+        """Back off a module that never answered while the rest of the bus did.
+
+        A stored module that is not on the bus (a test module made in the
+        Nikobus software, one that was removed) fails every read: three
+        attempts holding the bus for some fifteen seconds, every cycle.
+        After ``NOT_ANSWERING_LIMIT`` such cycles it is tried once an
+        hour and named in a Repair issue. Only a module never heard
+        since startup, and only while another module was heard, so a
+        bus that went quiet as a whole is never mistaken for it.
+        """
+        for address in sorted(failed):
+            if self._module_heard(address) or address in self._not_answering:
+                continue
+            if not self._bus_alive(failed):
+                continue
+            count = self._unanswered_cycles.get(address, 0) + 1
+            self._unanswered_cycles[address] = count
+            if count < NOT_ANSWERING_LIMIT:
+                continue
+            self._not_answering[address] = time.monotonic()
+            description = self._module_description(address)
+            _LOGGER.warning(
+                "Nikobus module %s (%s) has not answered a state read since startup while "
+                "the rest of the bus does — polled once an hour from now on",
+                address,
+                description,
+            )
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                f"{ISSUE_MODULE_NOT_ANSWERING}_{address.lower()}",
+                is_fixable=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_MODULE_NOT_ANSWERING,
+                translation_placeholders={"address": address, "description": description},
+            )
+
+    def _module_description(self, address: str) -> str:
+        for modules in (self.dict_module_data or {}).values():
+            if isinstance(modules, dict):
+                for stored, data in modules.items():
+                    if str(stored).upper() == address and isinstance(data, dict):
+                        return str(data.get("description") or address)
+        return address
 
     @staticmethod
     def _module_groups(module_data: Any) -> tuple[int, ...]:
@@ -966,9 +1057,13 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             silent_since = time.monotonic() - FEEDBACK_SAFETY_POLL_S
         polled = 0
         failures = 0
+        failed_modules: set[str] = set()
         try:
             for module_type in MODULE_TYPES:
                 modules = self.dict_module_data.get(module_type)
+                if not modules:
+                    continue
+                modules = self._skip_backed_off(modules)
                 if not modules:
                     continue
                 groups_by_address: dict[str, tuple[int, ...]] | None = None
@@ -987,7 +1082,9 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                         ),
                     )
                 polled_n, failed_n = await self._refresh_module_type(
-                    modules, groups_by_address=groups_by_address
+                    modules,
+                    groups_by_address=groups_by_address,
+                    failed_modules=failed_modules,
                 )
                 polled += polled_n
                 failures += failed_n
@@ -996,10 +1093,17 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             _LOGGER.error("Failed to fetch Nikobus data: %s", err)
             raise UpdateFailed(f"Data refresh failed: {err}") from err
         finally:
+            self._account_unanswered(failed_modules)
+            # A cycle in which every read failed means the bus went quiet
+            # only if a module that has answered before is among them: a
+            # cycle made of modules that never answered (one absent module
+            # alone in a Feedback-Module safety poll) says nothing about
+            # the bus, and reconnecting for it dropped a healthy link.
             if (
                 polled > 0
                 and failures == polled
                 and not self._stopping
+                and any(self._module_heard(address) for address in failed_modules)
             ):
                 _LOGGER.warning(
                     "Nikobus poll cycle: %d/%d commands timed out — "
@@ -1020,6 +1124,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         self,
         modules_dict: dict[str, Any],
         groups_by_address: dict[str, tuple[int, ...]] | None = None,
+        failed_modules: set[str] | None = None,
     ) -> tuple[int, int]:
         """Poll each module, return (polled, failed) counts.
 
@@ -1062,10 +1167,14 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                         self._note_state_seen(normalized, g)
                     else:
                         failed += 1
+                        if failed_modules is not None:
+                            failed_modules.add(normalized)
                 except asyncio.CancelledError:
                     raise
                 except Exception as err:  # noqa: BLE001 - defensive: per-group failures are counted, not fatal
                     failed += 1
+                    if failed_modules is not None:
+                        failed_modules.add(normalized)
                     # Per-group failures are noise on installs that
                     # hit periodic bus-silent windows (issue #337) —
                     # they show up as N separate ERROR entries in

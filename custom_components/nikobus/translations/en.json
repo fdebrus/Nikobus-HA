@@ -166,6 +166,10 @@
       "title": "Nikobus module {description} ({address}) programming checksum mismatch",
       "description": "The checksum the module computes over its programming memory differs from the image Home Assistant just read back, which points to a corrupted or interrupted transfer. Re-run **Verify module programming**; if it persists, reprogram the module with the Nikobus PC software."
     },
+    "module_not_answering": {
+      "title": "Nikobus module {description} ({address}) does not answer",
+      "description": "This output module is stored in the integration but has not answered a single state read since Home Assistant started, while the other modules do. It is most likely not on the bus: a test module created in the Nikobus software, or a module that was removed or replaced. To spare the bus, it is now read only once an hour. If the module no longer exists, remove it with the **nikobus.purge_stale_inventory** action (address {address}) and delete it from your Nikobus project, or a later `.nkb` import brings it back. If it does exist, check its power and bus wiring; this warning clears by itself as soon as it answers."
+    },
     "module_programming_changed": {
       "title": "Nikobus module {description} ({address}) was reprogrammed",
       "description": "The checksum the module reports over its programming differs from the one recorded on {recorded_at}, when Home Assistant last read its links. The module was reprogrammed since, most likely with the Nikobus PC software, so the button links Home Assistant knows may no longer match it. Run **2. Load Existing Installation** (or **Verify module programming** / **Backup module programming**) to read the module again; this warning clears by itself afterwards."

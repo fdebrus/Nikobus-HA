@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.30.1
+
+**Requires `nikobus-connect` 0.55.0.**
+
+- **A power cut no longer reads as a reprogrammed dimmer.** A 05-008-02 dimmer writes state into its memory when power drops, inside the part its checksum covers, so the daily programming-change check raised "Nikobus module … was reprogrammed" after a power cut that caught a channel in a new state, although nothing was programmed. The baseline now also keeps those bytes (four read-only block reads); when the checksum moves, they are read again, and if they alone explain the new checksum exactly, the baseline is updated silently with an info line in the log. Any other change still raises the issue. Baselines recorded before this version have no such bytes yet: run *2. Load Existing Installation* once to record them (it also clears a warning raised by a power cut).
+- **A family byte the integration does not know is no longer a "problem".** *Verify module programming* marked a module whose status byte it did not recognise as stored under the wrong type, and the programming health as a problem (seen on 05-008-02 dimmers). An unknown byte is now reported as unknown, with an info line in the log asking to report it; only a byte of another known family is a mismatch.
+- **A module that never answers no longer drops the connection.** A stored module absent from the bus (a test module created in the Nikobus software, at 1234 on a real install) was the only silent group in many Feedback-Module safety polls; its read failed, the cycle counted as "every read failed", and the integration reconnected a healthy bus, while each failed read held the bus for some fifteen seconds. The bus now counts as silent only when a module that has answered before goes quiet. A module that has never answered, while others do, is read once an hour after three failed cycles and named in a Repair issue (*Nikobus module … does not answer*) that says how to remove it; it returns to normal polling as soon as it answers.
+
 ## 3.30.0
 
 **Requires `nikobus-connect` 0.54.0.**

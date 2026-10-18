@@ -37,6 +37,9 @@ class _FakeCoord:
         self._module_states: dict = states or {}
         self.nikobus_module_states = self._module_states
         self._state_seen_at: dict[tuple[str, int], float] = {}
+        self._unanswered_cycles: dict[str, int] = {}
+        self._not_answering: dict[str, float] = {}
+        self.hass = MagicMock()
         self.dict_module_data: dict = module_data or {}
         # ``module_storage.data`` is the 0.4.0 flat store. Build it from the
         # legacy nested ``module_data`` when the caller provides one, so
@@ -1921,11 +1924,17 @@ class TestBlackoutAutoRecovery(unittest.IsolatedAsyncioTestCase):
         # actually runs against the mocked get_output_state. The
         # unbound staticmethod-style call hands ``coord`` in as self.
         coord._refresh_module_type = (
-            lambda md, groups_by_address=None, _coord=coord:
+            lambda md, groups_by_address=None, failed_modules=None, _coord=coord:
             NikobusDataCoordinator._refresh_module_type(
-                _coord, md, groups_by_address=groups_by_address
+                _coord, md, groups_by_address=groups_by_address,
+                failed_modules=failed_modules,
             )
         )
+        coord._unanswered_cycles = {}
+        coord._not_answering = {}
+        for name in ("_module_heard", "_bus_alive", "_skip_backed_off",
+                     "_account_unanswered", "_module_description"):
+            setattr(coord, name, getattr(NikobusDataCoordinator, name).__get__(coord))
         return coord
 
     async def test_total_blackout_triggers_reconnect(self):
@@ -1938,6 +1947,10 @@ class TestBlackoutAutoRecovery(unittest.IsolatedAsyncioTestCase):
             }},
             get_output_state_side_effect=NikobusTimeoutError("timeout"),
         )
+        # Both modules answered earlier in the session: their silence now
+        # is the bus going quiet.
+        import time as _time
+        coord._state_seen_at = {("8110", 1): _time.monotonic() - 600, ("1CEC", 1): _time.monotonic() - 600}
 
         await NikobusDataCoordinator._async_update_data(coord)
 
@@ -2570,3 +2583,85 @@ class TestRefreshModuleOnRequest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await coord.async_refresh_module("A3EE42"))
         self.assertFalse(await coord.async_refresh_module(""))
         coord.nikobus_command.get_output_state.assert_not_called()
+
+
+class TestModuleThatNeverAnswers(unittest.IsolatedAsyncioTestCase):
+    """A stored module absent from the bus (a test module made in the
+    Nikobus software, at 1234 on a real install) must not trigger the
+    blackout reconnect nor hold the bus every cycle."""
+
+    def _coord(self, *, feedback=True):
+        import time as _time
+
+        from nikobus_connect.exceptions import NikobusTimeoutError
+
+        def _answer(address, group):
+            if address == "1234":
+                raise NikobusTimeoutError("timeout")
+            return "00" * 6
+
+        coord = TestBlackoutAutoRecovery._make_coord(
+            self,
+            modules={
+                "rgb_module": {"1234": {"description": "Dummy RGB", "channels": [{}]}},
+                "switch_module": {"4707": {"channels": [{}] * 4}},
+            },
+            get_output_state_side_effect=_answer,
+        )
+        coord._has_feedback_module = feedback
+        # 4707 is pushed by the Feedback Module (heard a moment ago).
+        coord._state_seen_at = {("4707", 1): _time.monotonic()}
+        return coord
+
+    async def test_an_absent_module_alone_in_a_cycle_does_not_reconnect(self):
+        coord = self._coord()
+        with patch("custom_components.nikobus.coordinator.ir"):
+            await NikobusDataCoordinator._async_update_data(coord)
+        polled = [c.args for c in coord.nikobus_command.get_output_state.call_args_list]
+        self.assertEqual(polled, [("1234", 1)])  # the safety poll's only silent group
+        coord.hass.async_create_background_task.assert_not_called()
+
+    async def test_it_is_backed_off_after_three_cycles_with_a_repair_issue(self):
+        from custom_components.nikobus.const import NOT_ANSWERING_LIMIT
+        coord = self._coord()
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            for _ in range(NOT_ANSWERING_LIMIT):
+                await NikobusDataCoordinator._async_update_data(coord)
+            ir.async_create_issue.assert_called_once()
+            self.assertEqual(ir.async_create_issue.call_args.args[2], "module_not_answering_1234")
+            self.assertEqual(
+                ir.async_create_issue.call_args.kwargs["translation_placeholders"],
+                {"address": "1234", "description": "Dummy RGB"},
+            )
+            coord.nikobus_command.get_output_state.reset_mock()
+            await NikobusDataCoordinator._async_update_data(coord)
+        coord.nikobus_command.get_output_state.assert_not_called()  # skipped until the hourly try
+
+    async def test_the_hourly_try_goes_out_and_an_answer_clears_it(self):
+        import time as _time
+
+        from custom_components.nikobus.const import NOT_ANSWERING_RETRY_S
+        coord = self._coord()
+        long_ago = _time.monotonic() - NOT_ANSWERING_RETRY_S - 1
+        coord._not_answering = {"1234": long_ago}
+        coord._unanswered_cycles = {"1234": 3}
+        with patch("custom_components.nikobus.coordinator.ir"):
+            await NikobusDataCoordinator._async_update_data(coord)
+        self.assertIn(("1234", 1), [c.args for c in coord.nikobus_command.get_output_state.call_args_list])
+        self.assertGreater(coord._not_answering["1234"], long_ago)  # next try an hour from now
+        coord.hass = MagicMock()
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            NikobusDataCoordinator._note_state_seen(coord, "1234", 1)
+        self.assertNotIn("1234", coord._not_answering)
+        ir.async_delete_issue.assert_called_once()
+
+    async def test_nothing_is_backed_off_while_the_whole_bus_is_quiet(self):
+        from nikobus_connect.exceptions import NikobusTimeoutError
+        coord = self._coord()
+        coord._state_seen_at = {}  # nothing heard, and nothing answers
+        coord.nikobus_command.get_output_state = AsyncMock(side_effect=NikobusTimeoutError("timeout"))
+        with patch("custom_components.nikobus.coordinator.ir") as ir:
+            for _ in range(5):
+                await NikobusDataCoordinator._async_update_data(coord)
+        ir.async_create_issue.assert_not_called()
+        self.assertEqual(coord._not_answering, {})

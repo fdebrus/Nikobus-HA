@@ -762,7 +762,8 @@ Every condition the integration can diagnose is a Repair issue (*Settings → Sy
 | Module needs reprogramming | A module's link table read as corrupt and was skipped | Reprogram it with the Nikobus PC software, rescan |
 | Module reports an EEPROM error | The module flags its own memory | Reprogram it with the Nikobus PC software |
 | Programming checksum mismatch | The image read back differs from the module's checksum | Re-run *Verify*; if it persists, reprogram |
-| Module was reprogrammed | Its checksum moved since its links were last read | Run *2. Load Existing Installation* |
+| Module was reprogrammed | Its checksum moved since its links were last read (a dimmer's power-loss memory alone does not count) | Run *2. Load Existing Installation* |
+| Module does not answer | A stored module has never answered a state read while the others do; it is now read once an hour | If it no longer exists, remove it with `nikobus.purge_stale_inventory` and from your Nikobus project; otherwise check its power and wiring |
 | Module is not a *type* | It answers as another family than the inventory says | Run *1. Load Project Overview*; correct the type under *Customize a module* if it stays wrong |
 | No Nikobus device answered on *port* | Nothing answered the presence probe | Cable, PC-Link power, other software on the port; clears on the first frame |
 | Connected to the Feedback Module's port | Pushed answers arrive without their queries | Turn the Feedback Module option off |
