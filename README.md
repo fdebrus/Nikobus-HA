@@ -801,6 +801,8 @@ To clear it:
 
 The store rebuilds cleanly with proper device types and no duplicates. Names you set in the HA UI are keyed by `unique_id` and reattach automatically.
 
+**Coming from 0.6.x / 0.7.x:** those releases used other unique_ids. Since 3.30.2 the first start re-keys the old entities, so they keep their entity id, name and area. Update straight to the current version; an install that already upgraded through an earlier 3.x lost the old entries.
+
 ### Custom channel/button names didn't carry over
 
 Friendly names you set in Home Assistant live in HA's entity/device registry (keyed by `unique_id`) — a clean re-discovery preserves them as long as the bus addresses are unchanged. Names applied by a `.nkb` import are stored by the integration (since **3.12.0**) and re-applied automatically. (Removed in **3.0.0**: names are no longer imported from a legacy `nikobus_button_config.json`; set them in HA, or [import them from your `.nkb`](#importing-from-your-nkb-project), and they persist.)

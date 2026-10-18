@@ -1826,7 +1826,7 @@ class TestOrphanCleanupWithAnEmptyStore(unittest.IsolatedAsyncioTestCase):
         ent_reg, dev_reg = MagicMock(), MagicMock()
         with patch("custom_components.nikobus.er.async_get", return_value=ent_reg), \
              patch("custom_components.nikobus.dr.async_get", return_value=dev_reg), \
-             patch("custom_components.nikobus.er.async_entries_for_config_entry", create=True) as entries:
+             patch("custom_components.nikobus.er.async_entries_for_config_entry") as entries:
             await _async_cleanup_orphan_entities(MagicMock(), MagicMock(), coord)
         entries.assert_not_called()
         ent_reg.async_remove.assert_not_called()

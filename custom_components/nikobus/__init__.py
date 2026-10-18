@@ -51,7 +51,7 @@ from .nkbsnapshot import (
     snapshot_entity,
     unique_id_index,
 )
-from .router import enabled_button_classes
+from .router import enabled_button_classes, legacy_unique_id_replacement
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -452,6 +452,41 @@ def _loaded_coordinator(hass: HomeAssistant) -> NikobusDataCoordinator | None:
     return None
 
 
+def _migrate_legacy_unique_ids(hass: HomeAssistant, entry: NikobusConfigEntry) -> int:
+    """Re-key the entities 0.6.x / 0.7.x registered to today's unique_ids.
+
+    Runs once, from the version-1 migration, before setup: the entities
+    the platforms create later find their registry entries under the
+    new ids. An entry whose new id is already taken is left alone
+    rather than failing the migration. Returns the number re-keyed.
+    """
+    ent_reg = er.async_get(hass)
+    migrated = 0
+    for entity in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if entity.platform != DOMAIN or not entity.unique_id:
+            continue
+        new_id = legacy_unique_id_replacement(entity.domain, entity.unique_id)
+        if new_id is None or new_id == entity.unique_id:
+            continue
+        if ent_reg.async_get_entity_id(entity.domain, DOMAIN, new_id) is not None:
+            _LOGGER.info(
+                "Not re-keying %s (%s): an entity with unique_id %s already exists",
+                entity.entity_id,
+                entity.unique_id,
+                new_id,
+            )
+            continue
+        ent_reg.async_update_entity(entity.entity_id, new_unique_id=new_id)
+        migrated += 1
+    if migrated:
+        _LOGGER.info(
+            "Re-keyed %d Nikobus entities from the 0.6.x unique_id format; "
+            "their entity ids, names and areas are kept",
+            migrated,
+        )
+    return migrated
+
+
 async def async_migrate_entry(
     hass: HomeAssistant, entry: NikobusConfigEntry
 ) -> bool:
@@ -475,6 +510,11 @@ async def async_migrate_entry(
         )
         return False
     if entry.version == 1:
+        # An entry from 0.6.x / 0.7.x still has its entities under the
+        # unique_ids of those releases; re-key them before anything can
+        # treat them as orphans, so they keep their entity id, name,
+        # area and whatever was built on them.
+        _migrate_legacy_unique_ids(hass, entry)
         # 3.22.0 made the press-entity classes a choice. An entry from
         # before then keeps everything it had: every class selected, so
         # nothing disappears on upgrade. A fresh entry starts with none.

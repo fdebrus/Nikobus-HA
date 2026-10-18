@@ -204,7 +204,11 @@ _mod(
 )
 
 # homeassistant.helpers.entity_registry
-_mod("homeassistant.helpers.entity_registry", async_get=lambda hass: None)
+_mod(
+    "homeassistant.helpers.entity_registry",
+    async_get=lambda hass: None,
+    async_entries_for_config_entry=lambda registry, entry_id: [],
+)
 
 # homeassistant.helpers.area_registry
 _mod("homeassistant.helpers.area_registry", async_get=lambda hass: None)
