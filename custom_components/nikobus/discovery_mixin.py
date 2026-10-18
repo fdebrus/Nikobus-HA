@@ -66,6 +66,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+#: Gateways that answer the ``#A`` probe but hold no project inventory.
+_NON_INVENTORY_GATEWAYS: frozenset[str] = frozenset({"feedback_module", "pc_logic"})
+
 # Outer-probe parameters passed to nikobus-connect's
 # ``detect_stale_inventory(outer_attempts=N, outer_delay=S)`` (issue #319).
 _PROBE_OUTER_ATTEMPTS = 2
@@ -750,10 +753,32 @@ class NikobusDiscoveryMixin:
             error=None,
         )
 
-        # 1. PC-Link probe with timeout.
-        used_pclink = await self._try_pclink_inventory()
+        # 1. PC-Link probe with timeout — unless the gateway already said
+        # at connect time that it is not a PC-Link: a Feedback Module or a
+        # PC-Logic answers ``#A`` too, and that answer is not an inventory.
+        gateway = getattr(getattr(self, "nikobus_connection", None), "gateway_family", None)
+        if gateway in _NON_INVENTORY_GATEWAYS:
+            _LOGGER.info(
+                "Step 1: Home Assistant is connected through a %s, which holds no "
+                "project inventory — reading the manual config files instead",
+                gateway.replace("_", " "),
+            )
+            used_pclink = False
+        else:
+            used_pclink = await self._try_pclink_inventory()
+            # Something answered, but no output module came out of it: a
+            # Feedback Module or PC-Logic answering the probe, or a PC-Link
+            # the Nikobus software never stored the project in. The manual
+            # files (or a .nkb) are then the inventory, as with no PC-Link.
+            if used_pclink and not self.has_known_output_modules:
+                _LOGGER.warning(
+                    "Step 1: the PC-Link inventory found no output module (the "
+                    "responder is not a PC-Link, or the PC-Link holds no project) "
+                    "— falling back to the manual config files"
+                )
+                used_pclink = False
 
-        # 2. Fall back to manual files if probe timed out / failed.
+        # 2. Fall back to manual files if no PC-Link inventory came of it.
         if not used_pclink:
             applied = await self._apply_manual_inventory_as_fallback()
             if not applied:
@@ -763,9 +788,10 @@ class NikobusDiscoveryMixin:
                 self._update_discovery_state(
                     phase=DISCOVERY_PHASE_ERROR,
                     message=(
-                        "No PC-Link detected and no inventory source found. "
-                        "Install a PC-Link, drop your Nikobus .nkb export in "
-                        "the config dir, or create nikobus_module_config.json."
+                        "No PC-Link inventory and no inventory source found. "
+                        "Connect a PC-Link holding the project, drop your Nikobus "
+                        ".nkb export in the config dir, or create "
+                        "nikobus_module_config.json."
                     ),
                     error="no_inventory_source",
                 )
@@ -774,6 +800,14 @@ class NikobusDiscoveryMixin:
                     translation_domain=DOMAIN,
                     translation_key="no_inventory_source",
                 )
+            self.discovery_running = False
+            self._update_discovery_state(
+                phase=DISCOVERY_PHASE_FINISHED,
+                message="Inventory loaded from the manual config files",
+                error=None,
+            )
+            self._discovery_finished_event.set()
+            async_dispatcher_send(self.hass, SIGNAL_DISCOVERY_STATE)
 
     async def _try_pclink_inventory(self) -> bool:
         """Kick off the ``#A`` broadcast and decide if PC-Link is present.

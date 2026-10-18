@@ -1760,6 +1760,79 @@ class TestUnifiedStep1Discovery(unittest.IsolatedAsyncioTestCase):
             await coord.start_pc_link_inventory(auto_reload=False)
 
 
+class TestStep1WithoutAPcLinkInventory(TestUnifiedStep1Discovery):
+    """Nikobus-HA #550: a Feedback Module answers ``#A`` too; the answer is
+    rejected as an inventory, and step 1 ended with nothing instead of
+    reading the manual files. The same gap hit a PC-Link that holds no
+    project. Inherits the harness; the parent's tests run again here."""
+
+    async def test_a_feedback_module_gateway_goes_straight_to_the_files(self):
+        from types import SimpleNamespace
+        coord = self._make_coord()
+        coord.nikobus_connection = SimpleNamespace(gateway_family="feedback_module")
+        with patch(
+            "custom_components.nikobus.nkbmanual.async_apply_manual_config",
+            new_callable=AsyncMock, return_value=True,
+        ) as apply_mock, patch("custom_components.nikobus.discovery_mixin.async_dispatcher_send"):
+            await coord.start_pc_link_inventory(auto_reload=False)
+        coord.nikobus_discovery.start_inventory_discovery.assert_not_awaited()
+        apply_mock.assert_awaited_once()
+        self.assertFalse(coord.discovery_running)
+        self.assertTrue(coord._discovery_finished_event.is_set())
+
+    async def test_an_answer_that_yields_no_output_module_falls_back(self):
+        coord = self._make_coord()
+        coord.has_known_output_modules = False
+
+        async def answered_but_empty():
+            coord._pclink_first_response_event.set()
+            coord._discovery_finished_event.set()
+
+        coord.nikobus_discovery.start_inventory_discovery.side_effect = answered_but_empty
+        with patch(
+            "custom_components.nikobus.nkbmanual.async_apply_manual_config",
+            new_callable=AsyncMock, return_value=True,
+        ) as apply_mock, patch("custom_components.nikobus.discovery_mixin.async_dispatcher_send"):
+            await coord.start_pc_link_inventory(auto_reload=False)
+        apply_mock.assert_awaited_once()
+
+    async def test_a_pc_link_inventory_with_modules_does_not_read_the_files(self):
+        coord = self._make_coord()
+        coord.has_known_output_modules = True
+
+        async def full():
+            coord._pclink_first_response_event.set()
+            coord._discovery_finished_event.set()
+
+        coord.nikobus_discovery.start_inventory_discovery.side_effect = full
+        with patch(
+            "custom_components.nikobus.nkbmanual.async_apply_manual_config",
+            new_callable=AsyncMock, return_value=True,
+        ) as apply_mock:
+            await coord.start_pc_link_inventory(auto_reload=False)
+        apply_mock.assert_not_awaited()
+
+
+class TestOrphanCleanupWithAnEmptyStore(unittest.IsolatedAsyncioTestCase):
+    """Nikobus-HA #550: on a first start after an upgrade the module store
+    is empty; removing every entity then also deleted the helpers built
+    on them. Nothing is removed until an output module is known."""
+
+    async def test_nothing_is_removed_while_no_output_module_is_known(self):
+        from custom_components.nikobus import _async_cleanup_orphan_entities
+        coord = MagicMock()
+        coord.has_known_output_modules = False
+        coord.dict_button_data = {"nikobus_button": {}}
+        ent_reg, dev_reg = MagicMock(), MagicMock()
+        with patch("custom_components.nikobus.er.async_get", return_value=ent_reg), \
+             patch("custom_components.nikobus.dr.async_get", return_value=dev_reg), \
+             patch("custom_components.nikobus.er.async_entries_for_config_entry", create=True) as entries:
+            await _async_cleanup_orphan_entities(MagicMock(), MagicMock(), coord)
+        entries.assert_not_called()
+        ent_reg.async_remove.assert_not_called()
+        dev_reg.async_remove_device.assert_not_called()
+
+
 class TestSurfaceLegacyUndecodedButtons(unittest.IsolatedAsyncioTestCase):
     """Direct tests for ``_surface_legacy_undecoded_buttons``.
 
