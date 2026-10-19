@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.30.3
+
+**Requires `nikobus-connect` 0.55.1.**
+
+- **Compact 05-008-02 dimmers are recognised in *Verify module programming*.** They report family byte 0x80 instead of the 0x30 of the full-size dimmer; 3.30.1 stopped calling that a type mismatch, and with the library now knowing the byte they show as dimmers with their family check passed.
+
 ## 3.30.2
 
 - **Upgrading from 0.6.x keeps your entities** (#552). Releases 0.6.x / 0.7.x keyed entities `nikobus_<addr>_<ch>`, `nikobus_switch_<addr>_<ch>` and `nikobus_button_sensor_<addr>`; 0.8.0 moved to the current format and nothing ever re-keyed the old entries, so an upgrade replaced every light, switch, cover and button sensor — entity ids, names, areas gone, and helpers built on them (*Change device type of a switch*) deleted by Home Assistant. The one-time config-entry migration now re-keys them first (the platform tells a dimmer light from a relay switch or a cover), so the entities created after discovery reuse their registry entries. Only exactly those old shapes are touched; an entity whose new id already exists is left alone. Installs that already upgraded cannot be repaired this way: their old entries are among Home Assistant's deleted entities.
