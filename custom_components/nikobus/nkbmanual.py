@@ -15,12 +15,13 @@ and would conflict with a fresh scan.
 Lifecycle:
 
   * Files stay in place under their canonical names. No rename, no
-    "consumed" marker. Re-import is implicit on every coordinator
-    setup — the files ARE the inventory source.
+    "consumed" marker. They are read by "1. Load Project Overview"
+    only, when no PC-Link inventory comes of it — never at startup.
   * Files are fully declarative: anything not in the file is removed
     from the corresponding store. Users edit the file when they
     install / remove / rename a module or button.
-  * After import, run "Scan all modules" to populate link records.
+  * After import, run "2. Load Existing Installation" to populate the
+    link records.
 """
 
 from __future__ import annotations
