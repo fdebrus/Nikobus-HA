@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.30.4
+
+**Requires `nikobus-connect` 0.56.0.**
+
+- **Keys listed by their address alone get their links.** Without a PC-Link, `nikobus_button_config.json` often lists keys by the address seen when pressing them, without the button's own address — which is what the modules' link records name. Those keys got no links: `controlled_by` stayed empty, a wall press did not refresh the outputs it drives, and they were flagged as legacy. *2. Load Existing Installation* now attaches each record to the key by the exact frame the module listens for. Run step 2 once after updating.
+- README (*Installs without a PC-Link*): the single-key form now gets its links; entries named `DISCOVERED …` without `linked_button` are skipped, which hits files written by releases before 3.0, and how to tell their real keys from bus noise.
+
 ## 3.30.3
 
 **Requires `nikobus-connect` 0.55.1.**
