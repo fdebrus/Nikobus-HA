@@ -2738,3 +2738,16 @@ class TestModuleThatNeverAnswers(unittest.IsolatedAsyncioTestCase):
                 await NikobusDataCoordinator._async_update_data(coord)
         ir.async_create_issue.assert_not_called()
         self.assertEqual(coord._not_answering, {})
+
+
+class TestPushedFrameKeepsPendingWrites(unittest.IsolatedAsyncioTestCase):
+    """A pushed Feedback-Module frame is stored through the command handler,
+    which lays writes still waiting for their frame back on top (0.56.1):
+    a frame arriving just before a command must not undo it."""
+
+    async def test_feedback_frame_does_not_undo_a_pending_write(self):
+        c = _coord(states={"CF58": bytearray(12)})
+        c.nikobus_command._pending_set_groups["CF58_1"] = {"channels": {5: 0xFF}}
+        await c._feedback_callback(1, _feedback_frame("58CF", "FF0000000000"))
+        self.assertEqual(c.nikobus_module_states["CF58"][:6], bytearray([0xFF, 0, 0, 0, 0xFF, 0]))
+        self.assertIn(("CF58", 1), c._state_seen_at)

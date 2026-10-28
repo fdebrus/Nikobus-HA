@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.30.5
+
+**Requires `nikobus-connect` 0.56.1.**
+
+- **Switching one output no longer switches others back** (#557). A switch or dimmer module is written six outputs at a time, from the state Home Assistant last knew. A light switched off at the wall seconds before, not yet seen by Home Assistant, came back on when an automation switched on another output of the same group. The library now reads a group first when its state is older than three seconds or unknown; a state heard recently (a pushed frame, a poll, a write of our own) costs no read. Answers and pushed frames are stored with any write still on its way laid back on top, so a frame arriving just before a command cannot undo it.
+- **A light or switch driven by its feedback key changes state once.** Since 3.30.0 the library reads the module before pressing the key and after it; the answer to the first read still showed the old state, so the entity went ON → OFF → ON on every switch (three recorder entries, and automations on the entity's state fired on the intermediate ones), while the lamp switched once. The entity now keeps the state it was asked for until the command is complete, then shows what the module reported once. A toggle goes straight from the old state to the new one the same way.
+
 ## 3.30.4
 
 **Requires `nikobus-connect` 0.56.0.**
