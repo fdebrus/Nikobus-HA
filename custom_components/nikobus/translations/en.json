@@ -188,6 +188,9 @@
     }
   },
   "exceptions": {
+    "missing_button_address": {
+      "message": "A button address is required."
+    },
     "communication_error": {
       "message": "Communication with Nikobus failed: {error}"
     },

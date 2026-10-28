@@ -2125,6 +2125,8 @@ class TestHandleConnectionLostCoalescing(unittest.IsolatedAsyncioTestCase):
         coord = MagicMock()
         coord._stopping = False
         coord._reconnect_task = reconnect_task
+        coord._reconnect_pending = False
+        coord._stop_and_reconnect = NikobusDataCoordinator._stop_and_reconnect.__get__(coord)
         coord.nikobus_command = MagicMock()
         coord.nikobus_command.stop = AsyncMock()
         coord.nikobus_listener = MagicMock()
@@ -2182,6 +2184,21 @@ class TestHandleConnectionLostCoalescing(unittest.IsolatedAsyncioTestCase):
 
         coord.nikobus_command.stop.assert_awaited_once()
         coord.hass.async_create_background_task.assert_called_once()
+
+    async def test_a_notification_during_the_stops_coalesces(self):
+        """The race the docstring describes: the listener's read error fires
+        a second notification while the first is still awaiting the stops."""
+        coord = self._make_coord()
+
+        async def _stop_and_notify_again():
+            await NikobusDataCoordinator._handle_connection_lost(coord)
+
+        coord.nikobus_command.stop = AsyncMock(side_effect=_stop_and_notify_again)
+        await NikobusDataCoordinator._handle_connection_lost(coord)
+        coord.nikobus_command.stop.assert_awaited_once()
+        coord.nikobus_listener.stop.assert_awaited_once()
+        coord.hass.async_create_background_task.assert_called_once()
+        self.assertFalse(coord._reconnect_pending)
 
     async def test_stopping_short_circuits(self):
         coord = self._make_coord()
@@ -2583,6 +2600,27 @@ class TestFeedbackSafetyPoll(unittest.IsolatedAsyncioTestCase):
         await NikobusDataCoordinator._async_update_data(coord)
         polled = [c.args for c in coord.nikobus_command.get_output_state.call_args_list]
         self.assertEqual(polled, [("81F6", 1)])
+
+    async def test_one_timeout_on_a_live_bus_does_not_reconnect(self):
+        """The safety poll often reads one group; a single timeout while
+        another module was heard a moment ago is not a silent bus."""
+        import time as _time
+
+        from nikobus_connect.exceptions import NikobusTimeoutError
+        coord = self._fm_coord(
+            {"switch_module": {"81F6": {"channels": [{}] * 4}, "4707": {"channels": [{}] * 4}}},
+            seen={"81F6": 600.0, "4707": 5.0},  # 81F6 silent (read), 4707 just pushed
+        )
+        coord.nikobus_command.get_output_state = AsyncMock(side_effect=NikobusTimeoutError("timeout"))
+        await NikobusDataCoordinator._async_update_data(coord)
+        polled = [c.args for c in coord.nikobus_command.get_output_state.call_args_list]
+        self.assertEqual(polled, [("81F6", 1)])
+        coord.hass.async_create_background_task.assert_not_called()
+        # Nothing else heard for a long time: the same failure is a silent bus.
+        coord._state_seen_at[("4707", 1)] = _time.monotonic() - 3600
+        coord._state_seen_at[("81F6", 1)] = _time.monotonic() - 3600
+        await NikobusDataCoordinator._async_update_data(coord)
+        coord.hass.async_create_background_task.assert_called_once()
 
     async def test_without_feedback_module_everything_is_still_polled(self):
         coord = self._fm_coord(

@@ -332,6 +332,15 @@
     }
   },
   "exceptions": {
+    "missing_button_address": {
+      "message": "Een knopadres is vereist."
+    },
+    "missing_module_address": {
+      "message": "Een moduleadres is vereist."
+    },
+    "unknown_output_module": {
+      "message": "{address} is geen bekende uitgangsmodule (schakel-, dim-, rolluik- of RGB-module)."
+    },
     "communication_error": {
       "message": "Communicatie met Nikobus mislukt: {error}"
     },
@@ -491,6 +500,20 @@
         "address": {
           "name": "Adres",
           "description": "Busadres van de te simuleren knop (bijv. 84DFFC)."
+        }
+      }
+    },
+    "refresh_module": {
+      "name": "Module verversen",
+      "description": "Leest nu de status van één uitgangsmodule van de bus: één groep (kanalen 1–6 of 7–12) of beide. Voor een uitgang die niets anders ververst, zoals een die de feedbackmodule niet volgt.",
+      "fields": {
+        "address": {
+          "name": "Moduleadres",
+          "description": "Adres van de uitgangsmodule (bijv. 81F6)."
+        },
+        "group": {
+          "name": "Groep",
+          "description": "1 voor kanalen 1–6, 2 voor kanalen 7–12. Leeg laten om beide te lezen."
         }
       }
     },

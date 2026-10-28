@@ -74,6 +74,7 @@ from .const import (
     NOT_ANSWERING_LIMIT,
     NOT_ANSWERING_RETRY_S,
     POLLED_MODULE_TYPES,
+    RECENT_ANSWER_S,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
     operation_signal,
@@ -130,6 +131,10 @@ _PROBE_OUTER_DELAY_S = 3.0
 
 class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None]):
     """Coordinator for managing asynchronous updates and connections to Nikobus."""
+
+    #: See ``_handle_connection_lost``; a class default so an instance built
+    #: without ``__init__`` (tests) still has it.
+    _reconnect_pending: bool = False
 
     config_entry: NikobusConfigEntry
 
@@ -261,6 +266,10 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         self._discovery_module_order: list[str] = []
         self._stopping: bool = False
         self._reconnect_task: asyncio.Task[None] | None = None
+        # Set the moment a connection-lost notification is accepted, before
+        # the command handler and listener are stopped: a second
+        # notification arriving during those awaits must coalesce too.
+        self._reconnect_pending = False
         self._last_connected: datetime | None = None
         self._reconnect_attempts: int = 0
 
@@ -529,11 +538,18 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
     def async_module_state_read(self, address: str, channel: int) -> None:
         """The library has just read this channel's group into the buffer.
 
-        Marks the group heard (the safety poll then leaves it alone) and
-        wakes the module's entities, which drop their optimistic state
-        and show what the module reported.
+        Wakes the module's entities, which drop their optimistic state
+        and show what the module reported, and marks the group heard
+        (the safety poll then leaves it alone) — but only when the
+        library actually got an answer: it falls back to a direct write
+        when the module does not answer its read, and a module that is
+        still silent must not clear its back-off or Repair issue.
         """
-        self._note_state_seen(address, 1 if int(channel) <= 6 else 2)
+        group = 1 if int(channel) <= 6 else 2
+        command = self.nikobus_command
+        age = command.group_state_age(address, group) if command is not None else None
+        if age is not None and age <= RECENT_ANSWER_S:
+            self._note_state_seen(address, group)
         async_dispatcher_send(self.hass, operation_signal(address))
 
     async def async_refresh_module(
@@ -1096,11 +1112,15 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             # cycle made of modules that never answered (one absent module
             # alone in a Feedback-Module safety poll) says nothing about
             # the bus, and reconnecting for it dropped a healthy link.
+            # And not while anything else on the bus was heard recently:
+            # a Feedback-Module safety poll often reads a single group, so
+            # one timeout there must not count as a silent bus.
             if (
                 polled > 0
                 and failures == polled
                 and not self._stopping
                 and any(self._module_heard(address) for address in failed_modules)
+                and not self._bus_alive(failed_modules)
             ):
                 _LOGGER.warning(
                     "Nikobus poll cycle: %d/%d commands timed out — "
@@ -1646,12 +1666,22 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         """
         if self._stopping:
             return
-        if self._reconnect_task is not None and not self._reconnect_task.done():
+        if self._reconnect_pending or (
+            self._reconnect_task is not None and not self._reconnect_task.done()
+        ):
             _LOGGER.debug(
                 "Reconnect already in progress — coalescing duplicate "
                 "connection-lost notification"
             )
             return
+        self._reconnect_pending = True
+        try:
+            await self._stop_and_reconnect()
+        finally:
+            self._reconnect_pending = False
+
+    async def _stop_and_reconnect(self) -> None:
+        """Stop the protocol stack and start the reconnect loop."""
         _LOGGER.warning("Nikobus connection lost — scheduling reconnect")
         self.async_update_listeners()
         if self.nikobus_command:

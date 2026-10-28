@@ -231,6 +231,35 @@ def device_entry_diagnostics(device: dr.DeviceEntry) -> dict[str, Any]:
     }
 
 
+async def write_module_channels(
+    coordinator: NikobusDataCoordinator,
+    module_id: str,
+    state: bytearray,
+    channels: set[int] | None,
+    failure_handler: Any,
+) -> None:
+    """Queue one set-output per channel of ``state`` to write.
+
+    ``channels`` (1-based) are written whatever the buffer holds; with
+    ``None`` every channel whose byte differs from the buffer is. The
+    library merges the requests of one group into a single frame and
+    reads the group first when its state is not recent.
+    """
+    command = coordinator.nikobus_command
+    if command is None:
+        return
+    count = coordinator.get_module_channel_count(module_id) or len(state)
+    for index in range(min(count, len(state))):
+        channel = index + 1
+        value = state[index]
+        if channels is not None:
+            if channel not in channels:
+                continue
+        elif coordinator.get_bytearray_state(module_id, channel) == value:
+            continue
+        await command.set_output_state(module_id, channel, int(value), failure_handler=failure_handler)
+
+
 class FeedbackKeySwitchMixin:
     """On/off of a switch channel that may be driven by its feedback key.
 

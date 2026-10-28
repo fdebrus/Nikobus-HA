@@ -703,8 +703,10 @@ def _make_cf_cover(members=None, modules_channels=6, cf_config=None):
     coord.get_cover_operation_time = MagicMock(return_value=30.0)
     coord.get_module_channel_count = MagicMock(return_value=modules_channels)
     coord.nikobus_module_states = {}
-    coord.set_bytearray_group_state = MagicMock()
-    coord.api.set_output_states_for_module = AsyncMock()
+    # Since 3.30.6 a grouped cover writes its member channels one by one
+    # through the command handler (the library merges them per group).
+    coord.nikobus_command.set_output_state = AsyncMock()
+    coord.get_bytearray_state = MagicMock(return_value=0)
     coord.async_event_handler = AsyncMock()
     coord.address_label = MagicMock(side_effect=lambda a: f"name({a})")
     if cf_config is None:
@@ -760,34 +762,33 @@ class TestCFCoverConstruction(unittest.TestCase):
         self.assertEqual(ent._members[0]["close_time"], 30.0)
 
 
+def _writes(coord):
+    """``(address, channel, value)`` of every set-output the entity queued."""
+    return [tuple(c.args[:3]) for c in coord.nikobus_command.set_output_state.await_args_list]
+
+
 class TestCFCoverMove(unittest.TestCase):
-    def test_close_commits_once_per_module_atomically(self):
+    def test_close_writes_every_member_channel(self):
         ent, coord = _make_cf_cover()
         _run(ent._move("closing"))
-        # All three channels are on one module → exactly one bus commit.
-        coord.api.set_output_states_for_module.assert_awaited_once_with(address="8CF5")
-        # Group-1 state staged with channels 1,2,3 = CLOSING (0x02).
-        group1_hex = coord.set_bytearray_group_state.call_args_list[0].args[2]
-        self.assertEqual(group1_hex[:6], "020202")
+        # One set-output per member; the library merges them into one frame.
+        self.assertEqual(_writes(coord), [("8CF5", 1, STATE_CLOSING), ("8CF5", 2, STATE_CLOSING), ("8CF5", 3, STATE_CLOSING)])
         self.assertEqual(ent._state, STATE_CLOSING)
 
-    def test_open_stages_opening_byte(self):
+    def test_open_writes_the_opening_byte(self):
         ent, coord = _make_cf_cover()
         _run(ent._move("opening"))
-        group1_hex = coord.set_bytearray_group_state.call_args_list[0].args[2]
-        self.assertEqual(group1_hex[:6], "010101")  # 0x01 = opening
+        self.assertEqual({v for _a, _c, v in _writes(coord)}, {STATE_OPENING})
         self.assertEqual(ent._state, STATE_OPENING)
 
-    def test_cross_module_commits_once_per_module(self):
+    def test_cross_module_writes_each_modules_members(self):
         members = [
             {"module_address": "8CF5", "channel": 1, "open_time": "40 s", "close_time": "40 s"},
             {"module_address": "9105", "channel": 2, "open_time": "30 s", "close_time": "30 s"},
         ]
         ent, coord = _make_cf_cover(members=members)
         _run(ent._move("closing"))
-        self.assertEqual(coord.api.set_output_states_for_module.await_count, 2)
-        addrs = {c.kwargs["address"] for c in coord.api.set_output_states_for_module.await_args_list}
-        self.assertEqual(addrs, {"8CF5", "9105"})
+        self.assertEqual(_writes(coord), [("8CF5", 1, STATE_CLOSING), ("9105", 2, STATE_CLOSING)])
 
     def test_move_schedules_timed_stops(self):
         ent, _ = _make_cf_cover()
@@ -808,10 +809,8 @@ class TestCFCoverStop(unittest.TestCase):
         pending.cancel.assert_called_once()
         self.assertEqual(ent._module_tokens, {})
         self.assertEqual(ent._state, STATE_STOPPED)
-        # Stopped byte (0x00) staged for the member channels.
-        group1_hex = coord.set_bytearray_group_state.call_args_list[-1].args[2]
-        self.assertEqual(group1_hex[:6], "000000")
-        coord.api.set_output_states_for_module.assert_awaited_with(address="8CF5")
+        # Every member is written STOPPED, whatever the buffer says.
+        self.assertEqual(_writes(coord), [("8CF5", 1, STATE_STOPPED), ("8CF5", 2, STATE_STOPPED), ("8CF5", 3, STATE_STOPPED)])
 
 
 class TestCFCoverActionErrors(unittest.TestCase):
@@ -819,9 +818,7 @@ class TestCFCoverActionErrors(unittest.TestCase):
         from homeassistant.exceptions import HomeAssistantError
 
         ent, coord = _make_cf_cover()
-        coord.api.set_output_states_for_module = AsyncMock(
-            side_effect=RuntimeError("bus down")
-        )
+        coord.nikobus_command.set_output_state = AsyncMock(side_effect=RuntimeError("bus down"))
         with self.assertRaises(HomeAssistantError) as cm:
             _run(ent.async_close_cover())
         self.assertEqual(cm.exception.translation_key, "communication_error")
@@ -830,9 +827,7 @@ class TestCFCoverActionErrors(unittest.TestCase):
         from homeassistant.exceptions import HomeAssistantError
 
         ent, coord = _make_cf_cover()
-        coord.api.set_output_states_for_module = AsyncMock(
-            side_effect=RuntimeError("bus down")
-        )
+        coord.nikobus_command.set_output_state = AsyncMock(side_effect=RuntimeError("bus down"))
         with self.assertRaises(HomeAssistantError) as cm:
             _run(ent.async_open_cover())
         self.assertEqual(cm.exception.translation_key, "communication_error")
@@ -854,9 +849,8 @@ class TestCFCoverTimedStop(unittest.TestCase):
         ent._module_tokens = {"8CF5": "tok"}
         with patch("custom_components.nikobus.cover.asyncio.sleep", new=AsyncMock()):
             _run(ent._delayed_stop("8CF5", sent, {0, 1}, 0.0, "tok"))
-        # Committed stop state: ch1 → stopped, ch2 untouched (still opening).
-        group1_hex = coord.set_bytearray_group_state.call_args_list[-1].args[2]
-        self.assertEqual(group1_hex[:4], "0001")  # 00=ch1 stopped, 01=ch2 left opening
+        # Only ch1 (still ours) is written STOPPED; ch2 is left to whoever reversed it.
+        self.assertEqual(_writes(coord), [("8CF5", 1, STATE_STOPPED)])
 
     def test_delayed_stop_aborted_when_token_superseded(self):
         ent, coord = _make_cf_cover()
@@ -864,4 +858,4 @@ class TestCFCoverTimedStop(unittest.TestCase):
         sent = bytearray(12)
         with patch("custom_components.nikobus.cover.asyncio.sleep", new=AsyncMock()):
             _run(ent._delayed_stop("8CF5", sent, {0}, 0.0, "oldtok"))
-        coord.api.set_output_states_for_module.assert_not_awaited()
+        coord.nikobus_command.set_output_state.assert_not_awaited()

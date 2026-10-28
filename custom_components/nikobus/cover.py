@@ -30,7 +30,7 @@ from .const import (
     press_signal,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity, command_error
+from .entity import NikobusEntity, command_error, write_module_channels
 from .nkbreconcile import cf_cover_members, is_pure_roller_cf
 from .nkbtravelcalculator import NikobusTravelCalculator
 from .router import build_unique_id, get_routing, register_output_module_devices
@@ -896,7 +896,7 @@ class NikobusCFCoverEntity(NikobusEntity, CoverEntity):
                 if op_time > 0:
                     delay = max(delay, op_time + DEFAULT_COVER_MOVEMENT_BUFFER)
             sent_states[module_id] = state
-            await self._commit_module(module_id, state)
+            await self._commit_module(module_id, state, {i + 1 for i in commanded.get(module_id, set())})
 
         # Schedule the timed stop per module once all are moving.
         for module_id, indexes in commanded.items():
@@ -912,13 +912,18 @@ class NikobusCFCoverEntity(NikobusEntity, CoverEntity):
 
         self._start_motion(direction)
 
-    async def _commit_module(self, module_id: str, state: bytearray) -> None:
-        """Stage and push a whole module's state in one bus commit (per group)."""
-        num_chans = self.coordinator.get_module_channel_count(module_id)
-        self.coordinator.set_bytearray_group_state(module_id, 1, state[:6].hex())
-        if num_chans > 6:
-            self.coordinator.set_bytearray_group_state(module_id, 2, state[6:12].hex())
-        await self.coordinator.api.set_output_states_for_module(address=module_id)
+    async def _commit_module(
+        self, module_id: str, state: bytearray, channels: set[int] | None = None
+    ) -> None:
+        """Write the member channels of one module.
+
+        One set-output request per channel; the library merges those of a
+        group into one frame, reads the group first when its state is not
+        recent, and reports a failed frame through the failure handler.
+        ``channels`` are written whatever the buffer says; without them
+        every channel whose byte differs from the buffer is.
+        """
+        await write_module_channels(self.coordinator, module_id, state, channels, self._command_failed)
         await self.coordinator.async_event_handler(
             "nikobus_refreshed", {"impacted_module_address": module_id}
         )
@@ -944,16 +949,16 @@ class NikobusCFCoverEntity(NikobusEntity, CoverEntity):
 
         current = self.coordinator.nikobus_module_states.get(module_id)
         stop_state = bytearray(current) if current else bytearray(sent_state)
-        changed = False
+        stopped: set[int] = set()
         for idx in indexes:
             if idx < len(stop_state) and stop_state[idx] == sent_state[idx]:
                 stop_state[idx] = STATE_STOPPED
-                changed = True
-        if not changed:
+                stopped.add(idx + 1)
+        if not stopped:
             return
 
         try:
-            await self._commit_module(module_id, stop_state)
+            await self._commit_module(module_id, stop_state, stopped)
         except asyncio.CancelledError:
             raise
         except Exception as err:  # noqa: BLE001 - defensive: one module's failure must not abort the CF stop
@@ -975,7 +980,7 @@ class NikobusCFCoverEntity(NikobusEntity, CoverEntity):
                 idx = member["channel"] - 1
                 if 0 <= idx < len(state):
                     state[idx] = STATE_STOPPED
-            await self._commit_module(module_id, state)
+            await self._commit_module(module_id, state, {m["channel"] for m in members})
 
         self.async_write_ha_state()
 

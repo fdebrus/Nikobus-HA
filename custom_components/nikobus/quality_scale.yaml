@@ -52,7 +52,7 @@ rules:
       real router (test_platform_setup.py), diagnostics
       (test_diagnostics_quality.py), config-entry migration
       (test_migration.py) and storage failure handling are all covered —
-      420+ tests against the stub-based harness in tests/conftest.py.
+      800+ tests against the stub-based harness in tests/conftest.py.
 
   # Gold
   devices: done
