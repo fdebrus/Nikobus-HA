@@ -1254,11 +1254,18 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         start = 0 if int(group) == 1 else 6
         if start + 6 > len(buf):
             return
-        try:
-            state_bytes = bytes.fromhex(value[:12].ljust(12, "0"))
-            buf[start : start + 6] = state_bytes[:6]
-        except (ValueError, IndexError):
-            return
+        padded = (value or "")[:12].ljust(12, "0")
+        # Through the command handler when there is one: an answer read
+        # after a press lands with any write still on its way laid back
+        # on top (nikobus-connect 0.56.1), like a pushed frame does.
+        if self.nikobus_command is not None:
+            if not self.nikobus_command.apply_group_state(addr_upper, int(group), padded):
+                return
+        else:
+            try:
+                buf[start : start + 6] = bytes.fromhex(padded)[:6]
+            except (ValueError, IndexError):
+                return
         self._note_state_seen(addr_upper, int(group))
 
     # ------------------------------------------------------------------
