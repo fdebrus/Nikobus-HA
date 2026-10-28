@@ -295,16 +295,19 @@ class NikobusRelayEntity(FeedbackKeySwitchMixin, NikobusBaseLight):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Close relay with optimistic UI update and error fallback."""
         self._is_on = True
+        self._begin_switch()
         self.async_write_ha_state()
-        
+
         try:
             await self.coordinator.api.turn_on_switch(
                 self._address, self._channel, failure_handler=self._command_failed
             )
             self._after_switch_command()
         except asyncio.CancelledError:
+            self._end_switch()
             raise
         except Exception as err:
+            self._end_switch()
             self._is_on = None
             self.async_write_ha_state()
             raise command_error(err) from err
@@ -312,16 +315,19 @@ class NikobusRelayEntity(FeedbackKeySwitchMixin, NikobusBaseLight):
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Open relay with optimistic UI update and error fallback."""
         self._is_on = False
+        self._begin_switch()
         self.async_write_ha_state()
-        
+
         try:
             await self.coordinator.api.turn_off_switch(
                 self._address, self._channel, failure_handler=self._command_failed
             )
             self._after_switch_command()
         except asyncio.CancelledError:
+            self._end_switch()
             raise
         except Exception as err:
+            self._end_switch()
             self._is_on = None
             self.async_write_ha_state()
             raise command_error(err) from err

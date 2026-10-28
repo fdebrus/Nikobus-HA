@@ -715,20 +715,17 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                     group,
                     state_hex,
                 )
-                buf = self._module_states.get(address)
-                if buf is None:
-                    # Auto-allocate if module wasn't pre-registered
-                    buf = bytearray(12)
-                    self._module_states[address] = buf
-                if start + 6 > len(buf):
-                    # Out-of-range group for this module's buffer
-                    # (e.g. group 2 on a 6-output module). Drop the
-                    # write rather than silently extend the buffer
-                    # and promote the module to a larger size.
-                    pass
+                # Stored through the command handler, which lays the
+                # writes still waiting for their frame back on top: a
+                # frame pushed just before a write must not undo it.
+                # A group beyond the module's buffer (group 2 on a
+                # six-output module) is dropped, not written.
+                if self.nikobus_command is not None:
+                    self.nikobus_command.apply_group_state(address, group, state_hex)
                 else:
-                    state_bytes = bytes.fromhex(state_hex)
-                    buf[start : start + 6] = state_bytes
+                    buf = self._module_states.setdefault(address, bytearray(12))
+                    if start + 6 <= len(buf):
+                        buf[start : start + 6] = bytes.fromhex(state_hex)
                 self._note_state_seen(address, group)
 
                 # Resolve any pending get_output_state future immediately
@@ -1155,14 +1152,9 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 try:
                     state_hex = await self.nikobus_command.get_output_state(normalized, g) or ""
                     if state_hex and len(state_hex) >= 12:
-                        start = 0 if g == 1 else 6
-                        buf = self._module_states.get(normalized)
-                        if buf is None:
-                            buf = bytearray(12)
-                            self._module_states[normalized] = buf
-                        new_bytes = bytes.fromhex(state_hex[:12])
-                        if buf[start : start + 6] != new_bytes:
-                            buf[start : start + 6] = new_bytes
+                        before = bytes(self.nikobus_command.get_bytearray_group_state(normalized, g))
+                        self.nikobus_command.apply_group_state(normalized, g, state_hex)
+                        if bytes(self.nikobus_command.get_bytearray_group_state(normalized, g)) != before:
                             changed = True
                         self._note_state_seen(normalized, g)
                     else:

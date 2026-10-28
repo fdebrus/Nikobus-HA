@@ -248,16 +248,46 @@ class FeedbackKeySwitchMixin:
     _channel: int
     _is_on: bool | None
 
+    #: A key-driven switch is in progress: the library reads the module
+    #: before pressing the key and again after it, and both answers wake
+    #: this module's entities. Until the command is complete, this entity
+    #: keeps the state it was asked for — the answer to the read *before*
+    #: the press still shows the old state, and showing it made the
+    #: entity flip three times per switch (reported on a real install).
+    _switching: bool = False
+
+    def _begin_switch(self) -> None:
+        self._switching = self.coordinator.has_feedback_key(self._address, self._channel)
+
     def _after_switch_command(self) -> None:
         """Show the read state once a key-driven command has completed."""
-        if self.coordinator.has_feedback_key(self._address, self._channel):
-            self.coordinator.async_module_state_read(self._address, self._channel)
+        if not self._switching:
+            return
+        self._switching = False
+        self.coordinator.async_module_state_read(self._address, self._channel)
+
+    def _end_switch(self) -> None:
+        """A command that failed or was cancelled: show what is known."""
+        self._switching = False
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        if self._switching:
+            return
+        super()._handle_coordinator_update()  # type: ignore[misc]
+
+    @callback
+    def _handle_button_operation(self) -> None:
+        if self._switching:
+            return
+        super()._handle_button_operation()  # type: ignore[misc]
 
     async def async_toggle(self, **kwargs: Any) -> None:
         """Toggle from the module's state when the channel has a feedback key."""
         if not self.coordinator.has_feedback_key(self._address, self._channel):
             await super().async_toggle(**kwargs)  # type: ignore[misc]
             return
+        self._switching = True
         try:
             await self.coordinator.api.toggle_switch(
                 self._address,
@@ -265,7 +295,9 @@ class FeedbackKeySwitchMixin:
                 failure_handler=getattr(self, "_command_failed", None),
             )
         except asyncio.CancelledError:
+            self._end_switch()
             raise
         except Exception as err:
+            self._end_switch()
             raise command_error(err) from err
-        self.coordinator.async_module_state_read(self._address, self._channel)
+        self._after_switch_command()
