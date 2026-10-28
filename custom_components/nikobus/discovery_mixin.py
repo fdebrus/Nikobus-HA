@@ -1429,6 +1429,7 @@ class NikobusDiscoveryMixin:
             if module_storage_changed:
                 await self.module_storage.async_save()
                 self._rebuild_dict_module_data()
+                self._invalidate_routing_cache()
 
         # Labels — one-click filtering by entity class in every HA table
         # and target picker. Purely additive: a label is only ever added
@@ -1495,6 +1496,7 @@ class NikobusDiscoveryMixin:
                 if self.button_storage is not None:
                     await self.button_storage.async_save()
                 self._rebuild_dict_module_data()
+                self._invalidate_routing_cache()
                 self.invalidate_controlled_by_index()
 
         _LOGGER.info(

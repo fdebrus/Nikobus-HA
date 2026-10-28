@@ -228,6 +228,8 @@ ISSUE_MODULE_NOT_ANSWERING: Final[str] = "module_not_answering"
 NOT_ANSWERING_LIMIT: Final[int] = 3
 #: How often a backed-off module is still tried.
 NOT_ANSWERING_RETRY_S: Final[int] = 3600
+#: A module answer this recent counts as "the module just answered".
+RECENT_ANSWER_S: Final[float] = 10.0
 #: Another module heard this recently means the bus itself is alive.
 BUS_ALIVE_WINDOW_S: Final[int] = 900
 # The port opened but nothing acknowledged the presence probe the

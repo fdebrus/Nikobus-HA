@@ -21,7 +21,7 @@ from .const import (
     press_signal,
 )
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
-from .entity import NikobusEntity, command_error
+from .entity import NikobusEntity, command_error, write_module_channels
 from .nkbreconcile import is_pure_roller_cf, is_surfaced_cf_scene
 
 _LOGGER = logging.getLogger(__name__)
@@ -281,6 +281,14 @@ class NikobusCFSceneEntity(NikobusEntity, Scene):
             },
         )
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Event-driven scene: a poll changes nothing it shows.
+
+        Rendering on every coordinator update rebuilt its attributes
+        from the whole entity registry each cycle, for every CF scene.
+        """
+
     async def async_activate(self, **kwargs: Any) -> None:
         """Send the CF activation broadcast on the bus."""
         await self.coordinator.async_activate_cf_broadcast(self._frame)
@@ -344,6 +352,8 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         await self._process_feedback_leds()
 
         module_updates: dict[str, bytearray] = {}
+
+        touched: dict[str, set[int]] = {}
         roller_tasks: dict[str, dict[str, Any]] = {}
 
         # 2. Build the state map for all impacted modules
@@ -365,6 +375,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 # Start with current known state from coordinator
                 current = self.coordinator.nikobus_module_states.get(module_id, bytearray(12))
                 module_updates[module_id] = bytearray(current)
+                touched[module_id] = set()
 
             # Update specific channel (0-indexed)
             try:
@@ -374,6 +385,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                 continue
             if 0 <= idx < len(module_updates[module_id]):
                 module_updates[module_id][idx] = byte_val
+                touched[module_id].add(idx + 1)
 
             # Track rollers that need a timed stop
             if module_type == "roller_module" and byte_val in (STATE_OPEN, STATE_CLOSE):
@@ -404,7 +416,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
         )
 
         for module_id, final_state in module_updates.items():
-            await self._apply_module_state(module_id, final_state)
+            await self._apply_module_state(module_id, final_state, touched.get(module_id))
 
             # 4. Schedule roller release if needed
             if module_id in roller_tasks:
@@ -421,18 +433,21 @@ class NikobusSceneEntity(NikobusEntity, Scene):
                     lambda t: self._roller_stop_tasks.remove(t) if t in self._roller_stop_tasks else None
                 )
 
-    async def _apply_module_state(self, module_id: str, state: bytearray) -> None:
-        """Push the bytearray state to the Nikobus module via coordinator."""
-        num_chans = self.coordinator.get_module_channel_count(module_id)
+    async def _apply_module_state(
+        self, module_id: str, state: bytearray, channels: set[int] | None = None
+    ) -> None:
+        """Write the scene's channels of one module.
 
-        # Update Group 1 (1-6)
-        self.coordinator.set_bytearray_group_state(module_id, 1, state[:6].hex())
-
-        # Update Group 2 (7-12) if applicable
-        if num_chans > 6:
-            self.coordinator.set_bytearray_group_state(module_id, 2, state[6:12].hex())
-
-        await self.coordinator.api.set_output_states_for_module(address=module_id)
+        One set-output request per channel: the library merges those of
+        one group into a single frame, reads the group first when its
+        state is not recent (so an output switched at the wall since the
+        last poll is not switched back — the whole-module write used to
+        send the host's stale image), and reports a failed frame through
+        the entity's failure handler. ``channels`` are the ones the scene
+        names, written whatever the buffer says; without them every
+        channel whose byte differs from the buffer is written.
+        """
+        await write_module_channels(self.coordinator, module_id, state, channels, self._command_failed)
 
         # Notify coordinator of manual refresh
         await self.coordinator.async_event_handler(
@@ -462,12 +477,12 @@ class NikobusSceneEntity(NikobusEntity, Scene):
 
         current = self.coordinator.nikobus_module_states.get(module_id)
         stop_state = bytearray(current) if current else bytearray(sent_state)
-        changed = False
+        stopped: set[int] = set()
         for idx in indexes:
             if idx < len(stop_state) and stop_state[idx] == sent_state[idx]:
                 stop_state[idx] = STATE_STOPPED
-                changed = True
-        if not changed:
+                stopped.add(idx + 1)
+        if not stopped:
             _LOGGER.debug(
                 "Timed stop for module %s skipped — every commanded roller "
                 "channel was redirected during travel",
@@ -477,7 +492,7 @@ class NikobusSceneEntity(NikobusEntity, Scene):
 
         _LOGGER.debug("Timed stop for rollers on module %s", module_id)
         try:
-            await self._apply_module_state(module_id, stop_state)
+            await self._apply_module_state(module_id, stop_state, stopped)
         except asyncio.CancelledError:
             raise
         except Exception as err:  # noqa: BLE001 - defensive: timed stop is best-effort

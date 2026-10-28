@@ -332,6 +332,15 @@
     }
   },
   "exceptions": {
+    "missing_button_address": {
+      "message": "Une adresse de bouton est requise."
+    },
+    "missing_module_address": {
+      "message": "Une adresse de module est requise."
+    },
+    "unknown_output_module": {
+      "message": "{address} n'est pas un module de sortie connu (commutation, variateur, volet ou RGB)."
+    },
     "communication_error": {
       "message": "Communication avec Nikobus échouée : {error}"
     },
@@ -491,6 +500,20 @@
         "address": {
           "name": "Adresse",
           "description": "Adresse de bus du bouton à simuler (par ex. 84DFFC)."
+        }
+      }
+    },
+    "refresh_module": {
+      "name": "Rafraîchir un module",
+      "description": "Lit maintenant l'état d'un module de sortie sur le bus : un groupe (canaux 1–6 ou 7–12) ou les deux. Pour une sortie que rien d'autre ne rafraîchit, par exemple une que le module de retour ne surveille pas.",
+      "fields": {
+        "address": {
+          "name": "Adresse du module",
+          "description": "Adresse du module de sortie (par ex. 81F6)."
+        },
+        "group": {
+          "name": "Groupe",
+          "description": "1 pour les canaux 1–6, 2 pour les canaux 7–12. Laisser vide pour lire les deux."
         }
       }
     },

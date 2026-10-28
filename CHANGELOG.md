@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.30.6
+
+**Requires `nikobus-connect` 0.56.2.**
+
+Fixes from an audit of 3.30.5 and the library; the library's own fixes are in 0.56.2.
+
+- **A setup failure no longer leaks the serial port.** When platform setup or the first refresh failed after the connection was opened, the coordinator was left running; the next attempt then failed to lock the port. Any failure after the port is open now stops the coordinator first.
+- **Outputs enabled by a `.nkb` import appear at once.** The import unlocked `not_in_use` channels and scheduled a reload, but the reload rebuilt the entities from a cached routing; the new entities only appeared after the next discovery or a restart. The cache is dropped by the import, and by an unload, so a reload never reuses the previous run's.
+- **Scenes and grouped covers go through the normal write path.** They wrote a whole module image from the buffer, bypassing the read a stale group gets before a write (3.30.5), the merging of requests, and the failure handler: an output switched at the wall since the last poll was switched back by a scene, and a lost frame was silent. They now queue one request per channel they name; the library merges them into one frame per group as before.
+- **A reconnect can no longer start twice.** The guard against a second connection-lost notification was checked before two awaits, so a notification arriving during them started a second reconnect on the same connection. Noted before any await now.
+- **In Feedback-Module mode, one failed read is not a silent bus.** The safety poll often reads a single group; one timeout then counted as "every read failed" and dropped a healthy connection. The reconnect now also needs that nothing else on the bus was heard in the last fifteen minutes.
+- **A key-driven switch marks a module heard only when it answered.** The library falls back to a direct write when the module does not answer its read; the entity still marked the module heard, clearing its Repair issue and back-off while it stayed silent.
+- **Central-function scenes no longer render on every poll.** Each render rebuilt the scene's attributes from the whole entity registry; the scene is event-driven and ignores general coordinator updates now.
+- **Translations:** French and Dutch gain the `nikobus.refresh_module` service and its two error messages; the error for `nikobus.send_button_press` without an address exists in all three languages; the service has an icon. A test now keeps the three languages' keys identical and checks every raised translation key.
+
 ## 3.30.5
 
 **Requires `nikobus-connect` 0.56.1.**

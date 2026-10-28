@@ -111,7 +111,24 @@ class TestCoordinatorHelpers(unittest.TestCase):
         from custom_components.nikobus.coordinator import NikobusDataCoordinator
 
         c = MagicMock()
+        c.nikobus_command.group_state_age = MagicMock(return_value=0.4)  # the module just answered
         with patch("custom_components.nikobus.coordinator.async_dispatcher_send") as send:
             NikobusDataCoordinator.async_module_state_read(c, "c9d7", 11)
         c._note_state_seen.assert_called_once_with("c9d7", 2)
         send.assert_called_once_with(c.hass, operation_signal("C9D7"))
+
+    def test_a_module_that_did_not_answer_is_not_marked_heard(self):
+        """The library falls back to a direct write when its read goes
+        unanswered; the entity still wakes, but a silent module must not
+        clear its back-off or Repair issue."""
+        from custom_components.nikobus.coordinator import NikobusDataCoordinator
+
+        c = MagicMock()
+        c.nikobus_command.group_state_age = MagicMock(return_value=None)
+        with patch("custom_components.nikobus.coordinator.async_dispatcher_send") as send:
+            NikobusDataCoordinator.async_module_state_read(c, "C9D7", 11)
+        c._note_state_seen.assert_not_called()
+        send.assert_called_once()
+        c.nikobus_command.group_state_age = MagicMock(return_value=120.0)  # an old answer
+        NikobusDataCoordinator.async_module_state_read(c, "C9D7", 11)
+        c._note_state_seen.assert_not_called()

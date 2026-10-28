@@ -99,9 +99,8 @@ class TestSceneActivationErrors(unittest.TestCase):
         coord.nikobus_module_states = {"C1C7": bytearray(12)}
         coord.get_module_channel_count.return_value = 6
         coord.async_event_handler = AsyncMock()
-        coord.api.set_output_states_for_module = AsyncMock(
-            side_effect=RuntimeError("bus down")
-        )
+        coord.get_bytearray_state = MagicMock(return_value=0)
+        coord.nikobus_command.set_output_state = AsyncMock(side_effect=RuntimeError("bus down"))
         e = NikobusSceneEntity(coord, {
             "id": "s1",
             "channels": [{"module_id": "C1C7", "channel": 1, "state": "on"}],

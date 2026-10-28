@@ -569,50 +569,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
             translation_placeholders={"error": str(err)},
         ) from err
 
-    _register_hub_device(hass, entry)
+    # Everything from here runs with the serial port / bridge socket open
+    # and held exclusively. A failure in platform setup, the first refresh
+    # or the post-setup passes used to raise straight through and orphan
+    # the connection: the retry then found the port locked by the previous
+    # attempt. Stop the coordinator before letting the error out.
+    try:
+        _register_hub_device(hass, entry)
 
-    # 3. Forward setup to platforms FIRST
-    # This allows entities to be created and register their dispatcher listeners.
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        # 3. Forward setup to platforms FIRST
+        # This allows entities to be created and register their dispatcher listeners.
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # 4. Reload when the user changes options via the OptionsFlow
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+        # 4. Reload when the user changes options via the OptionsFlow
+        entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
-    # 5. Trigger the first refresh
-    # Since platforms are loaded, entities will correctly receive the "Targeted update signal".
-    _LOGGER.debug("Performing initial Nikobus data synchronization")
-    await coordinator.async_config_entry_first_refresh()
+        # 5. Trigger the first refresh
+        # Since platforms are loaded, entities will correctly receive the "Targeted update signal".
+        _LOGGER.debug("Performing initial Nikobus data synchronization")
+        await coordinator.async_config_entry_first_refresh()
 
-    # 6. Give back the names and areas a press-entity class had before
-    #    it was switched off, now that it is back and its entities exist.
-    await _async_restore_button_customisations(hass, entry, coordinator)
+        # 6. Give back the names and areas a press-entity class had before
+        #    it was switched off, now that it is back and its entities exist.
+        await _async_restore_button_customisations(hass, entry, coordinator)
 
-    # 7. Clean up stale entities
-    await _async_cleanup_orphan_entities(hass, entry, coordinator)
+        # 7. Clean up stale entities
+        await _async_cleanup_orphan_entities(hass, entry, coordinator)
 
-    # 8. Surface repair issues for actionable misconfigurations.
-    coordinator.refresh_repair_issues()
+        # 8. Surface repair issues for actionable misconfigurations.
+        coordinator.refresh_repair_issues()
 
-    # 9. Programming-change watch: one read-only CRC frame per output
-    # module, a few minutes after setup and then once a day. A module
-    # reprogrammed with the Nikobus PC software raises a Repair issue
-    # asking for a link rescan.
-    entry.async_on_unload(
-        async_call_later(
-            hass,
-            PROGRAMMING_CHANGE_CHECK_DELAY_S,
-            coordinator.programming.async_scheduled_change_check,
+        # 9. Programming-change watch: one read-only CRC frame per output
+        # module, a few minutes after setup and then once a day. A module
+        # reprogrammed with the Nikobus PC software raises a Repair issue
+        # asking for a link rescan.
+        entry.async_on_unload(
+            async_call_later(
+                hass,
+                PROGRAMMING_CHANGE_CHECK_DELAY_S,
+                coordinator.programming.async_scheduled_change_check,
+            )
         )
-    )
-    entry.async_on_unload(
-        async_track_time_interval(
-            hass,
-            coordinator.programming.async_scheduled_change_check,
-            timedelta(seconds=PROGRAMMING_CHANGE_CHECK_INTERVAL_S),
+        entry.async_on_unload(
+            async_track_time_interval(
+                hass,
+                coordinator.programming.async_scheduled_change_check,
+                timedelta(seconds=PROGRAMMING_CHANGE_CHECK_INTERVAL_S),
+            )
         )
-    )
 
-    _LOGGER.info("Nikobus integration setup complete")
+        _LOGGER.info("Nikobus integration setup complete")
+    except BaseException:
+        await coordinator.stop()
+        raise
+
     return True
 
 
@@ -759,4 +769,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> 
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok and (coordinator := entry.runtime_data):
         await coordinator.stop()
+        # Derived state (the cached entity routing) must not outlive the
+        # entry: a reload rebuilt entities from the previous run's cache.
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return unload_ok
