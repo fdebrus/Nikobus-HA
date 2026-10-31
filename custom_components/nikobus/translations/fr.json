@@ -20,7 +20,7 @@
           "press_repeat": "Répétitions de l'appui simulé"
         },
         "data_description": {
-          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état — pas de scrutation nécessaire. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même : ce port ne relaie pas les requêtes du module, l'état poussé ne peut pas être attribué ; l'état est alors interrogé.",
+          "has_feedbackmodule": "Lorsqu'il est activé, Home Assistant utilise les réponses aux interrogations du module Feedback lui-même (un groupe de module environ toutes les 35 secondes) au lieu d'interroger les modules ; un changement sans appui sur une touche peut mettre quelques minutes à apparaître. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même : ce port ne relaie pas les requêtes du module, l'état poussé ne peut pas être attribué ; l'état est alors interrogé.",
           "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
           "press_repeat": "Nombre de fois où chaque appui déclenché par HA (bouton, scène, CF, interrupteur) est envoyé sur le bus. Un vrai bouton répète son télégramme ; un seul envoi peut être manqué en cas de trafic. Défaut 3."
         }
@@ -46,7 +46,7 @@
         },
         "data_description": {
           "connection_string": "Chemin du périphérique série ou adresse TCP du pont PC-Link",
-          "has_feedbackmodule": "Lorsqu'il est activé, le module Feedback transmet automatiquement les changements d'état — aucune interrogation nécessaire. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même : ce port ne relaie pas les requêtes du module, l'état poussé ne peut pas être attribué ; l'état est alors interrogé.",
+          "has_feedbackmodule": "Lorsqu'il est activé, Home Assistant utilise les réponses aux interrogations du module Feedback lui-même (un groupe de module environ toutes les 35 secondes) au lieu d'interroger les modules ; un changement sans appui sur une touche peut mettre quelques minutes à apparaître. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même : ce port ne relaie pas les requêtes du module, l'état poussé ne peut pas être attribué ; l'état est alors interrogé.",
           "prior_gen3": "Active les ajustements de compatibilité pour le matériel PC-Link de première et deuxième génération.",
           "refresh_interval": "Fréquence de lecture de l'état des modules sur le bus (60–3600 s). Des valeurs plus basses accélèrent les mises à jour mais augmentent le trafic du bus."
         }
@@ -85,7 +85,7 @@
           "press_repeat": "Répétitions de l'appui simulé"
         },
         "data_description": {
-          "has_feedbackmodule": "Lorsqu'activé, le module Feedback envoie automatiquement les changements d'état. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même.",
+          "has_feedbackmodule": "Lorsqu'il est activé, Home Assistant utilise les réponses aux interrogations du module Feedback lui-même (un groupe de module environ toutes les 35 secondes) au lieu d'interroger les modules ; un changement sans appui sur une touche peut mettre quelques minutes à apparaître. Laissez désactivé si Home Assistant est branché sur le port série du module Feedback lui-même : ce port ne relaie pas les requêtes du module, l'état poussé ne peut pas être attribué ; l'état est alors interrogé.",
           "prior_gen3": "Active les adaptations de compatibilité pour les PC-Link de première et deuxième génération.",
           "press_repeat": "Nombre de fois où chaque appui déclenché par HA (bouton, scène, CF, interrupteur) est envoyé sur le bus. Un vrai bouton répète son télégramme ; un seul envoi peut être manqué en cas de trafic. Défaut 3."
         }

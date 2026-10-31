@@ -22,7 +22,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 - 🧹 **Only the press entities you want** — press buttons and press sensors come in six classes (wall buttons, interfaces, remotes and IR codes, input modules, audio triggers, virtual buttons); tick the ones you use and the rest get no entities and no devices. Automations keep working either way: the `nikobus_button_pressed` events fire for every key.
 - 📥 **Import from `.nkb`** — upload your Nikobus project export and pull in device names (numbered like in the Nikobus software), **per-channel names**, **Areas** (from rooms), and **scenes** — pick exactly what to apply. Imported names persist across restarts and re-discovery.
 - 🎬 **Scenes that fire atomically** — Central Function scenes are activated on the bus the same way a physical scene key would, with no per-channel fan-out.
-- ⚡ **Real-time or polled** — instant pushed state with a Feedback Module, or a configurable poll without one.
+- ⚡ **Pushed or polled** — every press is followed by a read of the modules it drives; on top of that, a Feedback Module's own polling is picked up for free, or a configurable poll runs without one.
 - 🛡️ **Backup, verify & watch your modules' programming** — read every module's memory image into a backup folder, check each module's status, family and checksum, and get a Repair issue when a module is reprogrammed behind Home Assistant's back. Read-only on the bus: nothing is ever written to a module.
 - 🩺 **Says what is wrong** — a wrong port, a serial cable on the Feedback Module instead of the PC-Link, a module stored as the wrong type, a corrupt link table: each is a Repair issue that names the cause and the fix, and clears itself once fixed.
 - 🕒 **PC-Link clock** — see the controller's clock and its drift, and set it from Home Assistant (the only write the integration performs).
@@ -94,7 +94,7 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 | PC-Link | `05-200` | The bus interface; source of the inventory, relays all bus traffic, keeps the clock and the 100 calendar channels |
 | PC-Logic | `05-201` | Logic controller; its 6 inputs surface as `LM-INPUT 1–6`; usable as gateway (polling only, no inventory) |
 | Modular Interface, 6 inputs | `05-206` | Its 6 inputs surface as `MI-INPUT 1–6` |
-| Feedback Module | `05-207` | Optional; drives plate LEDs and pushes real-time state — through the PC-Link's port. Usable as gateway (polling only) |
+| Feedback Module | `05-207` | Optional; drives plate LEDs, and its own polling of the modules is picked up as pushed state — through the PC-Link's port. Usable as gateway (polling only) |
 | Audio Distribution Module | `05-205` | One `media_player` per zone: on/off, volume, source select; its trigger keys as press buttons under the module |
 | RGB / LED controller | `340-00112` | One `light`: on/off and the colour its outputs mix to, switched through the keys linked to it (from your `.nkb`); see [RGB controller](#rgb-controller) |
 
@@ -123,7 +123,7 @@ One HA **device** is created per physical button, with one button-entity + binar
 3. *Settings → Devices & Services → Add Integration → Nikobus*.
 4. Enter the serial path or `IP:port`. The connection is tested immediately.
 5. On **Hardware Configuration**, enable a toggle if it applies:
-   - **Feedback Module (05-207) installed, Home Assistant connected to the PC-Link's port** — real-time pushed state, no polling. Leave it off when the serial port is the Feedback Module's own: that port does not relay the module's queries, so pushed state cannot be attributed to an output group and the integration raises a Repair issue asking you to turn it off.
+   - **Feedback Module (05-207) installed, Home Assistant connected to the PC-Link's port** — the integration picks up the answers to the Feedback Module's own polling (one module group about every 35 seconds) instead of polling itself, and only reads a group the module has not reported for 5 minutes. A press is still followed by an immediate read; a change without a press (a timer, PC-Logic, another client) is seen when the Feedback Module next polls that module, which can take minutes. Leave it off when the serial port is the Feedback Module's own: that port does not relay the module's queries, so pushed state cannot be attributed to an output group and the integration raises a Repair issue asking you to turn it off.
    - **PC-Link older than Gen 3** — disables state polling (early PC-Links don't answer module state queries reliably), leaving push-only updates. **Leave this off unless you need it**: it has no effect on discovery, but with polling off Home Assistant only learns an output's state from what it sees happen, so these stay stale until the next press on a key linked to that module:
      - a timed output switching itself off (*Off + operating time*, *Delayed off*);
      - an output switched by a PC-Logic program, a central function or the PC-Link's calendar;
@@ -1000,7 +1000,7 @@ Fixed in 3.18.3: requests for the same module group made together are merged int
 
 ### State is slow to update
 
-Without a Feedback Module, external changes (a wall press on a key Home Assistant does not know, another client) are only seen on the next poll. Physical button presses and presses sent by Home Assistant both trigger a read of the impacted modules within about a second. Add a 05-207 Feedback Module for real-time updates, or lower the polling interval.
+Without a Feedback Module, external changes (a wall press on a key Home Assistant does not know, another client) are only seen on the next poll. Physical button presses and presses sent by Home Assistant both trigger a read of the impacted modules within about a second. Lower the polling interval, or add a 05-207 Feedback Module: its own polling is then picked up, though a change without a press can still take a few minutes to show.
 
 With a Feedback Module, the module itself polls the output modules it is configured to track and the integration listens to the answers; with debug logging you see each one as `Feedback frame for module 4707 group 2 — outputs …`. If those lines never appear, the Feedback Module is not tracking that module: add the output to its configuration in the Nikobus PC software and download the module again. An output the Feedback Module does not track is not lost either: every five minutes the integration reads the module groups (channels 1–6, 7–12) it has heard nothing from in that long (a safety poll, logged at debug level as `Feedback-Module safety poll`), and only those, so a tracked group costs nothing on the bus. To read one module right now, call `homeassistant.update_entity` on one of its entities, which reads that entity's group whatever the mode, or [`nikobus.refresh_module`](#nikobusrefresh_module). If the lines appear but the wrong lamps change, read the Repair issue about the Feedback Module's port above.
 
