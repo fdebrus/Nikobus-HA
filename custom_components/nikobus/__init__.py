@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any, Final
 
@@ -469,6 +470,79 @@ def _loaded_coordinator(hass: HomeAssistant) -> NikobusDataCoordinator | None:
     return None
 
 
+#: Press entities keyed by a key's bus address: ``(entity domain, unique_id prefix)``.
+_PRESS_ENTITY_IDS: tuple[tuple[str, str], ...] = (
+    ("binary_sensor", f"{DOMAIN}_button_"),
+    ("button", f"{DOMAIN}_push_button_"),
+)
+
+
+def _rekey_moved_plate_keys(
+    hass: HomeAssistant, entry: NikobusConfigEntry, buttons: Mapping[str, Any]
+) -> int:
+    """Move the press entities of keys whose bus address a layout fix changed.
+
+    Library 0.57.1 corrected the two-button wall plates (05-060, 05-061,
+    05-060-02) from the generic 8 / C key layout to 0 / 4. Press entities
+    are keyed by the key's bus address, so after the next inventory the
+    platforms would create new entities and the orphan cleanup remove
+    the old ones, with their names, areas and the automations on them.
+    Run before the platforms: each old entity is re-keyed to the address
+    its key now has. Nothing happens until an inventory has moved the
+    keys, an address that is any key's current one is never touched, and
+    a new id already taken is left alone. Returns the number re-keyed.
+    """
+    from nikobus_connect.discovery.mapping import DEVICE_TYPE_KEY_MAPPING, KEY_MAPPING
+    from nikobus_connect.discovery.protocol import convert_nikobus_address
+    from nikobus_connect.nkb.parser import key_layout_for_model
+
+    generic = KEY_MAPPING.get(2, {})
+    current = {
+        str(op.get("bus_address") or "").upper()
+        for phys in buttons.values()
+        if isinstance(phys, Mapping)
+        for op in (phys.get("operation_points") or {}).values()
+        if isinstance(op, Mapping)
+    }
+    ent_reg = er.async_get(hass)
+    moved = 0
+    for physical, phys in buttons.items():
+        if not isinstance(phys, Mapping) or phys.get("channels") != 2:
+            continue
+        layout = DEVICE_TYPE_KEY_MAPPING.get(str(phys.get("device_type") or "").upper())
+        if layout is None:
+            layout = key_layout_for_model(str(phys.get("model") or ""))
+        if layout is None:
+            continue
+        try:
+            converted = convert_nikobus_address(str(physical))
+            nibble = int(converted[0], 16)
+        except (TypeError, ValueError, IndexError):
+            continue
+        for label, op in (phys.get("operation_points") or {}).items():
+            if label not in generic or not isinstance(op, Mapping):
+                continue
+            new_bus = str(op.get("bus_address") or "").upper()
+            old_bus = f"{(nibble + int(generic[label], 16)) & 0xF:X}{converted[1:]}"
+            if not new_bus or old_bus == new_bus or old_bus in current:
+                continue
+            for domain, prefix in _PRESS_ENTITY_IDS:
+                entity_id = ent_reg.async_get_entity_id(domain, DOMAIN, prefix + old_bus)
+                if entity_id is None:
+                    continue
+                if ent_reg.async_get_entity_id(domain, DOMAIN, prefix + new_bus) is not None:
+                    continue
+                ent_reg.async_update_entity(entity_id, new_unique_id=prefix + new_bus)
+                moved += 1
+    if moved:
+        _LOGGER.info(
+            "Moved %d Nikobus press entities to the corrected addresses of "
+            "two-button plates; they keep their names and areas",
+            moved,
+        )
+    return moved
+
+
 def _migrate_legacy_unique_ids(hass: HomeAssistant, entry: NikobusConfigEntry) -> int:
     """Re-key the entities 0.6.x / 0.7.x registered to today's unique_ids.
 
@@ -599,6 +673,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     # attempt. Stop the coordinator before letting the error out.
     try:
         _register_hub_device(hass, entry)
+
+        # Press entities of two-button plate keys whose address the
+        # library's layout fix moved keep their registry entries.
+        _rekey_moved_plate_keys(
+            hass, entry, coordinator.dict_button_data.get("nikobus_button", {})
+        )
 
         # 3. Forward setup to platforms FIRST
         # This allows entities to be created and register their dispatcher listeners.

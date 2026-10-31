@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.31.1
+
+**Requires `nikobus-connect` 0.57.1.**
+
+### Two-button wall plates work (nikobus-connect #184)
+
+The keys of the 05-060 two-button plate were created at the wrong bus addresses: the library used the generic two-key layout, while the plate sends its keys where a four-button plate has its right-hand pair. A press matched no module (`module_address` and `channel` empty in `nikobus_button_pressed`), no link landed on the keys, and pressing the key from Home Assistant sent a frame nothing listens to. An install with 14 of them showed it on the bus and in its output modules.
+
+- The 05-060 (and 4\*-072), and the same plate with feedback LEDs, 05-061 and 05-060-02, now get their keys at the addresses they send, like the 4\*-082 already did. Push-button and switch interfaces are unchanged.
+- Run **1. Load Project Overview**, then **2. Load Existing Installation**, once after updating: the keys move to the right addresses and their links are read.
+- The keys' button and press-sensor entities move with them: they keep their entity id, name, area and the automations built on them.
+- A manual config generated from a `.nkb` project file gets the right addresses too.
+
 ## 3.31.0
 
 **Requires `nikobus-connect` 0.57.0.**
