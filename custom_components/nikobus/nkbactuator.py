@@ -270,12 +270,15 @@ class NikobusActuator:
                 continue
 
             if fire_event:
+                # The initial press reads the modules too; its event says
+                # "pressed" with no duration, as documented, and only the
+                # release carries "released" and how long the key was held.
                 self._fire_event(
                     EVENT_BUTTON_OPERATION,
                     PressState(address=button_address, press_id=press_id, started_at=0.0, last_frame_at=0.0),
                     _PressContext(addr, None),
-                    state_value="released",
-                    duration=(press_context or {}).get("duration_s"),
+                    state_value="pressed" if is_initial_press else "released",
+                    duration=None if is_initial_press else (press_context or {}).get("duration_s"),
                     bucket=(press_context or {}).get("bucket"),
                     extra={
                         "impacted_module_address": addr,

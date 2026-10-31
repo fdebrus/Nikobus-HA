@@ -1,11 +1,13 @@
 {
   "config": {
     "abort": {
-      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "reconfigure_successful": "The Nikobus connection settings were updated."
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
-      "unknown": "[%key:common::config_flow::error::unknown%]"
+      "unknown": "[%key:common::config_flow::error::unknown%]",
+      "already_configured": "Another Nikobus entry already uses this connection."
     },
     "step": {
       "hardware": {
@@ -125,6 +127,9 @@
             "title": "Discover Nikobus modules and buttons",
             "description": "Home Assistant has not detected any Nikobus buttons. Run a PC-Link inventory discovery now to populate the configuration."
           }
+        },
+        "abort": {
+          "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."
         }
       }
     },
@@ -257,7 +262,8 @@
       "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
       "module_not_found": "The selected module was not found in storage.",
       "channel_not_found": "The selected channel was not found.",
-      "scene_not_found": "Scene not found — it may have been removed."
+      "scene_not_found": "Scene not found — it may have been removed.",
+      "no_modules": "No Nikobus modules are known yet. Run the PC-Link inventory first (Nikobus Bridge device, button 1)."
     },
     "error": {
       "invalid_hex_address": "LED address must be exactly 6 hexadecimal characters (or empty).",

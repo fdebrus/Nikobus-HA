@@ -54,10 +54,12 @@
     },
     "error": {
       "cannot_connect": "Impossible de se connecter au PC-Link Nikobus — vérifiez l'adresse et qu'aucun autre client n'est connecté",
-      "unknown": "Erreur inattendue — consultez les journaux Home Assistant pour plus de détails"
+      "unknown": "Erreur inattendue — consultez les journaux Home Assistant pour plus de détails",
+      "already_configured": "Une autre entrée Nikobus utilise déjà cette connexion."
     },
     "abort": {
-      "already_configured": "Cette connexion Nikobus est déjà configurée."
+      "already_configured": "Cette connexion Nikobus est déjà configurée.",
+      "reconfigure_successful": "Les paramètres de connexion Nikobus ont été mis à jour."
     }
   },
   "options": {
@@ -191,7 +193,8 @@
       "not_loaded": "L'intégration Nikobus n'est pas chargée. Veuillez la recharger puis réessayer.",
       "channel_not_found": "Le canal sélectionné est introuvable.",
       "module_not_found": "Le module sélectionné est introuvable dans le stockage.",
-      "scene_not_found": "Scène introuvable — elle a peut-être été supprimée."
+      "scene_not_found": "Scène introuvable — elle a peut-être été supprimée.",
+      "no_modules": "Aucun module Nikobus n'est encore connu. Lancez d'abord l'inventaire PC-Link (appareil Nikobus Bridge, bouton 1)."
     },
     "error": {
       "invalid_nkb": "Ce fichier n'est pas un projet Nikobus .nkb lisible (il doit s'agir de l'export .nkb — une archive ZIP contenant la base de données du projet).",
@@ -269,6 +272,9 @@
             "title": "Découvrir les modules et boutons Nikobus",
             "description": "Home Assistant n'a détecté aucun bouton Nikobus. Lancez maintenant un inventaire PC-Link pour compléter la configuration."
           }
+        },
+        "abort": {
+          "not_loaded": "L'intégration Nikobus n'est pas chargée. Rechargez l'intégration et réessayez."
         }
       }
     },

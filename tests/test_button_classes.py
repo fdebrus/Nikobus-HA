@@ -47,6 +47,7 @@ from custom_components.nikobus.router import (
     iter_input_module_children,
     iter_operation_points,
 )
+from tests.schema_helpers import schema_fields
 
 
 def _run(coro):
@@ -276,7 +277,7 @@ class TestOptionsAndMigration(unittest.TestCase):
     def test_the_form_defaults_to_what_is_selected(self):
         result = _run(self._flow({CONF_BUTTON_CLASSES: ["remotes"]}).async_step_button_entities(None))
         self.assertEqual(result["type"], "form")
-        (key,) = list(result["data_schema"])
+        (key,) = list(schema_fields(result["data_schema"]))
         self.assertEqual(key.default(), ["remotes"])
 
     def test_submitting_keeps_the_other_options(self):

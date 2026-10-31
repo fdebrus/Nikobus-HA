@@ -379,6 +379,17 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
 
         else:
             direction = "opening" if new_bus_state == STATE_OPENING else "closing"
+            if (
+                self._end_stop_task is not None
+                and not self._end_stop_task.done()
+                and direction != self._last_motion_direction
+            ):
+                # Inside the end-stop margin of a full travel the module
+                # still reports that travel's direction (the relay stays
+                # engaged until the deferred stop). The other direction is
+                # a new motion started at the wall, which the pending
+                # stop frame would cut short.
+                self._cancel_end_stop()
             self._movement_source = "nikobus"
 
             # Calculate how long the cover has already been moving before HA
@@ -490,6 +501,11 @@ class NikobusCoverEntity(NikobusEntity, CoverEntity, RestoreEntity):
         self._target_position = target
 
         async def on_sent() -> None:
+            # The module acknowledged our command: the motion is ours,
+            # even if a state push of the new direction arrived before
+            # the ack and marked it as started on the bus. Otherwise an
+            # intermediate target would never get its stop frame.
+            self._movement_source = "ha"
             self._start_motion_logic(direction)
 
         if direction == "opening":

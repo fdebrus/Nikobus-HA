@@ -34,10 +34,12 @@ from typing import Any
 
 from aiofiles import open as aio_open
 from homeassistant.core import HomeAssistant
+from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
 
 from .const import (
     MANUAL_BUTTON_CONFIG_FILENAME,
     MANUAL_MODULE_CONFIG_FILENAME,
+    POLLED_MODULE_TYPES,
 )
 from .nkbstorage import NikobusModuleStorage
 
@@ -82,8 +84,17 @@ async def _generate_manual_files_from_nkb(hass: HomeAssistant) -> bool:
         return False
 
     async def _write(path: str, payload: dict[str, Any]) -> None:
-        async with aio_open(path, mode="w") as fh:
-            await fh.write(json.dumps(payload, indent=2, ensure_ascii=False))
+        # Written next to the target and moved into place: a write cut
+        # short (disk full, restart) never leaves a truncated file, which
+        # would be skipped as unreadable and never regenerated.
+        tmp = f"{path}.tmp"
+        try:
+            async with aio_open(tmp, mode="w") as fh:
+                await fh.write(json.dumps(payload, indent=2, ensure_ascii=False))
+            await hass.async_add_executor_job(os.replace, tmp, path)
+        except BaseException:
+            await hass.async_add_executor_job(_remove_quietly, tmp)
+            raise
 
     await _write(module_path, config.module_config)
     await _write(button_path, config.button_config)
@@ -139,6 +150,22 @@ async def _read_json(
             "Manual config: %s is unreadable (%s) — skipping", path, err
         )
         return None, None
+
+
+def _remove_quietly(path: str) -> None:
+    """Remove ``path`` if it exists (executor helper)."""
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+#: Module types the store knows. A group key outside this set (a file
+#: copied from the ``.storage`` store, whose single group is
+#: ``nikobus_module``) gives way to the entry's own ``module_type``.
+_KNOWN_MODULE_TYPES: frozenset[str] = frozenset(
+    {*POLLED_MODULE_TYPES, *NON_OUTPUT_MODULE_TYPES, "pc_link", "pc_logic", "audio_module"}
+)
 
 
 def _tag_manual_source(entry: dict[str, Any]) -> None:
@@ -199,7 +226,18 @@ def convert_legacy_to_flat(legacy: dict[str, Any]) -> dict[str, dict[str, Any]]:
             if not isinstance(address, str) or not address:
                 continue
             key = address.upper()
-            flat[key] = _convert_entry(key, module_type, entry)
+            entry_type = entry.get("module_type")
+            effective_type = module_type
+            if module_type not in _KNOWN_MODULE_TYPES and isinstance(entry_type, str):
+                effective_type = entry_type
+            if key in flat:
+                _LOGGER.warning(
+                    "Manual config: module %s is listed more than once in %s — "
+                    "the last entry is used",
+                    key,
+                    MANUAL_MODULE_CONFIG_FILENAME,
+                )
+            flat[key] = _convert_entry(key, effective_type, entry)
 
     return flat
 
@@ -278,8 +316,29 @@ async def _apply_module_config(
         return 0, None
 
     flat = convert_legacy_to_flat(payload)
+    if not flat:
+        # A file that yields no module (an empty group, a typo in the
+        # shape) would otherwise wipe every module from the store.
+        _LOGGER.warning(
+            "Manual config: %s contains no module entry Home Assistant can read — "
+            "the module store is left unchanged. Expected shape: "
+            '{"switch_module": [{"address": "C9A5", "channels": [...]}], ...}',
+            path,
+        )
+        return 0, path
     for entry in flat.values():
         _tag_manual_source(entry)
+    unknown = sorted(
+        addr for addr, entry in flat.items()
+        if entry.get("module_type") not in _KNOWN_MODULE_TYPES
+    )
+    if unknown:
+        _LOGGER.warning(
+            "Manual config: module(s) %s in %s have no known module type "
+            "(switch_module, dimmer_module, roller_module, ...) — they get no entities",
+            ", ".join(unknown),
+            path,
+        )
 
     # Wholesale replacement. Removing an entry from the file removes
     # it from the store on the next reload — pre-v2 declarative
@@ -311,7 +370,9 @@ def _extract_physical_info(
     phys = str(info.get("address") or "").strip().upper()
     key = str(info.get("key") or "").strip().upper()
     channels = info.get("channels")
-    if not phys or not key or not isinstance(channels, int):
+    if isinstance(channels, str) and channels.strip().isdigit():
+        channels = int(channels.strip())  # "4" written by hand
+    if not phys or not key or not isinstance(channels, int) or isinstance(channels, bool):
         return None
     type_str = str(info.get("type") or "").strip() or "Button"
     model = str(info.get("model") or "").strip()

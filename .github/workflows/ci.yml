@@ -37,12 +37,20 @@ jobs:
           python-version: ${{ matrix.python-version }}
       # Home Assistant itself is stubbed in tests/conftest.py, but the
       # integration modules still import the real library + helpers at load
-      # time, so install the manifest's runtime requirements alongside pytest.
-      # async tests use @pytest.mark.asyncio, so pytest-asyncio is required.
-      - run: >
-          pip install pytest pytest-asyncio
-          aiofiles "pyserial-asyncio-fast>=0.16"
-          "nikobus-connect>=0.24.0" "construct>=2.10"
+      # time, so install the manifest's runtime requirements alongside pytest
+      # (read from the manifest, so the tests run against the library
+      # version the integration requires). voluptuous is installed so the
+      # form and service schemas are really validated; async tests use
+      # @pytest.mark.asyncio, so pytest-asyncio is required.
+      - run: pip install pytest pytest-asyncio aiofiles voluptuous
+      - name: Install the manifest requirements
+        run: |
+          python - <<'PY' > "$RUNNER_TEMP/manifest-requirements.txt"
+          import json
+          with open("custom_components/nikobus/manifest.json") as fh:
+              print("\n".join(json.load(fh)["requirements"]))
+          PY
+          pip install -r "$RUNNER_TEMP/manifest-requirements.txt"
       - run: python -m pytest -q
 
   hassfest:

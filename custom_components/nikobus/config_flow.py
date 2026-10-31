@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import logging
 import re
@@ -9,6 +10,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -423,25 +425,43 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            try:
-                await _test_connection(
-                    self.hass, user_input[CONF_CONNECTION_STRING].strip()
-                )
-            except ValueError:
-                errors["base"] = "cannot_connect"
-            except Exception:
-                _LOGGER.exception("Unexpected error during Nikobus reconfigure test")
-                errors["base"] = "unknown"
-            else:
+            connection = user_input[CONF_CONNECTION_STRING].strip()
+            current = str(entry.data.get(CONF_CONNECTION_STRING) or "").strip()
+            changed = connection.lower() != current.lower()
+            loaded = entry.state is ConfigEntryState.LOADED
+            if changed and any(
+                other.entry_id != entry.entry_id and other.unique_id == connection.lower()
+                for other in self._async_current_entries(include_ignore=False)
+            ):
+                errors["base"] = "already_configured"
+            elif changed or not loaded:
+                # The running integration holds the port (serial ports
+                # are opened exclusively, and most TCP bridges take one
+                # client), so a loaded entry is unloaded before a new
+                # connection is tested, and set up again on the old one
+                # if the test fails. An unchanged connection on a loaded
+                # entry is known to work and is not tested.
+                if loaded:
+                    await self.hass.config_entries.async_unload(entry.entry_id)
+                try:
+                    await _test_connection(self.hass, connection)
+                except ValueError:
+                    errors["base"] = "cannot_connect"
+                except Exception:
+                    _LOGGER.exception("Unexpected error during Nikobus reconfigure test")
+                    errors["base"] = "unknown"
+                if errors and loaded:
+                    await self.hass.config_entries.async_setup(entry.entry_id)
+            if not errors:
                 # The coordinator reads the hardware and polling settings
                 # from options first (Options writes them there), so the
                 # reconfigure form writes them there too; only the
                 # connection string belongs to the entry data. Keys the
                 # form does not show (press_repeat) are left as they are.
-                connection = user_input[CONF_CONNECTION_STRING].strip()
                 settings = {k: v for k, v in user_input.items() if k != CONF_CONNECTION_STRING}
                 return self.async_update_reload_and_abort(
                     entry,
+                    unique_id=connection.lower(),
                     data={**entry.data, CONF_CONNECTION_STRING: connection},
                     options={**entry.options, **settings},
                 )
@@ -508,7 +528,31 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         return {**self.config_entry.options, **self._options}
 
     def _coordinator(self) -> NikobusDataCoordinator | None:
+        """The running coordinator, or ``None`` while the entry is not loaded.
+
+        ``runtime_data`` is set before the bus connects, so an entry
+        waiting to retry its setup has a coordinator whose stores were
+        never loaded: a scene saved through it would rewrite the scene
+        file with that one scene.
+        """
+        if self.config_entry.state is not ConfigEntryState.LOADED:
+            return None
         return self.config_entry.runtime_data
+
+    def _finish_after_store_edit(self) -> config_entries.FlowResult:
+        """Close the flow after an edit saved to the integration's own stores.
+
+        Home Assistant calls the entry's update listener (which reloads
+        it) only when the options changed. A module, channel or scene
+        edit changes the stores, not the options, so the reload is
+        scheduled here unless the options changed too.
+        """
+        merged = self._merged_options()
+        if merged == dict(self.config_entry.options):
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(self.config_entry.entry_id)
+            )
+        return self.async_create_entry(title="", data=merged)
 
     # --- Step 1: main menu --------------------------------------------------
 
@@ -648,6 +692,7 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         dest = hass.config.path(CANONICAL_NKB_FILENAME)
 
         def _validate_and_save() -> None:
+            import os
             import shutil
 
             with process_uploaded_file(hass, file_id) as src:
@@ -655,7 +700,16 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                     parse_nkb(src)  # parses → it's a usable .nkb
                 except Exception as err:
                     raise _NkbUploadError("invalid_nkb") from err
-                shutil.copyfile(src, dest)
+                # Copied next to the target and moved into place: a
+                # failed copy never leaves a truncated nikobus.nkb.
+                tmp = f"{dest}.tmp"
+                try:
+                    shutil.copyfile(src, tmp)
+                    os.replace(tmp, dest)
+                except BaseException:
+                    with contextlib.suppress(OSError):
+                        os.remove(tmp)
+                    raise
 
         try:
             await hass.async_add_executor_job(_validate_and_save)
@@ -681,11 +735,14 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             cats = {c for c in NKB_IMPORT_CATEGORIES if user_input.get(c)}
             overwrite = bool(user_input.get("overwrite"))
+            coordinator = self._coordinator()
+            if coordinator is None:
+                return self.async_abort(reason="not_loaded")
             if not cats:
                 errors["base"] = "nkb_nothing_selected"
             else:
                 try:
-                    await self._coordinator().async_import_nkb_names(
+                    await coordinator.async_import_nkb_names(
                         categories=cats, overwrite=overwrite
                     )
                 except HomeAssistantError as err:
@@ -832,9 +889,8 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
                     return await self.async_step_edit_module()
                 return await self.async_step_edit_channel()
 
-            # Done — close the flow. The entry's update listener reloads.
-            merged = {**self.config_entry.options, **self._options}
-            return self.async_create_entry(title="", data=merged)
+            # Done — close the flow and reload so the edits take effect.
+            return self._finish_after_store_edit()
 
         channel_options = [
             {
@@ -1255,10 +1311,8 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         await coordinator.nikobus_config.save_json_data(
             "nikobus_scene_config.json", "scene", coordinator.dict_scene_data
         )
-        # Close the flow; the entry update listener reloads the scene platform.
-        return self.async_create_entry(
-            data={**self.config_entry.options, **self._options}
-        )
+        # Close the flow and reload so the scene entities follow.
+        return self._finish_after_store_edit()
 
     async def _delete_scene(self) -> config_entries.FlowResult:
         """Remove the working scene from the store + JSON file and finish."""
@@ -1272,6 +1326,4 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
         await coordinator.nikobus_config.save_json_data(
             "nikobus_scene_config.json", "scene", coordinator.dict_scene_data
         )
-        return self.async_create_entry(
-            data={**self.config_entry.options, **self._options}
-        )
+        return self._finish_after_store_edit()
