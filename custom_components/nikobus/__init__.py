@@ -480,23 +480,33 @@ _PRESS_ENTITY_IDS: tuple[tuple[str, str], ...] = (
 def _rekey_moved_plate_keys(
     hass: HomeAssistant, entry: NikobusConfigEntry, buttons: Mapping[str, Any]
 ) -> int:
-    """Move the press entities of keys whose bus address a layout fix changed.
+    """Move the press entities of two-button plate keys whose address changed.
 
-    Library 0.57.1 corrected the two-button wall plates (05-060, 05-061,
-    05-060-02) from the generic 8 / C key layout to 0 / 4. Press entities
-    are keyed by the key's bus address, so after the next inventory the
-    platforms would create new entities and the orphan cleanup remove
-    the old ones, with their names, areas and the automations on them.
-    Run before the platforms: each old entity is re-keyed to the address
-    its key now has. Nothing happens until an inventory has moved the
-    keys, an address that is any key's current one is never touched, and
-    a new id already taken is left alone. Returns the number re-keyed.
+    A two-button plate sends its keys in one of two layouts (generic
+    8 / C, or the four-button's right pair 0 / 4). Library 0.57.1 put
+    every 05-060 / 05-061 / 05-060-02 at 0 / 4; 0.57.2 reads each
+    plate's layout from its links, so keys move either way. Press
+    entities are keyed by the key's bus address: without this, the
+    platforms would create new entities and the orphan cleanup delete
+    the old ones with their names, areas and automations.
+
+    Run before the platforms: an entity still keyed by the key's address
+    in the other layout is re-keyed to its current one. Nothing moves
+    while the store's keys have not changed; an address that is any
+    key's current one is never touched; a taken new id is left alone.
+    Returns the number re-keyed.
     """
-    from nikobus_connect.discovery.mapping import DEVICE_TYPE_KEY_MAPPING, KEY_MAPPING
-    from nikobus_connect.discovery.protocol import convert_nikobus_address
+    from nikobus_connect.discovery.fileio import (
+        has_per_plate_key_layout,
+        two_button_bus_addresses,
+    )
+    from nikobus_connect.discovery.mapping import (
+        DEVICE_TYPE_KEY_MAPPING,
+        TWO_BUTTON_LAYOUTS,
+        TWO_BUTTON_PLATE_KEYS,
+    )
     from nikobus_connect.nkb.parser import key_layout_for_model
 
-    generic = KEY_MAPPING.get(2, {})
     current = {
         str(op.get("bus_address") or "").upper()
         for phys in buttons.values()
@@ -509,34 +519,40 @@ def _rekey_moved_plate_keys(
     for physical, phys in buttons.items():
         if not isinstance(phys, Mapping) or phys.get("channels") != 2:
             continue
-        layout = DEVICE_TYPE_KEY_MAPPING.get(str(phys.get("device_type") or "").upper())
-        if layout is None:
-            layout = key_layout_for_model(str(phys.get("model") or ""))
-        if layout is None:
+        fixed_right_pair = (
+            DEVICE_TYPE_KEY_MAPPING.get(str(phys.get("device_type") or "").upper())
+            is TWO_BUTTON_PLATE_KEYS
+            or key_layout_for_model(str(phys.get("model") or "")) is TWO_BUTTON_PLATE_KEYS
+        )
+        if not fixed_right_pair and not has_per_plate_key_layout(dict(phys)):
             continue
         try:
-            converted = convert_nikobus_address(str(physical))
-            nibble = int(converted[0], 16)
+            layouts = [
+                two_button_bus_addresses(str(physical), name) for name in TWO_BUTTON_LAYOUTS
+            ]
         except (TypeError, ValueError, IndexError):
             continue
         for label, op in (phys.get("operation_points") or {}).items():
-            if label not in generic or not isinstance(op, Mapping):
+            if not isinstance(op, Mapping):
                 continue
             new_bus = str(op.get("bus_address") or "").upper()
-            old_bus = f"{(nibble + int(generic[label], 16)) & 0xF:X}{converted[1:]}"
-            if not new_bus or old_bus == new_bus or old_bus in current:
+            if not new_bus:
                 continue
-            for domain, prefix in _PRESS_ENTITY_IDS:
-                entity_id = ent_reg.async_get_entity_id(domain, DOMAIN, prefix + old_bus)
-                if entity_id is None:
+            for addresses in layouts:
+                old_bus = addresses.get(label)
+                if not old_bus or old_bus == new_bus or old_bus in current:
                     continue
-                if ent_reg.async_get_entity_id(domain, DOMAIN, prefix + new_bus) is not None:
-                    continue
-                ent_reg.async_update_entity(entity_id, new_unique_id=prefix + new_bus)
-                moved += 1
+                for domain, prefix in _PRESS_ENTITY_IDS:
+                    entity_id = ent_reg.async_get_entity_id(domain, DOMAIN, prefix + old_bus)
+                    if entity_id is None:
+                        continue
+                    if ent_reg.async_get_entity_id(domain, DOMAIN, prefix + new_bus) is not None:
+                        continue
+                    ent_reg.async_update_entity(entity_id, new_unique_id=prefix + new_bus)
+                    moved += 1
     if moved:
         _LOGGER.info(
-            "Moved %d Nikobus press entities to the corrected addresses of "
+            "Moved %d Nikobus press entities to the current key addresses of "
             "two-button plates; they keep their names and areas",
             moved,
         )
@@ -674,8 +690,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     try:
         _register_hub_device(hass, entry)
 
-        # Press entities of two-button plate keys whose address the
-        # library's layout fix moved keep their registry entries.
+        # Press entities of two-button plate keys whose address changed
+        # (the plate's key layout, read from its links) keep their
+        # registry entries.
         _rekey_moved_plate_keys(
             hass, entry, coordinator.dict_button_data.get("nikobus_button", {})
         )

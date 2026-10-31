@@ -93,3 +93,27 @@ def test_the_type_byte_is_enough_without_a_model():
     moved, calls = _run(store, existing)
     assert moved == 1
     assert calls == [("button.lower", ("new_unique_id", "nikobus_push_button_4753BA"))]
+
+
+def test_entities_move_back_when_a_plate_returns_to_the_generic_layout():
+    """fdebrus: 0.57.1 moved the plate's keys and entities to 0 / 4; 0.57.2
+    finds the plate is generic and puts the keys back at 8 / C."""
+    existing = {
+        ("binary_sensor", "nikobus_button_0753BA"): "binary_sensor.bt_gf_corridor_froom_light_on",
+        ("button", "nikobus_push_button_4753BA"): "button.salon_lower",
+    }
+    moved, calls = _run(_store("8753BA", "C753BA", device_type="04"), existing)
+    assert moved == 2
+    assert sorted(calls) == sorted([
+        ("binary_sensor.bt_gf_corridor_froom_light_on", ("new_unique_id", "nikobus_button_8753BA")),
+        ("button.salon_lower", ("new_unique_id", "nikobus_push_button_C753BA")),
+    ])
+
+
+def test_a_4x082_entity_left_at_8_c_moves_to_its_fixed_layout():
+    store = {"130078": {"model": "42-082", "device_type": "10", "channels": 2,
+                        "operation_points": {"1A": {"bus_address": "078032"}, "1B": {"bus_address": "478032"}}}}
+    existing = {("binary_sensor", "nikobus_button_878032"): "binary_sensor.x"}
+    moved, calls = _run(store, existing)
+    assert moved == 1
+    assert calls == [("binary_sensor.x", ("new_unique_id", "nikobus_button_078032"))]
