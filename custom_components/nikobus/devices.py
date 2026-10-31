@@ -66,6 +66,20 @@ def _remote_transmitter_naming(
     return f"Remote {bus_addr}", (DOMAIN, parent_id)
 
 
+def wall_button_device_name(physical_addr: str, phys: Mapping[str, Any]) -> str:
+    """The name a plain wall-button device is registered under.
+
+    The imported ``.nkb`` name, else ``{type} ({address})``, prefixed
+    with the Niko software's index when the PC-Link registry gave one.
+    """
+    type_str = str(phys.get("type") or phys.get("model") or "Wall Button")
+    number = phys.get("component_number")
+    default_name = (
+        f"{number}: {type_str} ({physical_addr})" if number else f"{type_str} ({physical_addr})"
+    )
+    return str(phys.get("nkb_name") or default_name)
+
+
 def register_wall_button_devices(
     hass: HomeAssistant,
     entry: NikobusConfigEntry,
@@ -222,17 +236,11 @@ def register_wall_button_devices(
         # .nkb-import name still wins over the default — the registry's
         # ``name`` field is re-asserted from here on every restart, so
         # this is what makes a non-overwrite import stick.
-        number = phys.get("component_number")
-        default_name = (
-            f"{number}: {type_str} ({physical_addr})"
-            if number
-            else f"{type_str} ({physical_addr})"
-        )
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, physical_addr)},
             manufacturer=BRAND,
-            name=str(phys.get("nkb_name") or default_name),
+            name=wall_button_device_name(physical_addr, phys),
             model=model,
             via_device_id=parent_device_id(device_registry, entry.entry_id, (DOMAIN, category)),
         )

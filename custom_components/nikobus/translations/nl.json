@@ -261,6 +261,14 @@
       "backup_module_programming": {
         "name": "Moduleprogrammering back-uppen"
       }
+    },
+    "binary_sensor": {
+      "motion_occupancy": {
+        "name": "Aanwezigheid"
+      },
+      "motion_light": {
+        "name": "Lichtniveau"
+      }
     }
   },
   "issues": {

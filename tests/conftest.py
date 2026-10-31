@@ -356,7 +356,18 @@ _mod(
     AddEntitiesCallback=type("AddEntitiesCallback", (), {}),
     AddConfigEntryEntitiesCallback=type("AddConfigEntryEntitiesCallback", (), {}),
 )
-_mod("homeassistant.components.binary_sensor", BinarySensorEntity=type("BinarySensorEntity", (), {}), DOMAIN="binary_sensor")
+class _BinarySensorDeviceClass(str):
+    OCCUPANCY = "occupancy"
+    LIGHT = "light"
+    MOTION = "motion"
+
+
+_mod(
+    "homeassistant.components.binary_sensor",
+    BinarySensorEntity=type("BinarySensorEntity", (), {}),
+    BinarySensorDeviceClass=_BinarySensorDeviceClass,
+    DOMAIN="binary_sensor",
+)
 _mod("homeassistant.components.switch", SwitchEntity=type("SwitchEntity", (), {}), DOMAIN="switch")
 _mod("homeassistant.components.button", ButtonEntity=type("ButtonEntity", (), {}), DOMAIN="button")
 _mod(

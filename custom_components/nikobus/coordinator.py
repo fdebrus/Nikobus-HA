@@ -1805,13 +1805,16 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities."""
         from .router import (
+            MOTION_SENSOR_KINDS,
             audio_zones,
             build_routing,
             build_unique_id,
             enabled_button_classes,
             input_latch_switch_unique_id,
             iter_input_module_children,
+            iter_motion_detectors,
             iter_operation_points,
+            motion_sensor_unique_id,
             rgb_light_unique_id,
         )
         known: set[str] = set()
@@ -1845,6 +1848,11 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         # inputs — same enumerator the switch platform creates from.
         for in_addr, _phys in iter_input_module_children(buttons, classes):
             known.add(input_latch_switch_unique_id(in_addr))
+        # A motion detector's occupancy and light sensors (binary_sensor
+        # platform), whatever press-entity classes are selected.
+        for md_addr, _phys in iter_motion_detectors(buttons):
+            for kind, _on, _off in MOTION_SENSOR_KINDS:
+                known.add(motion_sensor_unique_id(md_addr, kind))
         for scene in self.dict_scene_data.get("scene", []):
             if sid := scene.get("id"):
                 known.add(f"{DOMAIN}_scene_{sid}")

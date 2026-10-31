@@ -261,6 +261,14 @@
       "backup_module_programming": {
         "name": "Sauvegarder la programmation des modules"
       }
+    },
+    "binary_sensor": {
+      "motion_occupancy": {
+        "name": "Présence"
+      },
+      "motion_light": {
+        "name": "Luminosité"
+      }
     }
   },
   "issues": {

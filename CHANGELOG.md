@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.31.0
+
+**Requires `nikobus-connect` 0.57.0.**
+
+### Motion detectors: occupancy and light-level sensors
+
+A user logged two motion detectors with Nikobus interface (`05-7*5` / `430-00500`) for three days. Each sends four frames: its output on and off, and the light level at the sensor above and below the threshold set on its potentiometer. The integration knew only the output pair, as two push buttons; the light pair was logged as a press from an unknown button.
+
+- Each detector now has an **Occupancy** sensor (on when its output switches on, off when the run time has elapsed) and a **Light level** sensor (on above the threshold, off below), on the detector's device. Both keep their last state across a restart, since the detector cannot be asked for it, and exist whatever press-entity classes are selected.
+- The library inventories all four frames as keys 1A (on), 1B (off), 1C (light) and 1D (dark), with their press entities and events. Run **1. Load Project Overview** once to add 1C and 1D to a detector inventoried before; the two sensors work without it.
+- A link programmed on the light or dark event now resolves to its key.
+
 ## 3.30.7
 
 **Requires `nikobus-connect` 0.56.3.**
