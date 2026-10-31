@@ -124,13 +124,18 @@ One HA **device** is created per physical button, with one button-entity + binar
 4. Enter the serial path or `IP:port`. The connection is tested immediately.
 5. On **Hardware Configuration**, enable a toggle if it applies:
    - **Feedback Module (05-207) installed, Home Assistant connected to the PC-Link's port** — real-time pushed state, no polling. Leave it off when the serial port is the Feedback Module's own: that port does not relay the module's queries, so pushed state cannot be attributed to an output group and the integration raises a Repair issue asking you to turn it off.
-   - **PC-Link older than Gen 3** — disables state polling (early PC-Links don't answer module state queries reliably), leaving push-only updates. **Leave this off on a Gen-3 PC-Link** — ticking it by mistake just makes state updates slower; it has no effect on discovery.
+   - **PC-Link older than Gen 3** — disables state polling (early PC-Links don't answer module state queries reliably), leaving push-only updates. **Leave this off unless you need it**: it has no effect on discovery, but with polling off Home Assistant only learns an output's state from what it sees happen, so these stay stale until the next press on a key linked to that module:
+     - a timed output switching itself off (*Off + operating time*, *Delayed off*);
+     - an output switched by a PC-Logic program, a central function or the PC-Link's calendar;
+     - the state after a power cut.
+
+     If your presses update the entities, your PC-Link answers state queries and you don't need the option: Home Assistant reads the modules with the same query after every press. If the log shows `Failed to receive ACK and state for command '$1012…'` with the option off, turn it on.
 6. **Simulated press repeats** (1–10, default 3): how many times a press sent by Home Assistant is repeated on the bus, back to back in one write. A real key repeats its telegram while held and modules act on a telegram seen at least twice; leave the default unless a press is reliably ignored.
 7. If neither toggle is set, choose a **polling interval** (60–3600 s, default 120).
 8. Finish, then run [discovery](#discovery-workflow).
 9. A fresh installation creates **no press buttons or press sensors**: lights, covers and switches do not need them, and automations trigger on events. If you want them for wall keys, remotes or inputs, tick their classes under *Configure → Choose which press buttons and press sensors exist* (see [Choosing which press entities exist](#choosing-which-press-entities-exist)).
 
-All of this can be changed later under *Configure* (*Change hardware settings*, *Choose which press buttons and press sensors exist*); the integration reloads with the new values.
+All of this can be changed later under *Configure* (*Change hardware settings*, *Choose which press buttons and press sensors exist*); the integration reloads with the new values. To change the connection itself — another serial port, a TCP bridge — use **Reconfigure** on the integration's entry. It works while the integration runs: an unchanged connection is kept as it is; a new one is tested after the integration has released the port, and if the test fails the old connection is set up again.
 
 Module and button data live in Home Assistant's own storage (`.storage/nikobus.modules`, `.storage/nikobus.buttons`, `.storage/nikobus.cfs`). You don't hand-edit these — they're populated by discovery.
 
@@ -175,14 +180,14 @@ Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scen
 
 ### Customize a module *(optional)*
 
-*Configure → Customize a module* lets you, per channel:
+*Configure → Customize a module* lets you set the **module type**, for a module the inventory reported as the wrong family, and per channel:
 - **Description** → the entity name.
-- **Entity type** → how HA exposes it (switch modules: `switch`/`light`/`none`; dimmers: `light`/`fan`/`none`; rollers: `cover`/`switch`/`light`/`none`). A dimmer output driving a variable-speed extractor fan shown as `fan` gets a speed slider (0–100 % over the channel's 0–255 range) instead of a brightness, and HomeKit exposes it as a fan.
+- **Entity type** → how HA exposes it (switch modules: `switch`/`light`; dimmers: `light`/`fan`; rollers: `cover`/`switch`/`light`; any of them `disabled` for no entity). A dimmer output driving a variable-speed extractor fan shown as `fan` gets a speed slider (0–100 % over the channel's 0–255 range) instead of a brightness, and HomeKit exposes it as a fan.
 - **LED on / off key** → the bus address of the wall key whose LED shows this channel. When filled, Home Assistant *presses that key* instead of switching the output, so the key's LED and the output stay in step (a key that toggles the output itself, in impulse mode, must be driven this way). When empty, Home Assistant switches the output directly and no plate LED is updated.
 - **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator. Leave them alone and the cover runs on the operating time programmed into the module's own roller links — the time it really keeps the relay engaged, per channel and per direction. The form shows that value, so saving it makes it explicit; a value you type wins over the links. Only a channel whose module has no roller link falls back to 30 s.
 - **End-stop margin** (rollers) → seconds after the estimated arrival at fully open/closed before a Home Assistant-started motion sends its stop frame (default 3). The motor runs into the end stop during the margin, which keeps the position model honest; the stop then releases the relay so a wall button acts on the first press. Set it higher to let the module's own run time release the relay instead.
 
-Changes persist in `.storage/nikobus.modules` and survive re-discovery.
+Closing the dialog reloads the integration, so a new entity type, travel time or scene is there at once. Changes persist in `.storage/nikobus.modules` and survive re-discovery.
 
 ### Installs without a PC-Link
 
@@ -208,6 +213,8 @@ If neither file exists yet and your Nikobus project export is in `/config` — n
 - **Links are not in the files.** Which key drives which output is read from the modules by step 2; never write it yourself.
 - **After every edit:** press **1. Load Project Overview**, then **2. Load Existing Installation**.
 - **JSON rules:** straight double quotes (`"`, not the curly `“ ”` a forum or word processor produces), no comma after the last item, and addresses as quoted hexadecimal strings (`"4707"`, not `4707`). The log says so when a file cannot be read.
+- **A file with no readable module changes nothing.** If not a single module can be read from `nikobus_module_config.json` (an empty list, the wrong layout), the module store is left as it is and the log says why, rather than every module disappearing. Duplicate addresses and unknown module types are named in the log too.
+- **A copy of the `.storage` file works.** A file shaped like `.storage/nikobus.modules` (one `nikobus_module` group, each entry with its own `module_type`) is read with each module's own type.
 
 #### `nikobus_module_config.json`
 
@@ -582,8 +589,9 @@ The integration fires structured HA bus events for the full press lifecycle:
 - **Release buckets**: `nikobus_button_pressed_0` (< 1 s) … `_3` (≥ 3 s).
 - **Hold milestones** (while still held): `nikobus_button_timer_1` / `_2` / `_3` at 1/2/3 s. These count wire frames (40 ms cadence), not wall-clock, so a bridge that buffers and bursts frames still classifies correctly.
 - **Post-refresh**: `nikobus_button_operation` after impacted modules are refreshed — for presses seen on the bus only, never for a press Home Assistant sent itself.
+- **Scene triggers**: `nikobus_scene_activated` when one of a central-function scene's trigger addresses is seen on the bus, pressed at the wall or sent by Home Assistant. Its payload differs from the button events: `address` (the trigger seen), `name` (the scene's name), `entity_id` (its scene entity) and `member_count` (how many outputs it sets).
 
-All events share one payload schema:
+All button events share one payload schema:
 
 ```yaml
 address: "004E2C"        # button address (uppercase hex, no 0x)
@@ -920,6 +928,12 @@ If your install has a **PC-Logic (05-201) configured as master**, the PC-Logic a
 ### Buttons missing, or a button shows the wrong number of control points
 
 Run **1. Load Project Overview** followed by **2. Load Existing Installation** while connected to the PC-Link. If a specific physical button type isn't recognised at all, its device-type byte may be uncatalogued — open an issue with the diagnostics download and the model number printed on the button.
+
+### A two-button plate's presses are not recognised
+
+The two-button plates `05-060` (and `4*-072`), `05-061` and `05-060-02` come in two versions that report the same type and model on the bus but send their two keys on different addresses: either where a four-button plate has its left pair, or where it has its right pair. The integration tells them apart per plate from the links the output modules hold for it, during **2. Load Existing Installation**, and remembers the result; both versions can be mixed in one installation. The `4*-082` always uses the right pair.
+
+A plate whose keys are linked to no output module cannot be told apart and gets the left-pair addresses. If its presses arrive with `module_address: null` or as *Press from unknown button*, compare the `address` a press shows under *Developer tools → Events* (`nikobus_button_pressed`) with the key's entity attributes, and open an issue with both: the plate's version can then be set from its address.
 
 ### The `.nkb` import did nothing / "no .nkb file found"
 
