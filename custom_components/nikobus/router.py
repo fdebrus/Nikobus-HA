@@ -11,6 +11,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+from nikobus_connect.discovery.protocol import is_motion_detector
 
 from .const import (
     BRAND,
@@ -309,6 +310,33 @@ def is_input_module_child(phys: Any) -> bool:
         isinstance(phys, Mapping)
         and phys.get("pc_logic_parent_type") in INPUT_MODULE_TYPES
     )
+
+
+#: The two stateful sensors of a motion detector: ``(kind, on role, off role)``
+#: over the roles of ``MOTION_DETECTOR_KEY_ROLES``. The detector's output
+#: is occupancy, not motion: it stays on for the run time set on the unit.
+MOTION_SENSOR_KINDS: tuple[tuple[str, str, str], ...] = (
+    ("occupancy", "on", "off"),
+    ("light", "light", "dark"),
+)
+
+
+def motion_sensor_unique_id(physical_addr: str, kind: str) -> str:
+    """Unique_id of a motion detector's occupancy / light sensor."""
+    return f"{DOMAIN}_motion_{str(physical_addr).lower()}_{kind}"
+
+
+def iter_motion_detectors(
+    buttons: Mapping[str, Any] | None,
+) -> Iterator[tuple[str, Mapping[str, Any]]]:
+    """Yield ``(physical_addr, phys)`` for every motion detector in the button store.
+
+    Not filtered by the press-entity classes: the sensors are states,
+    not press signals, and exist whichever classes are selected.
+    """
+    for addr, phys in (buttons or {}).items():
+        if isinstance(phys, Mapping) and is_motion_detector(dict(phys)):
+            yield str(addr), phys
 
 
 def input_latch_switch_unique_id(physical_addr: str) -> str:

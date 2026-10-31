@@ -3,25 +3,39 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Any
+from typing import Any, ClassVar
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+)
 from homeassistant.const import EntityCategory
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.restore_state import RestoreEntity
+from nikobus_connect.discovery.protocol import motion_detector_bus_addresses
 
-from .button import op_point_display_name, register_wall_button_devices
+from .button import (
+    _category_for_button_type,
+    op_point_display_name,
+    register_wall_button_devices,
+)
 from .const import DOMAIN, press_signal
 from .coordinator import NikobusConfigEntry, NikobusDataCoordinator
+from .devices import wall_button_device_name
 from .entity import NikobusEntity
 from .router import (
+    MOTION_SENSOR_KINDS,
     audio_trigger_naming,
     calendar_channel_naming,
     enabled_button_classes,
+    iter_motion_detectors,
     iter_operation_points,
+    motion_sensor_unique_id,
     op_point_parent_device,
 )
 
@@ -47,7 +61,7 @@ async def async_setup_entry(
         hass, entry, buttons, coordinator.dict_module_data, classes=classes
     )
 
-    entities: list[NikobusButtonBinarySensor] = [
+    entities: list[BinarySensorEntity] = [
         NikobusButtonBinarySensor(
             coordinator, physical_addr, key_label, op_point, parent_phys=phys
         )
@@ -56,7 +70,113 @@ async def async_setup_entry(
         )
         if calendar_channel_naming(phys) is None  # never pressed on the bus
     ]
+
+    # Motion detectors: an occupancy and a light sensor each, whatever
+    # press-entity classes are selected, so the detector's device is
+    # registered here too (the press platforms skip it when its class
+    # is off).
+    detectors = dict(iter_motion_detectors(buttons))
+    if detectors:
+        register_wall_button_devices(
+            hass, entry, detectors, coordinator.dict_module_data, classes=None
+        )
+    for physical_addr, phys in detectors.items():
+        frames = motion_detector_bus_addresses(physical_addr)
+        for kind, on_role, off_role in MOTION_SENSOR_KINDS:
+            entities.append(
+                NikobusMotionDetectorSensor(
+                    coordinator,
+                    physical_addr,
+                    phys,
+                    kind=kind,
+                    on_address=frames[on_role],
+                    off_address=frames[off_role],
+                )
+            )
     async_add_entities(entities)
+
+
+class NikobusMotionDetectorSensor(NikobusEntity, BinarySensorEntity, RestoreEntity):
+    """Occupancy or light level of a motion detector with Nikobus interface.
+
+    The detector sends a frame when its state changes and cannot be
+    asked for it: one frame turns the sensor on, the other off, and the
+    last state is restored after a restart (unknown until the first
+    frame on a new install).
+
+    * ``occupancy`` — the detector's output: on when it detects motion
+      below its light threshold (or its own button is pressed), off when
+      its run time has elapsed.
+    * ``light`` — the light level at the sensor, against the threshold
+      set on its potentiometer: on above it, off below. Room lighting
+      counts as well as daylight.
+    """
+
+    _DEVICE_CLASSES: ClassVar[dict[str, BinarySensorDeviceClass]] = {
+        "occupancy": BinarySensorDeviceClass.OCCUPANCY,
+        "light": BinarySensorDeviceClass.LIGHT,
+    }
+
+    def __init__(
+        self,
+        coordinator: NikobusDataCoordinator,
+        physical_address: str,
+        phys: Mapping[str, Any],
+        *,
+        kind: str,
+        on_address: str,
+        off_address: str,
+    ) -> None:
+        type_str = str(phys.get("type") or phys.get("model") or "Motion detector")
+        super().__init__(
+            coordinator=coordinator,
+            address=physical_address,
+            name=wall_button_device_name(physical_address, phys),
+            model=str(phys.get("model") or type_str),
+            via_device=(DOMAIN, _category_for_button_type(type_str)),
+        )
+        self._kind = kind
+        self._on_address = on_address.upper()
+        self._off_address = off_address.upper()
+        self._attr_device_class = self._DEVICE_CLASSES[kind]
+        self._attr_translation_key = f"motion_{kind}"
+        self._attr_unique_id = motion_sensor_unique_id(physical_address, kind)
+        self._attr_is_on: bool | None = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        parent = super().extra_state_attributes or {}
+        return {**parent, "on_address": self._on_address, "off_address": self._off_address}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_state()
+        if last is not None and last.state in ("on", "off"):
+            self._attr_is_on = last.state == "on"
+        for address in (self._on_address, self._off_address):
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    self.hass, press_signal(address), self._handle_frame
+                )
+            )
+
+    @callback
+    def _handle_frame(self, data: dict[str, Any]) -> None:
+        """The detector reported a change (each frame comes several times)."""
+        address = str(data.get("address") or "").upper()
+        if address == self._on_address:
+            state = True
+        elif address == self._off_address:
+            state = False
+        else:
+            return
+        if state != self._attr_is_on:
+            self._attr_is_on = state
+            self.async_write_ha_state()
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Polls say nothing about the detector; only its frames do."""
 
 
 class NikobusButtonBinarySensor(NikobusEntity, BinarySensorEntity):

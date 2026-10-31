@@ -116,6 +116,14 @@
           "unknown": "Not checked"
         }
       }
+    },
+    "binary_sensor": {
+      "motion_occupancy": {
+        "name": "Occupancy"
+      },
+      "motion_light": {
+        "name": "Light level"
+      }
     }
   },
   "issues": {

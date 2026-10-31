@@ -105,7 +105,7 @@ One HA **device** is created per physical button, with one button-entity + binar
 - **Bus push buttons** — 2-, 4-, and 8-control-point variants across the supported series (`4*-072` / `4*-074` / `4*-078`, the classic `05-060` / `05-064` and the feedback-LED `05-061` (recognised since 3.11.0), and the `4*-082` / `4*-084` / `4*-088` series).
 - **Push-button & switch interfaces** (`05-056`, `05-057`, `05-058`).
 - **IR receivers** — each learned IR code becomes its own op-point.
-- **Motion detectors** with Nikobus interface (`05-7*5`).
+- **Motion detectors** with Nikobus interface (`05-7*5` / `430-00500`) — an occupancy and a light-level sensor each, plus their four keys ([details](#motion-detectors)).
 - **RF transmitters** — `05-302` / `05-304` / `05-311` / `05-314`, and the **05-312 Easywave 52-key** hand-held (all 52 sub-codes as op-points).
 - **Virtual / clustered remotes** — multi-page handhelds that emit many bus codes but aren't in PC-Link inventory are clustered into a single `Remote Transmitter (<suffix>)` device at the end of a link scan.
 
@@ -518,6 +518,21 @@ A 05-205 keeps its links in its own memory, and discovery now reads them: for ea
 The module answers no state query, so a zone's state is what was last commanded. It is not guesswork on one side only: a wall key pressing the same function is relayed by the PC-Link, so pressing *Zone 2 on* at the wall updates the entity too.
 
 Each address the module listens for is also a press button and press sensor of its own — *Zone 2 Source 3*, *Audio Power* for the module's own Power object — filed under the module's device rather than under a wall plate, since no plate owns them. They belong to the *Audio triggers* class of [press entities](#choosing-which-press-entities-exist), so they exist only if that class is ticked; the media players do not depend on it.
+
+### Motion detectors
+
+A motion detector with Nikobus interface (`05-7*5` / `430-00500`) sends four button frames: its output switching **on** (motion while the light level is below its threshold, or its own button) and **off** (the run time has elapsed), and the light level at the sensor going **above** or **below** its threshold. The threshold (2–1000 lux) and the run time (5 s – 30 min) are set with the potentiometers on the sensor; the bus carries no lux value and no timing.
+
+Each detector gets two binary sensors on its device:
+
+| Sensor | Device class | On | Off |
+|---|---|---|---|
+| *Occupancy* | occupancy | the output switched on | the output switched off |
+| *Light level* | light | above the threshold | below the threshold |
+
+The light level is the total light at the sensor, so switching on the room light counts as much as daylight. Occupancy follows the detector's output rather than each movement: it stays on for the run time. The detector cannot be asked for its state; the sensors keep their last state across restarts and stay *unknown* on a new install until the first frame. They exist whichever [press-entity classes](#choosing-which-press-entities-exist) are ticked.
+
+The four frames are also the detector's keys 1A (on), 1B (off), 1C (light) and 1D (dark), with the press entities and `nikobus_button_pressed` events of any key. A detector inventoried before 3.31.0 has only 1A and 1B; run **1. Load Project Overview** once to add the other two. The two sensors work either way.
 
 ### RGB controller
 
