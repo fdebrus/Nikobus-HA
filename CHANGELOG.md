@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.31.2
+
+**Requires `nikobus-connect` 0.57.2.** Fixes a regression in 3.31.1.
+
+### Two-button plates: each plate gets its own key layout
+
+3.31.1 moved the keys of every 05-060, 05-061 and 05-060-02 to the layout one install's plates use. The same plate model exists in a second layout, with the same type and model reported on the bus, and on an install with those plates the keys stopped matching what the plates send once discovery was run again: their links disappeared and their presses were no longer recognised.
+
+- The library now reads each plate's layout from the links its modules hold for it, during **2. Load Existing Installation**. Plates of both kinds can live in the same installation.
+- The keys' button and press-sensor entities follow their key in either direction and keep their entity id, name, area and automations.
+- **If you ran discovery on 3.31.1** and a two-button plate stopped working: update, then run **1. Load Project Overview** and **2. Load Existing Installation** once.
+- A plate whose keys have no link in any module stays in the generic layout, as before 3.31.1.
+
 ## 3.31.1
 
 **Requires `nikobus-connect` 0.57.1.**
