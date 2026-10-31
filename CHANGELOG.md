@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.30.7
+
+**Requires `nikobus-connect` 0.56.3.**
+
+Fixes from a second audit of 3.30.6; the library's own fixes (a cancelled scan poisoning the next one, the inventory ending while identity reads were still queued, a Feedback Module answer filed under the wrong output group) are in 0.56.3.
+
+- **Module, channel and scene edits take effect when you close the dialog.** Customize a module, edit a channel, and create, change or delete a scene saved to the integration's stores but left the options unchanged, and Home Assistant reloads an entry only when its options change. Entity types, cover travel times and new or deleted scenes only appeared after a manual reload. The dialog now reloads the integration itself.
+- **Reconfigure works while the integration is running.** It tested the new connection on the port the running integration holds, so it always failed with "cannot connect". An unchanged connection is no longer tested; a changed one is tested after the integration is stopped, and the old connection is set up again if the test fails. The entry's identity follows the new connection, and a connection another Nikobus entry already uses is refused.
+- **The options dialog refuses to run while the integration is not loaded.** During a setup retry (PC-Link unplugged at boot) the scene list was empty, and saving a scene rewrote the scene file with that one scene.
+- **The manual module file can no longer empty the module store.** A file with no readable module (an empty group, a wrong shape) replaced every module with nothing; it is now ignored with a warning. A file copied from the `.storage` store, whose single group is `nikobus_module`, keeps each module's own type instead of giving every module that group name. Duplicate addresses and unknown module types are reported, and a button file's channel count written as text (`"4"`) is accepted.
+- **Generated manual files and the uploaded `.nkb` are written atomically.** A write cut short no longer leaves a truncated file behind.
+- **The "No buttons configured" repair starts the inventory in the background.** It ran the whole inventory inside the dialog, and any refusal came back as "Unknown error".
+- **A setup failure of any kind releases the port.** Only Nikobus errors from the connection step stopped the coordinator; anything else left the serial port or bridge socket open until a restart.
+- **`nikobus.query_module_inventory` goes through the same path as the bridge buttons.** Without fields it runs the inventory with the manual-file fallback, with an address the module scan; progress and phase are tracked as for the buttons. The register-range mode is unchanged.
+- **Covers.** A motion started at the wall during the end-stop margin of a full travel is no longer stopped by that travel's deferred stop frame. A position move whose new direction was pushed on the bus before the module acknowledged it now still gets its stop frame at the target.
+- **`nikobus_button_operation` on the initial press says `pressed`,** with no duration, as documented; only the release carries `released` and how long the key was held.
+- **The PC-Link clock is not set while a scan or a maintenance run is reading the bus.**
+- Missing translations added for "no modules known", the repair's "not loaded" and the reconfigure success message, in English, French and Dutch.
+- **Tests and CI.** The tests use the real `voluptuous` when it is installed, so form and service schemas are actually validated, and CI installs exactly the requirements in the manifest instead of a years-old library.
+
 ## 3.30.6
 
 **Requires `nikobus-connect` 0.56.2.**

@@ -54,10 +54,12 @@
     },
     "error": {
       "cannot_connect": "Kan geen verbinding maken met de Nikobus PC-Link — controleer het adres en of geen andere client verbonden is",
-      "unknown": "Onverwachte fout — raadpleeg de Home Assistant-logboeken voor details"
+      "unknown": "Onverwachte fout — raadpleeg de Home Assistant-logboeken voor details",
+      "already_configured": "Een andere Nikobus-vermelding gebruikt deze verbinding al."
     },
     "abort": {
-      "already_configured": "Deze Nikobus-verbinding is al geconfigureerd."
+      "already_configured": "Deze Nikobus-verbinding is al geconfigureerd.",
+      "reconfigure_successful": "De Nikobus-verbindingsinstellingen zijn bijgewerkt."
     }
   },
   "options": {
@@ -191,7 +193,8 @@
       "not_loaded": "De Nikobus-integratie is niet geladen. Herlaad de integratie en probeer het opnieuw.",
       "channel_not_found": "Het geselecteerde kanaal is niet gevonden.",
       "module_not_found": "De geselecteerde module is niet gevonden in de opslag.",
-      "scene_not_found": "Scène niet gevonden — mogelijk verwijderd."
+      "scene_not_found": "Scène niet gevonden — mogelijk verwijderd.",
+      "no_modules": "Er zijn nog geen Nikobus-modules bekend. Voer eerst de PC-Link-inventaris uit (apparaat Nikobus Bridge, knop 1)."
     },
     "error": {
       "invalid_nkb": "Dit bestand is geen leesbaar Nikobus .nkb-project (het moet de .nkb-export zijn — een ZIP met de projectdatabase).",
@@ -269,6 +272,9 @@
             "title": "Nikobus-modules en -knoppen ontdekken",
             "description": "Home Assistant heeft geen Nikobus-knoppen gedetecteerd. Voer nu een PC-Link-inventaris uit om de configuratie aan te vullen."
           }
+        },
+        "abort": {
+          "not_loaded": "De Nikobus-integratie is niet geladen. Laad de integratie opnieuw en probeer het nog eens."
         }
       }
     },

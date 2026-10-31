@@ -12,6 +12,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import AbortFlow
 
 from custom_components.nikobus.config_flow import (
@@ -28,6 +29,7 @@ from custom_components.nikobus.const import (
     CONF_PRIOR_GEN3,
     CONF_REFRESH_INTERVAL,
 )
+from tests.schema_helpers import schema_fields
 
 _TEST_CONN = "custom_components.nikobus.config_flow._test_connection"
 
@@ -208,6 +210,7 @@ class TestOptionsFlow(unittest.TestCase):
             CONF_REFRESH_INTERVAL: 120,
         }
         entry.options = {}
+        entry.state = ConfigEntryState.LOADED
         flow.config_entry = entry
         return flow
 
@@ -260,7 +263,7 @@ class TestOptionsFlow(unittest.TestCase):
         ``.default`` like the real library."""
         return {
             key.schema: key.default()
-            for key in result["data_schema"]
+            for key in schema_fields(result["data_schema"])
         }
 
     def test_import_nkb_form_prefills_from_last_applied_options(self):
@@ -353,7 +356,11 @@ class TestSceneEditor(unittest.TestCase):
         entry.runtime_data = coord
         entry.options = {}
         entry.data = {}
+        entry.entry_id = "entry-1"
+        entry.state = ConfigEntryState.LOADED
         flow.config_entry = entry
+        flow.hass = MagicMock()
+        flow.hass.config_entries.async_reload = MagicMock(return_value="reload-coro")
         return flow, coord
 
     def test_manage_scenes_lists_existing_and_create(self):

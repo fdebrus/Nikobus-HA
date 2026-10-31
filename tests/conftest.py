@@ -129,6 +129,12 @@ class _ConfigFlow(_FlowHandlerBase):
     def _get_reconfigure_entry(self):
         return self._reconfigure_entry
 
+    #: Test hook — the entries ``_async_current_entries`` reports.
+    _current_entries: list | None = None
+
+    def _async_current_entries(self, include_ignore=True):
+        return list(self._current_entries or [])
+
     def async_update_reload_and_abort(self, entry, *, data=None, options=None, **kw):
         # Mirrors HA: each of ``data`` / ``options`` replaces the entry's
         # mapping when given and is left alone when not.
@@ -398,9 +404,9 @@ _mod(
 _mod("homeassistant.components.scene", Scene=type("Scene", (), {}), DOMAIN="scene")
 
 # --- config-flow / repairs import surface -------------------------------
-# voluptuous + the HA flow/selector helpers aren't installed in this env;
-# stub just enough to import config_flow.py / repairs.py and exercise
-# their pure helpers (schema builders themselves are not invoked).
+# The HA flow/selector helpers aren't installed in this env; stub just
+# enough to import config_flow.py / repairs.py. voluptuous is stubbed
+# only when the real library is missing.
 class _VolMarker(str):
     """Stub for vol.Optional / vol.Required.
 
@@ -416,7 +422,18 @@ class _VolMarker(str):
         return obj
 
 
-_mod(
+def _have_real_voluptuous() -> bool:
+    try:
+        import voluptuous  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+# The real voluptuous when it is installed (CI installs it), so the
+# service and form schemas are actually validated; the stub below only
+# keeps the suite importable without it.
+if not _have_real_voluptuous(): _mod(
     "voluptuous",
     Invalid=type("Invalid", (Exception,), {}),
     Schema=lambda *a, **k: (a[0] if a else None),

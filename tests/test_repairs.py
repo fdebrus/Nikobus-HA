@@ -11,6 +11,7 @@ from homeassistant.config_entries import ConfigEntryState
 
 from custom_components.nikobus.const import BUTTON_LEGACY_KEEP_KEY
 from custom_components.nikobus.repairs import LegacyUndecodedButtonsRepairFlow as RF
+from tests.schema_helpers import schema_fields
 
 
 class TestFormatLabel(unittest.TestCase):
@@ -125,7 +126,7 @@ def _store():
 
 
 def _defaults(result):
-    return {str(key): key.default() for key in result["data_schema"]}
+    return {str(key): key.default() for key in schema_fields(result["data_schema"])}
 
 
 class TestFlowOpens(unittest.TestCase):

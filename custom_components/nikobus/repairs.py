@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, ClassVar
 
 import voluptuous as vol
@@ -9,6 +10,7 @@ from homeassistant.components.repairs import RepairsFlow
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
@@ -22,6 +24,8 @@ from .const import (
     LEGACY_BUTTON_STATUSES,
 )
 from .coordinator import NikobusDataCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class NoButtonsConfiguredRepairFlow(RepairsFlow):
@@ -48,8 +52,27 @@ class NoButtonsConfiguredRepairFlow(RepairsFlow):
         if coordinator is None:
             return self.async_abort(reason="not_loaded")
 
-        await coordinator.start_pc_link_inventory()
+        # The inventory takes up to a minute; awaited here it ran inside
+        # the dialog's request, and an error came back as "Unknown
+        # error". It runs in the background like the bridge button's,
+        # which reports progress and the result on its own.
+        from .button import _entry_background_task
+
+        _entry_background_task(
+            self.hass,
+            coordinator,
+            _run_inventory_logged(coordinator),
+            "nikobus_repair_pc_link_inventory",
+        )
         return self.async_create_entry(title="", data={})
+
+
+async def _run_inventory_logged(coordinator: Any) -> None:
+    """Run the PC-Link inventory, logging a refusal instead of raising it."""
+    try:
+        await coordinator.start_pc_link_inventory()
+    except HomeAssistantError as err:
+        _LOGGER.warning("Nikobus inventory from the repair dialog did not start: %s", err)
 
 
 class LegacyUndecodedButtonsRepairFlow(RepairsFlow):

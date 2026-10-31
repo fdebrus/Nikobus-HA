@@ -305,6 +305,8 @@ class NikobusProgramming:
 
     async def async_sync_clock(self) -> datetime:
         """Write Home Assistant's local time into the PC-Link and re-read it."""
+        # Not while a scan or another maintenance run is reading the bus.
+        self._acquire()
         api = self._api()
         address = self._require_pc_link()
         now = dt_util.now()

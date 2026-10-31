@@ -209,9 +209,21 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 translation_key="discovery_already_running",
             )
 
+        # The inventory and the module scan go through the coordinator,
+        # like the bridge buttons: it tracks the scope and phase for the
+        # progress sensor, falls back to the manual files without a
+        # PC-Link, and knows whether a scan covered every module. Only
+        # the forensic register range talks to the library directly.
+        from .button import _entry_background_task
+
         if not module_address:
             _LOGGER.info("Starting manual Nikobus PC-Link inventory discovery")
-            await coordinator.nikobus_discovery.start_inventory_discovery()
+            _entry_background_task(
+                hass,
+                coordinator,
+                coordinator.start_pc_link_inventory(),
+                "nikobus_service_pc_link_inventory",
+            )
         elif custom_range:
             _LOGGER.info(
                 "Forensic scan of module %s — registers 0x%02X..0x%02X, sub=%s",
@@ -228,7 +240,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             )
         else:
             _LOGGER.info("Starting discovery for module %s", module_address)
-            await coordinator.nikobus_discovery.query_module_inventory(module_address)
+            _entry_background_task(
+                hass,
+                coordinator,
+                coordinator.start_module_scan(module_address),
+                "nikobus_service_module_scan",
+            )
 
     hass.services.async_register(
         DOMAIN,
@@ -568,6 +585,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
             translation_key="initialization_error",
             translation_placeholders={"error": str(err)},
         ) from err
+    except BaseException:
+        # Anything else (``connect`` wraps it in HomeAssistantError, a
+        # store from a newer version raises NotImplementedError, a
+        # cancel) also leaves the port open: release it before raising.
+        await coordinator.stop()
+        raise
 
     # Everything from here runs with the serial port / bridge socket open
     # and held exclusively. A failure in platform setup, the first refresh

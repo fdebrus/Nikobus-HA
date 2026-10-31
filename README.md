@@ -764,8 +764,8 @@ The integration registers seven services in the `nikobus.` domain. All appear in
 
 Triggers a discovery scan. It has three modes depending on which fields you pass:
 
-- **Full inventory** — no fields: re-enumerate every module and button from the PC-Link.
-- **Single module** — `module_address` only: re-scan one module's link table.
+- **Full inventory** — no fields: re-enumerate every module and button from the PC-Link, exactly like the bridge's *1. Load Project Overview* button (without a PC-Link it loads the manual config files instead).
+- **Single module** — `module_address` only: re-scan one module's link table, like *2. Load Existing Installation* does for every module.
 - **Forensic register read** — `module_address` + `register_start` + `register_end` (+ optional `sub_byte`): read a specific register range, for reverse-engineering / diagnostics.
 
 | Field | Required | Example | Description |
@@ -775,7 +775,7 @@ Triggers a discovery scan. It has three modes depending on which fields you pass
 | `register_end` | forensic | `"0x83"` | Last register (forensic mode). |
 | `sub_byte` | no | `"04"` | Memory bank — `04` output link table (default), `00` module header, `01` BP-cell / vendor map. |
 
-Forensic mode requires `module_address`, `register_start` **and** `register_end` together. No response value; results go to the integration log and the stores. Can't run while another discovery is in progress.
+Forensic mode requires `module_address`, `register_start` **and** `register_end` together. The action returns as soon as the scan has started; the discovery progress sensor follows it, and results go to the integration log and the stores. Can't run while another discovery is in progress.
 
 ```yaml
 action: nikobus.query_module_inventory
