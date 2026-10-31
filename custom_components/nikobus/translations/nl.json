@@ -20,7 +20,7 @@
           "press_repeat": "Herhalingen gesimuleerde druk"
         },
         "data_description": {
-          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen — geen polling nodig. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten: die poort geeft de vragen van de module niet door, dus gepushte status kan niet worden toegewezen; de status wordt dan gepolld.",
+          "has_feedbackmodule": "Indien ingeschakeld gebruikt Home Assistant de antwoorden op de eigen polling van de Feedbackmodule (ongeveer elke 35 seconden één modulegroep) in plaats van zelf te pollen; een wijziging zonder druk op een toets kan enkele minuten duren voordat ze zichtbaar is. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten: die poort geeft de vragen van de module niet door, dus gepushte status kan niet worden toegewezen; de status wordt dan gepolld.",
           "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
           "press_repeat": "Hoe vaak elke door HA geactiveerde druk (knop, sfeer, CF, schakelaar) op de bus wordt verzonden. Een echte knop herhaalt zijn telegram, dus één verzending kan gemist worden bij een drukke bus. Standaard 3."
         }
@@ -46,7 +46,7 @@
         },
         "data_description": {
           "connection_string": "Pad naar het seriële apparaat of TCP-adres van de PC-Link-brug",
-          "has_feedbackmodule": "Indien ingeschakeld pusht de Feedbackmodule statuswijzigingen automatisch — pollen is niet nodig. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten: die poort geeft de vragen van de module niet door, dus gepushte status kan niet worden toegewezen; de status wordt dan gepolld.",
+          "has_feedbackmodule": "Indien ingeschakeld gebruikt Home Assistant de antwoorden op de eigen polling van de Feedbackmodule (ongeveer elke 35 seconden één modulegroep) in plaats van zelf te pollen; een wijziging zonder druk op een toets kan enkele minuten duren voordat ze zichtbaar is. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten: die poort geeft de vragen van de module niet door, dus gepushte status kan niet worden toegewezen; de status wordt dan gepolld.",
           "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor PC-Link-hardware van de eerste en tweede generatie.",
           "refresh_interval": "Hoe vaak de modulestatussen van de bus worden gelezen (60–3600 s). Lagere waarden betekenen snellere updates maar meer busverkeer."
         }
@@ -85,7 +85,7 @@
           "press_repeat": "Herhalingen gesimuleerde druk"
         },
         "data_description": {
-          "has_feedbackmodule": "Indien ingeschakeld stuurt de Feedbackmodule automatisch statuswijzigingen. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten.",
+          "has_feedbackmodule": "Indien ingeschakeld gebruikt Home Assistant de antwoorden op de eigen polling van de Feedbackmodule (ongeveer elke 35 seconden één modulegroep) in plaats van zelf te pollen; een wijziging zonder druk op een toets kan enkele minuten duren voordat ze zichtbaar is. Laat uit als Home Assistant op de eigen seriële poort van de Feedbackmodule is aangesloten: die poort geeft de vragen van de module niet door, dus gepushte status kan niet worden toegewezen; de status wordt dan gepolld.",
           "prior_gen3": "Schakelt compatibiliteitsaanpassingen in voor eerste en tweede generatie PC-Link hardware.",
           "press_repeat": "Hoe vaak elke door HA geactiveerde druk (knop, sfeer, CF, schakelaar) op de bus wordt verzonden. Een echte knop herhaalt zijn telegram, dus één verzending kan gemist worden bij een drukke bus. Standaard 3."
         }

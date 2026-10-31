@@ -17,7 +17,7 @@
           "press_repeat": "Simulated press repeats"
         },
         "data_description": {
-          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
+          "has_feedbackmodule": "When enabled, Home Assistant uses the answers to the Feedback Module's own polling (one module group about every 35 seconds) instead of polling itself; a change without a key press can take a few minutes to show. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
           "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
           "press_repeat": "How many times each HA-triggered press (button, scene, CF, latch switch) is sent on the bus. A real button repeats its telegram, so a single send can be missed under bus contention. Default 3."
         },
@@ -43,7 +43,7 @@
         },
         "data_description": {
           "connection_string": "Serial device path or TCP address of the PC-Link bridge",
-          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
+          "has_feedbackmodule": "When enabled, Home Assistant uses the answers to the Feedback Module's own polling (one module group about every 35 seconds) instead of polling itself; a change without a key press can take a few minutes to show. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
           "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
           "refresh_interval": "How often to read module states from the bus (60–3600 s). Lower values mean faster updates but more bus traffic."
         },
@@ -291,7 +291,7 @@
           "press_repeat": "Simulated press repeats"
         },
         "data_description": {
-          "has_feedbackmodule": "When enabled, the Feedback Module pushes state changes automatically — no polling needed. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
+          "has_feedbackmodule": "When enabled, Home Assistant uses the answers to the Feedback Module's own polling (one module group about every 35 seconds) instead of polling itself; a change without a key press can take a few minutes to show. Leave it off when Home Assistant is connected to the Feedback Module's own serial port: that port does not relay the module's queries, so pushed state cannot be attributed; state is then polled.",
           "prior_gen3": "Enables compatibility tweaks for first and second-generation PC-Link hardware.",
           "press_repeat": "How many times each HA-triggered press (button, scene, CF, latch switch) is sent on the bus. A real button repeats its telegram, so a single send can be missed under bus contention. Default 3."
         },
