@@ -48,7 +48,7 @@ def _api():
     api.read_module_memory = AsyncMock(return_value=b"\xff" * 64)
     api.get_module_crc = AsyncMock(return_value=0x1234)
     api.verify_module_memory = AsyncMock(return_value=(True, 0x1234, 0x1234))
-    api.get_pc_link_time = AsyncMock(return_value=datetime(2026, 9, 3, 21, 10, 43))  # noqa: DTZ001
+    api.get_pc_link_time = AsyncMock(return_value=datetime(2026, 9, 3, 21, 10, 43))
     api.set_pc_link_time = AsyncMock()
     return api
 

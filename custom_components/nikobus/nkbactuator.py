@@ -15,7 +15,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
@@ -367,7 +367,7 @@ class NikobusActuator:
             "address": state.address,
             "module_address": context.module_address if context else None,
             "channel": context.channel if context else None,
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "press_id": state.press_id,
             "state": kwargs.get("state_value"),
             "duration_s": kwargs.get("duration"),

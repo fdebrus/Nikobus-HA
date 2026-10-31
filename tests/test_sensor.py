@@ -2,7 +2,7 @@
 
 import json
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -137,7 +137,7 @@ class TestSensorAttributes(unittest.TestCase):
         self.assertIsNone(attrs["last_connected"])
 
     def test_last_connected_isoformat(self):
-        ts = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        ts = datetime(2025, 1, 15, 10, 30, 0, tzinfo=UTC)
         attrs = self._sensor(last_connected=ts).extra_state_attributes
         self.assertEqual(attrs["last_connected"], ts.isoformat())
 

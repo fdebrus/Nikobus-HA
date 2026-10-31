@@ -101,7 +101,7 @@ def _api(eeprom_error=False, crc_ok=True, type_code=None):
     api.read_module_memory = AsyncMock(return_value=b"\xff" * 64)
     api.get_module_crc = AsyncMock(return_value=0x1234)
     api.verify_module_memory = AsyncMock(return_value=(crc_ok, 0x1234, 0x1234 if crc_ok else 0x9999))
-    api.get_pc_link_time = AsyncMock(return_value=datetime(2026, 9, 3, 21, 10, 43))  # noqa: DTZ001
+    api.get_pc_link_time = AsyncMock(return_value=datetime(2026, 9, 3, 21, 10, 43))
     api.set_pc_link_time = AsyncMock()
     return api
 
