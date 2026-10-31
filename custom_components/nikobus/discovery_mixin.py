@@ -838,7 +838,7 @@ class NikobusDiscoveryMixin:
                     self._pclink_first_response_event.wait(),
                     timeout=self._PCLINK_PROBE_TIMEOUT,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _LOGGER.info(
                     "No PC-Link response within %.1fs — falling back to "
                     "manual config files",
@@ -851,7 +851,7 @@ class NikobusDiscoveryMixin:
                         self._discovery_finished_event.wait(),
                         timeout=self._PCLINK_FINALIZE_WAIT_AFTER_TIMEOUT,
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     _LOGGER.warning(
                         "Step 1: library did not finalise inventory after "
                         "probe timeout; proceeding with fallback anyway."

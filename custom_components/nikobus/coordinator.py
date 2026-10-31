@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
 from homeassistant.config_entries import ConfigEntry
@@ -670,7 +670,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
 
             await self.nikobus_command.start()
             await self.nikobus_listener.start()
-            self._last_connected = datetime.now(timezone.utc)
+            self._last_connected = datetime.now(UTC)
 
         except NikobusDataError:
             raise
@@ -1739,7 +1739,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 await self.nikobus_command.start()
                 self.nikobus_listener.on_connection_lost = self._handle_connection_lost
                 await self.nikobus_listener.start()
-                self._last_connected = datetime.now(timezone.utc)
+                self._last_connected = datetime.now(UTC)
                 self._reconnect_attempts = 0
                 self._surface_device_probe()
                 await self._async_update_data()

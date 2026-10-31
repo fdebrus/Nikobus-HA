@@ -18,9 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Lints custom_components/nikobus per ruff defaults.
+      # Lints custom_components/nikobus per ruff defaults. The version is
+      # pinned: ruff-action installs the latest release when it finds no
+      # pyproject.toml (the config is in ruff.toml), so a new release
+      # could fail a PR that changes no code. Bump it on purpose.
       - uses: astral-sh/ruff-action@v3
         with:
+          version: "0.17.3"
           args: "check --output-format=github"
 
   test:

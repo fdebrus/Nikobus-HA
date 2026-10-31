@@ -7,8 +7,7 @@ import importlib.machinery
 import importlib.util
 import sys
 import types
-from datetime import datetime
-from datetime import timezone as _tz
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -319,8 +318,8 @@ _mod(
 _mod("homeassistant.util")
 _mod(
     "homeassistant.util.dt",
-    now=lambda tz=None: datetime.now(_tz.utc),
-    utcnow=lambda: datetime.now(_tz.utc),
+    now=lambda tz=None: datetime.now(UTC),
+    utcnow=lambda: datetime.now(UTC),
     as_local=lambda dt: dt,
 )
 
