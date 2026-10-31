@@ -115,4 +115,5 @@ def test_a_4x082_entity_left_at_8_c_moves_to_its_fixed_layout():
                         "operation_points": {"1A": {"bus_address": "078032"}, "1B": {"bus_address": "478032"}}}}
     existing = {("binary_sensor", "nikobus_button_878032"): "binary_sensor.x"}
     moved, calls = _run(store, existing)
+    assert moved == 1
     assert calls == [("binary_sensor.x", ("new_unique_id", "nikobus_button_078032"))]
