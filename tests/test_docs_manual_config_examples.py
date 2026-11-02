@@ -1,8 +1,8 @@
-"""The README's manual-config examples load as documented.
+"""The manual-config examples in docs/manual-config.md load as documented.
 
-The two JSON blocks under "Installs without a PC-Link" are what users
-copy for an install without a PC-Link. This keeps them parseable and
-checks that they produce what the README says: the entities per module
+Its two JSON blocks are what users copy for an install without a
+PC-Link. This keeps them parseable and checks that they produce what
+the guide says: the entities per module
 and channel option, and one 4-key button plus a single-key one.
 """
 
@@ -15,27 +15,24 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from custom_components.nikobus.nkbmanual import (
-    _apply_button_config,
-    convert_legacy_to_flat,
-)
 from custom_components.nikobus.router import build_routing
 
-README = Path(__file__).resolve().parents[1] / "README.md"
+GUIDE = Path(__file__).resolve().parents[1] / "docs" / "manual-config.md"
 
 
 def _examples() -> tuple[dict, dict]:
-    text = README.read_text()
-    section = text[text.index("### Installs without a PC-Link") :]
-    section = section[: section.index("\n---\n")]
-    blocks = re.findall(r"```json\n(.*?)```", section, flags=re.DOTALL)
+    blocks = re.findall(r"```json\n(.*?)```", GUIDE.read_text(), flags=re.DOTALL)
     assert len(blocks) == 2, "expected one module and one button example"
     return json.loads(blocks[0]), json.loads(blocks[1])
 
 
 def test_the_module_example_loads_and_routes_as_documented() -> None:
+    # Imported at run time: test_manual_config reloads the module during
+    # collection, and the patch below must hit the copy that is in use.
+    from custom_components.nikobus import nkbmanual
+
     modules, _ = _examples()
-    flat = convert_legacy_to_flat(modules)
+    flat = nkbmanual.convert_legacy_to_flat(modules)
     assert set(flat) == {"4707", "0E6C", "9105"}
     assert [len(flat[a]["channels"]) for a in ("4707", "0E6C", "9105")] == [12, 4, 6]
     # Legacy single run time split into both directions.
@@ -61,14 +58,16 @@ def test_the_module_example_loads_and_routes_as_documented() -> None:
 
 
 def test_the_button_example_makes_one_plate_and_one_single_key() -> None:
+    from custom_components.nikobus import nkbmanual
+
     _, buttons = _examples()
     data: dict = {}
-    with patch(
-        "custom_components.nikobus.nkbmanual._read_json",
+    with patch.object(
+        nkbmanual, "_read_json",
         AsyncMock(return_value=("/config/nikobus_button_config.json", buttons)),
     ):
         plates, keys, _path = asyncio.new_event_loop().run_until_complete(
-            _apply_button_config(SimpleNamespace(), data)
+            nkbmanual._apply_button_config(SimpleNamespace(), data)
         )
     assert (plates, keys) == (2, 5)
     plate = data["nikobus_button"]["1843B4"]
