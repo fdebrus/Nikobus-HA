@@ -16,6 +16,7 @@ Fixes from the third audit (`documentation/audit-2026-10-31/`) and from what a F
 - `manifest.json`: `single_config_entry` (the stores are global, so a second entry was never supported), and the unused `pyserial-asyncio-fast` requirement dropped (the library depends on `pyserial-asyncio`).
 - README: what the Feedback Module does with the LEDs, corrected for an output switched off (never picked up by its reads) and for an inverted LED, from the tests on an installation with a 05-207 (October 2026); `nikobus_scene_activated` is not fired for a scene Home Assistant activates itself; `nikobus_button_operation` fires when the module read is scheduled and carries two more keys; eight services, not seven; a module type set under *Customize a module* is written back by the next inventory. The module dialog named the inventory button by an old name.
 - CI also runs the tests against the manifest's minimum `nikobus-connect`, not only the newest release.
+- **The README is split.** It keeps the quick start, prerequisites, supported hardware, installation and known limitations; the guides moved to `docs/` (discovery, the manual files, maintenance, `.nkb` import, buttons and entities, commands on the bus, events, scenes, connectivity, services, troubleshooting, how it works), with a test that every link between them resolves.
 
 ## 3.31.2
 

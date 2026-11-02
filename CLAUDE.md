@@ -36,6 +36,8 @@ fields from either.
   `nkbnames.py` `.nkb` import; `nkbprogramming.py` backup / verify / clock.
 - `translations/en.json`, `fr.json`, `nl.json` must have the same keys (a test
   checks); there is no `strings.json`.
+- `docs/` the user guides the README links to; `documentation/` reference
+  material (protocol notes, memory maps, vendor manuals, code audits).
 
 ## Rules that must not be broken
 
@@ -71,8 +73,9 @@ fields from either.
   `nikobus-connect>=` in `manifest.json`. CI installs exactly the manifest's
   requirements, so it fails until the library is on PyPI.
 - Bump `version` in `manifest.json` and add a `CHANGELOG.md` entry.
-- README, `CHANGELOG.md` and the translations are part of a change: keep
-  them true to the code (option names, defaults, timings, service fields).
+- README, the `docs/` guides, `CHANGELOG.md` and the translations are part
+  of a change: keep them true to the code (option names, defaults, timings,
+  service fields). A test checks that every relative link resolves.
 - Do not amend, squash or rebase commits already pushed to a pull request
   branch once the pull request is open: reviewers follow the history and
   what changed since their last review. Restarting the working branch from
