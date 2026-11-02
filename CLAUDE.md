@@ -73,6 +73,10 @@ fields from either.
 - Bump `version` in `manifest.json` and add a `CHANGELOG.md` entry.
 - README, `CHANGELOG.md` and the translations are part of a change: keep
   them true to the code (option names, defaults, timings, service fields).
+- Do not amend, squash or rebase commits already pushed to a pull request
+  branch once the pull request is open: reviewers follow the history and
+  what changed since their last review. Restarting the working branch from
+  `main` after its pull request was merged is fine.
 
 ## Code review
 
