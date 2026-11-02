@@ -21,6 +21,6 @@
     "aiofiles>=25.1.0",
     "nikobus-connect>=0.57.3"
   ],
-  "version": "3.31.3",
-  "single_config_entry": true
+  "single_config_entry": true,
+  "version": "3.31.3"
 }
