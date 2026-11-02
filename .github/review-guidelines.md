@@ -6,7 +6,7 @@
   Python version and PR rules changed; core-only rules removed.
 -->
 
-# Copilot code review instructions
+# Code review guidelines
 
 This repository contains **Nikobus**, a Home Assistant custom integration distributed through HACS. Integration code lives in `custom_components/nikobus/`, tests in `tests/`. The bus protocol library is `nikobus-connect`, published separately on PyPI.
 

@@ -3,8 +3,7 @@
 Home Assistant custom integration for the Nikobus bus, distributed through
 HACS. Integration code is in `custom_components/nikobus/`, tests in `tests/`.
 The protocol library is [nikobus-connect](https://github.com/fdebrus/nikobus-connect),
-published separately on PyPI; the code-review rules for this repository are
-also in `.github/copilot-instructions.md` and apply here too.
+published separately on PyPI.
 
 ## Commands
 
@@ -74,3 +73,10 @@ fields from either.
 - Bump `version` in `manifest.json` and add a `CHANGELOG.md` entry.
 - README, `CHANGELOG.md` and the translations are part of a change: keep
   them true to the code (option names, defaults, timings, service fields).
+
+## Code review
+
+Pull requests are reviewed by Claude (`.github/workflows/claude-review.yml`).
+Review against the rules above and these guidelines:
+
+@.github/review-guidelines.md
