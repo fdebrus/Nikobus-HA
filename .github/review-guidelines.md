@@ -6,7 +6,7 @@
   Python version and PR rules changed; core-only rules removed.
 -->
 
-# Copilot code review instructions
+# Code review guidelines
 
 This repository contains **Nikobus**, a Home Assistant custom integration distributed through HACS. Integration code lives in `custom_components/nikobus/`, tests in `tests/`. The bus protocol library is `nikobus-connect`, published separately on PyPI.
 
@@ -16,7 +16,7 @@ This repository contains **Nikobus**, a Home Assistant custom integration distri
 - Do not comment on code style, formatting or linting issues. Ruff runs in CI.
 - Only comment on code added or changed by the pull request. Do not ask for refactors of unchanged code.
 - Flag comments that over-explain straightforward code, narrate the obvious, or read like AI commentary (multi-sentence justifications for a single line).
-- A pull request that bumps a dependency version (in `manifest.json` `requirements`) should only contain the changes required for that bump. If it includes other changes, request that they are moved to a separate pull request.
+- A pull request that bumps a third-party dependency (in `manifest.json` `requirements`) should only contain the changes required for that bump. If it includes other changes, request that they are moved to a separate pull request. This does not apply to `nikobus-connect`: it is this project's own library, released in step with the integration, and a release pull request raises its pin together with the changes that need the new version.
 - When a pull request changes `manifest.json` `version`, check that `CHANGELOG.md` has a matching entry.
 
 ## Python and compatibility
@@ -31,6 +31,7 @@ This repository contains **Nikobus**, a Home Assistant custom integration distri
 - Do not let users set the config entry name in the config flow.
 - Protocol parsing and bus state machines belong in the `nikobus-connect` library, not in the integration. Flag new protocol logic added to `custom_components/nikobus/`. Do not ask to move existing modules in a pull request that does not otherwise change them.
 - Do not add workarounds in the integration for limitations in `nikobus-connect`; the library should be fixed instead.
+- Do not add entities for data that Home Assistant intentionally only exposes through an action (for example weather forecasts through `weather.get_forecasts`).
 - In config flows, map known failures to the matching standard error (for example `cannot_connect`) without logging them. Catch unexpected exceptions only at the outer level, log them with `_LOGGER.exception()` and map them to `unknown`. Do not mix translated and untranslated text in an error shown to the user.
 - User-facing strings belong in `custom_components/nikobus/translations/en.json`. This custom integration has no `strings.json`. When a pull request adds a translation key, check it exists in `en.json`.
 - When validation guarantees a dict key exists, prefer direct key access (`data["key"]`) over `.get("key")`, so contract violations surface instead of being silently masked.
@@ -56,11 +57,12 @@ This repository contains **Nikobus**, a Home Assistant custom integration distri
 
 - Every repair issue must be actionable by the user. Only create issues for problems the user can resolve.
 - The issue text must say what the problem is, why it matters, the exact steps to resolve it (a numbered list when there are several), and what to expect afterwards. Avoid vague instructions such as "check your installation".
+- Use friendly, helpful language, and include the relevant context: the module or device name, address, or error details.
 - Severity: `WARNING` for future breakage, `ERROR` for problems needing immediate attention, `CRITICAL` only for extreme cases.
 
 ## Diagnostics (`diagnostics.py`)
 
-- Diagnostics must never expose passwords, tokens, host credentials or other sensitive data. Use `async_redact_data` for anything that could contain them.
+- Diagnostics must never expose passwords, tokens, host credentials, location coordinates or other sensitive data. Use `async_redact_data` for anything that could contain them.
 
 ## Tests
 
@@ -71,6 +73,9 @@ This repository contains **Nikobus**, a Home Assistant custom integration distri
 - Avoid conditions and branching in tests. Split the test or use parametrization instead.
 - If several tests share most of their code, merge them with `pytest.mark.parametrize`, using `pytest.param(..., id=...)` to name each case.
 - Async tests use `@pytest.mark.asyncio`.
+- Prefer `@pytest.mark.usefixtures` over a fixture argument the test does not use.
+- To give one test different mock data, parametrize the fixture that provides it (`pytest.mark.parametrize` with `indirect=True` when the fixture reads `request.param`) instead of patching again inside the test.
+- When a `Platform` member or an `ATTR_*` constant exists for a value, use it instead of a string literal.
 - Patch objects where they are used, not where they are defined.
 - Hardcoded `entity_id`s in tests are fine. If the same one is repeated, use a constant.
 
@@ -79,6 +84,7 @@ This repository contains **Nikobus**, a Home Assistant custom integration distri
 - Keep comments concise. Prefer one short line stating a non-obvious constraint, or no comment at all.
 - Do not add comments that restate the code that follows. Comments explain why, never what.
 - Do not add comments that justify a change by describing what the code looked like before.
+- Comments in tests that explain why a call or assertion is made are fine.
 - Do not add section or divider comments (for example `# --- Helpers ---`). Flag new ones introduced by the pull request.
 - Flag commented-out code.
 
