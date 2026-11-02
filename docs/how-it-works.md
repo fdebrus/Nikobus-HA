@@ -35,7 +35,7 @@ The code is split into two packages.
 
 1. **Button-driven refresh** — each button carries its `linked_modules`; a press, seen on the bus or sent by Home Assistant, refreshes the impacted module group(s) about a second later.
 2. **Periodic refresh** — the polling interval when there is no Feedback Module, or when the Feedback Module option is off.
-3. **Feedback Module push** — a 05-207 polls, on its own, the output modules it is configured to track, and the PC-Link relays both its queries and the modules' answers. The integration captures those answers and updates the entities without sending anything itself, so the periodic poll is switched off when the option is set. The output group of an answer is known from the query that preceded it, which is why this mode needs the PC-Link's port: the Feedback Module's own port relays answers only.
+3. **Feedback Module push** — a 05-207 polls, on its own, the output modules it is configured to track, and the PC-Link relays both its queries and the modules' answers. The integration captures those answers and updates the entities without sending anything itself, so the periodic poll is switched off when the option is set. The output group of an answer is known from the query that preceded it, which is why this mode needs the PC-Link's port: the Feedback Module's own port relays answers only. The module sends one query about every 33 s, walking its own list: on a ten-module installation some groups came up every 2 minutes and the groups with LED keys every 12 to 30 minutes, often as two queries 1.4 s apart, so the five-minute safety poll reads those groups more often than the module does.
 
 ## Interoperability
 
