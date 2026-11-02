@@ -57,6 +57,27 @@ jobs:
           pip install -r "$RUNNER_TEMP/manifest-requirements.txt"
       - run: python -m pytest -q
 
+  test-minimum-library:
+    # HACS leaves the manifest's lower bound installed until the pin
+    # rises: the tests must pass against exactly that nikobus-connect.
+    name: Tests (minimum nikobus-connect)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pytest pytest-asyncio aiofiles voluptuous
+      - name: Install the manifest requirements at their minimum versions
+        run: |
+          python - <<'PY' > "$RUNNER_TEMP/manifest-minimum.txt"
+          import json
+          for req in json.load(open("custom_components/nikobus/manifest.json"))["requirements"]:
+              print(req.replace(">=", "==", 1))
+          PY
+          pip install -r "$RUNNER_TEMP/manifest-minimum.txt"
+      - run: python -m pytest -q
+
   hassfest:
     name: Hassfest (manifest validation)
     runs-on: ubuntu-latest

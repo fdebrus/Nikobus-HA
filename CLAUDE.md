@@ -58,7 +58,7 @@ fields from either.
 ## Testing
 
 - Test the real behaviour, not the stub's. Known gaps of the stubs: config
-  entry states are only LOADED / NOT_LOADED, `async_update_reload_and_abort`
+  entry states are only LOADED / NOT_LOADED / SETUP_RETRY, `async_update_reload_and_abort`
   does not reload, `async_forward_entry_setups` is a mock, repair flows do
   not delete their issue. Say so in the test when a fix depends on one.
 - Every bug fix gets a test that fails without the fix.

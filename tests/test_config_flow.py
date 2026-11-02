@@ -142,6 +142,7 @@ class TestReconfigureFlow(unittest.TestCase):
         entry = MagicMock()
         entry.data = {CONF_CONNECTION_STRING: "old:1234"}
         entry.options = {}
+        entry.update_listeners = []
         flow._reconfigure_entry = entry
         return flow, entry
 

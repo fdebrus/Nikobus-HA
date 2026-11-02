@@ -11,7 +11,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
-from nikobus_connect.discovery.protocol import is_motion_detector
+from nikobus_connect.discovery import is_motion_detector
 
 from .const import (
     BRAND,

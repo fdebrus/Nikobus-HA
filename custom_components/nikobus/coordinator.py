@@ -24,12 +24,12 @@ from nikobus_connect import (
     NikobusEventListener,
 )
 from nikobus_connect.discovery import (
+    NON_OUTPUT_MODULE_TYPES,
     InventoryQueryType,
     NikobusDiscovery,
     find_module,
     find_operation_point,
 )
-from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
 from nikobus_connect.exceptions import (
     NikobusConnectionError,
     NikobusDataError,
@@ -1801,6 +1801,42 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
     # ------------------------------------------------------------------
     # Misc helpers
     # ------------------------------------------------------------------
+
+    def led_key_conflicts(self) -> list[tuple[str, int, str, list[tuple[str, int]]]]:
+        """LED keys that drive other outputs than the channel they are set on.
+
+        ``(module_address, channel, key, [(module, channel), ...])`` per
+        offending key, from the links the last scan read.
+        """
+        conflicts: list[tuple[str, int, str, list[tuple[str, int]]]] = []
+        for module_type, modules in (self.dict_module_data or {}).items():
+            if module_type not in MODULE_TYPES or not isinstance(modules, dict):
+                continue
+            for address, entry in modules.items():
+                channels = entry.get("channels") if isinstance(entry, dict) else None
+                if not isinstance(channels, list):
+                    continue
+                for index, channel in enumerate(channels, start=1):
+                    if not isinstance(channel, dict):
+                        continue
+                    for key in {channel.get("led_on"), channel.get("led_off")} - {None, ""}:
+                        others = self.outputs_driven_besides(str(key), str(address), index)
+                        if others:
+                            conflicts.append((str(address).upper(), index, str(key).upper(), others))
+        return conflicts
+
+    def outputs_driven_besides(self, key: str, module_address: str, channel: int) -> list[tuple[str, int]]:
+        """Outputs a key's links drive other than ``module_address`` / ``channel``."""
+        others: list[tuple[str, int]] = []
+        for link in self.get_button_linked_outputs(key.upper()):
+            module = str(link.get("module_address") or "").upper()
+            try:
+                linked_channel = int(link.get("channel"))
+            except (TypeError, ValueError):
+                continue
+            if (module, linked_channel) != (module_address.upper(), channel):
+                others.append((module, linked_channel))
+        return sorted(set(others))
 
     def get_known_entity_unique_ids(self) -> set[str]:
         """Return the set of valid unique_ids for all Nikobus entities."""

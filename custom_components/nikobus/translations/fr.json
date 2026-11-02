@@ -109,7 +109,7 @@
       },
       "edit_module": {
         "title": "Module {address} ({module_type})",
-        "description": "Modèle : {model}. Modifiez la description du module, corrigez le type si la découverte s'est trompée, ou choisissez un canal à personnaliser. Note : relancer *Découvrir les modules et boutons* peut écraser un type forcé manuellement, jusqu'à ce que la bibliothèque apprenne à le respecter.",
+        "description": "Modèle : {model}. Modifiez la description du module, corrigez le type si la découverte s'est trompée, ou choisissez un canal à personnaliser. Note : *1. Charger l'aperçu du projet* réécrit le type signalé par le PC-Link ; refaites le forçage après chaque inventaire.",
         "data": {
           "description": "Description du module",
           "module_type": "Type de module",
@@ -204,7 +204,8 @@
       "nkb_parse_failed": "Impossible de lire le fichier .nkb. Consultez les journaux Home Assistant.",
       "invalid_hex_address": "L'adresse de la LED doit comporter exactement 6 caractères hexadécimaux (ou être vide).",
       "invalid_scene_state": "État invalide pour ce type de module ('on'/'off', 'open'/'close'/'stop', ou 0-255 pour un variateur).",
-      "invalid_scene_channel": "Numéro de canal hors limites pour ce module."
+      "invalid_scene_channel": "Numéro de canal hors limites pour ce module.",
+      "led_key_drives_other_outputs": "Cette touche pilote aussi d'autres sorties : la presser depuis Home Assistant les commuterait aussi. Utilisez une touche liée à cette seule sortie, ou laissez le champ vide."
     }
   },
   "entity": {
@@ -282,7 +283,8 @@
           }
         },
         "abort": {
-          "not_loaded": "L'intégration Nikobus n'est pas chargée. Rechargez l'intégration et réessayez."
+          "not_loaded": "L'intégration Nikobus n'est pas chargée. Rechargez l'intégration et réessayez.",
+          "discovery_already_running": "Une découverte est déjà en cours. Attendez qu'elle se termine et réessayez."
         }
       }
     },

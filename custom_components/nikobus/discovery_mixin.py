@@ -25,8 +25,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from nikobus_connect.discovery import InventoryQueryType
-from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
+from nikobus_connect.discovery import NON_OUTPUT_MODULE_TYPES, InventoryQueryType
 from nikobus_connect.discovery.progress import ProgressCounters, progress_percent
 from nikobus_connect.discovery.store import reconcile_inventory
 

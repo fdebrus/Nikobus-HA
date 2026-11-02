@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import copy
 import logging
@@ -440,17 +441,31 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # client), so a loaded entry is unloaded before a new
                 # connection is tested, and set up again on the old one
                 # if the test fails. An unchanged connection on a loaded
-                # entry is known to work and is not tested.
+                # entry is known to work and is not tested. An entry
+                # waiting to retry its setup would open the port under
+                # the test: its retry is cancelled first (the update
+                # below sets it up again).
+                if entry.state is ConfigEntryState.SETUP_RETRY:
+                    entry.async_cancel_retry_setup()
+                unloaded = False
                 if loaded:
-                    await self.hass.config_entries.async_unload(entry.entry_id)
-                try:
-                    await _test_connection(self.hass, connection)
-                except ValueError:
-                    errors["base"] = "cannot_connect"
-                except Exception:
-                    _LOGGER.exception("Unexpected error during Nikobus reconfigure test")
-                    errors["base"] = "unknown"
-                if errors and loaded:
+                    unloaded = bool(await self.hass.config_entries.async_unload(entry.entry_id))
+                    if not unloaded:
+                        _LOGGER.error("Nikobus entry could not be unloaded for the connection test")
+                        errors["base"] = "unknown"
+                if not errors:
+                    try:
+                        await _test_connection(self.hass, connection)
+                    except ValueError:
+                        errors["base"] = "cannot_connect"
+                    except asyncio.CancelledError:
+                        if unloaded:
+                            await self.hass.config_entries.async_setup(entry.entry_id)
+                        raise
+                    except Exception:
+                        _LOGGER.exception("Unexpected error during Nikobus reconfigure test")
+                        errors["base"] = "unknown"
+                if errors and unloaded:
                     await self.hass.config_entries.async_setup(entry.entry_id)
             if not errors:
                 # The coordinator reads the hardware and polling settings
@@ -459,12 +474,19 @@ class NikobusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 # connection string belongs to the entry data. Keys the
                 # form does not show (press_repeat) are left as they are.
                 settings = {k: v for k, v in user_input.items() if k != CONF_CONNECTION_STRING}
-                return self.async_update_reload_and_abort(
-                    entry,
-                    unique_id=connection.lower(),
-                    data={**entry.data, CONF_CONNECTION_STRING: connection},
-                    options={**entry.options, **settings},
-                )
+                update = {
+                    "unique_id": connection.lower(),
+                    "title": f"Nikobus ({connection})",
+                    "data": {**entry.data, CONF_CONNECTION_STRING: connection},
+                    "options": {**entry.options, **settings},
+                }
+                if entry.update_listeners:
+                    # A loaded entry reloads through its update listener
+                    # when something changed; scheduling a second reload
+                    # here is what Home Assistant warns about.
+                    self.hass.config_entries.async_update_entry(entry, **update)
+                    return self.async_abort(reason="reconfigure_successful")
+                return self.async_update_reload_and_abort(entry, **update)
 
         return self.async_show_form(
             step_id="reconfigure",
@@ -972,6 +994,18 @@ class NikobusOptionsFlow(config_entries.OptionsFlow):
             except vol.Invalid:
                 errors["base"] = "invalid_hex_address"
             else:
+                # Pressing a key applies every link the key has: a key that
+                # also drives other outputs would switch them along.
+                for key in {led_on, led_off} - {""}:
+                    others = coordinator.outputs_driven_besides(key, address, idx)
+                    if others:
+                        _LOGGER.warning(
+                            "LED key %s refused for %s channel %d: it also drives %s",
+                            key, address, idx, ", ".join(f"{m} ch {c}" for m, c in others),
+                        )
+                        errors["base"] = "led_key_drives_other_outputs"
+                        break
+            if not errors:
                 entity_type = user_input.get("entity_type")
                 if entity_type and entity_type != "default":
                     # "disabled" and concrete overrides ("switch" / "light" /

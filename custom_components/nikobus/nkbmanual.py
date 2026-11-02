@@ -34,7 +34,7 @@ from typing import Any
 
 from aiofiles import open as aio_open
 from homeassistant.core import HomeAssistant
-from nikobus_connect.discovery.discovery import NON_OUTPUT_MODULE_TYPES
+from nikobus_connect.discovery import NON_OUTPUT_MODULE_TYPES
 
 from .const import (
     MANUAL_BUTTON_CONFIG_FILENAME,
@@ -168,6 +168,19 @@ _KNOWN_MODULE_TYPES: frozenset[str] = frozenset(
 )
 
 
+def _unwrap_storage_envelope(payload: dict[str, Any]) -> dict[str, Any]:
+    """The content of a file copied straight from ``.storage``.
+
+    Home Assistant's store files wrap the content in ``{"version", "key",
+    "data": {...}}``. Read as a manual file, that wrapper used to turn
+    into one bogus module named ``data``'s group and replace the store.
+    """
+    data = payload.get("data")
+    if isinstance(data, dict) and ("version" in payload or "key" in payload):
+        return data
+    return payload
+
+
 def _tag_manual_source(entry: dict[str, Any]) -> None:
     """Mark a module entry as manual-config-sourced for diagnostics."""
     discovered_info = entry.get("discovered_info")
@@ -200,6 +213,7 @@ def convert_legacy_to_flat(legacy: dict[str, Any]) -> dict[str, dict[str, Any]]:
     flat: dict[str, dict[str, Any]] = {}
     if not isinstance(legacy, dict):
         return flat
+    legacy = _unwrap_storage_envelope(legacy)
 
     for module_type, modules in legacy.items():
         if not isinstance(module_type, str):
@@ -332,6 +346,17 @@ async def _apply_module_config(
         addr for addr, entry in flat.items()
         if entry.get("module_type") not in _KNOWN_MODULE_TYPES
     )
+    if len(unknown) == len(flat):
+        # Not one module of a known type: the file is not a module file
+        # (a wrong layout, a file meant for something else). Replacing
+        # the store with it would remove every real module.
+        _LOGGER.warning(
+            "Manual config: no module in %s has a known module type "
+            "(switch_module, dimmer_module, roller_module, ...) — the module store "
+            "is left unchanged",
+            path,
+        )
+        return 0, path
     if unknown:
         _LOGGER.warning(
             "Manual config: module(s) %s in %s have no known module type "
@@ -437,7 +462,22 @@ async def _apply_button_config(
     if path is None or not isinstance(payload, dict):
         return 0, 0, None
 
-    raw = payload.get("nikobus_button")
+    raw = _unwrap_storage_envelope(payload).get("nikobus_button")
+    if isinstance(raw, dict) and raw and all(
+        isinstance(entry, dict)
+        and isinstance(entry.get("operation_points"), dict)
+        and "linked_button" not in entry
+        for entry in raw.values()
+    ):
+        # The store's own shape (a copy of ``.storage/nikobus.buttons``):
+        # every entry already carries its keys and bus addresses, so it
+        # is taken as it is rather than collapsed to one fallback key.
+        new_from_store = {
+            str(addr).strip().upper(): dict(entry) for addr, entry in raw.items() if str(addr).strip()
+        }
+        button_data["nikobus_button"] = new_from_store
+        op_points = sum(len(entry.get("operation_points") or {}) for entry in new_from_store.values())
+        return len(new_from_store), op_points, path
     # v1 files store a list of entries; the v1 NikobusConfig loader
     # converted them to a dict keyed by address at load time. Accept
     # both shapes so users with either snapshot work without manual
@@ -512,6 +552,15 @@ async def _apply_button_config(
             )
             op_points_total += 1
 
+    if not new_buttons:
+        # A file with no readable button (an empty list, the wrong layout)
+        # would otherwise remove every button from the store.
+        _LOGGER.warning(
+            "Manual config: %s contains no button entry Home Assistant can read — "
+            "the button store is left unchanged",
+            path,
+        )
+        return 0, 0, path
     button_data["nikobus_button"] = _consolidate_legacy_1a_only_buttons(new_buttons)
     return len(new_buttons), op_points_total, path
 

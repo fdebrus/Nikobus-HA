@@ -109,7 +109,7 @@
       },
       "edit_module": {
         "title": "Module {address} ({module_type})",
-        "description": "Model: {model}. Bewerk de beschrijving, corrigeer het moduletype als de ontdekking het verkeerd heeft geclassificeerd, of kies een kanaal om aan te passen. Let op: opnieuw *Modules en knoppen ontdekken* uitvoeren kan een handmatig overschreven type weer wegschrijven totdat de bibliotheek dit respecteert.",
+        "description": "Model: {model}. Bewerk de beschrijving, corrigeer het moduletype als de ontdekking het verkeerd heeft geclassificeerd, of kies een kanaal om aan te passen. Let op: *1. Projectoverzicht laden* schrijft het door de PC-Link gemelde type terug; stel de overschrijving na elke inventarisatie opnieuw in.",
         "data": {
           "description": "Modulebeschrijving",
           "module_type": "Moduletype",
@@ -204,7 +204,8 @@
       "nkb_parse_failed": "Kon het .nkb-bestand niet lezen. Zie de Home Assistant-logboeken.",
       "invalid_hex_address": "Het LED-adres moet exact 6 hexadecimale tekens bevatten (of leeg zijn).",
       "invalid_scene_state": "Ongeldige status voor dit moduletype ('on'/'off', 'open'/'close'/'stop', of 0-255 voor dimmers).",
-      "invalid_scene_channel": "Kanaalnummer valt buiten het bereik van deze module."
+      "invalid_scene_channel": "Kanaalnummer valt buiten het bereik van deze module.",
+      "led_key_drives_other_outputs": "Deze toets stuurt ook andere uitgangen aan: ze vanuit Home Assistant indrukken zou die ook schakelen. Gebruik een toets die alleen aan deze uitgang gekoppeld is, of laat het veld leeg."
     }
   },
   "entity": {
@@ -282,7 +283,8 @@
           }
         },
         "abort": {
-          "not_loaded": "De Nikobus-integratie is niet geladen. Laad de integratie opnieuw en probeer het nog eens."
+          "not_loaded": "De Nikobus-integratie is niet geladen. Laad de integratie opnieuw en probeer het nog eens.",
+          "discovery_already_running": "Er loopt al een detectie. Wacht tot ze klaar is en probeer opnieuw."
         }
       }
     },
