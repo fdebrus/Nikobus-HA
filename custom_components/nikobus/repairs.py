@@ -51,6 +51,10 @@ class NoButtonsConfiguredRepairFlow(RepairsFlow):
         coordinator = _coordinator(self.hass, self._entry_id)
         if coordinator is None:
             return self.async_abort(reason="not_loaded")
+        if coordinator.discovery_running:
+            # Finishing the flow deletes the issue; a refused inventory
+            # would leave nothing behind to try again from.
+            return self.async_abort(reason="discovery_already_running")
 
         # The inventory takes up to a minute; awaited here it ran inside
         # the dialog's request, and an error came back as "Unknown

@@ -496,16 +496,14 @@ def _rekey_moved_plate_keys(
     key's current one is never touched; a taken new id is left alone.
     Returns the number re-keyed.
     """
-    from nikobus_connect.discovery.fileio import (
-        has_per_plate_key_layout,
-        two_button_bus_addresses,
-    )
-    from nikobus_connect.discovery.mapping import (
+    from nikobus_connect.discovery import (
         DEVICE_TYPE_KEY_MAPPING,
         TWO_BUTTON_LAYOUTS,
         TWO_BUTTON_PLATE_KEYS,
+        has_per_plate_key_layout,
+        two_button_bus_addresses,
     )
-    from nikobus_connect.nkb.parser import key_layout_for_model
+    from nikobus_connect.nkb import key_layout_for_model
 
     current = {
         str(op.get("bus_address") or "").upper()
@@ -521,8 +519,8 @@ def _rekey_moved_plate_keys(
             continue
         fixed_right_pair = (
             DEVICE_TYPE_KEY_MAPPING.get(str(phys.get("device_type") or "").upper())
-            is TWO_BUTTON_PLATE_KEYS
-            or key_layout_for_model(str(phys.get("model") or "")) is TWO_BUTTON_PLATE_KEYS
+            == TWO_BUTTON_PLATE_KEYS
+            or key_layout_for_model(str(phys.get("model") or "")) == TWO_BUTTON_PLATE_KEYS
         )
         if not fixed_right_pair and not has_per_plate_key_layout(dict(phys)):
             continue
@@ -557,6 +555,26 @@ def _rekey_moved_plate_keys(
             moved,
         )
     return moved
+
+
+def _warn_led_keys_driving_other_outputs(coordinator: NikobusDataCoordinator) -> None:
+    """Log every LED key that would switch more than its own channel.
+
+    Pressing a key makes every module apply every link the key has, so a
+    key configured as a channel's LED key must drive that channel only.
+    The dialog refuses such a key; a manual file or an older store can
+    still hold one.
+    """
+    for module_address, channel, key, others in coordinator.led_key_conflicts():
+        _LOGGER.warning(
+            "Module %s channel %d: its LED key %s also drives %s — pressing it from "
+            "Home Assistant switches those outputs too; clear the key under "
+            "Customize a module or use the output's own key",
+            module_address,
+            channel,
+            key,
+            ", ".join(f"{m} ch {c}" for m, c in others),
+        )
 
 
 def _migrate_legacy_unique_ids(hass: HomeAssistant, entry: NikobusConfigEntry) -> int:
@@ -687,6 +705,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     # or the post-setup passes used to raise straight through and orphan
     # the connection: the retry then found the port locked by the previous
     # attempt. Stop the coordinator before letting the error out.
+    platforms_loaded = False
     try:
         _register_hub_device(hass, entry)
 
@@ -700,6 +719,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
         # 3. Forward setup to platforms FIRST
         # This allows entities to be created and register their dispatcher listeners.
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+        platforms_loaded = True
 
         # 4. Reload when the user changes options via the OptionsFlow
         entry.async_on_unload(entry.add_update_listener(_async_options_updated))
@@ -718,6 +738,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
         # 8. Surface repair issues for actionable misconfigurations.
         coordinator.refresh_repair_issues()
+        _warn_led_keys_driving_other_outputs(coordinator)
 
         # 9. Programming-change watch: one read-only CRC frame per output
         # module, a few minutes after setup and then once a day. A module
@@ -740,6 +761,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
         _LOGGER.info("Nikobus integration setup complete")
     except BaseException:
+        if platforms_loaded:
+            # Home Assistant leaves forwarded platforms loaded when setup
+            # raises, and a retry then fails on every platform with
+            # "has already been setup"; the entry would stay stuck with
+            # entities bound to a stopped coordinator.
+            try:
+                await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+            except Exception:
+                _LOGGER.exception("Failed to unload the Nikobus platforms after a setup error")
         await coordinator.stop()
         raise
 

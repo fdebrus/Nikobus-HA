@@ -17,7 +17,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.restore_state import RestoreEntity
-from nikobus_connect.discovery.protocol import motion_detector_bus_addresses
+from nikobus_connect.discovery import motion_detector_bus_addresses
 
 from .button import (
     _category_for_button_type,
@@ -82,6 +82,15 @@ async def async_setup_entry(
         )
     for physical_addr, phys in detectors.items():
         frames = motion_detector_bus_addresses(physical_addr)
+        if not frames:
+            # A hand-written manual file with a typo in the address: that
+            # detector gets no sensors, the other entities are unaffected.
+            _LOGGER.warning(
+                "Motion detector %s has no valid 6-digit address — no occupancy or "
+                "light sensor for it",
+                physical_addr,
+            )
+            continue
         for kind, on_role, off_role in MOTION_SENSOR_KINDS:
             entities.append(
                 NikobusMotionDetectorSensor(

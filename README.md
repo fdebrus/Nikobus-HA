@@ -187,7 +187,7 @@ Press **3. Import Names from .nkb** to apply the friendly names, rooms, and scen
 - **Travel time up / down** (rollers) → seconds to open/close, used by the position calculator. Leave them alone and the cover runs on the operating time programmed into the module's own roller links — the time it really keeps the relay engaged, per channel and per direction. The form shows that value, so saving it makes it explicit; a value you type wins over the links. Only a channel whose module has no roller link falls back to 30 s.
 - **End-stop margin** (rollers) → seconds after the estimated arrival at fully open/closed before a Home Assistant-started motion sends its stop frame (default 3). The motor runs into the end stop during the margin, which keeps the position model honest; the stop then releases the relay so a wall button acts on the first press. Set it higher to let the module's own run time release the relay instead.
 
-Closing the dialog reloads the integration, so a new entity type, travel time or scene is there at once. Changes persist in `.storage/nikobus.modules` and survive re-discovery.
+Closing the dialog reloads the integration, so a new entity type, travel time or scene is there at once. Changes persist in `.storage/nikobus.modules` and survive re-discovery, except the module type: **1. Load Project Overview** writes back what the PC-Link reports, so a type override has to be set again after each inventory.
 
 ### Installs without a PC-Link
 
@@ -553,7 +553,7 @@ Which keys are linked to the controller is known only from your **`.nkb` project
 
 Home Assistant reaches an output in one of two ways, chosen per channel by the **LED on / off key** fields under *Customize a module*.
 
-**Switching the output directly.** With the LED fields empty, `light.turn_on`, `switch.turn_off`, a fan speed or a cover command sends a set-output frame to the module, which acknowledges it: the end state is defined whatever the output was doing before, and Home Assistant updates the entity on the spot. A set-output frame carries all six outputs of the module's group, taken from the state Home Assistant last knew, so when that state is more than a few seconds old (no pushed frame, poll or command of its own since) the group is read first; a light switched at the wall a moment ago therefore stays as it is instead of being switched back. The read costs about half a second before the relay clicks; the entity still shows the new state at once. Requests for the same module group that arrive together — six lights of one module in one service call — are merged into one frame carrying all six bytes: one acknowledgement, one relay click. Plate LEDs lag behind: the Feedback Module (05-207), which drives them, changes them at once only when it sees a key's telegram on the bus, and otherwise corrects them from the output state on its polling cycle — one module group about every 35 seconds, so minutes for a whole installation. Until then the LED of a key in impulse mode shows the opposite of the light.
+**Switching the output directly.** With the LED fields empty, `light.turn_on`, `switch.turn_off`, a fan speed or a cover command sends a set-output frame to the module, which acknowledges it: the end state is defined whatever the output was doing before, and Home Assistant updates the entity on the spot. A set-output frame carries all six outputs of the module's group, taken from the state Home Assistant last knew, so when that state is more than a few seconds old (no pushed frame, poll or command of its own since) the group is read first; a light switched at the wall a moment ago therefore stays as it is instead of being switched back. The read costs about half a second before the relay clicks; the entity still shows the new state at once. Requests for the same module group that arrive together — six lights of one module in one service call — are merged into one frame carrying all six bytes: one acknowledgement, one relay click. Plate LEDs do not follow: the Feedback Module (05-207), which drives them, toggles a key's LED on every key telegram it sees and keeps that state itself; a set-output never reaches it. An output switched *on* this way shows on the LED when the module's polling cycle next reads that module — one module group about every 35 seconds, so minutes for a whole installation; an output switched *off* is not picked up by those reads, and the LED stays on until the key is pressed. Until then the LED of a key in impulse mode shows the opposite of the light.
 
 **Pressing the key.** With a key address in the LED fields, Home Assistant *presses that key* instead: the same `#N` telegram a wall press puts on the bus, so the module applies whatever the key is linked to (on/off, impulse, timer) and the Feedback Module updates the LEDs at once — on every plate whose key drives the same output, not only this one. Use this for channels whose LED must stay in step, and for keys in **impulse mode** (M05), which toggle: a set-output command would leave the LED behind. On a relay light or switch, a key press is checked against the module: the channel is read first and the key is not pressed when the output is already where it should be (so `light.turn_off` on a light that is off leaves it off, even with a toggle key); after the press the channel is read again, and an output that did not move is set directly, with a warning in the log (the LED then lags until the Feedback Module's next poll of that module). `light.toggle` and `switch.toggle` decide from what the module reports, not from what Home Assistant shows. The entity keeps the state it was asked for until the press has been checked, then shows what the module reported, so a switch is one state change in the recorder, never the intermediate reading.
 
@@ -588,8 +588,8 @@ The integration fires structured HA bus events for the full press lifecycle:
 - **Classified**: `nikobus_short_button_pressed` (< 1 s), `nikobus_long_button_pressed` (≥ 1 s). The threshold is `SHORT_PRESS_S` in the library's `nikobus_connect.press`, which also holds the frame cadence and the release patience.
 - **Release buckets**: `nikobus_button_pressed_0` (< 1 s) … `_3` (≥ 3 s).
 - **Hold milestones** (while still held): `nikobus_button_timer_1` / `_2` / `_3` at 1/2/3 s. These count wire frames (40 ms cadence), not wall-clock, so a bridge that buffers and bursts frames still classifies correctly.
-- **Post-refresh**: `nikobus_button_operation` after impacted modules are refreshed — for presses seen on the bus only, never for a press Home Assistant sent itself.
-- **Scene triggers**: `nikobus_scene_activated` when one of a central-function scene's trigger addresses is seen on the bus, pressed at the wall or sent by Home Assistant. Its payload differs from the button events: `address` (the trigger seen), `name` (the scene's name), `entity_id` (its scene entity) and `member_count` (how many outputs it sets).
+- **Module reads**: `nikobus_button_operation` when a read of an impacted module is scheduled — on the initial press and again on the release — for presses seen on the bus only, never for a press Home Assistant sent itself. Its payload adds `impacted_module_address` and `impacted_module_group`.
+- **Scene triggers**: `nikobus_scene_activated` when one of a central-function scene's trigger addresses is seen on the bus (a press at the wall, or sent by another client); a scene Home Assistant activates itself fires no event, since the gateway never relays the host's own frame. Its payload differs from the button events: `address` (the trigger seen), `name` (the scene's name), `entity_id` (its scene entity) and `member_count` (how many outputs it sets).
 
 All button events share one payload schema:
 
@@ -781,7 +781,7 @@ The middle row is the trap. A Feedback Module keeps polling the outputs it track
 
 ## Services
 
-The integration registers seven services in the `nikobus.` domain. All appear in **Developer Tools → Actions** with a form (from `services.yaml`) and can be called from scripts and automations.
+The integration registers eight services in the `nikobus.` domain. All appear in **Developer Tools → Actions** with a form (from `services.yaml`) and can be called from scripts and automations.
 
 ### `nikobus.query_module_inventory`
 
@@ -917,7 +917,7 @@ Every condition the integration can diagnose is a Repair issue (*Settings → Sy
 | Programming checksum mismatch | The image read back differs from the module's checksum | Re-run *Verify*; if it persists, reprogram |
 | Module was reprogrammed | Its checksum moved since its links were last read (a dimmer's power-loss memory alone does not count) | Run *2. Load Existing Installation* |
 | Module does not answer | A stored module has never answered a state read while the others do; it is now read once an hour | If it no longer exists, remove it with `nikobus.purge_stale_inventory` and from your Nikobus project; otherwise check its power and wiring |
-| Module is not a *type* | It answers as another family than the inventory says | Run *1. Load Project Overview*; correct the type under *Customize a module* if it stays wrong |
+| Module is not a *type* | It answers as another family than the inventory says | Run *1. Load Project Overview*; correct the type under *Customize a module* if it stays wrong (and again after each later inventory, which writes the reported type back) |
 | No Nikobus device answered on *port* | Nothing answered the presence probe | Cable, PC-Link power, other software on the port; clears on the first frame |
 | Connected to the Feedback Module's port | Pushed answers arrive without their queries | Turn the Feedback Module option off |
 
@@ -992,7 +992,7 @@ The key is linked in **impulse mode** (M05): every press toggles. Before 3.18.2 
 
 ### The plate LED does not follow a light I switch from Home Assistant
 
-Plate LEDs are driven by the Feedback Module (05-207), not by the plate: without one they stay dark. When it sees a key's telegram on the bus it updates the LEDs of every key that drives the same output, on every plate, straight away; an output switched any other way — directly from Home Assistant, by a timer, by a PC-Logic program — reaches the LEDs only when its polling cycle next reads that module, which takes minutes, and until then a toggle key's LED shows the opposite. To keep a channel's LED in step at once, put the key's bus address in its **LED on / off key** fields under *Customize a module*: Home Assistant then presses the key instead of switching the output.
+Plate LEDs are driven by the Feedback Module (05-207), not by the plate: without one they stay dark. When it sees a key's telegram on the bus it toggles the LEDs of every key that drives the same output, on every plate, straight away, and keeps that LED state itself. An output switched any other way — directly from Home Assistant, by a timer, by a PC-Logic program — does not reach that state: an output switched *on* is picked up when the Feedback Module's polling cycle next reads the module, which takes minutes; an output switched *off* is not picked up at all, so the LED stays on. A press that the Feedback Module saw but the module missed leaves the LED inverted, and further presses keep it inverted; to realign it, set the output to what the LED shows (from Home Assistant), then press the key once. To keep a channel's LED in step, put the key's bus address in its **LED on / off key** fields under *Customize a module*: Home Assistant then presses the key instead of switching the output, after reading the module so a press that is not needed is never sent. The key must drive that output only; the dialog refuses a key linked to other outputs too, since pressing it would switch them along (seen on an installation with a 05-207 and LED plates, October 2026).
 
 ### Relays click several times when I switch several lights of one module
 
@@ -1006,7 +1006,7 @@ With a Feedback Module, the module itself polls the output modules it is configu
 
 ### Stale records from a previous install
 
-A second-hand PC-Link (or replaced hardware) can leave records for modules that are no longer on the bus. Run [`nikobus.detect_stale_inventory`](#nikobusdetect_stale_inventory) to see which addresses don't respond, then [`nikobus.purge_stale_inventory`](#nikobuspurge_stale_inventory) to remove the ones you confirm are gone. See [Services](#services) for all seven services and their parameters.
+A second-hand PC-Link (or replaced hardware) can leave records for modules that are no longer on the bus. Run [`nikobus.detect_stale_inventory`](#nikobusdetect_stale_inventory) to see which addresses don't respond, then [`nikobus.purge_stale_inventory`](#nikobuspurge_stale_inventory) to remove the ones you confirm are gone. See [Services](#services) for all eight services and their parameters.
 
 ---
 

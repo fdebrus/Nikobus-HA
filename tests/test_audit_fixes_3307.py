@@ -108,6 +108,7 @@ def _reconfigure_flow(state, current="old:1234", others=()):
     entry.state = state
     entry.data = {CONF_CONNECTION_STRING: current}
     entry.options = {}
+    entry.update_listeners = []
     flow._reconfigure_entry = entry
     flow._current_entries = [entry, *others]
     flow.hass = MagicMock()
@@ -146,7 +147,7 @@ class TestReconfigureWhileLoaded(unittest.TestCase):
     def test_new_connection_unloads_first_then_tests(self):
         flow, _entry, captured = _reconfigure_flow(ConfigEntryState.LOADED)
         order: list[str] = []
-        flow.hass.config_entries.async_unload = AsyncMock(side_effect=lambda _id: order.append("unload"))
+        flow.hass.config_entries.async_unload = AsyncMock(side_effect=lambda _id: order.append("unload") or True)
         test = AsyncMock(side_effect=lambda _h, _c: order.append("test"))
         with patch(_TEST_CONN, new=test):
             result = _run(flow.async_step_reconfigure(_form("New:5678")))
@@ -201,6 +202,7 @@ class TestNoButtonsRepairRunsInTheBackground(unittest.TestCase):
         flow.hass = MagicMock()
         flow.async_create_entry = lambda **kw: {"type": "create_entry"}
         coord = MagicMock()
+        coord.discovery_running = False
         coord.start_pc_link_inventory = AsyncMock()
         started: list = []
         with (

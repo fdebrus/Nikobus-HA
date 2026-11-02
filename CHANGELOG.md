@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.31.3
+
+**Requires `nikobus-connect` 0.57.3.**
+
+Fixes from the third audit (`documentation/audit-2026-10-31/`) and from what a Feedback Module's LEDs turned out to do; the library's own fixes are in 0.57.3.
+
+- **Two manual-file wipes closed.** A `nikobus_module_config.json` copied straight from `.storage/nikobus.modules`, with its `version` / `key` / `data` wrapper, replaced the module store with one bogus module; the wrapper is now unwrapped, and a file with no module of a known type leaves the store alone. The button file had no guard at all: an empty list emptied the button store, and a copy of `.storage/nikobus.buttons` collapsed every plate to one fallback key; both are handled, the store copy taken as it is.
+- **A failed setup no longer leaves the entry stuck.** When anything failed after the platforms had been set up (the first refresh, the restore of names, the cleanup), the platforms stayed loaded and every retry failed with "has already been setup". They are unloaded before the error is raised.
+- **Reconfigure.** It no longer reloads twice on a loaded entry (Home Assistant's warning about the update listener), cancels a pending setup retry before testing the port, checks that the unload succeeded, puts the old connection back if the test is cancelled, and updates the entry title with the new connection.
+- **"No Nikobus buttons configured" repair:** refused while a discovery runs instead of closing and vanishing.
+- **One mistyped motion-detector address** in a manual file took the whole binary-sensor platform down with it; that detector now gets no sensors and a warning, the rest is unaffected.
+- **An LED key must drive its own channel only.** Pressing a key applies every link the key has, so a key that also drives other outputs would switch them along. *Customize a module* refuses such a key, and a key already stored that way is reported in the log at startup.
+- The integration imports the library's public API (`nikobus_connect.discovery`, `nikobus_connect.nkb`) instead of module internals, and compares the key-layout tables by value.
+- `manifest.json`: `single_config_entry` (the stores are global, so a second entry was never supported), and the unused `pyserial-asyncio-fast` requirement dropped (the library depends on `pyserial-asyncio`).
+- README: what the Feedback Module does with the LEDs, corrected for an output switched off (never picked up by its reads) and for an inverted LED, from the tests on an installation with a 05-207 (October 2026); `nikobus_scene_activated` is not fired for a scene Home Assistant activates itself; `nikobus_button_operation` fires when the module read is scheduled and carries two more keys; eight services, not seven; a module type set under *Customize a module* is written back by the next inventory. The module dialog named the inventory button by an old name.
+- CI also runs the tests against the manifest's minimum `nikobus-connect`, not only the newest release.
+
 ## 3.31.2
 
 **Requires `nikobus-connect` 0.57.2.** Fixes a regression in 3.31.1.

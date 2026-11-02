@@ -137,7 +137,8 @@
           }
         },
         "abort": {
-          "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again."
+          "not_loaded": "The Nikobus integration is not loaded. Please reload the integration and try again.",
+          "discovery_already_running": "A discovery is already running. Wait for it to finish and try again."
         }
       }
     },
@@ -281,7 +282,8 @@
       "nkb_not_found": "No .nkb file found — upload one first (Configure → Upload .nkb project file).",
       "nkb_parse_failed": "Could not read the .nkb file. See the Home Assistant logs.",
       "invalid_scene_state": "Invalid state for this module type ('on'/'off', 'open'/'close'/'stop', or 0-255 for dimmers).",
-      "invalid_scene_channel": "Channel number is out of range for this module."
+      "invalid_scene_channel": "Channel number is out of range for this module.",
+      "led_key_drives_other_outputs": "This key also drives other outputs: pressing it from Home Assistant would switch them too. Use a key linked to this output only, or leave the field empty."
     },
     "step": {
       "hardware": {
@@ -329,7 +331,7 @@
       },
       "edit_module": {
         "title": "Module {address} ({module_type})",
-        "description": "Model: {model}. Edit the module description, override the module type if discovery misclassified it, or pick a channel to customize. Note: re-running *Discover modules & buttons* may overwrite a manual type override until the library learns to respect it.",
+        "description": "Model: {model}. Edit the module description, override the module type if discovery misclassified it, or pick a channel to customize. Note: *1. Load Project Overview* writes back the type the PC-Link reports, so set the override again after each inventory.",
         "data": {
           "description": "Module description",
           "module_type": "Module type",

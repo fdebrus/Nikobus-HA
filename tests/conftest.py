@@ -152,6 +152,7 @@ class _OptionsFlow(_FlowHandlerBase):
 class _ConfigEntryState:
     LOADED = "loaded"
     NOT_LOADED = "not_loaded"
+    SETUP_RETRY = "setup_retry"
 
 
 _mod(
@@ -482,7 +483,7 @@ _mod("homeassistant.data_entry_flow", FlowResult=dict, AbortFlow=_AbortFlow)
 # homeassistant.components.file_upload — process_uploaded_file is patched
 # per-test; stub the module so config_flow's lazy import resolves.
 _mod("homeassistant.components.file_upload", process_uploaded_file=None)
-_mod("homeassistant.components.repairs", RepairsFlow=type("RepairsFlow", (), {}))
+_mod("homeassistant.components.repairs", RepairsFlow=type("RepairsFlow", (_FlowHandlerBase,), {}))
 
 
 class _RestoreEntityStub:
