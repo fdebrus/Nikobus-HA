@@ -55,37 +55,60 @@ Control your **Nikobus** installation from Home Assistant — switches, dimmers,
 
 ## Supported hardware
 
+Everything below is recognised by the PC-Link inventory and the link scan; the device-type bytes and models are listed in the library's `discovery/mapping.py`, each with the install it was seen on.
+
 ### Output modules
+
+| Module | Ref | Outputs | In Home Assistant |
+|---|---|---|---|
+| Switch module | `05-000-02` | 12 | `switch` or `light` per channel |
+| Compact switch module | `05-002-02` | 4 | `switch` or `light` per channel |
+| Dim controller | `05-007-02` | 12 | `light` with brightness, or `fan` with speed, per channel |
+| Compact dim controller | `05-008-02` | 4 | `light` with brightness, or `fan` with speed, per channel |
+| Roller shutter module | `05-001-02` | 6 | `cover` with simulated position |
+
+### Controllers and system modules
 
 | Module | Ref | In Home Assistant |
 |---|---|---|
-| Switch Module | `05-000-02` | `switch` (or `light`) per channel |
-| Compact Switch Module | `05-002-02` | `switch` / `light` |
-| Dimmer Module | `05-007-02` | `light` with brightness, or `fan` with speed (per channel) |
-| Compact Dim Controller | `05-008-02` | `light` |
-| Roller Shutter Module | `05-001-02` | `cover` with simulated position |
+| PC-Link | `05-200` | The bus interface: source of the inventory, relays all bus traffic, keeps the clock (sensor and sync action) and the 100 calendar channels, which appear in `controlled_by` as `Calendar channel CH001A (PC-Link)` |
+| PC-Logic | `05-201` | Its 6 inputs as `LM-INPUT 1–6` (A/B keys, sensors and a latch switch each); its logic outputs as virtual buttons; usable as gateway (polling only, no inventory) |
+| Modular interface, 6 inputs | `05-206` | Its 6 inputs as `MI-INPUT 1–6` |
+| Feedback module | `05-207` | Optional. Drives the plate LEDs; its own polling of the modules is picked up as pushed state through the PC-Link's port. Usable as gateway (polling only) |
+| Audio distribution module | `05-205` | One `media_player` per zone (on/off, volume, source); its trigger keys as press buttons under the module |
+| RGB controller | `340-00112` (colour and mono profiles) | One `light`: on/off and the colour its outputs mix to, switched through the keys your `.nkb` links to it; see [RGB controller](docs/buttons-and-entities.md#rgb-controller) |
+| RGB plinth light | `340-00111` | Handled like the RGB controller; its state reply has not been captured on an install yet, so the light shows the on flag only |
 
-### Interface / system modules
+### Push buttons
 
-| Module | Ref | Notes |
+One Home Assistant **device** per plate, one press button and one press sensor per key, and the plate's wiring in the attributes (see [the entity model](docs/buttons-and-entities.md)). Press entities exist only for the [classes you tick](docs/buttons-and-entities.md#choosing-which-press-entities-exist); events fire for every key regardless.
+
+| Plate | Ref | Keys | LEDs |
+|---|---|---|---|
+| Bus push button, 2 keys | `05-060` (`4*-072`, `05-060-01`) | 2 | — |
+| Bus push button, 4 keys | `05-064` (`4*-074`, `05-064-01`) | 4 | — |
+| Bus push button, 8 keys | `4*-078` (`05-078-01`) | 8 | — |
+| Bus push button, 2 / 4 keys | `4*-082` / `4*-084` | 2 / 4 | — |
+| Push button with IR receiver | `05-09x` | 4, plus one key per learned IR code | — |
+| Bus push button with feedback LEDs, 2 keys | `05-061` | 2 | yes |
+| Push button with feedback LEDs, graphite | `05-060-02` / `05-064-02` / `05-078-02` | 2 / 4 / 8 | yes |
+
+The 2-key plates `05-060`, `05-061` and `05-060-02` exist in two key layouts under the same type byte; the layout is told apart per plate from its links during **2. Load Existing Installation** (see [Troubleshooting](docs/troubleshooting.md#a-two-button-plates-presses-are-not-recognised)).
+
+### Interfaces, transmitters and sensors
+
+| Device | Ref | Keys |
 |---|---|---|
-| PC-Link | `05-200` | The bus interface; source of the inventory, relays all bus traffic, keeps the clock and the 100 calendar channels |
-| PC-Logic | `05-201` | Logic controller; its 6 inputs surface as `LM-INPUT 1–6`; usable as gateway (polling only, no inventory) |
-| Modular Interface, 6 inputs | `05-206` | Its 6 inputs surface as `MI-INPUT 1–6` |
-| Feedback Module | `05-207` | Optional; drives plate LEDs, and its own polling of the modules is picked up as pushed state — through the PC-Link's port. Usable as gateway (polling only) |
-| Audio Distribution Module | `05-205` | One `media_player` per zone: on/off, volume, source select; its trigger keys as press buttons under the module |
-| RGB / LED controller | `340-00112` | One `light`: on/off and the colour its outputs mix to, switched through the keys linked to it (from your `.nkb`); see [RGB controller](docs/buttons-and-entities.md#rgb-controller) |
-
-### Buttons & transmitters
-
-One HA **device** is created per physical button, with one button-entity + binary-sensor per key (see [the entity model](docs/buttons-and-entities.md)).
-
-- **Bus push buttons** — 2-, 4-, and 8-control-point variants across the supported series (`4*-072` / `4*-074` / `4*-078`, the classic `05-060` / `05-064` and the feedback-LED `05-061` (recognised since 3.11.0), and the `4*-082` / `4*-084` / `4*-088` series).
-- **Push-button & switch interfaces** (`05-056`, `05-057`, `05-058`).
-- **IR receivers** — each learned IR code becomes its own op-point.
-- **Motion detectors** with Nikobus interface (`05-7*5` / `430-00500`) — an occupancy and a light-level sensor each, plus their four keys ([details](docs/buttons-and-entities.md#motion-detectors)).
-- **RF transmitters** — `05-302` / `05-304` / `05-311` / `05-314`, and the **05-312 Easywave 52-key** hand-held (all 52 sub-codes as op-points).
-- **Virtual / clustered remotes** — multi-page handhelds that emit many bus codes but aren't in PC-Link inventory are clustered into a single `Remote Transmitter (<suffix>)` device at the end of a link scan.
+| Push-button interface | `05-056` | 2 |
+| Switch interface | `05-057` | 2 |
+| Universal interface | `05-058` | 4 in push-button mode, 8 (close + open per input) in switch mode |
+| RF-bus push button | `05-302` (`05-301-4*`) / `05-304` (`05-303-4*`) | 2 / 4 |
+| Mini hand-held RF transmitter | `05-311` | 1 |
+| RF868 mini transmitter | `05-314` | 4 |
+| Easywave hand-held RF transmitter | `05-312` | 52 |
+| Motion detector with Nikobus interface | `05-7*5` (`430-00500`) | 4: on, off, light, dark — an occupancy and a light-level sensor each ([details](docs/buttons-and-entities.md#motion-detectors)) |
+| Virtual buttons | — | The PC-Logic's logic outputs and the Nikobus software's virtual input banks, inventoried from the output modules' link tables ([details](docs/buttons-and-entities.md#virtual--off-bus-buttons)) |
+| Clustered remotes | — | Multi-page handhelds that send many bus codes but are not in the PC-Link inventory are grouped into one `Remote Transmitter (<suffix>)` device after a link scan |
 
 ---
 
