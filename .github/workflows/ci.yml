@@ -46,7 +46,7 @@ jobs:
       # version the integration requires). voluptuous is installed so the
       # form and service schemas are really validated; async tests use
       # @pytest.mark.asyncio, so pytest-asyncio is required.
-      - run: pip install pytest pytest-asyncio aiofiles voluptuous
+      - run: pip install pytest pytest-asyncio aiofiles voluptuous pyyaml
       - name: Install the manifest requirements
         run: |
           python - <<'PY' > "$RUNNER_TEMP/manifest-requirements.txt"
@@ -67,7 +67,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install pytest pytest-asyncio aiofiles voluptuous
+      - run: pip install pytest pytest-asyncio aiofiles voluptuous pyyaml
       - name: Install the manifest requirements at their minimum versions
         run: |
           python - <<'PY' > "$RUNNER_TEMP/manifest-minimum.txt"
