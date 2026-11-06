@@ -1,0 +1,90 @@
+blueprint:
+  name: Nikobus key controls any entity
+  description: >-
+    A Nikobus wall key switches a light, switch, fan or cover of any
+    integration, for example a Shelly relay that took over a load from a
+    Nikobus module.
+
+
+    Find the key's bus address under Tools → Events: listen to
+    `nikobus_button_pressed`, press the key, and copy the event's `address`.
+
+
+    The automation runs only while Home Assistant runs. The Feedback Module
+    drives a plate LED from Nikobus outputs only, so the LED of this key does
+    not follow an entity of another integration.
+  domain: automation
+  author: fdebrus
+  source_url: https://github.com/fdebrus/Nikobus-HA/blob/main/blueprints/automation/fdebrus/nikobus_key_controls_entity.yaml
+  homeassistant:
+    min_version: "2024.10.0"
+  input:
+    key_address:
+      name: Key bus address
+      description: >-
+        The six hexadecimal digits the key puts on the bus, as the `address`
+        of its `nikobus_button_pressed` event (for example 8B7086).
+      selector:
+        text: {}
+    press:
+      name: Press
+      description: When the action runs.
+      default: nikobus_button_pressed
+      selector:
+        select:
+          options:
+            - label: As soon as the key is pressed
+              value: nikobus_button_pressed
+            - label: Short press, on release (under 1 s)
+              value: nikobus_short_button_pressed
+            - label: Long press, on release (1 s or more)
+              value: nikobus_long_button_pressed
+    target_entities:
+      name: What the key controls
+      selector:
+        target:
+          entity:
+            - domain:
+                - light
+                - switch
+                - fan
+                - cover
+                - input_boolean
+    behaviour:
+      name: Action
+      description: >-
+        Toggle flips each target on its own. For a key pair (one key on, the
+        other off), make one automation per key with Turn on and Turn off.
+      default: toggle
+      selector:
+        select:
+          options:
+            - label: Toggle
+              value: toggle
+            - label: Turn on (open a cover)
+              value: turn_on
+            - label: Turn off (close a cover)
+              value: turn_off
+
+# Each press acts once, in order, even when pressed again before the
+# previous action finished.
+mode: queued
+max: 10
+max_exceeded: silent
+
+trigger_variables:
+  key_address: !input key_address
+  press_event: !input press
+
+triggers:
+  - trigger: event
+    event_type: "{{ press_event }}"
+    event_data:
+      address: "{{ key_address | string | trim | upper }}"
+
+variables:
+  behaviour: !input behaviour
+
+actions:
+  - action: "homeassistant.{{ behaviour }}"
+    target: !input target_entities

@@ -8,7 +8,7 @@ published separately on PyPI.
 ## Commands
 
 ```bash
-pip install pytest pytest-asyncio aiofiles voluptuous ruff==0.17.3
+pip install pytest pytest-asyncio aiofiles voluptuous pyyaml ruff==0.17.3
 pip install "nikobus-connect>=<pin in manifest.json>"   # or -e ../nikobus-connect
 python -m pytest tests -q   # ~870 tests; Home Assistant itself is stubbed
 ruff check .                # must be clean; CI pins ruff 0.17.3
@@ -38,6 +38,8 @@ fields from either.
   checks); there is no `strings.json`.
 - `docs/` the user guides the README links to; `documentation/` reference
   material (protocol notes, memory maps, vendor manuals, code audits).
+- `blueprints/` automation blueprints users import from GitHub (not shipped
+  by HACS); `tests/test_blueprints.py` pins them to the events fired.
 
 ## Rules that must not be broken
 

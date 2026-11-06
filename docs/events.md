@@ -91,3 +91,24 @@ action:
     data:
       position: 60
 ```
+
+## A key that controls another integration's entity
+
+The blueprint **Nikobus key controls any entity** lets a wall key switch a light, switch, fan or cover of any integration, for example a Shelly relay that took over a load from a Nikobus module. Import it once, then create one automation per key from it.
+
+[![Import the blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Ffdebrus%2FNikobus-HA%2Fblob%2Fmain%2Fblueprints%2Fautomation%2Ffdebrus%2Fnikobus_key_controls_entity.yaml)
+
+Without the badge: *Settings → Automations & scenes → Blueprints → Import blueprint*, and paste the file's address in [`blueprints/automation/fdebrus/`](../blueprints/automation/fdebrus/nikobus_key_controls_entity.yaml).
+
+| Field | What to enter |
+|---|---|
+| Key bus address | The key's six hexadecimal digits: listen to `nikobus_button_pressed` under *Tools → Events*, press the key, and copy the event's `address`. Upper or lower case, spaces around it are ignored. |
+| Press | As soon as the key is pressed (the default, and the fastest), or on release after a short or a long press. |
+| What the key controls | Lights, switches, fans, covers or input booleans, picked as entities, devices or a whole area. |
+| Action | Toggle, Turn on (opens a cover) or Turn off (closes a cover). Toggle flips each target on its own; for a key pair, make one automation per key, one with Turn on and one with Turn off. |
+
+Two things to know:
+
+- **It runs only while Home Assistant runs.** A key linked on a Nikobus module keeps switching its output without Home Assistant; a key driving another integration's entity through this automation does not.
+- **The plate LED does not follow.** The Feedback Module drives an LED from Nikobus outputs only. While the old module is still installed, leaving the key's link to its now-empty channel in place keeps the LED in step with that channel; the key then switches both, and the two stay together as long as only the key switches the load.
+
