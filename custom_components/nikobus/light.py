@@ -179,6 +179,11 @@ class NikobusDimmerEntity(NikobusBaseLight):
         
         # Add tracker for optimistic slider updates
         self._optimistic_brightness: int | None = None
+        # An LED-key command is in flight: the library reads the channel
+        # to decide whether to press the key, and that answer still shows
+        # the old state. The entity keeps the state it was asked for until
+        # the call returns; the write is in the state buffer by then.
+        self._commanding = False
 
     @property
     def is_on(self) -> bool:
@@ -204,8 +209,16 @@ class NikobusDimmerEntity(NikobusBaseLight):
         return (self.is_on, self.brightness)
 
     @callback
+    def _handle_coordinator_update(self) -> None:
+        if self._commanding:
+            return
+        super()._handle_coordinator_update()
+
+    @callback
     def _handle_button_operation(self) -> None:
         """Also drop the optimistic brightness for this dimmer's module."""
+        if self._commanding:
+            return
         self._optimistic_brightness = None
         super()._handle_button_operation()
 
@@ -232,6 +245,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
         self._optimistic_brightness = target_brightness
         self.async_write_ha_state()
 
+        self._commanding = self.coordinator.has_feedback_key(self._address, self._channel, "dimmer_module")
         try:
             await self.coordinator.api.turn_on_light(
                 self._address,
@@ -247,6 +261,8 @@ class NikobusDimmerEntity(NikobusBaseLight):
             self._optimistic_brightness = None
             self.async_write_ha_state()
             raise command_error(err) from err
+        finally:
+            self._commanding = False
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the dimmer with optimistic UI update and error fallback."""
@@ -255,6 +271,7 @@ class NikobusDimmerEntity(NikobusBaseLight):
         self._optimistic_brightness = None
         self.async_write_ha_state()
 
+        self._commanding = self.coordinator.has_feedback_key(self._address, self._channel, "dimmer_module")
         try:
             await self.coordinator.api.turn_off_light(
                 self._address,
@@ -270,6 +287,8 @@ class NikobusDimmerEntity(NikobusBaseLight):
             self._optimistic_brightness = None
             self.async_write_ha_state()
             raise command_error(err) from err
+        finally:
+            self._commanding = False
 
 
 class NikobusRelayEntity(FeedbackKeySwitchMixin, NikobusBaseLight):

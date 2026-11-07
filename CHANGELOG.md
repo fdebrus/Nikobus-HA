@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.31.4
+
+- **A dimmer with an LED key no longer jumps back to its old state.** Since 3.31.3 (with nikobus-connect 0.57.3) the module is read before the LED key is pressed, so a press that is not needed is never sent. The answer to that read, still the old state, replaced the state Home Assistant had just shown, about 0.4 s after the command; the lamp and the LED switched correctly, but the entity showed the old state until the next poll or Feedback Module read, 30 s to several minutes later. The dimmer now keeps the state it was asked for while the command runs, as the relay lights and switches with a key already did. Reported on a 05-008-02 with its LED key in mode M14, November 2026.
+- Docs: what a dimmer with an LED key sends (a key press only when it switches on or off, then the brightness directly).
+
 ## 3.31.3
 
 **Requires `nikobus-connect` 0.57.3.**

@@ -22,5 +22,5 @@
     "nikobus-connect>=0.57.3"
   ],
   "single_config_entry": true,
-  "version": "3.31.3"
+  "version": "3.31.4"
 }
