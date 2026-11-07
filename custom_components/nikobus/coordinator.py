@@ -529,10 +529,10 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
                 silent[normalized] = groups
         return silent
 
-    def has_feedback_key(self, address: str, channel: int) -> bool:
-        """Whether a switch channel is driven by pressing its feedback key."""
+    def has_feedback_key(self, address: str, channel: int, module_type: str = "switch_module") -> bool:
+        """Whether a channel is driven by pressing its feedback key."""
         api = self.api
-        return bool(api is not None and api.has_feedback_key("switch_module", address, channel))
+        return bool(api is not None and api.has_feedback_key(module_type, address, channel))
 
     @callback
     def async_module_state_read(self, address: str, channel: int) -> None:
