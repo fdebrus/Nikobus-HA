@@ -1,5 +1,5 @@
 name: Discovery / scan issue
-description: A button isn't found, a module is misclassified, linked_modules is empty, or "Scan all module links" produces wrong results.
+description: A button isn't found, a module is misclassified, linked_modules is empty, or "2. Load Existing Installation" produces wrong results.
 labels:
   - discovery
   - bug
@@ -18,7 +18,7 @@ body:
       options:
         - label: I have searched [existing issues](https://github.com/fdebrus/Nikobus-HA/issues?q=is%3Aissue) and didn't find a duplicate.
           required: true
-        - label: I have run **Discover modules & buttons** (PC Link inventory) **and** **Scan all module links**, in that order, on the Nikobus Bridge device.
+        - label: I have run **1. Load Project Overview** (PC-Link inventory) **and** **2. Load Existing Installation** (module links), in that order, on the Nikobus Bridge device.
           required: true
 
   - type: textarea
@@ -101,9 +101,9 @@ body:
   - type: checkboxes
     id: log_attached
     attributes:
-      label: Debug log of "Scan all module links" attached
+      label: Debug log of "2. Load Existing Installation" attached
       description: |
-        Required. Enable debug logging, restart HA, click **Scan all module links** on the Nikobus Bridge device, wait for it to fully complete (several minutes for ~12 modules), then save the log file and attach it to this issue. The library's debug output is the only way to root-cause register-level issues.
+        Required. Enable debug logging, restart HA, press **2. Load Existing Installation** on the Nikobus Bridge device, wait for it to fully complete (several minutes for ~12 modules), then save the log file and attach it to this issue. The library's debug output is the only way to root-cause register-level issues.
 
         ```yaml
         # configuration.yaml
@@ -115,7 +115,7 @@ body:
             nikobus_connect.discovery: debug
         ```
       options:
-        - label: I have attached the debug log of a fresh `Scan all module links` run.
+        - label: I have attached the debug log of a fresh `2. Load Existing Installation` run.
           required: true
 
   - type: checkboxes

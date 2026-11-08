@@ -106,6 +106,7 @@ The 2-key plates `05-060`, `05-061` and `05-060-02` exist in two key layouts und
 | Mini hand-held RF transmitter | `05-311` | 1 |
 | RF868 mini transmitter | `05-314` | 4 |
 | Easywave hand-held RF transmitter | `05-312` | 52 |
+| RF box (receiver for RF transmitters) | `05-315`, 4 channels | 4; the 2-channel version is not recognised yet |
 | Motion detector with Nikobus interface | `05-7*5` (`430-00500`) | 4: on, off, light, dark — an occupancy and a light-level sensor each ([details](docs/buttons-and-entities.md#motion-detectors)) |
 | Virtual buttons | — | The PC-Logic's logic outputs and the Nikobus software's virtual input banks, inventoried from the output modules' link tables ([details](docs/buttons-and-entities.md#virtual--off-bus-buttons)) |
 | Clustered remotes | — | Multi-page handhelds that send many bus codes but are not in the PC-Link inventory are grouped into one `Remote Transmitter (<suffix>)` device after a link scan |

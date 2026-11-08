@@ -35,7 +35,7 @@ body:
       label: Steps to reproduce
       description: Numbered steps from a freshly-restarted HA, including which buttons / services / automations you triggered.
       placeholder: |
-        1. Settings → Devices & Services → Nikobus → Configure → Discover modules & buttons
+        1. On the Nikobus Bridge device, press 1. Load Project Overview
         2. Wait for completion
         3. Press wall button at address 3AC4A9
         4. Observe …

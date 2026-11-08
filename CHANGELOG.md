@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.31.5
+
+**Requires `nikobus-connect` 0.57.4.**
+
+- **The 05-315 RF box, 4 channels, is discovered** (#575). Its device type was not known to the library, so the inventory dropped it and its presses showed up as *Press from unknown button*. After updating, run **1. Load Project Overview** and **2. Load Existing Installation** once: the RF box appears as a device with four keys, under the *Remotes and IR codes* press-entity class. Keys 1C and 1D are confirmed from the report; 1A and 1B follow from the same key layout. The 2-channel version is not recognised yet, since which two keys it uses is not known.
+- README: the RF box in the supported hardware table.
+- The bug and discovery issue templates name the bridge buttons as they are today (*1. Load Project Overview*, *2. Load Existing Installation*).
+
 ## 3.31.4
 
 - **A dimmer with an LED key no longer jumps back to its old state.** Since 3.31.3 (with nikobus-connect 0.57.3) the module is read before the LED key is pressed, so a press that is not needed is never sent. The answer to that read, still the old state, replaced the state Home Assistant had just shown, about 0.4 s after the command; the lamp and the LED switched correctly, but the entity showed the old state until the next poll or Feedback Module read, 30 s to several minutes later. The dimmer now keeps the state it was asked for while the command runs, as the relay lights and switches with a key already did. Reported on a 05-008-02 with its LED key in mode M14, November 2026.
