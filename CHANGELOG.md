@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.31.6
+
+**Requires `nikobus-connect` 0.57.5.**
+
+- **Relays click sooner again.** Since 3.30.5 nearly every command read the module group first, about half a second before the relay clicked, so that a light switched at the wall was not switched back (#557). The read is now skipped where nothing can have changed unseen: the groups of a switch module whose links were read in full by *2. Load Existing Installation* and none of which runs a timer or comes from a PC-Link calendar channel. On those the relay clicks about 0.45 s after the command instead of 0.9 s. A group with a timed link (delayed off, an operating time other than zero, flashing), every dimmer group and every shutter group is read first as before.
+- **Every press makes the next command read first** on the groups it drives, whether seen on the bus or sent by Home Assistant; a press of a key with no known link does so for every group. This is what #557 needed, and it also covers an automation that reacts to a press by switching another output of the same module.
+- **PC-Link older than Gen 3**: no read before a command. Such an interface does not answer state queries, so the read was a timeout of up to five seconds before every command.
+- After a reconnection, the first command to each group reads it: presses made meanwhile were not seen.
+- The diagnostics download lists the groups written without a read (`written_without_a_read_first`).
+
 ## 3.31.5
 
 **Requires `nikobus-connect` 0.57.4.**

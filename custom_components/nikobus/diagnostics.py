@@ -253,6 +253,7 @@ async def async_get_config_entry_diagnostics(
             "scene_count": len(coordinator.dict_scene_data.get("scene", [])),
             "discovery_phase": coordinator.discovery_phase,
             "raw_hex_states": raw_module_states,
+            "written_without_a_read_first": coordinator.steady_group_labels(),
         },
         "discovery_quality": {
             "per_module": _per_module_decode_metrics(coordinator),

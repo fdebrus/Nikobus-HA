@@ -109,6 +109,7 @@ class NikobusActuator:
         """Account for one ``#N`` frame: start a press, or extend it."""
         state, started, timers = self.tracker.frame(address)
         if started:
+            self.note_press(state.address)
             module_address, channel = self._derive_button_context(state.address)
             context = _PressContext(module_address, channel)
             self._contexts[state.address] = context
@@ -184,6 +185,25 @@ class NikobusActuator:
     # ------------------------------------------------------------------
     # What a press reaches
     # ------------------------------------------------------------------
+
+    def note_press(self, address: str) -> None:
+        """Forget the state of every output group a press may have changed.
+
+        The next write to such a group then reads it first instead of
+        sending what the buffer held before the press. The groups the
+        key's links drive; every group for a key with no known link,
+        which may drive anything.
+        """
+        command = self._coordinator.nikobus_command
+        if command is None:
+            return
+        hit = find_operation_point(self._dict_button_data, address.upper())
+        groups = impacted_groups(hit[2]) if hit is not None else []
+        if not groups:
+            command.invalidate_group_state()
+            return
+        for module_address, group in groups:
+            command.invalidate_group_state(module_address, group)
 
     async def button_discovery(self, address: str, press_context: dict[str, Any] | None = None) -> None:
         """Identify impacted modules and trigger targeted refreshes."""

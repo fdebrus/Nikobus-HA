@@ -30,6 +30,7 @@ from nikobus_connect.discovery import (
     find_module,
     find_operation_point,
 )
+from nikobus_connect.discovery.store import steady_groups
 from nikobus_connect.exceptions import (
     NikobusConnectionError,
     NikobusDataError,
@@ -205,7 +206,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         self._unanswered_cycles: dict[str, int] = {}
         self._not_answering: dict[str, float] = {}
 
-        self.discovery_running = False
+        self._discovery_running = False
         # ``discovery_module`` / ``discovery_module_address`` /
         # ``inventory_query_type`` are part of the
         # ``nikobus_connect.CoordinatorProtocol`` contract: the library
@@ -668,6 +669,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
             except (TypeError, ValueError):
                 self.api.press_repeat = DEFAULT_PRESS_REPEAT
 
+            self._apply_write_guard()
             await self.nikobus_command.start()
             await self.nikobus_listener.start()
             self._last_connected = datetime.now(UTC)
@@ -1611,13 +1613,17 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         # toggle link can count as two presses.
         self.api.press_repeat = repeats
         address = address.upper()
+        actuator = self.nikobus_actuator
+        if actuator is not None:
+            actuator.note_press(address)
 
         async def _refresh_after_press() -> None:
             # The interface never relays the host's own #N, so nothing
             # would read the impacted modules: do what an inbound press
             # does, once the burst is actually on the wire.
-            actuator = self.nikobus_actuator
             if actuator is not None:
+                # Again: a poll answer may have landed since it was queued.
+                actuator.note_press(address)
                 await actuator.refresh_after_host_press(address)
 
         await self.api.press_button(address, completion_handler=_refresh_after_press)
@@ -1987,6 +1993,54 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         entry_data = domain_data.get(self.config_entry.entry_id, {})
         entry_data.pop("routing", None)
 
+    @property
+    def discovery_running(self) -> bool:
+        """Whether an inventory or a link scan is in progress."""
+        return self._discovery_running
+
+    @discovery_running.setter
+    def discovery_running(self, value: bool) -> None:
+        self._discovery_running = bool(value)
+        self._apply_write_guard()
+
+    def steady_group_labels(self) -> list[str]:
+        """The groups written without a read first, for the diagnostics."""
+        command = self.nikobus_command
+        if command is None:
+            return []
+        return [f"{address} g{group}" for address, group in sorted(command.steady_groups)]
+
+    def _apply_write_guard(self) -> None:
+        """Tell the command handler which groups need no read before a write.
+
+        A write carries a group's six outputs from the state buffer, so
+        the library reads the group first unless it is told the buffer
+        can be trusted: the groups nothing but a key telegram changes
+        (``steady_groups``), for as long as two refresh periods. Every
+        press forgets the groups it reaches (``NikobusActuator.note_press``).
+        None while a scan rewrites the links those groups are judged by.
+        """
+        command = self.nikobus_command
+        if command is None:
+            return
+        if self._prior_gen3:
+            # The interface does not answer state queries: a read before
+            # the write would only be a timeout before every command.
+            command.read_before_write_s = None
+            return
+        groups = (
+            set()
+            if self._discovery_running
+            else steady_groups(self.dict_button_data, self.module_storage.data)
+        )
+        cadence = FEEDBACK_SAFETY_POLL_S if self._has_feedback_module else self._refresh_interval
+        command.set_steady_groups(groups, max_age=2 * float(cadence))
+        _LOGGER.debug(
+            "Write guard: %d group(s) written without a read first — %s",
+            len(groups),
+            ", ".join(f"{address} g{group}" for address, group in sorted(groups)) or "none",
+        )
+
     async def async_on_module_save(self) -> None:
         """Persist the Store after discovery/user edits, then refresh derived views.
 
@@ -1997,6 +2051,7 @@ class NikobusDataCoordinator(NikobusDiscoveryMixin, DataUpdateCoordinator[None])
         self._rebuild_dict_module_data()
         # Clear the cached router spec so newly-discovered modules show up.
         self._invalidate_routing_cache()
+        self._apply_write_guard()
 
 
 
