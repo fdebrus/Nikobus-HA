@@ -39,7 +39,7 @@ def _make_coordinator():
     coord._reload_task = None
     coord._last_connected = None
     coord._reconnect_attempts = 0
-    coord.discovery_running = False
+    coord._discovery_running = False
     coord.dict_module_data = {}
     # ``nikobus_module_states`` is a read-only property on the real class
     # (returns ``self._module_states``). Bypass __init__, so set the

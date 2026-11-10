@@ -19,8 +19,8 @@
   "quality_scale": "gold",
   "requirements": [
     "aiofiles>=25.1.0",
-    "nikobus-connect>=0.57.4"
+    "nikobus-connect>=0.57.5"
   ],
   "single_config_entry": true,
-  "version": "3.31.5"
+  "version": "3.31.6"
 }

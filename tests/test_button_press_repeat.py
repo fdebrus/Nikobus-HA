@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from nikobus_connect.api import NikobusAPI
 
@@ -24,6 +24,8 @@ def _coord(press_repeat=DEFAULT_PRESS_REPEAT, actuator=True):
     # The real library API, so the burst text is the one that goes out.
     c.api = NikobusAPI(c.nikobus_command, {})
     c.nikobus_actuator = AsyncMock() if actuator else None
+    if actuator:
+        c.nikobus_actuator.note_press = MagicMock()  # synchronous on the real actuator
     return c
 
 
