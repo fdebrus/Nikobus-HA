@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from nikobus_connect.discovery import describe_link
@@ -45,6 +46,7 @@ class Describer:
         self._hub = hub
         self._entities = er.async_get(hub.hass)
         self._areas = ar.async_get(hub.hass)
+        self._devices = dr.async_get(hub.hass)
 
     def _entity(self, platform: str, unique_id: str) -> dict[str, Any]:
         """An entity as a model can point at it: its id, its name, its area."""
@@ -53,7 +55,10 @@ class Describer:
             return {"entity_id": None}
         entry = self._entities.async_get(entity_id)
         state = self._hub.hass.states.get(entity_id)
-        area = self._areas.async_get_area(entry.area_id) if entry and entry.area_id else None
+        # An entity with no area of its own is in its device's.
+        device = self._devices.async_get(entry.device_id) if entry and entry.device_id else None
+        area_id = (entry.area_id if entry else None) or (device.area_id if device else None)
+        area = self._areas.async_get_area(area_id) if area_id else None
         return {
             "entity_id": entity_id,
             "name": state.name if state else (entry.name or entry.original_name if entry else None),

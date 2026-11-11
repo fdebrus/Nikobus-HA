@@ -10,6 +10,7 @@ from custom_components.nikobus_ng.const import DOMAIN
 from custom_components.nikobus_ng.describe import _explained
 from custom_components.nikobus_ng.llm_api import API_PROMPT
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from nikobus_connect.discovery import meaning
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -119,3 +120,16 @@ async def test_a_scene_has_a_device_of_its_own_that_stays(
     assert devices.async_get_device_by_identifier((DOMAIN, f"{KEY_SCENE}_scene"), entry.entry_id) is not None
     # What a module holds is not forgotten by deleting its device.
     assert not await async_remove_config_entry_device(hass, entry, device)
+
+
+async def test_an_output_is_described_in_the_area_of_its_device(
+    hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry
+) -> None:
+    """The area is the module's: the entity has none of its own."""
+    await setup()
+    devices = dr.async_get(hass)
+    module = devices.async_get_device_by_identifier((DOMAIN, SWITCH), entry.entry_id)
+    assert module is not None
+    devices.async_update_device(module.id, area_id=ar.async_get(hass).async_get_or_create("Cellar").id)
+    described = await hass.services.async_call(DOMAIN, "describe", {}, blocking=True, return_response=True)
+    assert {o["area"] for o in described["outputs"] if o["module"] == SWITCH and o["enabled"]} == {"Cellar"}
