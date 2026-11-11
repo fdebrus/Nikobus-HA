@@ -64,6 +64,9 @@
     },
     "discover": {
       "service": "mdi:radar"
+    },
+    "describe": {
+      "service": "mdi:sitemap"
     }
   }
 }

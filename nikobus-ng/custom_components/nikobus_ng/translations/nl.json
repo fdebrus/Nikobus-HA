@@ -44,7 +44,9 @@
           "led_key": "LED-toetsen van een uitgang",
           "module_type": "Het type van een module",
           "names": "Namen uit het projectbestand",
-          "files": "Inventaris uit twee bestanden"
+          "files": "Inventaris uit twee bestanden",
+          "take_over": "Overnemen van de Nikobus-integratie",
+          "give_back": "Teruggeven aan de Nikobus-integratie"
         }
       },
       "gateway": {
@@ -148,6 +150,14 @@
           "module_file": "Modulebestand (nikobus_module_config.json)",
           "button_file": "Toetsenbestand (nikobus_button_config.json)"
         }
+      },
+      "take_over": {
+        "title": "Overnemen van de Nikobus-integratie",
+        "description": "{entities} entiteiten van de Nikobus-integratie hebben hier een tegenhanger: haar lampen, schakelaars, rolluiken, ventilatoren, sferen en ingangsschakelaars. Bij verzenden gaan van elk de entiteits-ID, de getoonde naam, de ruimte, de aliassen, de labels, het pictogram en de blootstelling aan spraakassistenten over naar de entiteit van deze integratie: dashboards, automatiseringen en geschiedenis blijven werken. {lights} relais worden hier lampen om overeen te komen.\n\nDe Nikobus-entiteiten blijven bewaard, geparkeerd onder hun ID gevolgd door `_nikobus`, en **Teruggeven** maakt alles ongedaan.\n\nNiet overgenomen: {left} andere Nikobus-entiteiten, vooral haar toetssensoren en drukknoppen, die hier gebeurtenisentiteiten zijn. Automatiseringen die deze gebruiken, of die de busgebeurtenissen en acties van Nikobus bij naam gebruiken, moeten met de hand worden aangepast.\n\nLaat het Nikobus-item uitgeschakeld: slechts één programma mag met de bus praten."
+      },
+      "give_back": {
+        "title": "Teruggeven aan de Nikobus-integratie",
+        "description": "{entities} entiteiten zijn overgenomen. Bij verzenden krijgt elke Nikobus-entiteit haar entiteits-ID terug, en krijgen de entiteiten van deze integratie de ID's die ze eerder hadden. Namen, ruimtes en aliassen blijven aan beide kanten zoals ze zijn."
       }
     },
     "error": {
@@ -157,7 +167,8 @@
     },
     "abort": {
       "not_loaded": "De integratie is niet geladen.",
-      "bus_taken": "Er loopt een ontdekking of een controle. Probeer opnieuw wanneer die klaar is."
+      "bus_taken": "Er loopt een ontdekking of een controle. Probeer opnieuw wanneer die klaar is.",
+      "nikobus_running": "De Nikobus-integratie is actief. Schakel eerst haar item uit: slechts één programma mag met de bus praten, en haar entiteiten zijn in gebruik."
     }
   },
   "entity": {
@@ -303,6 +314,12 @@
     },
     "zone_function_missing": {
       "message": "Deze functie is niet geprogrammeerd op deze zone."
+    },
+    "llm_not_an_output": {
+      "message": "{entity_id} is geen uitgang van deze Nikobus-installatie."
+    },
+    "llm_not_a_key": {
+      "message": "{key} is geen toets van deze Nikobus-installatie."
     }
   },
   "selector": {
@@ -356,7 +373,7 @@
         "step": {
           "confirm": {
             "title": "{module} antwoordt niet",
-            "description": "De module antwoordde drie keer na elkaar niet terwijl andere modules dat wel deden: haar entiteiten tonen een oude toestand. Controleer eerst haar voeding en haar busbedrading; deze melding verdwijnt vanzelf wanneer ze opnieuw antwoordt.\n\nIs de module uit de installatie gehaald, verzend dan om ze met haar entiteiten uit Home Assistant te verwijderen. Een latere ontdekking brengt ze terug als de PC-Link ze nog vermeldt."
+            "description": "De module antwoordde drie keer na elkaar niet terwijl andere modules dat wel deden: haar entiteiten tonen een oude toestand. Controleer eerst haar voeding en haar busbedrading; deze melding verdwijnt vanzelf wanneer ze opnieuw antwoordt.\n\nIs de module uit de installatie gehaald, verzend dan om ze met haar entiteiten uit Home Assistant te verwijderen. Ze blijft verwijderd bij latere ontdekkingen, ook als de PC-Link ze nog vermeldt. De actie **Ontdekken** met haar adres brengt ze terug."
           }
         },
         "abort": {
@@ -451,6 +468,10 @@
           "description": "De vier hexadecimale cijfers van een module, om alleen haar koppelingen opnieuw te lezen, bijvoorbeeld na het herprogrammeren. Leeg: de hele installatie."
         }
       }
+    },
+    "describe": {
+      "name": "De installatie beschrijven",
+      "description": "Geeft de installatie terug als gegevens: elke uitgang met de toetsen die ze sturen, hun modi en tijden, elke toets met wat ze stuurt, de sferen met hun uitgangen, de logische ingangen en de toestand van de bus. Gelezen uit wat de ontdekking opsloeg; er wordt niets op de bus gezet."
     }
   }
 }

@@ -54,6 +54,7 @@ async def async_get_config_entry_diagnostics(
         "keys": sum(1 for _ in inventory.iter_keys()),
         "logical_inputs": sum(1 for _ in inventory.logical_inputs()),
         "from_project": inventory.from_project,
+        "removed": list(inventory.removed),
         "led_key_outputs": sorted(hub.led_keys),
         "shutter_groups": sum(1 for _ in inventory.shutter_groups()),
         "audio_zones": len(inventory.audio_zones()),

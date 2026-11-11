@@ -18,6 +18,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service import async_register_admin_service
 
 from .const import DOMAIN
+from .describe import Describer
 from .hub import NikobusHub
 
 ATTR_ADDRESS = "address"
@@ -28,6 +29,7 @@ SERVICE_READ_MODULE = "read_module"
 SERVICE_VERIFY = "verify_programming"
 SERVICE_BACKUP = "backup_programming"
 SERVICE_DISCOVER = "discover"
+SERVICE_DESCRIBE = "describe"
 
 _KEY_ADDRESS = vol.All(cv.string, vol.Upper, vol.Match(r"^[0-9A-F]{6}$"))
 _MODULE_ADDRESS = vol.All(cv.string, vol.Upper, vol.Match(r"^[0-9A-F]{4}$"))
@@ -74,6 +76,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def discover(call: ServiceCall) -> None:
         hub = _hub(hass)
         module = call.data.get(ATTR_ADDRESS)
+        if module is not None and hub.inventory.restore(module):
+            # Asked for by its address: a removed module is taken back in.
+            await hub.inventory.async_save()
+            hub.allocate_states()
         if module is not None and module not in hub.inventory.addresses():
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
@@ -82,6 +88,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
             )
         hub.discovery.start(module)
 
+    async def describe(call: ServiceCall) -> ServiceResponse:
+        installation: dict[str, Any] = Describer(_hub(hass)).installation()
+        return installation
+
+    hass.services.async_register(DOMAIN, SERVICE_DESCRIBE, describe, vol.Schema({}), SupportsResponse.ONLY)
     hass.services.async_register(
         DOMAIN, SERVICE_PRESS_KEY, press_key, vol.Schema({vol.Required(ATTR_ADDRESS): _KEY_ADDRESS})
     )

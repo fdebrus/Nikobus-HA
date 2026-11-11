@@ -44,7 +44,9 @@
           "led_key": "LED keys of an output",
           "module_type": "The type of a module",
           "names": "Names from the project file",
-          "files": "Inventory from two files"
+          "files": "Inventory from two files",
+          "take_over": "Take over from the Nikobus integration",
+          "give_back": "Give back to the Nikobus integration"
         }
       },
       "gateway": {
@@ -148,6 +150,14 @@
           "module_file": "Module file (nikobus_module_config.json)",
           "button_file": "Button file (nikobus_button_config.json)"
         }
+      },
+      "take_over": {
+        "title": "Take over from the Nikobus integration",
+        "description": "{entities} entities of the Nikobus integration have a counterpart here: its lights, switches, covers, fans, scenes and input switches. Submitting moves each one's entity ID, name as shown, area, aliases, labels, icon and voice-assistant exposure onto this integration's entity, so dashboards, automations and history keep working. {lights} relays become lights here to match.\n\nThe Nikobus entities are kept, parked under their ID followed by `_nikobus`, and **Give back** undoes all of it.\n\nNot taken over: {left} other Nikobus entities, mostly its key sensors and press buttons, which are event entities here. Automations that use those, or the Nikobus bus events and actions by name, have to be changed by hand.\n\nKeep the Nikobus entry disabled: only one program may talk to the bus."
+      },
+      "give_back": {
+        "title": "Give back to the Nikobus integration",
+        "description": "{entities} entities were taken over. Submitting gives each Nikobus entity its entity ID back, and this integration's entities the IDs they had before. Names, areas and aliases stay as they are on both."
       }
     },
     "error": {
@@ -157,7 +167,8 @@
     },
     "abort": {
       "not_loaded": "The integration is not loaded.",
-      "bus_taken": "A discovery or a check is running. Try again when it has ended."
+      "bus_taken": "A discovery or a check is running. Try again when it has ended.",
+      "nikobus_running": "The Nikobus integration is running. Disable its entry first: only one program may talk to the bus, and its entities are in use."
     }
   },
   "entity": {
@@ -303,6 +314,12 @@
     },
     "zone_function_missing": {
       "message": "This function is not programmed on this zone."
+    },
+    "llm_not_an_output": {
+      "message": "{entity_id} is not an output of this Nikobus installation."
+    },
+    "llm_not_a_key": {
+      "message": "{key} is not a key of this Nikobus installation."
     }
   },
   "selector": {
@@ -356,7 +373,7 @@
         "step": {
           "confirm": {
             "title": "{module} does not answer",
-            "description": "The module has not answered three reads in a row while other modules did, so its entities show an old state. Check its power and its bus wiring first; this notice goes away by itself when it answers again.\n\nIf the module was taken out of the installation, submit to remove it and its entities from Home Assistant. A later discovery brings it back if the PC-Link still lists it."
+            "description": "The module has not answered three reads in a row while other modules did, so its entities show an old state. Check its power and its bus wiring first; this notice goes away by itself when it answers again.\n\nIf the module was taken out of the installation, submit to remove it and its entities from Home Assistant. It stays removed through later discoveries, even while the PC-Link still lists it. The **Discover** action with its address brings it back."
           }
         },
         "abort": {
@@ -451,6 +468,10 @@
           "description": "The four hexadecimal digits of a module, to read only its links again, for instance after reprogramming it. Empty reads the whole installation."
         }
       }
+    },
+    "describe": {
+      "name": "Describe the installation",
+      "description": "Returns the installation as data: every output with the keys that drive it, their modes and times, every key with what it drives, the scenes with their outputs, the logical inputs and the health of the bus. Read from what the discovery stored; nothing is sent on the bus."
     }
   }
 }

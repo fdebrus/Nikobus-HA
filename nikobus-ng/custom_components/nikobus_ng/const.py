@@ -105,6 +105,8 @@ REPROGRAMMED_CHECK_INTERVAL: Final = timedelta(days=1)
 
 #: A module silent for this many reads in a row, while others answer, is reported.
 SILENT_READS: Final = 3
+#: Such a module is then asked only this often: each read of it is a timeout on the bus.
+SILENT_RETRY: Final = timedelta(hours=1)
 ISSUE_NOT_ANSWERING: Final = "module_not_answering"
 ISSUE_CORRUPT_LINKS: Final = "module_corrupt_links"
 ISSUE_NO_DEVICE: Final = "no_device_answered"

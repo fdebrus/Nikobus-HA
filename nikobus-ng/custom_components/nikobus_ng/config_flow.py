@@ -66,6 +66,7 @@ from .const import (
 )
 from .inventory import Inventory
 from .manual import inventory_from_files
+from .takeover import give_back, has_old_entities, make_plan, old_entry_blocks
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -244,6 +245,10 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
         steps.append("names")
         if inventory.is_empty or inventory.from_project:
             steps.append("files")
+        if inventory.takeover["done"]:
+            steps.append("give_back")
+        elif has_old_entities(self.hass) and not inventory.is_empty:
+            steps.append("take_over")
         return self.async_show_menu(step_id="init", menu_options=steps)
 
     async def async_step_gateway(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -488,6 +493,49 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
                 "close": f"{from_links['down']:g} s" if from_links["down"] else "-",
                 "margin": f"{COVER_END_MARGIN:g} s",
             },
+        )
+
+    async def async_step_take_over(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Take the entity ids, names and areas the Nikobus integration's entities have.
+
+        The form says what would move. Nothing moves until it is
+        submitted, and then only once the entry has reloaded and this
+        integration's entities exist as the same kinds of entity.
+        """
+        hub = self.config_entry.runtime_data
+        if old_entry_blocks(self.hass):
+            return self.async_abort(reason="nikobus_running")
+        plan = make_plan(self.hass, hub)
+        if user_input is not None:
+            inventory = self._inventory()
+            inventory.takeover["pending"] = plan.entities
+            await inventory.async_save()
+            # The ids move when the entry has reloaded, whether or not an option changed.
+            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+            return self._save(**plan.options)
+        now_lights = set(hub.light_outputs)
+        return self.async_show_form(
+            step_id="take_over",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "entities": str(len(plan.entities)),
+                "left": str(plan.left),
+                "lights": str(len(set(plan.options[CONF_LIGHT_OUTPUTS]) - now_lights)),
+            },
+        )
+
+    async def async_step_give_back(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Undo a take-over: every entity gets back the id it had before."""
+        inventory = self._inventory()
+        if user_input is not None:
+            give_back(self.hass, self.config_entry.runtime_data)
+            await inventory.async_save()
+            self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+            return self._save()
+        return self.async_show_form(
+            step_id="give_back",
+            data_schema=vol.Schema({}),
+            description_placeholders={"entities": str(len(inventory.takeover["done"]))},
         )
 
     async def async_step_names(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
