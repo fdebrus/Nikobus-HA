@@ -1,0 +1,145 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Verbinden met Nikobus",
+        "description": "De seriële poort van de PC-Link (bijvoorbeeld /dev/ttyUSB0) of het adres van een seriële bridge (bijvoorbeeld 192.168.1.50:9999). Slechts één programma mag met de bus praten: stop eerst de Nikobus-software.",
+        "data": {
+          "connection": "Seriële poort of host:poort",
+          "feedback_module": "Er is een Feedbackmodule geïnstalleerd"
+        },
+        "data_description": {
+          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit."
+        }
+      },
+      "reconfigure": {
+        "title": "De verbinding wijzigen",
+        "data": {
+          "connection": "Seriële poort of host:poort",
+          "feedback_module": "Er is een Feedbackmodule geïnstalleerd"
+        },
+        "data_description": {
+          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Geen Nikobus-gateway antwoordde op deze verbinding.",
+      "unknown": "Onverwachte fout. Zie het logboek."
+    },
+    "abort": {
+      "already_configured": "Deze verbinding is al geconfigureerd.",
+      "reconfigure_successful": "De verbinding is gewijzigd.",
+      "single_instance_allowed": "Er is maar één Nikobus NG-item mogelijk."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nikobus-opties",
+        "description": "Upload het .nkb-project van de Nikobus-software om de namen en ruimtes over te nemen die het bevat voor modules, bedieningen en uitgangen. Namen die u in Home Assistant gaf, blijven behouden.",
+        "data": {
+          "feedback_module": "Er is een Feedbackmodule geïnstalleerd",
+          "project_file": "Projectbestand (.nkb)"
+        },
+        "data_description": {
+          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit."
+        }
+      }
+    },
+    "error": {
+      "invalid_project_file": "Dit bestand kon niet als Nikobus-project worden gelezen."
+    },
+    "abort": {
+      "not_loaded": "De integratie is niet geladen."
+    }
+  },
+  "entity": {
+    "switch": {
+      "output": {
+        "name": "Uitgang {channel}"
+      }
+    },
+    "light": {
+      "output": {
+        "name": "Uitgang {channel}"
+      }
+    },
+    "cover": {
+      "output": {
+        "name": "Uitgang {channel}"
+      }
+    },
+    "event": {
+      "key": {
+        "name": "Toets {key}",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Ingedrukt",
+              "hold": "Vastgehouden",
+              "short_release": "Losgelaten na een korte druk",
+              "long_release": "Losgelaten na een lange druk"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "discover": {
+        "name": "Installatie ontdekken"
+      },
+      "press_key": {
+        "name": "{key} indrukken"
+      }
+    },
+    "scene": {
+      "central_function": {
+        "name": "Centrale functie {address}"
+      }
+    },
+    "sensor": {
+      "discovery": {
+        "name": "Ontdekking",
+        "state": {
+          "idle": "In rust",
+          "inventory": "Inventaris lezen",
+          "links": "Koppelingen lezen",
+          "finalizing": "Afronden",
+          "error": "Gestopt"
+        }
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Verbinding"
+      },
+      "occupancy": {
+        "name": "Aanwezigheid"
+      },
+      "light_level": {
+        "name": "Lichtniveau"
+      }
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Geen Nikobus-gateway antwoordde: {error}"
+    },
+    "not_connected": {
+      "message": "De Nikobus-gateway is niet verbonden."
+    },
+    "command_failed": {
+      "message": "{address} bevestigde het commando niet: {error}"
+    },
+    "discovery_running": {
+      "message": "Er loopt al een ontdekking."
+    },
+    "no_pc_link": {
+      "message": "Geen PC-Link antwoordde op de inventaris. De ontdekking leest de installatie uit een PC-Link (05-200)."
+    },
+    "no_modules": {
+      "message": "De PC-Link bevat geen uitgangsmodule."
+    }
+  }
+}

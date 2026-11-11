@@ -1,0 +1,145 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Nikobus",
+        "description": "The serial port of the PC-Link (for example /dev/ttyUSB0) or the address of a serial bridge (for example 192.168.1.50:9999). Only one program may talk to the bus: stop the Nikobus software first.",
+        "data": {
+          "connection": "Serial port or host:port",
+          "feedback_module": "A Feedback Module is installed"
+        },
+        "data_description": {
+          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself."
+        }
+      },
+      "reconfigure": {
+        "title": "Change the connection",
+        "data": {
+          "connection": "Serial port or host:port",
+          "feedback_module": "A Feedback Module is installed"
+        },
+        "data_description": {
+          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "No Nikobus gateway answered on this connection.",
+      "unknown": "Unexpected error. See the log."
+    },
+    "abort": {
+      "already_configured": "This connection is already configured.",
+      "reconfigure_successful": "The connection was changed.",
+      "single_instance_allowed": "Only one Nikobus NG entry is possible."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nikobus options",
+        "description": "Upload the .nkb project of the Nikobus software to take the names and rooms it holds for modules, plates and outputs. Names you gave in Home Assistant are kept.",
+        "data": {
+          "feedback_module": "A Feedback Module is installed",
+          "project_file": "Project file (.nkb)"
+        },
+        "data_description": {
+          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself."
+        }
+      }
+    },
+    "error": {
+      "invalid_project_file": "This file could not be read as a Nikobus project."
+    },
+    "abort": {
+      "not_loaded": "The integration is not loaded."
+    }
+  },
+  "entity": {
+    "switch": {
+      "output": {
+        "name": "Output {channel}"
+      }
+    },
+    "light": {
+      "output": {
+        "name": "Output {channel}"
+      }
+    },
+    "cover": {
+      "output": {
+        "name": "Output {channel}"
+      }
+    },
+    "event": {
+      "key": {
+        "name": "Key {key}",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed",
+              "hold": "Held",
+              "short_release": "Released after a short press",
+              "long_release": "Released after a long press"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "discover": {
+        "name": "Discover installation"
+      },
+      "press_key": {
+        "name": "Press {key}"
+      }
+    },
+    "scene": {
+      "central_function": {
+        "name": "Central function {address}"
+      }
+    },
+    "sensor": {
+      "discovery": {
+        "name": "Discovery",
+        "state": {
+          "idle": "Idle",
+          "inventory": "Reading the inventory",
+          "links": "Reading the links",
+          "finalizing": "Finishing",
+          "error": "Stopped"
+        }
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Connection"
+      },
+      "occupancy": {
+        "name": "Occupancy"
+      },
+      "light_level": {
+        "name": "Light level"
+      }
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "No Nikobus gateway answered: {error}"
+    },
+    "not_connected": {
+      "message": "The Nikobus gateway is not connected."
+    },
+    "command_failed": {
+      "message": "{address} did not acknowledge the command: {error}"
+    },
+    "discovery_running": {
+      "message": "A discovery is already running."
+    },
+    "no_pc_link": {
+      "message": "No PC-Link answered the inventory. Discovery reads the installation from a PC-Link (05-200)."
+    },
+    "no_modules": {
+      "message": "The PC-Link holds no output module."
+    }
+  }
+}

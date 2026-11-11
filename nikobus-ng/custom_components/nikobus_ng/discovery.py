@@ -1,0 +1,187 @@
+"""One action that discovers the whole installation.
+
+The library reads an installation in two passes: the PC-Link's
+inventory (which modules and plates exist), then every output module's
+own link table (which key drives which output, and the scenes). Here
+they run one after the other, started by one button or by the first
+setup, and end with a reload so the entities appear.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from homeassistant.exceptions import HomeAssistantError
+from nikobus_connect.discovery import PHASE_REGISTER_SCAN, InventoryQueryType
+from nikobus_connect.discovery.store import flatten_cf_broadcasts, is_pure_roller_cf
+
+from .const import DOMAIN, INVENTORY_CLOSE_TIMEOUT, INVENTORY_PROBE_TIMEOUT
+
+if TYPE_CHECKING:
+    from .hub import NikobusHub
+
+_LOGGER = logging.getLogger(__name__)
+
+IDLE = "idle"
+INVENTORY = "inventory"
+LINKS = "links"
+FINALIZING = "finalizing"
+ERROR = "error"
+PHASES = [IDLE, INVENTORY, LINKS, FINALIZING, ERROR]
+
+#: Gateways that answer the probe but hold no inventory.
+_NO_INVENTORY = ("feedback_module", "pc_logic")
+# Where each pass starts on the progress scale.
+_LINKS_FROM, _FINALIZING_FROM = 30, 95
+
+
+@dataclass(slots=True)
+class DiscoveryStatus:
+    """What the status sensor shows."""
+
+    phase: str = IDLE
+    progress: int = 0
+    module: str | None = None
+    error: str | None = None
+
+
+class DiscoveryRunner:
+    """Runs the inventory and the link scan, and reports on them."""
+
+    def __init__(self, hub: NikobusHub) -> None:
+        self._hub = hub
+        self.status = DiscoveryStatus()
+        self.running = False
+        self._task: asyncio.Task[None] | None = None
+        self._first_answer = asyncio.Event()
+        self._pass_finished = asyncio.Event()
+
+    def start(self) -> None:
+        """Start a discovery in the background. Raises when one is running."""
+        if self.running:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="discovery_running")
+        if not self._hub.connected:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="not_connected")
+        self.running = True
+        self._task = self._hub.entry.async_create_background_task(
+            self._hub.hass, self._async_run(), name=f"{DOMAIN}_discovery"
+        )
+
+    async def async_wait(self) -> None:
+        """Wait for the discovery in progress, if any."""
+        if self._task is not None:
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
+
+    async def _async_run(self) -> None:
+        hub = self._hub
+        hub.apply_write_guard()
+        try:
+            await self._async_inventory()
+            await self._async_links()
+            await self._async_finalize()
+        except HomeAssistantError as err:
+            _LOGGER.error("Discovery stopped: %s", err)
+            self._set(ERROR, error=err.translation_key or str(err))
+            return
+        except Exception:
+            _LOGGER.exception("Discovery failed")
+            self._set(ERROR, error="unknown")
+            return
+        finally:
+            self.running = False
+            hub.discovery_running = False
+            hub.apply_write_guard()
+            hub.notify()
+        self._set(IDLE, progress=100)
+        hub.hass.config_entries.async_schedule_reload(hub.entry.entry_id)
+
+    async def _async_inventory(self) -> None:
+        """Ask the PC-Link which modules and plates exist."""
+        hub = self._hub
+        self._set(INVENTORY)
+        if hub.connection.gateway_family in _NO_INVENTORY:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="no_pc_link")
+        self._first_answer.clear()
+        self._pass_finished.clear()
+        hub.discovery_running = True
+        await hub.engine.start_inventory_discovery()
+        try:
+            async with asyncio.timeout(INVENTORY_PROBE_TIMEOUT):
+                await self._first_answer.wait()
+        except TimeoutError:
+            # The library closes the pass by itself; let it, then report.
+            with contextlib.suppress(TimeoutError):
+                async with asyncio.timeout(INVENTORY_CLOSE_TIMEOUT):
+                    await self._pass_finished.wait()
+            raise HomeAssistantError(
+                translation_domain=DOMAIN, translation_key="no_pc_link"
+            ) from None
+        await self._pass_finished.wait()
+        hub.inventory.changed()
+        if hub.inventory.is_empty:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="no_modules")
+        hub.allocate_states()
+
+    async def _async_links(self) -> None:
+        """Read every module's own link table."""
+        hub = self._hub
+        self._set(LINKS, progress=_LINKS_FROM)
+        self._pass_finished.clear()
+        hub.discovery_running = True
+        await hub.engine.query_module_inventory("ALL")
+        await self._pass_finished.wait()
+
+    async def _async_finalize(self) -> None:
+        """Keep the scenes the scan classified, and save."""
+        hub = self._hub
+        self._set(FINALIZING, progress=_FINALIZING_FROM)
+        broadcasts = hub.engine.discovered_cf_broadcasts
+        if broadcasts:
+            hub.inventory.scenes = {
+                address: scene
+                for address, scene in flatten_cf_broadcasts(broadcasts).items()
+                # A shutter group cannot be given a direction by its address.
+                if not is_pure_roller_cf(scene)
+            }
+        await hub.inventory.async_save()
+
+    def _set(self, phase: str, *, progress: int = 0, error: str | None = None) -> None:
+        self.status = DiscoveryStatus(phase=phase, progress=progress, error=error)
+        self._hub.notify()
+
+    # --- what the library reports -------------------------------------------------
+
+    def on_progress(self, progress: Any) -> None:
+        """Turn the library's counters into one percentage."""
+        if not self.running or progress.phase != PHASE_REGISTER_SCAN or not progress.module_total:
+            return
+        module_done = (progress.registers_sent / progress.register_total) if progress.register_total else 0
+        done = (max(progress.module_index, 1) - 1 + min(module_done, 1)) / progress.module_total
+        percent = _LINKS_FROM + int((_FINALIZING_FROM - _LINKS_FROM) * min(done, 1))
+        if percent != self.status.progress or progress.module_address != self.status.module:
+            self.status = DiscoveryStatus(phase=LINKS, progress=percent, module=progress.module_address)
+            self._hub.notify()
+
+    async def async_on_finished(self, **_kwargs: Any) -> None:
+        """A pass of the library is over."""
+        self._pass_finished.set()
+
+    def on_inventory_frame(self, message: str) -> None:
+        """A ``$18`` frame: an inventory record while the PC-Link is being read."""
+        if self.running and self._hub.inventory_query_type is InventoryQueryType.PC_LINK:
+            self._hub.engine.handle_device_address_inventory(message)
+
+    async def async_on_answer_frame(self, message: str) -> None:
+        """A ``$2E`` / ``$1E`` frame: a memory block one of the passes asked for."""
+        if not self.running:
+            return
+        if self._hub.inventory_query_type is InventoryQueryType.MODULE:
+            await self._hub.engine.parse_module_inventory_response(message)
+        elif self._hub.inventory_query_type is InventoryQueryType.PC_LINK:
+            self._first_answer.set()
+            await self._hub.engine.parse_inventory_response(message)
