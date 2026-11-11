@@ -75,7 +75,15 @@ async def test_diagnostics_hold_the_installation_and_not_the_connection(hass: Ho
     await setup()
     dump = await async_get_config_entry_diagnostics(hass, entry)
     assert dump["entry"]["data"][CONF_CONNECTION] == "**REDACTED**"
-    assert dump["gateway"] == {"connected": True, "address": "86F5", "family": "pc_link", "feedback_module": False}
+    assert dump["gateway"] == {
+        "connected": True,
+        "answered_the_probe": True,
+        "feedback_queries_seen": 0,
+        "feedback_answers_seen": 0,
+        "address": "86F5",
+        "family": "pc_link",
+        "feedback_module": False,
+    }
     assert [(m["address"], m["type"], m["channels"]) for m in dump["modules"]] == [
         ("0E6C", "dimmer_module", 12),
         ("4707", "switch_module", 12),

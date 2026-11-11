@@ -49,7 +49,10 @@ from .const import (
     COVER_STOPPED,
     DIMMER_MODULE,
     DOMAIN,
+    FEEDBACK_PORT_ANSWERS,
     FEEDBACK_SAFETY_POLL,
+    ISSUE_FEEDBACK_PORT,
+    ISSUE_NO_DEVICE,
     ISSUE_NOT_ANSWERING,
     POLL_INTERVAL,
     RECONNECT_DELAY_INITIAL,
@@ -101,6 +104,7 @@ class NikobusHub:
         self._states: dict[str, bytearray] = {}
         self._heard: dict[tuple[str, int], float] = {}
         self._silent: dict[str, int] = defaultdict(int)
+        self._feedback_port_reported = False
         self._module_listeners: dict[str, list[CALLBACK_TYPE]] = defaultdict(list)
         self._status_listeners: list[CALLBACK_TYPE] = []
         self._reconnect_task: asyncio.Task[None] | None = None
@@ -184,6 +188,8 @@ class NikobusHub:
                 translation_placeholders={"error": str(err)},
             ) from err
         self.connected = True
+        self.connection.on_device_answered = self._note_probe
+        self._note_probe()
 
         interval = FEEDBACK_SAFETY_POLL if self.feedback_module else POLL_INTERVAL
         self.entry.async_on_unload(
@@ -426,8 +432,58 @@ class NikobusHub:
         elif message.startswith(DEVICE_INVENTORY_ANSWER):
             await self.discovery.async_on_answer_frame(message)
 
+    @callback
+    def _note_probe(self) -> None:
+        """Say so when the port opened and nothing on it answered.
+
+        A wrong port, a PC-Link without power, a port another program left
+        dead: the connection stands, and every command would time out
+        without a word. The library takes the verdict back on the first
+        frame it receives, and calls this again.
+        """
+        issue_id = f"{ISSUE_NO_DEVICE}_{self.entry.entry_id}"
+        if self.connection.device_answered is False:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key=ISSUE_NO_DEVICE,
+                translation_placeholders={"connection": self.entry.data[CONF_CONNECTION]},
+            )
+        else:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    @callback
+    def _note_feedback_port(self) -> None:
+        """Say so when states are pushed with none of the queries behind them.
+
+        A PC-Link relays the Feedback Module's queries and the answers;
+        the Feedback Module's own port relays the answers alone. Which
+        group an answer is for is then a guess, and the two halves of a
+        twelve-output module get swapped.
+        """
+        issue_id = f"{ISSUE_FEEDBACK_PORT}_{self.entry.entry_id}"
+        if self.listener.feedback_queries_seen:
+            if self._feedback_port_reported:
+                self._feedback_port_reported = False
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+        elif self.listener.feedback_answers_seen >= FEEDBACK_PORT_ANSWERS and not self._feedback_port_reported:
+            self._feedback_port_reported = True
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=True,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key=ISSUE_FEEDBACK_PORT,
+                data={"entry_id": self.entry.entry_id},
+            )
+
     async def _async_on_feedback(self, group: int, message: str) -> None:
         """An output state nobody here asked for: a Feedback Module's read."""
+        self._note_feedback_port()
         if len(message) < 21:
             return
         address = (message[5:7] + message[3:5]).upper()
@@ -543,6 +599,7 @@ class NikobusHub:
             self._reconnect_task = None
         self._heard.clear()
         self.connected = True
+        self._note_probe()
         self.notify()
         _LOGGER.info("Reconnected to the Nikobus gateway")
         await self._async_poll()

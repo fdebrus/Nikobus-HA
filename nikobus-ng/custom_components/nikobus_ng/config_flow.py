@@ -297,11 +297,7 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
         address, _, channel = self._led_output.partition(":")
         inventory = self._inventory()
         candidates = [
-            SelectOptionDict(
-                value=key.bus_address,
-                label=f"{inventory.device_name(key.plate) or key.plate_entry.get('description') or key.plate}"
-                f" {key.label} ({key.bus_address})",
-            )
+            SelectOptionDict(value=key.bus_address, label=inventory.key_label(key))
             for key in inventory.keys_driving(address, int(channel))
         ]
         selector = SelectSelector(

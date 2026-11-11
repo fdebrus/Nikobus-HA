@@ -28,6 +28,9 @@ async def async_get_config_entry_diagnostics(
         },
         "gateway": {
             "connected": hub.connected,
+            "answered_the_probe": hub.connection.device_answered,
+            "feedback_queries_seen": hub.listener.feedback_queries_seen,
+            "feedback_answers_seen": hub.listener.feedback_answers_seen,
             "address": hub.connection.gateway_address,
             "family": hub.connection.gateway_family,
             "feedback_module": hub.feedback_module,
@@ -47,6 +50,7 @@ async def async_get_config_entry_diagnostics(
             }
             for module in inventory.output_modules()
         ],
+        "links": inventory.link_statistics(),
         "keys": sum(1 for _ in inventory.iter_keys()),
         "logical_inputs": sum(1 for _ in inventory.logical_inputs()),
         "from_project": inventory.from_project,

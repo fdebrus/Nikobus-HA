@@ -31,3 +31,11 @@ backup_programming:
       selector:
         text:
           multiple: true
+
+discover:
+  fields:
+    address:
+      required: false
+      example: "4707"
+      selector:
+        text:

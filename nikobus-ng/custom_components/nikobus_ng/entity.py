@@ -135,6 +135,9 @@ class ChannelEntity(NikobusEntity):
             or not inventory.links_read(module.address)
             or inventory.is_linked(module.address, channel)
         )
+        self._attr_extra_state_attributes = {
+            "controlled_by": [inventory.key_label(key) for key in inventory.keys_driving(module.address, channel)]
+        }
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, module.address)},
             manufacturer=MANUFACTURER,

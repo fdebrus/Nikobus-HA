@@ -27,6 +27,7 @@ SERVICE_PRESS_KEY = "press_key"
 SERVICE_READ_MODULE = "read_module"
 SERVICE_VERIFY = "verify_programming"
 SERVICE_BACKUP = "backup_programming"
+SERVICE_DISCOVER = "discover"
 
 _KEY_ADDRESS = vol.All(cv.string, vol.Upper, vol.Match(r"^[0-9A-F]{6}$"))
 _MODULE_ADDRESS = vol.All(cv.string, vol.Upper, vol.Match(r"^[0-9A-F]{4}$"))
@@ -70,8 +71,22 @@ def async_setup_services(hass: HomeAssistant) -> None:
         report: dict[str, Any] = await _hub(hass).maintenance.async_backup(call.data.get(ATTR_MODULES))
         return report
 
+    async def discover(call: ServiceCall) -> None:
+        hub = _hub(hass)
+        module = call.data.get(ATTR_ADDRESS)
+        if module is not None and module not in hub.inventory.addresses():
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_module",
+                translation_placeholders={"address": module},
+            )
+        hub.discovery.start(module)
+
     hass.services.async_register(
         DOMAIN, SERVICE_PRESS_KEY, press_key, vol.Schema({vol.Required(ATTR_ADDRESS): _KEY_ADDRESS})
+    )
+    async_register_admin_service(
+        hass, DOMAIN, SERVICE_DISCOVER, discover, vol.Schema({vol.Optional(ATTR_ADDRESS): _MODULE_ADDRESS})
     )
     hass.services.async_register(
         DOMAIN, SERVICE_READ_MODULE, read_module, vol.Schema({vol.Optional(ATTR_ADDRESS): _MODULE_ADDRESS})

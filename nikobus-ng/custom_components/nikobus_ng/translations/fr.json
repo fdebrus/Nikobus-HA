@@ -307,7 +307,7 @@
         "step": {
           "confirm": {
             "title": "{module} a été reprogrammé",
-            "description": "La mémoire du module a changé depuis que Home Assistant a lu ses liens : ce que Home Assistant sait de ses touches, de ses temps de marche et de ses ambiances n'est peut-être plus à jour.\n\nValidez pour relire l'installation. Cela prend quelques minutes, pendant lesquelles Home Assistant ne suit pas les sorties ; l'entrée se recharge à la fin."
+            "description": "La mémoire du module a changé depuis que Home Assistant a lu ses liens : ce que Home Assistant sait de ses touches, de ses temps de marche et de ses ambiances n'est peut-être plus à jour.\n\nValidez pour relire les liens de ce module. Cela prend une minute ou deux, pendant lesquelles Home Assistant ne suit pas les sorties ; l'entrée se recharge à la fin."
           }
         },
         "abort": {
@@ -323,6 +323,28 @@
           "confirm": {
             "title": "{module} ne répond pas",
             "description": "Le module n'a pas répondu à trois lectures de suite alors que d'autres modules répondaient : ses entités affichent un ancien état. Vérifiez d'abord son alimentation et son câblage au bus ; cet avis disparaît de lui-même quand il répond de nouveau.\n\nSi le module a été retiré de l'installation, validez pour le supprimer de Home Assistant avec ses entités. Une découverte ultérieure le ramène si le PC-Link le liste encore."
+          }
+        },
+        "abort": {
+          "not_loaded": "L'intégration n'est pas chargée."
+        }
+      }
+    },
+    "module_corrupt_links": {
+      "title": "La table de liens de {module} n'a pas pu être lue",
+      "description": "Les liens enregistrés dans ce module ne s'alignent pas comme dans une table de liens ; ils ont donc été ignorés : Home Assistant ne sait pas quelles touches commandent ses sorties. Le logiciel Nikobus signale la même chose et demande de reprogrammer le module.\n\n1. Ouvrez l'installation dans le logiciel Nikobus et envoyez de nouveau la programmation à ce module.\n2. Lancez l'action **Découvrir** pour ce module, ou appuyez sur **Découvrir l'installation** sur l'appareil Nikobus.\n\nCet avis disparaît quand ses liens sont lus correctement."
+    },
+    "no_device_answered": {
+      "title": "Rien n'a répondu sur {connection}",
+      "description": "La connexion s'est ouverte, mais aucun appareil Nikobus n'y a répondu : aucun état n'est lu et chaque commande expirera.\n\n1. Vérifiez qu'il s'agit bien du port du PC-Link, et que le PC-Link est alimenté.\n2. Fermez le logiciel Nikobus s'il est ouvert : un seul programme peut utiliser le port.\n3. Si un autre programme a utilisé le port auparavant, coupez l'alimentation du PC-Link quelques secondes.\n\nCet avis disparaît de lui-même dès qu'une trame Nikobus est reçue. Pour utiliser un autre port, reconfigurez l'intégration."
+    },
+    "feedback_module_port": {
+      "title": "Home Assistant est sur le port du module Feedback lui-même",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Home Assistant est sur le port du module Feedback lui-même",
+            "description": "L'option module Feedback est activée, mais ses réponses d'état arrivent sans les requêtes correspondantes. Seul un PC-Link relaie les deux ; le port du module Feedback ne relaie que les réponses. Home Assistant doit alors deviner à quelle moitié d'un module une réponse se rapporte, et les deux moitiés d'un module à douze sorties s'échangent.\n\nValidez pour désactiver l'option. Home Assistant lit alors lui-même les modules, toutes les deux minutes et après chaque appui, et l'intégration se recharge."
           }
         },
         "abort": {
@@ -369,6 +391,16 @@
         "modules": {
           "name": "Modules",
           "description": "Adresses des modules à sauvegarder. Vide : tous les modules de sortie."
+        }
+      }
+    },
+    "discover": {
+      "name": "Découvrir",
+      "description": "Relit l'installation depuis le bus : l'inventaire du PC-Link et les liens de chaque module, ou seulement les liens d'un module. S'exécute en arrière-plan et recharge l'intégration à la fin. Lecture seule.",
+      "fields": {
+        "address": {
+          "name": "Module",
+          "description": "Les quatre chiffres hexadécimaux d'un module, pour ne relire que ses liens, par exemple après l'avoir reprogrammé. Vide : toute l'installation."
         }
       }
     }

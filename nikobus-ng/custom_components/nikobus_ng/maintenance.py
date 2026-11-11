@@ -359,7 +359,7 @@ class Maintenance:
                 severity=ir.IssueSeverity.WARNING,
                 translation_key=ISSUE_REPROGRAMMED,
                 translation_placeholders={"module": self._hub.inventory.module_label(address)},
-                data={"entry_id": self._hub.entry.entry_id},
+                data={"entry_id": self._hub.entry.entry_id, "address": address},
             )
         self.reprogrammed = reprogrammed
         self._hub.inventory.schedule_save()
@@ -379,14 +379,18 @@ class Maintenance:
             return False
         return predict_module_crc(module_type, int(kept.get("checksum") or 0), before, now) == checksum
 
-    def forget_checksums(self) -> None:
-        """After a discovery: the links are fresh, so the next check records anew."""
-        for address in list(self._hub.inventory.programming):
+    def forget_checksums(self, module: str | None = None) -> None:
+        """After a discovery: the links are fresh, so the next check records anew.
+
+        Of every module, or of the one whose links were read again.
+        """
+        programming = self._hub.inventory.programming
+        for address in [module] if module else list(programming):
             ir.async_delete_issue(
                 self._hub.hass, DOMAIN, f"{ISSUE_REPROGRAMMED}_{address.lower()}"
             )
-        self._hub.inventory.programming.clear()
-        self.reprogrammed = []
+            programming.pop(address, None)
+        self.reprogrammed = [address for address in self.reprogrammed if module and address != module]
 
     async def async_scheduled_clock(self, _now: datetime | None = None) -> None:
         """The hourly read of the clock: never raises."""
