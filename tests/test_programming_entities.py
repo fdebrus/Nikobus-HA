@@ -105,14 +105,18 @@ class TestMaintenanceButtons(unittest.TestCase):
             button.hass = MagicMock()
             _run(button.async_press())
             button.hass.async_create_background_task.assert_called_once()
-            # close the un-awaited coroutine handed to the fake task runner
-            button.hass.async_create_background_task.call_args.args[0].close()
+            # The fake task runner does not run what it is handed: run it here.
+            _run(button.hass.async_create_background_task.call_args.args[0])
+            getattr(coord.programming, method).assert_awaited_once()
 
     def test_press_refused_while_busy(self):
-        button = NikobusVerifyProgrammingButton(_coordinator(running=True))
+        coord = _coordinator(running=True)
+        button = NikobusVerifyProgrammingButton(coord)
         button.hass = MagicMock()
         with self.assertRaises(Exception):  # noqa: B017 - stubbed HomeAssistantError
             _run(button.async_press())
+        # A refused press starts nothing: no coroutine is left un-awaited.
+        coord.programming.async_verify_modules.assert_not_called()
 
 
 if __name__ == "__main__":
