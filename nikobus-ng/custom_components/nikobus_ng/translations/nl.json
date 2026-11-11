@@ -307,7 +307,7 @@
         "step": {
           "confirm": {
             "title": "{module} werd opnieuw geprogrammeerd",
-            "description": "Het geheugen van de module is gewijzigd sinds Home Assistant haar koppelingen las: wat Home Assistant weet over haar toetsen, looptijden en sferen is mogelijk verouderd.\n\nVerzend om de installatie opnieuw te lezen. Dat duurt enkele minuten, waarin Home Assistant de uitgangen niet volgt; het item wordt herladen wanneer het klaar is."
+            "description": "Het geheugen van de module is gewijzigd sinds Home Assistant haar koppelingen las: wat Home Assistant weet over haar toetsen, looptijden en sferen is mogelijk verouderd.\n\nVerzend om de koppelingen van deze module opnieuw te lezen. Dat duurt een minuut of twee, waarin Home Assistant de uitgangen niet volgt; het item wordt herladen wanneer het klaar is."
           }
         },
         "abort": {
@@ -323,6 +323,28 @@
           "confirm": {
             "title": "{module} antwoordt niet",
             "description": "De module antwoordde drie keer na elkaar niet terwijl andere modules dat wel deden: haar entiteiten tonen een oude toestand. Controleer eerst haar voeding en haar busbedrading; deze melding verdwijnt vanzelf wanneer ze opnieuw antwoordt.\n\nIs de module uit de installatie gehaald, verzend dan om ze met haar entiteiten uit Home Assistant te verwijderen. Een latere ontdekking brengt ze terug als de PC-Link ze nog vermeldt."
+          }
+        },
+        "abort": {
+          "not_loaded": "De integratie is niet geladen."
+        }
+      }
+    },
+    "module_corrupt_links": {
+      "title": "De koppelingstabel van {module} kon niet worden gelezen",
+      "description": "De koppelingen die in deze module zijn opgeslagen, staan niet zoals in een koppelingstabel en zijn daarom overgeslagen: Home Assistant weet niet welke toetsen haar uitgangen sturen. De Nikobus-software meldt hetzelfde en vraagt om de module opnieuw te programmeren.\n\n1. Open de installatie in de Nikobus-software en stuur de programmering opnieuw naar deze module.\n2. Voer de actie **Ontdekken** uit voor deze module, of druk op **Installatie ontdekken** op het Nikobus-apparaat.\n\nDeze melding verdwijnt wanneer haar koppelingen correct worden gelezen."
+    },
+    "no_device_answered": {
+      "title": "Niets antwoordde op {connection}",
+      "description": "De verbinding is geopend, maar geen Nikobus-apparaat antwoordde erop: er wordt geen toestand gelezen en elk commando zal verlopen.\n\n1. Controleer of dit de poort van de PC-Link is, en of de PC-Link stroom heeft.\n2. Sluit de Nikobus-software als die openstaat: slechts één programma kan de poort gebruiken.\n3. Als een ander programma de poort eerder gebruikte, haal de voeding van de PC-Link er enkele seconden af.\n\nDeze melding verdwijnt vanzelf zodra een Nikobus-frame wordt ontvangen. Om een andere poort te gebruiken, configureert u de integratie opnieuw."
+    },
+    "feedback_module_port": {
+      "title": "Home Assistant zit op de poort van de Feedbackmodule zelf",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Home Assistant zit op de poort van de Feedbackmodule zelf",
+            "description": "De optie Feedbackmodule staat aan, maar haar toestandsantwoorden komen binnen zonder de bijbehorende vragen. Alleen een PC-Link geeft beide door; de eigen poort van de Feedbackmodule geeft alleen de antwoorden door. Home Assistant moet dan raden voor welke helft van een module een antwoord geldt, en de twee helften van een module met twaalf uitgangen worden verwisseld.\n\nVerzend om de optie uit te schakelen. Home Assistant leest de modules dan zelf, om de twee minuten en na elke toetsdruk, en de integratie wordt herladen."
           }
         },
         "abort": {
@@ -369,6 +391,16 @@
         "modules": {
           "name": "Modules",
           "description": "Adressen van de modules voor de back-up. Leeg: alle uitgangsmodules."
+        }
+      }
+    },
+    "discover": {
+      "name": "Ontdekken",
+      "description": "Leest de installatie opnieuw van de bus: de inventaris van de PC-Link en de koppelingen van elke module, of alleen de koppelingen van één module. Loopt op de achtergrond en herlaadt de integratie wanneer het klaar is. Alleen lezen.",
+      "fields": {
+        "address": {
+          "name": "Module",
+          "description": "De vier hexadecimale cijfers van een module, om alleen haar koppelingen opnieuw te lezen, bijvoorbeeld na het herprogrammeren. Leeg: de hele installatie."
         }
       }
     }

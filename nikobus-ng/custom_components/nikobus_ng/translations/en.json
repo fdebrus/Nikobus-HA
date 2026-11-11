@@ -307,7 +307,7 @@
         "step": {
           "confirm": {
             "title": "{module} was reprogrammed",
-            "description": "The module's memory has changed since Home Assistant read its links, so what Home Assistant knows of its keys, run times and scenes may be out of date.\n\nSubmit to read the installation again. It takes a few minutes, during which Home Assistant does not follow the outputs; the entry reloads when it ends."
+            "description": "The module's memory has changed since Home Assistant read its links, so what Home Assistant knows of its keys, run times and scenes may be out of date.\n\nSubmit to read this module's links again. It takes a minute or two, during which Home Assistant does not follow the outputs; the entry reloads when it ends."
           }
         },
         "abort": {
@@ -323,6 +323,28 @@
           "confirm": {
             "title": "{module} does not answer",
             "description": "The module has not answered three reads in a row while other modules did, so its entities show an old state. Check its power and its bus wiring first; this notice goes away by itself when it answers again.\n\nIf the module was taken out of the installation, submit to remove it and its entities from Home Assistant. A later discovery brings it back if the PC-Link still lists it."
+          }
+        },
+        "abort": {
+          "not_loaded": "The integration is not loaded."
+        }
+      }
+    },
+    "module_corrupt_links": {
+      "title": "The link table of {module} could not be read",
+      "description": "The links stored in this module do not line up the way a link table does, so they were skipped: Home Assistant does not know which keys drive its outputs. The Nikobus software reports the same and asks for the module to be reprogrammed.\n\n1. Open the installation in the Nikobus software and send the programming to this module again.\n2. Run the **Discover** action for this module, or press **Discover installation** on the Nikobus device.\n\nThis notice goes away when its links are read cleanly."
+    },
+    "no_device_answered": {
+      "title": "Nothing answered on {connection}",
+      "description": "The connection opened, but no Nikobus device answered on it, so no state is read and every command will time out.\n\n1. Check that this is the port of the PC-Link, and that the PC-Link has power.\n2. Close the Nikobus software if it is running: only one program can use the port.\n3. If another program used the port before, unplug the PC-Link's power for a few seconds.\n\nThis notice goes away by itself as soon as a Nikobus frame is received. To use another port, reconfigure the integration."
+    },
+    "feedback_module_port": {
+      "title": "Home Assistant is on the Feedback Module's own port",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Home Assistant is on the Feedback Module's own port",
+            "description": "The Feedback Module option is on, but its state answers arrive without the queries behind them. Only a PC-Link relays both; the Feedback Module's own port relays the answers alone. Home Assistant then has to guess which half of a module an answer is for, and the two halves of a twelve-output module get swapped.\n\nSubmit to turn the option off. Home Assistant then reads the modules itself, every two minutes and after each key press, and the integration reloads."
           }
         },
         "abort": {
@@ -369,6 +391,16 @@
         "modules": {
           "name": "Modules",
           "description": "Module addresses to back up. Empty backs up every output module."
+        }
+      }
+    },
+    "discover": {
+      "name": "Discover",
+      "description": "Reads the installation again from the bus: the PC-Link's inventory and every module's links, or only the links of one module. Runs in the background and reloads the integration when it ends. Read-only.",
+      "fields": {
+        "address": {
+          "name": "Module",
+          "description": "The four hexadecimal digits of a module, to read only its links again, for instance after reprogramming it. Empty reads the whole installation."
         }
       }
     }

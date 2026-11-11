@@ -16,10 +16,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import issue_registry as ir
 from nikobus_connect.discovery import PHASE_REGISTER_SCAN, InventoryQueryType
-from nikobus_connect.discovery.store import flatten_cf_broadcasts
+from nikobus_connect.discovery.store import flatten_cf_broadcasts, is_button_backed_cf
 
-from .const import DOMAIN, INVENTORY_CLOSE_TIMEOUT, INVENTORY_PROBE_TIMEOUT
+from .const import (
+    DOMAIN,
+    INVENTORY_CLOSE_TIMEOUT,
+    INVENTORY_PROBE_TIMEOUT,
+    ISSUE_CORRUPT_LINKS,
+)
 
 if TYPE_CHECKING:
     from .hub import NikobusHub
@@ -60,9 +66,14 @@ class DiscoveryRunner:
         self._first_answer = asyncio.Event()
         self._pass_finished = asyncio.Event()
         self._scenes: dict[str, dict[str, Any]] = {}
+        self._corrupt: set[str] = set()
 
-    def start(self) -> None:
-        """Start a discovery in the background. Raises when one is running."""
+    def start(self, module: str | None = None) -> None:
+        """Start a discovery in the background. Raises when one is running.
+
+        With ``module``, only that module's links are read again: what a
+        reprogrammed module needs, in a fraction of the time.
+        """
         if self.running:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="discovery_running")
         if not self._hub.connected:
@@ -71,7 +82,7 @@ class DiscoveryRunner:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="maintenance_running")
         self.running = True
         self._task = self._hub.entry.async_create_background_task(
-            self._hub.hass, self._async_run(), name=f"{DOMAIN}_discovery"
+            self._hub.hass, self._async_run(module), name=f"{DOMAIN}_discovery"
         )
 
     async def async_wait(self) -> None:
@@ -80,15 +91,15 @@ class DiscoveryRunner:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
 
-    async def _async_run(self) -> None:
+    async def _async_run(self, module: str | None) -> None:
         hub = self._hub
         hub.apply_write_guard()
         try:
-            if not hub.inventory.from_project:
+            if module is None and not hub.inventory.from_project:
                 # A project file's inventory stands in for the PC-Link's.
                 await self._async_inventory()
-            await self._async_links()
-            await self._async_finalize()
+            await self._async_links(module)
+            await self._async_finalize(module)
         except HomeAssistantError as err:
             _LOGGER.error("Discovery stopped: %s", err)
             self._set(ERROR, error=err.translation_key or str(err))
@@ -132,23 +143,62 @@ class DiscoveryRunner:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="no_modules")
         hub.allocate_states()
 
-    async def _async_links(self) -> None:
-        """Read every module's own link table."""
+    async def _async_links(self, module: str | None) -> None:
+        """Read the link table of every module, or of one."""
         hub = self._hub
         self._set(LINKS, progress=_LINKS_FROM)
         self._pass_finished.clear()
         hub.discovery_running = True
-        await hub.engine.query_module_inventory("ALL")
+        await hub.engine.query_module_inventory(module or "ALL")
         await self._pass_finished.wait()
 
-    async def _async_finalize(self) -> None:
-        """Keep the scenes the scan classified, and save."""
+    async def _async_finalize(self, module: str | None) -> None:
+        """Keep the scenes the scan classified, report unreadable link tables, and save."""
         hub = self._hub
         self._set(FINALIZING, progress=_FINALIZING_FROM)
-        hub.inventory.scenes = dict(self._scenes)
+        hub.inventory.scenes = (
+            dict(self._scenes) if module is None else self._scenes_after(module, hub.inventory.scenes)
+        )
+        scanned = [module] if module else sorted(hub.inventory.addresses())
+        for address in scanned:
+            issue_id = f"{ISSUE_CORRUPT_LINKS}_{address.lower()}"
+            if address in self._corrupt:
+                ir.async_create_issue(
+                    hub.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_CORRUPT_LINKS,
+                    translation_placeholders={"module": hub.inventory.module_label(address)},
+                )
+            else:
+                ir.async_delete_issue(hub.hass, DOMAIN, issue_id)
         # The links are fresh: the next look at the checksums records them anew.
-        hub.maintenance.forget_checksums()
+        hub.maintenance.forget_checksums(module)
         await hub.inventory.async_save()
+
+    def _scenes_after(self, module: str, known: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        """The scenes once one module was read again.
+
+        A light scene on a key is classified from every plate's links, so
+        the fresh ones stand. A central function with an address of its
+        own is classified from the links read in this run, which are this
+        module's only: its members on other modules are kept as they were.
+        """
+        scenes = {address: scene for address, scene in self._scenes.items() if is_button_backed_cf(scene)}
+        fresh = {address: scene for address, scene in self._scenes.items() if address not in scenes}
+        kept = {address: scene for address, scene in known.items() if not is_button_backed_cf(scene)}
+        for address in sorted({*fresh, *kept}):
+            elsewhere = [
+                output
+                for output in (kept.get(address) or {}).get("outputs") or []
+                if str(output.get("module_address") or "").upper() != module
+            ]
+            outputs = [*elsewhere, *((fresh.get(address) or {}).get("outputs") or [])]
+            if outputs:
+                scenes[address] = {**(fresh.get(address) or kept[address]), "outputs": outputs}
+        return scenes
 
     def _set(self, phase: str, *, progress: int = 0, error: str | None = None) -> None:
         self.status = DiscoveryStatus(phase=phase, progress=progress, error=error)
@@ -169,8 +219,9 @@ class DiscoveryRunner:
 
     async def async_on_finished(self, **_kwargs: Any) -> None:
         """A pass of the library is over."""
-        # The library clears what it classified as soon as this returns.
+        # The library clears what it classified and flagged as soon as this returns.
         self._scenes = flatten_cf_broadcasts(self._hub.engine.discovered_cf_broadcasts)
+        self._corrupt = {str(address).upper() for address in self._hub.engine.corrupt_link_tables}
         self._pass_finished.set()
 
     def on_inventory_frame(self, message: str) -> None:

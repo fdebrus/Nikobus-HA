@@ -97,6 +97,11 @@ REPROGRAMMED_CHECK_INTERVAL: Final = timedelta(days=1)
 #: A module silent for this many reads in a row, while others answer, is reported.
 SILENT_READS: Final = 3
 ISSUE_NOT_ANSWERING: Final = "module_not_answering"
+ISSUE_CORRUPT_LINKS: Final = "module_corrupt_links"
+ISSUE_NO_DEVICE: Final = "no_device_answered"
+ISSUE_FEEDBACK_PORT: Final = "feedback_module_port"
+#: This many pushed states with none of the queries behind them: the port is the Feedback Module's own.
+FEEDBACK_PORT_ANSWERS: Final = 6
 
 #: Fired for every key press seen on the bus, known key or not.
 EVENT_PRESS: Final = "nikobus_ng_press"

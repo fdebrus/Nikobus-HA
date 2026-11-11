@@ -29,7 +29,8 @@ from homeassistant.core import HomeAssistant
 from nikobus_connect.discovery.fileio import merge_discovered_buttons
 from nikobus_connect.discovery.mapping import DEVICE_TYPES, KEY_MAPPING
 from nikobus_connect.discovery.protocol import convert_nikobus_address
-from nikobus_simulator.gateway import PRESS_DEBOUNCE
+from nikobus_simulator.gateway import PRESS_DEBOUNCE, wire_address
+from nikobus_simulator.gateway import frame as gateway_frame
 from nikobus_simulator.server import NikobusSimulator
 from nikobus_simulator.topology import load_installation
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -128,9 +129,13 @@ class WallSimulator(NikobusSimulator):
         #: same frame, as a held key is: the burst counts once.
         self.host_presses: list[str] = []
         self._last_frame: tuple[str, float] = ("", 0.0)
+        #: Nothing answers while set: a port with no Nikobus device behind it.
+        self.silent = False
         handle = self.gateway.handle
 
         def _recording(line: str) -> list[str]:
+            if self.silent:
+                return []
             if line.strip().startswith("#N"):
                 frame, now = line.strip()[2:8].upper(), time.monotonic()
                 if (frame, True) != (self._last_frame[0], now - self._last_frame[1] < PRESS_DEBOUNCE):
@@ -161,6 +166,14 @@ class WallSimulator(NikobusSimulator):
                 writer.write(f"#N{bus_address}\r".encode("ascii"))
                 await writer.drain()
             await asyncio.sleep(0.04)
+
+    async def push_state(self, address: str, group: int = 1) -> None:
+        """Send a module's state unasked, as a Feedback Module's read arrives on its own port."""
+        module = self.gateway.modules[address]
+        line = gateway_frame(f"{wire_address(address)}00{module.group_state(group)}")
+        for writer in self._clients:
+            writer.write(f"{line}\r".encode("ascii"))
+            await writer.drain()
 
     def output(self, address: str, channel: int) -> int:
         return self.gateway.modules[address].outputs[channel - 1]

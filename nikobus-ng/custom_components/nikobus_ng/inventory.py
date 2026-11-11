@@ -78,6 +78,7 @@ class Inventory:
         #: The module store by type, the shape the library's scan planner reads.
         self.grouped: dict[str, dict[str, Any]] = {}
         self._linked: set[tuple[str, int]] | None = None
+        self._drivers: dict[tuple[str, Any], list[Key]] | None = None
 
     async def async_load(self) -> None:
         """Read the store; anything missing or malformed starts empty."""
@@ -136,6 +137,7 @@ class Inventory:
         self.grouped.clear()
         self.grouped.update(grouped)
         self._linked = None
+        self._drivers = None
 
     def _module_entries(self) -> dict[str, dict[str, Any]]:
         return {
@@ -328,8 +330,9 @@ class Inventory:
     def iter_keys(self) -> Iterator[Key]:
         """Every key that puts a frame on the bus."""
         for plate, entry in sorted(self._plates().items()):
-            if entry.get("calendar_channel"):
-                # A PC-Link calendar channel: what it sends is not relayed.
+            if entry.get("calendar_channel") or entry.get("audio_module_address"):
+                # A PC-Link calendar channel: what it sends is not relayed. A
+                # trigger of an audio module: its zone is the entity, not the frame.
                 continue
             points = entry.get("operation_points")
             if not isinstance(points, dict):
@@ -380,15 +383,46 @@ class Inventory:
 
     def keys_driving(self, address: str, channel: int) -> list[Key]:
         """The keys with a link to this output, in plate order."""
-        return [
-            key
-            for key in self.iter_keys()
-            if any(
-                str(link.get("module_address") or "").upper() == address.upper()
-                and any(output.get("channel") == channel for output in link.get("outputs") or [])
-                for link in (key.plate_entry["operation_points"][key.label] or {}).get("linked_modules") or []
-            )
-        ]
+        if self._drivers is None:
+            self._drivers = {}
+            for key in self.iter_keys():
+                point = key.plate_entry["operation_points"][key.label] or {}
+                for link in point.get("linked_modules") or []:
+                    module = str(link.get("module_address") or "").upper()
+                    for output in link.get("outputs") or []:
+                        drivers = self._drivers.setdefault((module, output.get("channel")), [])
+                        if key not in drivers:
+                            drivers.append(key)
+        return list(self._drivers.get((address.upper(), channel), []))
+
+    def key_label(self, key: Key) -> str:
+        """A key as a person would point at it: its plate, its face, its frame."""
+        plate = self.device_name(key.plate) or key.plate_entry.get("description") or key.plate
+        return f"{plate} {key.label} ({key.bus_address})"
+
+    def link_statistics(self) -> dict[str, Any]:
+        """How much of the installation the link scan filled in, without a name in it."""
+        modes: dict[str, int] = {}
+        per_module: dict[str, dict[str, int]] = {}
+        for module, channel, output in self._links():
+            mode = str(output.get("mode") or "unknown")
+            modes[mode] = modes.get(mode, 0) + 1
+            counts = per_module.setdefault(module, {"links": 0})
+            counts["links"] += 1
+        for module in self.output_modules():
+            counts = per_module.setdefault(module.address, {"links": 0})
+            linked = sum(1 for channel in range(1, module.channels + 1) if self.is_linked(module.address, channel))
+            counts.update(outputs_linked=linked, outputs_unlinked=module.channels - linked)
+        keys = list(self.iter_keys())
+        with_links = sum(
+            1 for key in keys if (key.plate_entry["operation_points"][key.label] or {}).get("linked_modules")
+        )
+        return {
+            "modules": dict(sorted(per_module.items())),
+            "keys_with_links": with_links,
+            "keys_without_links": len(keys) - with_links,
+            "modes": dict(sorted(modes.items())),
+        }
 
     def is_linked(self, address: str, channel: int) -> bool:
         """Whether any key drives this output."""

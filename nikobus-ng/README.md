@@ -22,7 +22,9 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   itself, and reports the connection as a sensor.
 - **Discovers the installation in one action.** The PC-Link inventory and
   every output module's link table are read one after the other, started by
-  one button or by the first setup, with one progress sensor.
+  one button or by the first setup, with one progress sensor. The
+  `nikobus_ng.discover` action can read the links of one module only, which
+  is what a reprogrammed module needs.
 - **Outputs.** A relay is a `switch`, or a `light` when it is ticked in the
   options as switching a lamp; a dimmer output is a `light` with brightness,
   or a `fan` with a speed when ticked as driving one;
@@ -63,13 +65,17 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   of every module's memory to `nikobus_ng_backup/<date>` in the
   configuration directory.
 - **Repairs.** A module that was reprogrammed since its links were read
-  (its checksum moved) offers a new discovery; a module that stops
-  answering while the others do offers its removal; a memory error, a
+  (its checksum moved) offers to read its links again; a module that stops
+  answering while the others do offers its removal; a port on which
+  nothing answers, a link table that could not be read, a memory error, a
   checksum that does not match and a module of another type than the
-  inventory says are reported with what to do.
-- **Actions**: `nikobus_ng.press_key`, `read_module`,
+  inventory says are reported with what to do; a cable on the Feedback
+  Module's own port offers to turn the Feedback Module option off.
+- **Actions**: `nikobus_ng.discover`, `press_key`, `read_module`,
   `verify_programming` and `backup_programming` (the last two return their
   result).
+- **Every output names the keys that drive it**, in its `controlled_by`
+  attribute.
 - **Deleting a device** of a module or a plate forgets it; a device the
   inventory no longer holds is removed at the next start.
 - **A blueprint**, `blueprints/automation/fdebrus/nikobus_ng_key_controls_entity.yaml`:
@@ -83,7 +89,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 4 098 lines |
+| Python | 15 036 lines | 4 298 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
@@ -93,7 +99,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
 | PC-Link clock | a timestamp sensor that changes every hour | the drift in seconds, and a button |
 | Settings | 17 options steps | a menu of five: gateway, lights and fans, a roller output, LED keys, names |
-| Tests | 923, against a stub of Home Assistant | 78, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 84, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -119,6 +125,7 @@ What exists in the Nikobus integration and is absent here.
 | Logical inputs, actions, repairs, device removal | The PC-Link clock, read or set |
 | Module status and memory read; the backup files | A module's checksum (the simulator has none) |
 | The blueprint, in a real automation | LED keys with a real Feedback Module |
+| One module read again; a port nothing answers on; states pushed without their queries | A link table that does not line up (the library's flag is set by the test) |
 | Fans, LED keys, shutter groups, a project file as inventory | An audio module and a colour controller, real ones |
 | Audio zones, read out of the simulated module by the link scan | The link scan through a gateway that is not a PC-Link |
 | A colour controller's state and keys (a stand-in answers its state query) | |
@@ -161,11 +168,11 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 
 | File | Lines | |
 |---|---|---|
-| `hub.py` | 548 | the connection, output state, commands, LED keys, polling, reconnection |
-| `config_flow.py` | 464 | setup, reconfigure, the options menu, `.nkb` upload |
-| `inventory.py` | 457 | the store, and every question asked of it |
-| `maintenance.py` | 405 | the clock, the programming checks, the backup |
+| `hub.py` | 605 | the connection, output state, commands, LED keys, polling, reconnection |
+| `inventory.py` | 491 | the store, and every question asked of it |
+| `config_flow.py` | 460 | setup, reconfigure, the options menu, `.nkb` upload |
+| `maintenance.py` | 409 | the clock, the programming checks, the backup |
 | `cover.py` | 364 | shutters, their position, shutter groups |
-| `discovery.py` | 189 | one discovery run |
-| `entity.py` | 184 | base classes, devices, which platform an output belongs to |
-| the rest | 1 487 | the other platforms, presses, repairs, actions, diagnostics |
+| `discovery.py` | 240 | one discovery run, of everything or of one module |
+| `entity.py` | 187 | base classes, devices, which platform an output belongs to |
+| the rest | 1 542 | the other platforms, presses, repairs, actions, diagnostics |
