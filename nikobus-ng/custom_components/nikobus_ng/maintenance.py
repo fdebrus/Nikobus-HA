@@ -103,8 +103,6 @@ class Maintenance:
         self.reprogrammed: list[str] = []
         self.backup_path: str | None = None
 
-    # --- what it works on -------------------------------------------------------
-
     @property
     def pc_link_address(self) -> str | None:
         """The PC-Link of the inventory; ``None`` when there is none."""
@@ -140,8 +138,6 @@ class Maintenance:
             },
         }
 
-    # --- guards -----------------------------------------------------------------
-
     def _require_connection(self) -> None:
         if not self._hub.connected:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="not_connected")
@@ -161,8 +157,6 @@ class Maintenance:
     def _set_running(self, running: bool) -> None:
         self.running = running
         self._hub.notify()
-
-    # --- the PC-Link's clock ----------------------------------------------------
 
     async def async_read_clock(self) -> float | None:
         """Read the PC-Link's clock; its distance from Home Assistant's, in seconds."""
@@ -201,8 +195,6 @@ class Maintenance:
                 translation_placeholders={"address": address, "error": str(err)},
             ) from err
         await self.async_read_clock()
-
-    # --- checks and backup ------------------------------------------------------
 
     async def _async_check(self, address: str, module_type: str) -> tuple[ModuleCheck, bytes | None]:
         """Ask one module for its status and read its memory against its checksum."""
@@ -308,8 +300,6 @@ class Maintenance:
         self.backup_path = str(folder)
         self._hub.notify()
         return {"path": str(folder), "files": sorted(images), **summary}
-
-    # --- reprogrammed since the links were read ---------------------------------
 
     async def _async_record(self, address: str, module_type: str, checksum: int) -> None:
         """Keep a module's checksum, and the bytes a dimmer rewrites by itself."""
