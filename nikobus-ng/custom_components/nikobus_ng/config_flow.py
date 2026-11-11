@@ -562,7 +562,7 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
                     inventory.use_project(config)
                 inventory.names = {
                     "devices": {
-                        address.upper(): {"name": name, "room": room}
+                        address.upper(): {"name": name, "room": room, "number": project.numbers.get(address)}
                         for address, (name, room) in project.addresses.items()
                     },
                     "channels": {

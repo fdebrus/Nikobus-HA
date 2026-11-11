@@ -38,7 +38,7 @@ def gateway_device(hub: NikobusHub) -> DeviceInfo:
         identifiers={(DOMAIN, hub.entry.entry_id)},
         manufacturer=MANUFACTURER,
         model=_GATEWAY_MODELS.get(hub.connection.gateway_family or "", "Gateway"),
-        name="Nikobus",
+        name="Nikobus Bridge",
         serial_number=hub.connection.gateway_address,
     )
 
@@ -54,6 +54,21 @@ def plate_device(hub: NikobusHub, address: str, entry: dict[str, Any]) -> Device
         suggested_area=hub.inventory.device_area(address),
         via_device_id=hub.gateway_device_id,
     )
+
+
+def function_device(hub: NikobusHub, identifier: str, kind: str, address: str, name: str | None) -> DeviceInfo:
+    """The device of a light scene or a shutter group: its own, so that it is shown under its own name."""
+    info = DeviceInfo(
+        identifiers={(DOMAIN, identifier)},
+        manufacturer=MANUFACTURER,
+        via_device_id=hub.gateway_device_id,
+    )
+    if name:
+        info["name"] = name
+    else:
+        info["translation_key"] = kind
+        info["translation_placeholders"] = {"address": address}
+    return info
 
 
 def output_platform(hub: NikobusHub, module: OutputModule, channel: int) -> Platform:

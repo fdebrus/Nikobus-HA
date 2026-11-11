@@ -27,8 +27,8 @@ from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 from .conftest import ENTRY_ID, SWITCH, SetupFixture, wait_for
 
 PC_LINK = "86F5"
-PROGRAMMING = "sensor.nikobus_programming"
-DRIFT = "sensor.nikobus_pc_link_clock_ahead_by"
+PROGRAMMING = "sensor.nikobus_bridge_programming"
+DRIFT = "sensor.nikobus_bridge_pc_link_clock_ahead_by"
 
 
 @pytest.fixture
@@ -82,7 +82,7 @@ async def test_a_check_is_refused_while_a_discovery_runs(hass: HomeAssistant, se
     hub.notify()
     with pytest.raises(HomeAssistantError):
         await hub.maintenance.async_verify()
-    assert hass.states.get("button.nikobus_check_programming").state == "unavailable"
+    assert hass.states.get("button.nikobus_bridge_check_programming").state == "unavailable"
 
 
 async def test_a_moved_checksum_is_a_repair_that_a_discovery_settles(hass: HomeAssistant, setup: SetupFixture, hass_client: ClientSessionGenerator) -> None:
@@ -124,7 +124,7 @@ async def test_the_clock_is_read_and_set_through_the_pc_link(hass: HomeAssistant
             patch.object(NikobusAPI, "get_pc_link_time", on_time),
         ):
             await hass.services.async_call(
-                "button", "press", {"entity_id": "button.nikobus_set_pc_link_clock"}, blocking=True
+                "button", "press", {"entity_id": "button.nikobus_bridge_set_pc_link_clock"}, blocking=True
             )
     address, moment = written.await_args.args
     assert address == PC_LINK
@@ -137,4 +137,4 @@ async def test_the_clock_is_read_and_set_through_the_pc_link(hass: HomeAssistant
 async def test_without_a_pc_link_there_is_no_clock(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry) -> None:
     await setup()
     assert hass.states.get(DRIFT) is None
-    assert hass.states.get("button.nikobus_set_pc_link_clock") is None
+    assert hass.states.get("button.nikobus_bridge_set_pc_link_clock") is None

@@ -66,6 +66,6 @@ async def test_entities_go_unavailable_and_come_back_with_the_connection(hass: H
     for writer in list(simulator._clients):
         writer.close()  # the line drops
     await wait_for(lambda: hass.states.get(SWITCH_1).state == "unavailable")
-    assert hass.states.get("binary_sensor.nikobus_connection").state == "off"
+    assert hass.states.get("binary_sensor.nikobus_bridge_connection").state == "off"
     await wait_for(lambda: hub.connected and hass.states.get(SWITCH_1).state == "off", timeout=15)
-    assert hass.states.get("binary_sensor.nikobus_connection").state == "on"
+    assert hass.states.get("binary_sensor.nikobus_bridge_connection").state == "on"

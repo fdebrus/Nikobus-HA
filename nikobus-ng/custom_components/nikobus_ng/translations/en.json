@@ -171,6 +171,14 @@
       "nikobus_running": "The Nikobus integration is running. Disable its entry first: only one program may talk to the bus, and its entities are in use."
     }
   },
+  "device": {
+    "central_function": {
+      "name": "Central function {address}"
+    },
+    "shutter_group": {
+      "name": "Shutter group {address}"
+    }
+  },
   "entity": {
     "switch": {
       "output": {
@@ -188,9 +196,6 @@
     "cover": {
       "output": {
         "name": "Output {channel}"
-      },
-      "shutter_group": {
-        "name": "Shutter group {address}"
       }
     },
     "event": {
@@ -223,11 +228,6 @@
       },
       "set_clock": {
         "name": "Set PC-Link clock"
-      }
-    },
-    "scene": {
-      "central_function": {
-        "name": "Central function {address}"
       }
     },
     "sensor": {

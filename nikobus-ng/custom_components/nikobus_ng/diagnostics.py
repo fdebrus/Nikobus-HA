@@ -68,7 +68,8 @@ async def async_get_config_entry_diagnostics(
             **hub.maintenance.report(),
             "reprogrammed": list(hub.maintenance.reprogrammed),
         },
-        "written_without_a_read_first": [
+        # Nothing was written: these are the groups a write would not read first.
+        "groups_written_without_a_read_while_fresh": [
             f"{address} g{group}" for address, group in sorted(hub.command.steady_groups)
         ],
     }

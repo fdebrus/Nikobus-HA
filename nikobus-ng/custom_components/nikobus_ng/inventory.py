@@ -559,10 +559,25 @@ class Inventory:
         return name if isinstance(name, str) and name.strip() else None
 
     def device_name(self, address: str) -> str | None:
-        """The name the project file gives a module or a plate."""
-        record = self.names["devices"].get(address.upper())
-        name = record.get("name") if isinstance(record, dict) else None
-        return name if isinstance(name, str) and name.strip() else None
+        """The project file's name for a module or a plate, as the Nikobus integration shows it.
+
+        ``Name (Room)``, the room alone where the installer gave no
+        name, and for a plate the number the vendor software shows it
+        under in front: ``11: Name (Room)``.
+        """
+        address = address.upper()
+        record = self.names["devices"].get(address)
+        if not isinstance(record, dict):
+            return None
+        name = str(record.get("name") or "").strip()
+        room = str(record.get("room") or "").strip()
+        if not (name or room):
+            return None
+        shown = f"{name} ({room})" if name and room else name or room
+        # The PC-Link's registry holds the same number, for a store filled before it was kept.
+        plate = self.buttons["nikobus_button"].get(address) or {}
+        number = record.get("number") or plate.get("component_number")
+        return f"{number}: {shown}" if number and len(address) == 6 else shown
 
     def scene_name(self, scene: dict[str, Any]) -> str | None:
         """The name of the project file's group with exactly this scene's outputs and modes."""

@@ -171,6 +171,14 @@
       "nikobus_running": "De Nikobus-integratie is actief. Schakel eerst haar item uit: slechts één programma mag met de bus praten, en haar entiteiten zijn in gebruik."
     }
   },
+  "device": {
+    "central_function": {
+      "name": "Centrale functie {address}"
+    },
+    "shutter_group": {
+      "name": "Rolluikgroep {address}"
+    }
+  },
   "entity": {
     "switch": {
       "output": {
@@ -188,9 +196,6 @@
     "cover": {
       "output": {
         "name": "Uitgang {channel}"
-      },
-      "shutter_group": {
-        "name": "Rolluikgroep {address}"
       }
     },
     "event": {
@@ -223,11 +228,6 @@
       },
       "set_clock": {
         "name": "Klok van de PC-Link instellen"
-      }
-    },
-    "scene": {
-      "central_function": {
-        "name": "Centrale functie {address}"
       }
     },
     "sensor": {

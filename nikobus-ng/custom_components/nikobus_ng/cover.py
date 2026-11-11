@@ -51,7 +51,7 @@ from .const import (
     COVER_STOPPED,
     DOMAIN,
 )
-from .entity import ChannelEntity, NikobusEntity, gateway_device, outputs_of
+from .entity import ChannelEntity, NikobusEntity, function_device, outputs_of
 from .hub import NikobusHub
 from .inventory import OutputModule
 
@@ -273,12 +273,12 @@ class NikobusShutterGroup(NikobusEntity, CoverEntity):
         self._member_ids = [f"{module}_{channel}" for module, channel in members]
         self._members: list[str] = []
         self._attr_unique_id = f"{address}_group"
-        if name := hub.inventory.scene_name(record):
-            self._attr_name = name
-        else:
-            self._attr_translation_key = "shutter_group"
-            self._attr_translation_placeholders = {"address": address}
-        self._attr_device_info = gateway_device(hub)
+        # The key the icon is found under; the name is the device's.
+        self._attr_translation_key = "shutter_group"
+        self._attr_name = None
+        self._attr_device_info = function_device(
+            hub, self._attr_unique_id, "shutter_group", address, hub.inventory.scene_name(record)
+        )
 
     async def async_added_to_hass(self) -> None:
         """Find the members that are shutters here, and follow them."""

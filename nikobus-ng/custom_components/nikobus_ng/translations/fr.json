@@ -171,6 +171,14 @@
       "nikobus_running": "L'intégration Nikobus est en cours d'exécution. Désactivez d'abord son entrée : un seul programme peut parler au bus, et ses entités sont utilisées."
     }
   },
+  "device": {
+    "central_function": {
+      "name": "Fonction centrale {address}"
+    },
+    "shutter_group": {
+      "name": "Groupe de volets {address}"
+    }
+  },
   "entity": {
     "switch": {
       "output": {
@@ -188,9 +196,6 @@
     "cover": {
       "output": {
         "name": "Sortie {channel}"
-      },
-      "shutter_group": {
-        "name": "Groupe de volets {address}"
       }
     },
     "event": {
@@ -223,11 +228,6 @@
       },
       "set_clock": {
         "name": "Régler l'horloge du PC-Link"
-      }
-    },
-    "scene": {
-      "central_function": {
-        "name": "Fonction centrale {address}"
       }
     },
     "sensor": {

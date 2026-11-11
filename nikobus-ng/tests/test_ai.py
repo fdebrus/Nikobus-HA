@@ -53,7 +53,7 @@ async def test_describe_returns_the_wiring(hass: HomeAssistant, scanned: SetupFi
     output = next(o for o in described["outputs"] if (o["module"], o["channel"]) == (SWITCH, 1))
     assert (output["entity_id"], output["module_type"], output["value"]) == (SWITCH_1, "switch_module", 0)
     assert [(k["key"], k["address"], k["links"]) for k in output["controlled_by"]] == [
-        ("1C", KEY_SWITCH_1, [{"mode": "M05 (Impulse)"}])
+        ("1C", KEY_SWITCH_1, [{"mode": "M05 (Impulse)", "does": "Each press switches the output over, on or off."}])
     ]
     key = next(k for k in described["keys"] if k["address"] == KEY_SWITCH_1)
     assert (key["plate_address"], key["entity_id"]) == (PLATE, KEY_EVENT)

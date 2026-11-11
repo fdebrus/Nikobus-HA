@@ -50,7 +50,9 @@ KEY_SWITCH_1, KEY_SWITCH_8, KEY_DIMMER, KEY_ROLLER, KEY_SCENE = PLATES.values()
 
 #: ``mode`` is the raw mode a record stores: 4 impulse and 11 light scene
 #: on (M14) on a switch module, 0 dim on/off on a dimmer, 0
-#: open-stop-close on a roller.
+#: open-stop-close on a roller. ``t1`` and ``t2`` are the positions of the
+#: setting wheels: 4 s of dimming on the dimmer's link, a run time of
+#: 30 s on the roller's.
 INSTALLATION: dict[str, Any] = {
     "gateway": {"address": "86F5", "family": "pc_link"},
     "modules": [
@@ -69,13 +71,13 @@ INSTALLATION: dict[str, Any] = {
             "address": DIMMER,
             "type": "dimmer_module",
             "channels": 12,
-            "links": [{"button": KEY_DIMMER, "key": 0, "channel": 1, "mode": 0}],
+            "links": [{"button": KEY_DIMMER, "key": 0, "channel": 1, "mode": 0, "t2": 2}],
         },
         {
             "address": ROLLER,
             "type": "roller_module",
             "channels": 6,
-            "links": [{"button": KEY_ROLLER, "key": 0, "channel": 1, "mode": 0}],
+            "links": [{"button": KEY_ROLLER, "key": 0, "channel": 1, "mode": 0, "t1": 11}],
         },
         {"address": AUDIO, "type": "audio_module", "zones": 1},
     ],

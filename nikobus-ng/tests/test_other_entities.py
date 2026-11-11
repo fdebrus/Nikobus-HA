@@ -40,6 +40,8 @@ async def test_a_central_function_is_a_scene_that_sends_its_telegram(hass: HomeA
     await setup()
     entity_id = er.async_get(hass).async_get_entity_id("scene", DOMAIN, f"{KEY_SWITCH_1}_scene")
     assert hass.states.get(entity_id).attributes["outputs"] == 1
+    # No project name: the device is named by its address, and the scene after it.
+    assert hass.states.get(entity_id).name == f"Central function {KEY_SWITCH_1}"
     await hass.services.async_call("scene", "turn_on", {"entity_id": entity_id}, blocking=True)
     await wait_for(lambda: simulator.output(SWITCH, 1) == 0xFF)
     # The scene reads the groups it reached.
@@ -102,5 +104,5 @@ async def test_a_first_setup_starts_a_discovery_by_itself(hass: HomeAssistant, h
     assert hub.discovery.running
     await hub.discovery.async_wait()
     await hass.async_block_till_done()
-    assert hass.states.get("sensor.nikobus_discovery").attributes["error"] == "no_pc_link"
-    assert hass.states.get("binary_sensor.nikobus_connection").state == "on"
+    assert hass.states.get("sensor.nikobus_bridge_discovery").attributes["error"] == "no_pc_link"
+    assert hass.states.get("binary_sensor.nikobus_bridge_connection").state == "on"
