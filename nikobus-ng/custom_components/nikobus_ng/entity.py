@@ -136,7 +136,13 @@ class ChannelEntity(NikobusEntity):
             or inventory.is_linked(module.address, channel)
         )
         self._attr_extra_state_attributes = {
-            "controlled_by": [inventory.key_label(key) for key in inventory.keys_driving(module.address, channel)]
+            "controlled_by": [
+                *(inventory.key_label(key) for key in inventory.keys_driving(module.address, channel)),
+                *(
+                    f"PC-Link calendar channel {label}"
+                    for label in inventory.calendar_channels_driving(module.address, channel)
+                ),
+            ]
         }
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, module.address)},

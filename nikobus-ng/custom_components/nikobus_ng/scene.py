@@ -13,6 +13,7 @@ from nikobus_connect.discovery.store import is_button_backed_cf, is_pure_roller_
 from .const import DIMMER_READ_DELAY
 from .entity import NikobusEntity, gateway_device
 from .hub import NikobusHub
+from .presses import PRESSED
 
 PARALLEL_UPDATES = 1
 
@@ -56,14 +57,26 @@ class NikobusScene(NikobusEntity, Scene):
             self._attr_translation_key = "central_function"
             self._attr_translation_placeholders = {"address": self._bus_address}
         self._attr_device_info = gateway_device(hub)
+        # Every frame that activates it: one central function can be on several keys.
+        self._triggers = sorted(
+            {self._bus_address, *(str(frame).upper() for frame in record.get("triggered_by") or [])}
+        )
         self._attr_extra_state_attributes = {
             "bus_address": self._bus_address,
             "outputs": len(record.get("outputs") or []),
         }
 
     async def async_added_to_hass(self) -> None:
-        """Follow the connection."""
+        """Follow the connection, and the scene's own frames on the bus."""
         self.async_on_remove(self.hub.subscribe_status(self.async_write_ha_state))
+        for frame in self._triggers:
+            self.async_on_remove(self.hub.presses.subscribe(frame, self._on_frame))
+
+    def _on_frame(self, event_type: str, _data: dict[str, Any]) -> None:
+        """Activated at the wall: the scene's state is when it was last activated, by anyone."""
+        if event_type == PRESSED:
+            self._async_record_activation()
+            self.async_write_ha_state()
 
     async def async_activate(self, **kwargs: Any) -> None:
         """Send the central function's telegram, then read what it reached."""

@@ -12,6 +12,7 @@ from custom_components.nikobus_ng.const import (
     CONF_LED_KEYS,
     DOMAIN,
 )
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
@@ -59,6 +60,16 @@ async def _reloaded(hass: HomeAssistant, entry: MockConfigEntry, hub: Any) -> An
     await wait_for(lambda: all(new_hub.value(a, 1 if g == 1 else 7) is not None for a, g in new_hub.inventory.output_groups()))
     await hass.async_block_till_done()
     return new_hub
+
+
+async def _rescanned(hass: HomeAssistant, entry: MockConfigEntry, hub: Any) -> Any:
+    """The hub once the entry reloaded, read links by itself, and reloaded again."""
+    await hass.async_block_till_done()
+    await wait_for(lambda: entry.runtime_data is not hub and entry.state is ConfigEntryState.LOADED)
+    scanning = entry.runtime_data
+    await wait_for(lambda: scanning.discovery.running or entry.runtime_data is not scanning)
+    await scanning.discovery.async_wait()
+    return await _reloaded(hass, entry, scanning)
 
 
 async def test_a_dimmer_output_ticked_as_a_fan_gets_a_speed(hass: HomeAssistant, simulator: WallSimulator, setup: SetupFixture, entry: MockConfigEntry) -> None:
@@ -243,8 +254,7 @@ async def test_a_project_file_stands_in_for_the_inventory_of_a_pc_link(hass: Hom
             result["flow_id"], {"project_file": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0", "rooms_as_areas": False, "use_as_inventory": True}
         )
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    await hub.discovery.async_wait()
-    new_hub = await _reloaded(hass, entry, hub)
+    new_hub = await _rescanned(hass, entry, hub)
     inventory = new_hub.inventory
     assert inventory.from_project
     assert [module.address for module in inventory.output_modules()] == [SWITCH]

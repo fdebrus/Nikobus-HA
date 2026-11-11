@@ -42,16 +42,22 @@
           "outputs": "Lumières et ventilateurs",
           "shutter": "Une sortie volet",
           "led_key": "Touches LED d'une sortie",
-          "names": "Noms du fichier projet"
+          "module_type": "Le type d'un module",
+          "names": "Noms du fichier projet",
+          "files": "Inventaire à partir de deux fichiers"
         }
       },
       "gateway": {
         "title": "Passerelle",
         "data": {
-          "feedback_module": "Un module Feedback est installé"
+          "feedback_module": "Un module Feedback est installé",
+          "old_pc_link": "Le PC-Link est antérieur à la génération 3",
+          "press_repeat": "Télégrammes par appui"
         },
         "data_description": {
-          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même."
+          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même.",
+          "old_pc_link": "Un tel PC-Link ne répond à aucune lecture d'état. Home Assistant ne lit alors rien : une sortie affiche ce que Home Assistant y a écrit en dernier, conservé d'un redémarrage à l'autre, et reste inconnue tant qu'elle n'a pas été écrite une fois. Une commande règle aussi les autres sorties du même groupe de six sur ce que Home Assistant y a écrit en dernier.",
+          "press_repeat": "Le nombre de fois qu'un appui envoyé par Home Assistant répète son télégramme, comme une touche maintenue. Trois suffisent à un module pour compter un appui ; augmentez seulement si des appuis de Home Assistant sont parfois manqués."
         }
       },
       "shutter": {
@@ -123,11 +129,31 @@
           "on_key": "Pour un volet : la touche qui l'ouvre. Une touche à bascule peut être donnée pour les deux.",
           "off_key": "Pour un volet : la touche qui le ferme."
         }
+      },
+      "module_type": {
+        "title": "Le type d'un module",
+        "description": "Pour un module que l'inventaire contient sous un autre type que le sien. Ses entités changent en conséquence, et ses liens sont relus d'eux-mêmes une fois l'intégration rechargée, car ils sont décodés selon le type. Le choix est conservé lors des découvertes suivantes.",
+        "data": {
+          "module": "Module",
+          "module_type": "C'est"
+        },
+        "data_description": {
+          "module": "Chaque module avec le type qu'il a actuellement."
+        }
+      },
+      "files": {
+        "title": "Inventaire à partir de deux fichiers",
+        "description": "Pour une installation sans PC-Link ni fichier projet : les deux fichiers de l'intégration Nikobus, l'un listant les modules et leurs sorties, l'autre les touches. Ils remplacent ce qui est connu. Ce qu'ils disent d'une sortie (lumière, ventilateur, touches LED, temps de marche) devient l'option correspondante ici. Les liens sont ensuite lus dans les modules, ce qui prend quelques minutes.",
+        "data": {
+          "module_file": "Fichier des modules (nikobus_module_config.json)",
+          "button_file": "Fichier des touches (nikobus_button_config.json)"
+        }
       }
     },
     "error": {
       "invalid_project_file": "Ce fichier n'a pas pu être lu comme un projet Nikobus.",
-      "invalid_key_address": "Une adresse de touche comporte six chiffres hexadécimaux, par exemple 0B7086."
+      "invalid_key_address": "Une adresse de touche comporte six chiffres hexadécimaux, par exemple 0B7086.",
+      "invalid_files": "Les deux fichiers n'ont pas pu être lus comme une liste de modules et une liste de touches. Vérifiez que chacun est un JSON valide, que chaque module a une adresse et le nombre de sorties de son type, et que chaque touche a une adresse."
     },
     "abort": {
       "not_loaded": "L'intégration n'est pas chargée.",
@@ -286,6 +312,14 @@
         "switch": "Une charge, comme interrupteur",
         "light": "Une lampe, comme lumière"
       }
+    },
+    "module_type": {
+      "options": {
+        "as_inventoried": "Ce que dit l'inventaire",
+        "switch_module": "Un module de commutation",
+        "dimmer_module": "Un module variateur",
+        "roller_module": "Un module de volets"
+      }
     }
   },
   "issues": {
@@ -345,6 +379,20 @@
           "confirm": {
             "title": "Home Assistant est sur le port du module Feedback lui-même",
             "description": "L'option module Feedback est activée, mais ses réponses d'état arrivent sans les requêtes correspondantes. Seul un PC-Link relaie les deux ; le port du module Feedback ne relaie que les réponses. Home Assistant doit alors deviner à quelle moitié d'un module une réponse se rapporte, et les deux moitiés d'un module à douze sorties s'échangent.\n\nValidez pour désactiver l'option. Home Assistant lit alors lui-même les modules, toutes les deux minutes et après chaque appui, et l'intégration se recharge."
+          }
+        },
+        "abort": {
+          "not_loaded": "L'intégration n'est pas chargée."
+        }
+      }
+    },
+    "module_type_fixable": {
+      "title": "{module} n'est pas du type indiqué par l'inventaire",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} n'est pas du type indiqué par l'inventaire",
+            "description": "L'inventaire contient ce module comme {module_type}, mais il répond comme {family}. Ses sorties sont alors affichées avec le mauvais type d'entité, et ses liens sont mal décodés.\n\nValidez pour le traiter comme {family}. L'intégration se recharge, les entités du module changent en conséquence (les anciennes sont supprimées), et ses liens sont relus, ce qui prend une minute ou deux."
           }
         },
         "abort": {

@@ -43,7 +43,19 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   switched by the keys the project file links to it.
 - **Without a PC-Link.** The `.nkb` project file can stand in for the
   PC-Link's inventory: its modules and plates are taken, and the links are
-  then read from the modules.
+  then read from the modules. Without a project file either, the two
+  hand-written files of the Nikobus integration can be uploaded instead;
+  what they say of an output becomes the matching option here.
+- **A module of the wrong type.** The options can say what a module is
+  when the inventory has it as another type; its entities change and its
+  links are read again by themselves. The choice stays through later
+  discoveries. When a check finds a module answering as another output
+  module, the repair offers that type.
+- **An old PC-Link** (before generation 3), as an option: nothing is read
+  before a write and nothing periodically, and what Home Assistant wrote
+  is kept across restarts.
+- **A scene activated at the wall** records the activation on its entity,
+  whichever of its keys was pressed.
 - **Keys.** One `event` entity per key with `pressed`, `hold`,
   `short_release` and `long_release`, one device per plate, and a bus event
   `nikobus_ng_press` for any address. A button per key presses it from Home
@@ -74,8 +86,8 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 - **Actions**: `nikobus_ng.discover`, `press_key`, `read_module`,
   `verify_programming` and `backup_programming` (the last two return their
   result).
-- **Every output names the keys that drive it**, in its `controlled_by`
-  attribute.
+- **Every output names what drives it**, in its `controlled_by`
+  attribute: the keys, and the PC-Link calendar channels.
 - **Deleting a device** of a module or a plate forgets it; a device the
   inventory no longer holds is removed at the next start.
 - **A blueprint**, `blueprints/automation/fdebrus/nikobus_ng_key_controls_entity.yaml`:
@@ -89,7 +101,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 4 298 lines |
+| Python | 15 036 lines | 4 702 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
@@ -98,8 +110,8 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Unnamed outputs | no entity | an entity; disabled when no key drives it |
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
 | PC-Link clock | a timestamp sensor that changes every hour | the drift in seconds, and a button |
-| Settings | 17 options steps | a menu of five: gateway, lights and fans, a roller output, LED keys, names |
-| Tests | 923, against a stub of Home Assistant | 84, against the real core and a simulated bus |
+| Settings | 17 options steps | a menu: gateway, lights and fans, a roller output, LED keys, a module's type, names, files |
+| Tests | 923, against a stub of Home Assistant | 96, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -107,8 +119,10 @@ What exists in the Nikobus integration and is absent here.
 
 | Feature | |
 |---|---|
-| Installations without a PC-Link and without a project file (hand-written files) | not supported |
 | Scenes made in Home Assistant's options | use Home Assistant's own scenes |
+| Choosing what a project file import takes, and which kinds of key get entities | everything is taken; entities are disabled one by one |
+| A refresh interval to set | fixed |
+| A device per PC-Link calendar channel | named in `controlled_by` only |
 | Volume level and brightness of a colour controller | the bus offers neither |
 | Migration from the Nikobus integration | none: new domain, new entities |
 
@@ -126,6 +140,8 @@ What exists in the Nikobus integration and is absent here.
 | Module status and memory read; the backup files | A module's checksum (the simulator has none) |
 | The blueprint, in a real automation | LED keys with a real Feedback Module |
 | One module read again; a port nothing answers on; states pushed without their queries | A link table that does not line up (the library's flag is set by the test) |
+| A module given another type, from the options and from the repair | A PC-Link older than generation 3: what it answers is taken from the Nikobus integration's handling of it |
+| Two hand-written files as the inventory; press repeats; calendar channels; a scene at the wall | |
 | Fans, LED keys, shutter groups, a project file as inventory | An audio module and a colour controller, real ones |
 | Audio zones, read out of the simulated module by the link scan | The link scan through a gateway that is not a PC-Link |
 | A colour controller's state and keys (a stand-in answers its state query) | |
@@ -168,11 +184,11 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 
 | File | Lines | |
 |---|---|---|
-| `hub.py` | 605 | the connection, output state, commands, LED keys, polling, reconnection |
-| `inventory.py` | 491 | the store, and every question asked of it |
-| `config_flow.py` | 460 | setup, reconfigure, the options menu, `.nkb` upload |
-| `maintenance.py` | 409 | the clock, the programming checks, the backup |
+| `hub.py` | 645 | the connection, output state, commands, LED keys, polling, reconnection |
+| `config_flow.py` | 564 | setup, reconfigure, the options menu, the uploads |
+| `inventory.py` | 563 | the store, and every question asked of it |
+| `maintenance.py` | 416 | the clock, the programming checks, the backup |
 | `cover.py` | 364 | shutters, their position, shutter groups |
-| `discovery.py` | 240 | one discovery run, of everything or of one module |
-| `entity.py` | 187 | base classes, devices, which platform an output belongs to |
-| the rest | 1 542 | the other platforms, presses, repairs, actions, diagnostics |
+| `discovery.py` | 241 | one discovery run, of everything or of one module |
+| `entity.py` | 193 | base classes, devices, which platform an output belongs to |
+| the rest | 1 716 | the other platforms, presses, repairs, actions, the hand-written files, diagnostics |

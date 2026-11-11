@@ -42,16 +42,22 @@
           "outputs": "Lampen en ventilatoren",
           "shutter": "Een rolluikuitgang",
           "led_key": "LED-toetsen van een uitgang",
-          "names": "Namen uit het projectbestand"
+          "module_type": "Het type van een module",
+          "names": "Namen uit het projectbestand",
+          "files": "Inventaris uit twee bestanden"
         }
       },
       "gateway": {
         "title": "Gateway",
         "data": {
-          "feedback_module": "Er is een Feedbackmodule geïnstalleerd"
+          "feedback_module": "Er is een Feedbackmodule geïnstalleerd",
+          "old_pc_link": "De PC-Link is ouder dan generatie 3",
+          "press_repeat": "Telegrammen per druk"
         },
         "data_description": {
-          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit."
+          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit.",
+          "old_pc_link": "Zo'n PC-Link beantwoordt geen toestandslezing. Home Assistant leest dan niets: een uitgang toont wat Home Assistant er het laatst naar schreef, bewaard over herstarts heen, en blijft onbekend tot ze één keer is geschreven. Een commando zet ook de andere uitgangen van dezelfde groep van zes op wat Home Assistant er het laatst naar schreef.",
+          "press_repeat": "Hoe vaak een druk die Home Assistant verstuurt zijn telegram herhaalt, zoals een ingehouden toets. Drie volstaat voor een module om één druk te tellen; verhoog alleen als drukken van Home Assistant soms gemist worden."
         }
       },
       "shutter": {
@@ -123,11 +129,31 @@
           "on_key": "Voor een rolluik: de toets die het opent. Een wisseltoets kan voor beide worden opgegeven.",
           "off_key": "Voor een rolluik: de toets die het sluit."
         }
+      },
+      "module_type": {
+        "title": "Het type van een module",
+        "description": "Voor een module die de inventaris als een ander type bevat dan ze is. Haar entiteiten veranderen mee, en haar koppelingen worden vanzelf opnieuw gelezen zodra de integratie is herladen, want ze worden per type gedecodeerd. De keuze blijft behouden bij latere ontdekkingen.",
+        "data": {
+          "module": "Module",
+          "module_type": "Het is"
+        },
+        "data_description": {
+          "module": "Elke module met het type dat ze nu heeft."
+        }
+      },
+      "files": {
+        "title": "Inventaris uit twee bestanden",
+        "description": "Voor een installatie zonder PC-Link en zonder projectbestand: de twee bestanden van de Nikobus-integratie, één met de modules en hun uitgangen, één met de toetsen. Ze vervangen wat bekend is. Wat ze over een uitgang zeggen (lamp, ventilator, LED-toetsen, looptijden) wordt hier de overeenkomstige optie. Daarna worden de koppelingen uit de modules gelezen, wat enkele minuten duurt.",
+        "data": {
+          "module_file": "Modulebestand (nikobus_module_config.json)",
+          "button_file": "Toetsenbestand (nikobus_button_config.json)"
+        }
       }
     },
     "error": {
       "invalid_project_file": "Dit bestand kon niet als Nikobus-project worden gelezen.",
-      "invalid_key_address": "Een toetsadres bestaat uit zes hexadecimale cijfers, bijvoorbeeld 0B7086."
+      "invalid_key_address": "Een toetsadres bestaat uit zes hexadecimale cijfers, bijvoorbeeld 0B7086.",
+      "invalid_files": "De twee bestanden konden niet worden gelezen als een modulelijst en een toetsenlijst. Controleer of elk bestand geldige JSON is, of elke module een adres heeft en het aantal uitgangen van haar type, en of elke toets een adres heeft."
     },
     "abort": {
       "not_loaded": "De integratie is niet geladen.",
@@ -286,6 +312,14 @@
         "switch": "Een last, als schakelaar",
         "light": "Een lamp, als licht"
       }
+    },
+    "module_type": {
+      "options": {
+        "as_inventoried": "Wat de inventaris zegt",
+        "switch_module": "Een schakelmodule",
+        "dimmer_module": "Een dimmermodule",
+        "roller_module": "Een rolluikmodule"
+      }
     }
   },
   "issues": {
@@ -345,6 +379,20 @@
           "confirm": {
             "title": "Home Assistant zit op de poort van de Feedbackmodule zelf",
             "description": "De optie Feedbackmodule staat aan, maar haar toestandsantwoorden komen binnen zonder de bijbehorende vragen. Alleen een PC-Link geeft beide door; de eigen poort van de Feedbackmodule geeft alleen de antwoorden door. Home Assistant moet dan raden voor welke helft van een module een antwoord geldt, en de twee helften van een module met twaalf uitgangen worden verwisseld.\n\nVerzend om de optie uit te schakelen. Home Assistant leest de modules dan zelf, om de twee minuten en na elke toetsdruk, en de integratie wordt herladen."
+          }
+        },
+        "abort": {
+          "not_loaded": "De integratie is niet geladen."
+        }
+      }
+    },
+    "module_type_fixable": {
+      "title": "{module} is niet het type dat de inventaris aangeeft",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} is niet het type dat de inventaris aangeeft",
+            "description": "De inventaris bevat deze module als {module_type}, maar ze antwoordt als {family}. Haar uitgangen worden dan als het verkeerde soort entiteit getoond, en haar koppelingen worden verkeerd gedecodeerd.\n\nVerzend om ze als {family} te behandelen. De integratie wordt herladen, de entiteiten van de module veranderen mee (de oude worden verwijderd), en haar koppelingen worden opnieuw gelezen, wat een minuut of twee duurt."
           }
         },
         "abort": {

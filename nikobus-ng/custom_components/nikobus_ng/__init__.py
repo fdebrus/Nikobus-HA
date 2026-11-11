@@ -40,11 +40,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     except BaseException:
         await hub.async_stop()
         raise
-    if hub.inventory.is_empty:
+    inventory = hub.inventory
+    if inventory.is_empty:
         # Nothing is known yet: read the installation, then reload.
         hub.discovery.start()
-    else:
-        _remove_devices_no_longer_known(hass, entry, hub)
+        return True
+    _remove_devices_no_longer_known(hass, entry, hub)
+    if inventory.from_project and not any(inventory.links_read(m.address) for m in inventory.output_modules()):
+        # A project file named the modules; which key drives what is still in them.
+        hub.discovery.start()
+    elif retyped := inventory.types_to_read_again():
+        # A module the options gave another type: its links are decoded by type.
+        hub.discovery.start(retyped[0])
     return True
 
 
