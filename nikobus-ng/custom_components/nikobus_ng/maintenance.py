@@ -28,7 +28,7 @@ from nikobus_connect import NikobusError
 from nikobus_connect.api import MODULE_IMAGE_SIZES, predict_module_crc
 from nikobus_connect.protocol import family_matches, family_name
 
-from .const import DOMAIN
+from .const import DOMAIN, ISSUE_TYPE_FIXABLE, MODULE_CHANNELS
 
 if TYPE_CHECKING:
     from .hub import NikobusHub
@@ -226,14 +226,21 @@ class Maintenance:
             (ISSUE_TYPE, check.family_ok is False),
         ):
             issue_id = f"{key}_{check.address.lower()}"
+            # A module that answers as another output module can be given that type.
+            fixable = key == ISSUE_TYPE and check.family in MODULE_CHANNELS
             if active:
                 ir.async_create_issue(
                     self._hub.hass,
                     DOMAIN,
                     issue_id,
-                    is_fixable=False,
+                    is_fixable=fixable,
                     severity=ir.IssueSeverity.WARNING,
-                    translation_key=key,
+                    translation_key=ISSUE_TYPE_FIXABLE if fixable else key,
+                    data=(
+                        {"entry_id": self._hub.entry.entry_id, "address": check.address, "family": check.family}
+                        if fixable
+                        else None
+                    ),
                     translation_placeholders={
                         "module": self._hub.inventory.module_label(check.address),
                         "module_type": check.module_type.replace("_", " "),

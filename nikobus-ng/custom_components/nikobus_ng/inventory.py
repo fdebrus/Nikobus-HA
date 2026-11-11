@@ -26,7 +26,13 @@ from nikobus_connect.discovery.store import (
 from nikobus_connect.nkb import NkbConfig
 from nikobus_connect.press import impacted_groups
 
-from .const import DOMAIN, INPUT_MODULE_TYPES, OUTPUT_MODULE_TYPES, RGB_MODULE
+from .const import (
+    DOMAIN,
+    INPUT_MODULE_TYPES,
+    MODULE_CHANNELS,
+    OUTPUT_MODULE_TYPES,
+    RGB_MODULE,
+)
 
 STORAGE_VERSION = 1
 _SAVE_DELAY = 1.0
@@ -65,8 +71,16 @@ class Key:
 class Inventory:
     """The stores of one config entry."""
 
-    def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry_id: str, module_types: dict[str, str] | None = None
+    ) -> None:
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
+        #: The type the options give a module, over the one the inventory holds.
+        self.module_types = {address.upper(): kind for address, kind in (module_types or {}).items()}
+        #: The type each such module's links were last read as.
+        self.links_read_as: dict[str, str] = {}
+        #: What Home Assistant last wrote to each module, for a gateway that answers no state read.
+        self.states: dict[str, str] = {}
         self.modules: dict[str, Any] = {"nikobus_module": {}}
         self.buttons: dict[str, Any] = {"nikobus_button": {}}
         self.scenes: dict[str, dict[str, Any]] = {}
@@ -102,6 +116,9 @@ class Inventory:
         if isinstance(stored.get("programming"), dict):
             self.programming = stored["programming"]
         self.from_project = stored.get("from_project") is True
+        for name in ("links_read_as", "states"):
+            if isinstance(stored.get(name), dict):
+                setattr(self, name, stored[name])
         self.changed()
 
     def _payload(self) -> dict[str, Any]:
@@ -112,6 +129,8 @@ class Inventory:
             "names": self.names,
             "programming": self.programming,
             "from_project": self.from_project,
+            "links_read_as": self.links_read_as,
+            "states": self.states,
         }
 
     async def async_save(self) -> None:
@@ -140,11 +159,64 @@ class Inventory:
         self._drivers = None
 
     def _module_entries(self) -> dict[str, dict[str, Any]]:
-        return {
-            str(address).upper(): entry
-            for address, entry in self.modules["nikobus_module"].items()
-            if isinstance(entry, dict)
-        }
+        """The modules, each as the type the options give it when they give one."""
+        entries: dict[str, dict[str, Any]] = {}
+        for key, entry in self.modules["nikobus_module"].items():
+            if not isinstance(entry, dict):
+                continue
+            address = str(key).upper()
+            kind = self.module_types.get(address)
+            if kind in MODULE_CHANNELS and kind != entry.get("module_type"):
+                # The outputs it has as that type: the number the inventory
+                # gives when that type exists with it, else the usual one.
+                channels = [c for c in entry.get("channels") or [] if isinstance(c, dict)]
+                count = len(channels) if len(channels) in MODULE_CHANNELS[kind] else MODULE_CHANNELS[kind][0]
+                entry = {
+                    **entry,
+                    "module_type": kind,
+                    "channels": [*channels[:count], *({} for _ in range(count - len(channels)))],
+                }
+            entries[address] = entry
+        return entries
+
+    def inventoried_type(self, address: str) -> str | None:
+        """The type the inventory itself holds for a module, whatever the options say."""
+        for key, entry in self.modules["nikobus_module"].items():
+            if str(key).upper() == address.upper() and isinstance(entry, dict):
+                return entry.get("module_type")
+        return None
+
+    def types_to_read_again(self) -> list[str]:
+        """The modules whose links were read as another type than the options now give them."""
+        return sorted(
+            address
+            for address in {*self.module_types, *self.links_read_as}
+            if address in self.modules["nikobus_module"]
+            and self.links_read_as.get(address) != self.module_types.get(address)
+            and self.module_types.get(address, self.inventoried_type(address)) in MODULE_CHANNELS
+        )
+
+    def note_links_read(self, addresses: list[str]) -> None:
+        """Remember as which type each of these modules was just read."""
+        for address in addresses:
+            if kind := self.module_types.get(address):
+                self.links_read_as[address] = kind
+            else:
+                self.links_read_as.pop(address, None)
+
+    def calendar_channels_driving(self, address: str, channel: int) -> list[str]:
+        """The PC-Link calendar channels with a link to this output, by their label."""
+        labels = []
+        for entry in self._plates().values():
+            if not (label := entry.get("calendar_channel")):
+                continue
+            for point in (entry.get("operation_points") or {}).values():
+                for link in (point or {}).get("linked_modules") or []:
+                    if str(link.get("module_address") or "").upper() == address.upper() and any(
+                        output.get("channel") == channel for output in link.get("outputs") or []
+                    ):
+                        labels.append(str(label))
+        return sorted(set(labels))
 
     def _plates(self) -> dict[str, dict[str, Any]]:
         return {

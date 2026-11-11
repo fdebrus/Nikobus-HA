@@ -42,11 +42,15 @@ from .const import (
     CONF_FEEDBACK_MODULE,
     CONF_LED_KEYS,
     CONF_LIGHT_OUTPUTS,
+    CONF_MODULE_TYPES,
     CONF_OFF_KEY,
+    CONF_OLD_PC_LINK,
     CONF_ON_KEY,
+    CONF_PRESS_REPEAT,
     CONF_SHUTTERS,
     COVER_OPENING,
     COVER_STOPPED,
+    DEFAULT_PRESS_REPEAT,
     DIMMER_MODULE,
     DOMAIN,
     FEEDBACK_PORT_ANSWERS,
@@ -80,13 +84,15 @@ class NikobusHub:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
-        self.inventory = Inventory(hass, entry.entry_id)
+        self.inventory = Inventory(hass, entry.entry_id, entry.options.get(CONF_MODULE_TYPES))
         self.presses = PressHandler(self)
         self.discovery = DiscoveryRunner(self)
         self.maintenance = Maintenance(self)
         self.feedback_module: bool = entry.options.get(
             CONF_FEEDBACK_MODULE, entry.data.get(CONF_FEEDBACK_MODULE, False)
         )
+        #: A PC-Link older than generation 3, which answers no state read.
+        self.old_pc_link: bool = entry.options.get(CONF_OLD_PC_LINK, False)
         self.light_outputs: frozenset[str] = frozenset(entry.options.get(CONF_LIGHT_OUTPUTS, ()))
         self.fan_outputs: frozenset[str] = frozenset(entry.options.get(CONF_FAN_OUTPUTS, ()))
         self.shutters: dict[str, dict[str, Any]] = dict(entry.options.get(CONF_SHUTTERS, {}))
@@ -175,6 +181,7 @@ class NikobusHub:
         )
         self.nikobus_command = self.command
         self.api = NikobusAPI(self.command, self._led_key_table())
+        self.api.press_repeat = int(self.entry.options.get(CONF_PRESS_REPEAT, DEFAULT_PRESS_REPEAT))
         self.allocate_states()
         self.apply_write_guard()
         try:
@@ -191,10 +198,13 @@ class NikobusHub:
         self.connection.on_device_answered = self._note_probe
         self._note_probe()
 
-        interval = FEEDBACK_SAFETY_POLL if self.feedback_module else POLL_INTERVAL
-        self.entry.async_on_unload(
-            async_track_time_interval(self.hass, self._async_poll, interval)
-        )
+        if self.old_pc_link:
+            self._restore_states()
+        else:
+            interval = FEEDBACK_SAFETY_POLL if self.feedback_module else POLL_INTERVAL
+            self.entry.async_on_unload(
+                async_track_time_interval(self.hass, self._async_poll, interval)
+            )
         self.entry.async_create_background_task(
             self.hass, self._async_first_reads(), name=f"{DOMAIN}_first_read"
         )
@@ -210,13 +220,36 @@ class NikobusHub:
 
     async def _async_first_reads(self) -> None:
         """Every output group once, then the PC-Link's clock."""
-        await self._async_poll()
+        if not self.old_pc_link:
+            await self._async_poll()
         await self.maintenance.async_scheduled_clock()
+
+    def _restore_states(self) -> None:
+        """Take back what was last written, where the gateway answers no state read.
+
+        A set-output carries all six outputs of a group. With nothing to
+        read them from, the other five are what Home Assistant last wrote,
+        kept across restarts so that the first command does not switch them off.
+        """
+        for address, image in self.inventory.states.items():
+            buffer = self._states.get(address)
+            try:
+                values = bytes.fromhex(image)
+            except ValueError:
+                continue
+            if buffer is None or len(values) != len(buffer):
+                continue
+            buffer[:] = values
+            for group in (1, 2)[: len(buffer) // 6]:
+                self._heard[(address, group)] = time.monotonic()
 
     async def async_stop(self) -> None:
         """Stop listening and close the connection."""
         self._stopping = True
         self.connected = False
+        if self.old_pc_link:
+            # What was written is the only record of the outputs: do not leave it to a delayed save.
+            await self.inventory.async_save()
         if self._reconnect_task is not None:
             self._reconnect_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -382,6 +415,9 @@ class NikobusHub:
         # The module holds exactly the frame it acknowledged, and the library
         # may have read the group first: the other outputs can have moved.
         self._heard[(address, group)] = time.monotonic()
+        if self.old_pc_link:
+            self.inventory.states[address] = bytes(self._states[address]).hex()
+            self.inventory.schedule_save()
         self.notify(address)
 
     # --- presses -----------------------------------------------------------------
@@ -505,6 +541,10 @@ class NikobusHub:
         periods; none while a discovery rewrites the links they are
         judged by. ``note_press`` is the other half of the bargain.
         """
+        if self.old_pc_link:
+            # It answers no state read: reading first would only be a timeout before every command.
+            self.command.read_before_write_s = None
+            return
         groups = set() if self.discovery.running else self.inventory.steady_groups()
         period = FEEDBACK_SAFETY_POLL if self.feedback_module else POLL_INTERVAL
         self.command.set_steady_groups(groups, max_age=2 * period.total_seconds())

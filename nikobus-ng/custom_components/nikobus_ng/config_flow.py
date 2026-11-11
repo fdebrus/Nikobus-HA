@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -43,15 +44,20 @@ from .const import (
     CONF_FEEDBACK_MODULE,
     CONF_LED_KEYS,
     CONF_LIGHT_OUTPUTS,
+    CONF_MODULE_TYPES,
     CONF_OFF_KEY,
+    CONF_OLD_PC_LINK,
     CONF_ON_KEY,
     CONF_OPEN_TIME,
     CONF_OUTPUT,
+    CONF_PRESS_REPEAT,
     CONF_SHUTTERS,
     CONF_USE_AS,
     COVER_END_MARGIN,
+    DEFAULT_PRESS_REPEAT,
     DIMMER_MODULE,
     DOMAIN,
+    MODULE_CHANNELS,
     OUTPUT_MODULE_TYPES,
     ROLLER_MODULE,
     SWITCH_MODULE,
@@ -59,12 +65,19 @@ from .const import (
     USE_AS_COVER,
 )
 from .inventory import Inventory
+from .manual import inventory_from_files
 
 _LOGGER = logging.getLogger(__name__)
 
 CONF_PROJECT_FILE = "project_file"
 CONF_ROOMS_AS_AREAS = "rooms_as_areas"
 CONF_USE_AS_INVENTORY = "use_as_inventory"
+CONF_MODULE = "module"
+CONF_MODULE_TYPE = "module_type"
+CONF_MODULE_FILE = "module_file"
+CONF_BUTTON_FILE = "button_file"
+#: In the type list: what the inventory itself says.
+AS_INVENTORIED = "as_inventoried"
 
 
 def _connection_schema(defaults: dict[str, Any]) -> vol.Schema:
@@ -165,6 +178,15 @@ def _read_names(hass: HomeAssistant, upload_id: str, inventory: bool) -> tuple[N
         return parse_nkb(Path(path)), build_config_from_nkb(Path(path)) if inventory else None
 
 
+def _read_files(hass: HomeAssistant, module_upload: str, button_upload: str) -> tuple[Any, Any]:
+    """The two hand-written files, as the JSON they hold."""
+    loaded = []
+    for upload_id in (module_upload, button_upload):
+        with process_uploaded_file(hass, upload_id) as path:
+            loaded.append(json.loads(Path(path).read_text(encoding="utf-8")))
+    return loaded[0], loaded[1]
+
+
 def _output_options(inventory: Inventory, *module_types: str) -> list[SelectOptionDict]:
     """Every output of some kinds of module, labelled the way its entity is named."""
     return [
@@ -217,23 +239,109 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
             steps.append("shutter")
         if _output_options(inventory, *OUTPUT_MODULE_TYPES):
             steps.append("led_key")
+        if inventory.addresses():
+            steps.append("module_type")
         steps.append("names")
+        if inventory.is_empty or inventory.from_project:
+            steps.append("files")
         return self.async_show_menu(step_id="init", menu_options=steps)
 
     async def async_step_gateway(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Whether a Feedback Module reads the modules too."""
+        """What is on the other end of the cable, and how a press is sent."""
         entry = self.config_entry
         if user_input is not None:
-            return self._save(**{CONF_FEEDBACK_MODULE: user_input[CONF_FEEDBACK_MODULE]})
+            return self._save(
+                **{
+                    CONF_FEEDBACK_MODULE: user_input[CONF_FEEDBACK_MODULE],
+                    CONF_OLD_PC_LINK: user_input[CONF_OLD_PC_LINK],
+                    CONF_PRESS_REPEAT: int(user_input[CONF_PRESS_REPEAT]),
+                }
+            )
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_FEEDBACK_MODULE,
                     default=entry.options.get(CONF_FEEDBACK_MODULE, entry.data[CONF_FEEDBACK_MODULE]),
-                ): BooleanSelector()
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_OLD_PC_LINK, default=entry.options.get(CONF_OLD_PC_LINK, False)
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_PRESS_REPEAT, default=entry.options.get(CONF_PRESS_REPEAT, DEFAULT_PRESS_REPEAT)
+                ): NumberSelector(NumberSelectorConfig(min=1, max=10, step=1, mode=NumberSelectorMode.BOX)),
             }
         )
         return self.async_show_form(step_id="gateway", data_schema=schema)
+
+    async def async_step_module_type(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Say what a module is, when the inventory has it as another type.
+
+        The type decides how the module's links are decoded, so they are
+        read again when the entry has reloaded.
+        """
+        inventory = self._inventory()
+        types: dict[str, str] = dict(self.config_entry.options.get(CONF_MODULE_TYPES, {}))
+        if user_input is not None:
+            types.pop(user_input[CONF_MODULE], None)
+            if user_input[CONF_MODULE_TYPE] != AS_INVENTORIED:
+                types[user_input[CONF_MODULE]] = user_input[CONF_MODULE_TYPE]
+            return self._save(**{CONF_MODULE_TYPES: types})
+        modules = [
+            SelectOptionDict(value=address, label=inventory.module_label(address))
+            for address in sorted(inventory.addresses())
+            if inventory.inventoried_type(address) in MODULE_CHANNELS or address in types
+        ]
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_MODULE): SelectSelector(
+                    SelectSelectorConfig(options=modules, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                vol.Required(CONF_MODULE_TYPE, default=AS_INVENTORIED): SelectSelector(
+                    SelectSelectorConfig(
+                        options=[AS_INVENTORIED, *MODULE_CHANNELS],
+                        translation_key=CONF_MODULE_TYPE,
+                        mode=SelectSelectorMode.LIST,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="module_type", data_schema=schema)
+
+    async def async_step_files(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Take the modules and the keys of two hand-written files as the inventory.
+
+        For an installation with neither a PC-Link nor a project file. The
+        files are those of the Nikobus integration; what they say of an
+        output beyond its name becomes the matching option here.
+        """
+        hub = self.config_entry.runtime_data
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if hub.busy:
+                return self.async_abort(reason="bus_taken")
+            try:
+                modules, buttons = await self.hass.async_add_executor_job(
+                    _read_files, self.hass, user_input[CONF_MODULE_FILE], user_input[CONF_BUTTON_FILE]
+                )
+                config, names, options = inventory_from_files(modules, buttons)
+            except (ValueError, KeyError, TypeError, FileNotFoundError):
+                errors["base"] = "invalid_files"
+            else:
+                inventory = self._inventory()
+                inventory.use_project(config)
+                inventory.names = {**inventory.names, **names}
+                await inventory.async_save()
+                # The links are read from the modules once the entry has reloaded.
+                self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+                return self._save(**options)
+        accept = FileSelectorConfig(accept=".json")
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_MODULE_FILE): FileSelector(accept),
+                vol.Required(CONF_BUTTON_FILE): FileSelector(accept),
+            }
+        )
+        return self.async_show_form(step_id="files", data_schema=schema, errors=errors)
 
     async def async_step_outputs(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Which relays switch a lamp, and which dimmer outputs drive a fan."""
@@ -428,13 +536,9 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
                 await inventory.async_save()
                 if user_input[CONF_ROOMS_AS_AREAS]:
                     self._apply_rooms(inventory)
-                if config is not None:
-                    # The links are read from the modules; the entry reloads when that ends.
-                    hub.allocate_states()
-                    hub.discovery.start()
-                else:
-                    # Names change no option, so the entry is reloaded from here.
-                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                # Names change no option, so the entry is reloaded from here. With a
+                # new inventory, the links are read from the modules once it has.
+                self.hass.config_entries.async_schedule_reload(entry.entry_id)
                 return self._save()
         fields: dict[vol.Marker, Any] = {
             vol.Required(CONF_PROJECT_FILE): FileSelector(FileSelectorConfig(accept=".nkb")),

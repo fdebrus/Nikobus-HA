@@ -174,6 +174,7 @@ class DiscoveryRunner:
                 )
             else:
                 ir.async_delete_issue(hub.hass, DOMAIN, issue_id)
+        hub.inventory.note_links_read(scanned)
         # The links are fresh: the next look at the checksums records them anew.
         hub.maintenance.forget_checksums(module)
         await hub.inventory.async_save()

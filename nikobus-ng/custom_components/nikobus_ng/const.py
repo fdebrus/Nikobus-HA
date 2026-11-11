@@ -14,6 +14,13 @@ CONF_CONNECTION: Final = "connection"
 CONF_FEEDBACK_MODULE: Final = "feedback_module"
 #: Relay outputs shown as lights, each ``"<module>:<channel>"``.
 CONF_LIGHT_OUTPUTS: Final = "light_outputs"
+#: How many times a press from Home Assistant repeats its telegram, as a held key does.
+CONF_PRESS_REPEAT: Final = "press_repeat"
+DEFAULT_PRESS_REPEAT: Final = 3
+#: A PC-Link older than generation 3: no read before a write, no periodic read.
+CONF_OLD_PC_LINK: Final = "old_pc_link"
+#: Per module address: the type to treat it as, when the inventory has it wrong.
+CONF_MODULE_TYPES: Final = "module_types"
 #: Dimmer outputs shown as fans, each ``"<module>:<channel>"``.
 CONF_FAN_OUTPUTS: Final = "fan_outputs"
 #: Per output ``"<module>:<channel>"``: the keys pressed to switch it, so plate LEDs follow.
@@ -50,6 +57,8 @@ SWITCH_MODULE: Final = "switch_module"
 DIMMER_MODULE: Final = "dimmer_module"
 ROLLER_MODULE: Final = "roller_module"
 OUTPUT_MODULE_TYPES: Final = (SWITCH_MODULE, DIMMER_MODULE, ROLLER_MODULE)
+#: How many outputs a module of each type can have; the first is the usual one.
+MODULE_CHANNELS: Final = {SWITCH_MODULE: (12, 4), DIMMER_MODULE: (12, 4), ROLLER_MODULE: (6,)}
 #: The colour controller: read like an output module, driven by its keys only.
 RGB_MODULE: Final = "rgb_module"
 #: Module types whose inputs the discovery files as plates of their own.
@@ -100,6 +109,7 @@ ISSUE_NOT_ANSWERING: Final = "module_not_answering"
 ISSUE_CORRUPT_LINKS: Final = "module_corrupt_links"
 ISSUE_NO_DEVICE: Final = "no_device_answered"
 ISSUE_FEEDBACK_PORT: Final = "feedback_module_port"
+ISSUE_TYPE_FIXABLE: Final = "module_type_fixable"
 #: This many pushed states with none of the queries behind them: the port is the Feedback Module's own.
 FEEDBACK_PORT_ANSWERS: Final = 6
 

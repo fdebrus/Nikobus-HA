@@ -11,12 +11,13 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import (
     CONF_FEEDBACK_MODULE,
+    CONF_MODULE_TYPES,
     DOMAIN,
     ISSUE_FEEDBACK_PORT,
     ISSUE_NOT_ANSWERING,
 )
 from .hub import NikobusHub
-from .maintenance import ISSUE_REPROGRAMMED
+from .maintenance import ISSUE_REPROGRAMMED, ISSUE_TYPE
 
 
 def _hub(hass: HomeAssistant, entry_id: str) -> NikobusHub | None:
@@ -71,6 +72,30 @@ class FeedbackPortRepairFlow(RepairsFlow):
         return self.async_create_entry(data={})
 
 
+class ModuleTypeRepairFlow(RepairsFlow):
+    """A module answers as another type than the inventory holds: take the type it reports."""
+
+    def __init__(self, entry_id: str, address: str, family: str) -> None:
+        self._entry_id = entry_id
+        self._address = address
+        self._family = family
+
+    async def async_step_init(self, user_input: dict[str, str] | None = None) -> FlowResult:
+        """Ask first: the module's entities change with its type."""
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(self, user_input: dict[str, str] | None = None) -> FlowResult:
+        """Give the module that type in the options; its links are read again after the reload."""
+        if user_input is None:
+            return self.async_show_form(step_id="confirm")
+        if (entry := self.hass.config_entries.async_get_entry(self._entry_id)) is None:
+            return self.async_abort(reason="not_loaded")
+        types = {**entry.options.get(CONF_MODULE_TYPES, {}), self._address: self._family}
+        self.hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_MODULE_TYPES: types})
+        self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        return self.async_create_entry(data={})
+
+
 class RemoveModuleRepairFlow(RepairsFlow):
     """A module does not answer any more: remove it and its entities."""
 
@@ -107,6 +132,10 @@ async def async_create_fix_flow(
         return DiscoverRepairFlow(entry_id, str((data or {}).get("address") or ""))
     if issue_id.startswith(ISSUE_FEEDBACK_PORT):
         return FeedbackPortRepairFlow(entry_id)
+    if issue_id.startswith(ISSUE_TYPE):
+        return ModuleTypeRepairFlow(
+            entry_id, str((data or {}).get("address") or ""), str((data or {}).get("family") or "")
+        )
     if issue_id.startswith(ISSUE_NOT_ANSWERING):
         return RemoveModuleRepairFlow(entry_id, str((data or {}).get("address") or ""))
     raise ValueError(f"unknown issue {issue_id}")

@@ -42,16 +42,22 @@
           "outputs": "Lights and fans",
           "shutter": "A roller output",
           "led_key": "LED keys of an output",
-          "names": "Names from the project file"
+          "module_type": "The type of a module",
+          "names": "Names from the project file",
+          "files": "Inventory from two files"
         }
       },
       "gateway": {
         "title": "Gateway",
         "data": {
-          "feedback_module": "A Feedback Module is installed"
+          "feedback_module": "A Feedback Module is installed",
+          "old_pc_link": "The PC-Link is older than generation 3",
+          "press_repeat": "Telegrams per press"
         },
         "data_description": {
-          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself."
+          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself.",
+          "old_pc_link": "Such a PC-Link answers no state read. Home Assistant then reads nothing: an output shows what Home Assistant last wrote to it, kept across restarts, and stays unknown until it is written once. A command also sets the other outputs of the same group of six to what Home Assistant last wrote.",
+          "press_repeat": "How many times a press sent by Home Assistant repeats its telegram, as a held key does. Three is what a module needs to count one press; raise it only if presses from Home Assistant are sometimes missed."
         }
       },
       "shutter": {
@@ -123,11 +129,31 @@
           "on_key": "For a shutter: the key that opens it. A key that toggles can be given for both.",
           "off_key": "For a shutter: the key that closes it."
         }
+      },
+      "module_type": {
+        "title": "The type of a module",
+        "description": "For a module the inventory holds as another type than it is. Its entities change to match, and its links are read again by themselves once the integration has reloaded, since they are decoded by type. The choice stays through later discoveries.",
+        "data": {
+          "module": "Module",
+          "module_type": "It is"
+        },
+        "data_description": {
+          "module": "Each module with the type it has now."
+        }
+      },
+      "files": {
+        "title": "Inventory from two files",
+        "description": "For an installation with neither a PC-Link nor a project file: the two files of the Nikobus integration, one listing the modules and their outputs, the other the keys. They replace what is known. What they say of an output (light, fan, LED keys, run times) becomes the matching option here. The links are then read from the modules, which takes a few minutes.",
+        "data": {
+          "module_file": "Module file (nikobus_module_config.json)",
+          "button_file": "Button file (nikobus_button_config.json)"
+        }
       }
     },
     "error": {
       "invalid_project_file": "This file could not be read as a Nikobus project.",
-      "invalid_key_address": "A key address is six hexadecimal digits, for example 0B7086."
+      "invalid_key_address": "A key address is six hexadecimal digits, for example 0B7086.",
+      "invalid_files": "The two files could not be read as a module list and a key list. Check that each is valid JSON, that every module has an address and the number of outputs of its type, and that every key has an address."
     },
     "abort": {
       "not_loaded": "The integration is not loaded.",
@@ -286,6 +312,14 @@
         "switch": "A load, as a switch",
         "light": "A lamp, as a light"
       }
+    },
+    "module_type": {
+      "options": {
+        "as_inventoried": "What the inventory says",
+        "switch_module": "A switch module",
+        "dimmer_module": "A dimmer module",
+        "roller_module": "A roller shutter module"
+      }
     }
   },
   "issues": {
@@ -345,6 +379,20 @@
           "confirm": {
             "title": "Home Assistant is on the Feedback Module's own port",
             "description": "The Feedback Module option is on, but its state answers arrive without the queries behind them. Only a PC-Link relays both; the Feedback Module's own port relays the answers alone. Home Assistant then has to guess which half of a module an answer is for, and the two halves of a twelve-output module get swapped.\n\nSubmit to turn the option off. Home Assistant then reads the modules itself, every two minutes and after each key press, and the integration reloads."
+          }
+        },
+        "abort": {
+          "not_loaded": "The integration is not loaded."
+        }
+      }
+    },
+    "module_type_fixable": {
+      "title": "{module} is not the type the inventory says",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} is not the type the inventory says",
+            "description": "The inventory holds this module as a {module_type}, but it answers as a {family}. Its outputs are then shown as the wrong kind of entity, and its links are decoded the wrong way.\n\nSubmit to treat it as a {family}. The integration reloads, the module's entities change to match (the old ones are removed), and its links are read again, which takes a minute or two."
           }
         },
         "abort": {
