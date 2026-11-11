@@ -37,6 +37,7 @@ from nikobus_connect.discovery import InventoryQueryType, NikobusDiscovery
 from .const import (
     CONF_CONNECTION,
     CONF_FEEDBACK_MODULE,
+    CONF_LIGHT_OUTPUTS,
     DOMAIN,
     FEEDBACK_SAFETY_POLL,
     POLL_INTERVAL,
@@ -65,6 +66,7 @@ class NikobusHub:
         self.feedback_module: bool = entry.options.get(
             CONF_FEEDBACK_MODULE, entry.data.get(CONF_FEEDBACK_MODULE, False)
         )
+        self.light_outputs: frozenset[str] = frozenset(entry.options.get(CONF_LIGHT_OUTPUTS, ()))
         self.connected = False
         #: The gateway's device, which every other device hangs under.
         self.gateway_device_id: str = ""

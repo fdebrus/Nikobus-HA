@@ -6,11 +6,11 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import SWITCH_MODULE
-from .entity import ChannelEntity
+from .entity import ChannelEntity, relay_outputs, remove_relay_entities
 from .hub import NikobusHub
 
 PARALLEL_UPDATES = 0
@@ -21,13 +21,11 @@ async def async_setup_entry(
     entry: ConfigEntry[NikobusHub],
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """One switch per relay. *Show as* makes it a light in Home Assistant."""
+    """One switch per relay the options do not show as a light."""
     hub = entry.runtime_data
+    remove_relay_entities(hass, Platform.SWITCH, relay_outputs(hub, as_light=True))
     async_add_entities(
-        NikobusSwitch(hub, module, channel)
-        for module in hub.inventory.output_modules()
-        if module.module_type == SWITCH_MODULE
-        for channel in range(1, module.channels + 1)
+        NikobusSwitch(hub, module, channel) for module, channel in relay_outputs(hub, as_light=False)
     )
 
 

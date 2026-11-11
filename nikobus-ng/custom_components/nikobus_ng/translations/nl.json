@@ -37,13 +37,15 @@
     "step": {
       "init": {
         "title": "Nikobus-opties",
-        "description": "Upload het .nkb-project van de Nikobus-software om de namen en ruimtes over te nemen die het bevat voor modules, bedieningen en uitgangen. Namen die u in Home Assistant gaf, blijven behouden.",
+        "description": "Upload het .nkb-project van de Nikobus-software om de namen en ruimtes over te nemen die het bevat voor modules, bedieningen, uitgangen en lichtsferen. Namen die u in Home Assistant gaf, blijven behouden.",
         "data": {
           "feedback_module": "Er is een Feedbackmodule geïnstalleerd",
+          "light_outputs": "Relais die lampen zijn",
           "project_file": "Projectbestand (.nkb)"
         },
         "data_description": {
-          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit."
+          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit.",
+          "light_outputs": "De relaisuitgangen die een lamp schakelen. Elke uitgang wordt een lichtentiteit in plaats van een schakelaar; de schakelaarentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf."
         }
       }
     },

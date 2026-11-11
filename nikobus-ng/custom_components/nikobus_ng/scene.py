@@ -8,6 +8,7 @@ from homeassistant.components.scene import Scene
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from nikobus_connect.discovery.store import is_button_backed_cf
 
 from .const import DIMMER_READ_DELAY
 from .entity import NikobusEntity, gateway_device
@@ -21,17 +22,24 @@ async def async_setup_entry(
     entry: ConfigEntry[NikobusHub],
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """One scene per central function that is not a shutter group."""
+    """One scene per central function that is not a shutter group.
+
+    A light scene on a wall key or an IR code is one only under the name
+    the project file gives it; unnamed, it is that key, which has its own
+    entities.
+    """
     hub = entry.runtime_data
     async_add_entities(
-        NikobusScene(hub, address, record) for address, record in sorted(hub.inventory.scenes.items())
+        NikobusScene(hub, address, record, name)
+        for address, record in sorted(hub.inventory.scenes.items())
+        if (name := hub.inventory.scene_name(record)) or not is_button_backed_cf(record)
     )
 
 
 class NikobusScene(NikobusEntity, Scene):
     """Activated on the bus the way its own key activates it: one telegram."""
 
-    def __init__(self, hub: NikobusHub, address: str, record: dict[str, Any]) -> None:
+    def __init__(self, hub: NikobusHub, address: str, record: dict[str, Any], name: str | None) -> None:
         super().__init__(hub)
         self._bus_address = str(record.get("bus_address") or address).upper()
         self._groups = sorted(
@@ -41,8 +49,8 @@ class NikobusScene(NikobusEntity, Scene):
             }
         )
         self._attr_unique_id = f"{address}_scene"
-        if name := record.get("name"):
-            self._attr_name = str(name)
+        if name:
+            self._attr_name = name
         else:
             self._attr_translation_key = "central_function"
             self._attr_translation_placeholders = {"address": self._bus_address}

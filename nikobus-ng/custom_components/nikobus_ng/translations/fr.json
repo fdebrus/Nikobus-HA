@@ -37,13 +37,15 @@
     "step": {
       "init": {
         "title": "Options Nikobus",
-        "description": "Envoyez le projet .nkb du logiciel Nikobus pour reprendre les noms et les pièces qu'il contient pour les modules, les plaques et les sorties. Les noms donnés dans Home Assistant sont conservés.",
+        "description": "Envoyez le projet .nkb du logiciel Nikobus pour reprendre les noms et les pièces qu'il contient pour les modules, les plaques, les sorties et les ambiances lumineuses. Les noms donnés dans Home Assistant sont conservés.",
         "data": {
           "feedback_module": "Un module Feedback est installé",
+          "light_outputs": "Relais qui sont des lumières",
           "project_file": "Fichier projet (.nkb)"
         },
         "data_description": {
-          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même."
+          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même.",
+          "light_outputs": "Les sorties relais qui commandent une lampe. Chacune devient une entité lumière au lieu d'un interrupteur ; son entité interrupteur est supprimée, avec le nom et la pièce que vous lui aviez donnés."
         }
       }
     },

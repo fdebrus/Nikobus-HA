@@ -112,7 +112,10 @@ A relay becomes a switch or a light through *Customize a module*, backed
 by `router.py` (741 lines) and 17 flow steps. Home Assistant already lets a
 user show any switch as a light.
 
-**nikobus-ng:** a relay is a switch. *Show as* does the rest.
+**nikobus-ng:** a relay is a switch, and the options hold one list of the
+relays that switch a lamp. The first version left this to *Show as*; on a
+real installation most relays were lamps, and that meant one helper per
+relay.
 
 ### 7. A discovered output has no entity until it is named
 

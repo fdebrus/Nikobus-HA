@@ -9,10 +9,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DOMAIN, MANUFACTURER, SWITCH_MODULE
 
 if TYPE_CHECKING:
     from .hub import NikobusHub
@@ -43,6 +45,25 @@ def plate_device(hub: NikobusHub, address: str, entry: dict[str, Any]) -> Device
         suggested_area=hub.inventory.device_area(address),
         via_device_id=hub.gateway_device_id,
     )
+
+
+def relay_outputs(hub: NikobusHub, *, as_light: bool) -> list[tuple[OutputModule, int]]:
+    """The relays shown as lights, or the ones left as switches."""
+    return [
+        (module, channel)
+        for module in hub.inventory.output_modules()
+        if module.module_type == SWITCH_MODULE
+        for channel in range(1, module.channels + 1)
+        if (f"{module.address}:{channel}" in hub.light_outputs) is as_light
+    ]
+
+
+def remove_relay_entities(hass: HomeAssistant, domain: str, outputs: list[tuple[OutputModule, int]]) -> None:
+    """Remove the entity a relay had in ``domain`` before the options moved it."""
+    registry = er.async_get(hass)
+    for module, channel in outputs:
+        if entity_id := registry.async_get_entity_id(domain, DOMAIN, f"{module.address}_{channel}"):
+            registry.async_remove(entity_id)
 
 
 class NikobusEntity(Entity):

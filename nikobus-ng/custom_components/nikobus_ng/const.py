@@ -12,6 +12,8 @@ MANUFACTURER: Final = "Niko"
 
 CONF_CONNECTION: Final = "connection"
 CONF_FEEDBACK_MODULE: Final = "feedback_module"
+#: Relay outputs shown as lights, each ``"<module>:<channel>"``.
+CONF_LIGHT_OUTPUTS: Final = "light_outputs"
 
 PLATFORMS: Final = [
     Platform.BINARY_SENSOR,

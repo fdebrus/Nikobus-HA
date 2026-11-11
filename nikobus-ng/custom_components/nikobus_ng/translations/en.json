@@ -37,13 +37,15 @@
     "step": {
       "init": {
         "title": "Nikobus options",
-        "description": "Upload the .nkb project of the Nikobus software to take the names and rooms it holds for modules, plates and outputs. Names you gave in Home Assistant are kept.",
+        "description": "Upload the .nkb project of the Nikobus software to take the names and rooms it holds for modules, plates, outputs and light scenes. Names you gave in Home Assistant are kept.",
         "data": {
           "feedback_module": "A Feedback Module is installed",
+          "light_outputs": "Relays that are lights",
           "project_file": "Project file (.nkb)"
         },
         "data_description": {
-          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself."
+          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself.",
+          "light_outputs": "The relay outputs that switch a lamp. Each becomes a light entity instead of a switch; its switch entity is removed, with the name and area you gave it."
         }
       }
     },
