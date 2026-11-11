@@ -1,0 +1,14 @@
+{
+  "entity": {
+    "button": {
+      "discover": { "default": "mdi:radar" },
+      "press_key": { "default": "mdi:gesture-tap-button" }
+    },
+    "event": {
+      "key": { "default": "mdi:light-switch" }
+    },
+    "sensor": {
+      "discovery": { "default": "mdi:radar" }
+    }
+  }
+}

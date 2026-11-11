@@ -1,0 +1,145 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à Nikobus",
+        "description": "Le port série du PC-Link (par exemple /dev/ttyUSB0) ou l'adresse d'un pont série (par exemple 192.168.1.50:9999). Un seul programme peut parler au bus : arrêtez d'abord le logiciel Nikobus.",
+        "data": {
+          "connection": "Port série ou hôte:port",
+          "feedback_module": "Un module Feedback est installé"
+        },
+        "data_description": {
+          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même."
+        }
+      },
+      "reconfigure": {
+        "title": "Changer la connexion",
+        "data": {
+          "connection": "Port série ou hôte:port",
+          "feedback_module": "Un module Feedback est installé"
+        },
+        "data_description": {
+          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Aucune passerelle Nikobus n'a répondu sur cette connexion.",
+      "unknown": "Erreur inattendue. Voir le journal."
+    },
+    "abort": {
+      "already_configured": "Cette connexion est déjà configurée.",
+      "reconfigure_successful": "La connexion a été modifiée.",
+      "single_instance_allowed": "Une seule entrée Nikobus NG est possible."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Nikobus",
+        "description": "Envoyez le projet .nkb du logiciel Nikobus pour reprendre les noms et les pièces qu'il contient pour les modules, les plaques et les sorties. Les noms donnés dans Home Assistant sont conservés.",
+        "data": {
+          "feedback_module": "Un module Feedback est installé",
+          "project_file": "Fichier projet (.nkb)"
+        },
+        "data_description": {
+          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même."
+        }
+      }
+    },
+    "error": {
+      "invalid_project_file": "Ce fichier n'a pas pu être lu comme un projet Nikobus."
+    },
+    "abort": {
+      "not_loaded": "L'intégration n'est pas chargée."
+    }
+  },
+  "entity": {
+    "switch": {
+      "output": {
+        "name": "Sortie {channel}"
+      }
+    },
+    "light": {
+      "output": {
+        "name": "Sortie {channel}"
+      }
+    },
+    "cover": {
+      "output": {
+        "name": "Sortie {channel}"
+      }
+    },
+    "event": {
+      "key": {
+        "name": "Touche {key}",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Appuyée",
+              "hold": "Maintenue",
+              "short_release": "Relâchée après un appui court",
+              "long_release": "Relâchée après un appui long"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "discover": {
+        "name": "Découvrir l'installation"
+      },
+      "press_key": {
+        "name": "Appuyer sur {key}"
+      }
+    },
+    "scene": {
+      "central_function": {
+        "name": "Fonction centrale {address}"
+      }
+    },
+    "sensor": {
+      "discovery": {
+        "name": "Découverte",
+        "state": {
+          "idle": "Au repos",
+          "inventory": "Lecture de l'inventaire",
+          "links": "Lecture des liens",
+          "finalizing": "Finalisation",
+          "error": "Arrêtée"
+        }
+      }
+    },
+    "binary_sensor": {
+      "connection": {
+        "name": "Connexion"
+      },
+      "occupancy": {
+        "name": "Présence"
+      },
+      "light_level": {
+        "name": "Luminosité"
+      }
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "Aucune passerelle Nikobus n'a répondu : {error}"
+    },
+    "not_connected": {
+      "message": "La passerelle Nikobus n'est pas connectée."
+    },
+    "command_failed": {
+      "message": "{address} n'a pas acquitté la commande : {error}"
+    },
+    "discovery_running": {
+      "message": "Une découverte est déjà en cours."
+    },
+    "no_pc_link": {
+      "message": "Aucun PC-Link n'a répondu à l'inventaire. La découverte lit l'installation depuis un PC-Link (05-200)."
+    },
+    "no_modules": {
+      "message": "Le PC-Link ne contient aucun module de sortie."
+    }
+  }
+}
