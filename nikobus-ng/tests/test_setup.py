@@ -37,8 +37,8 @@ async def test_the_inventory_becomes_devices_and_entities(hass: HomeAssistant, s
         "switch": 12,
         "light": 12,
         "cover": 6,
-        "event": 16,
-        "button": 17,  # discover, and one per key (not enabled)
+        "event": 20,
+        "button": 21,  # discover, and one per key (not enabled)
         "sensor": 1,
         "binary_sensor": 1,
     }

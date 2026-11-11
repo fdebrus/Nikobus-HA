@@ -59,6 +59,7 @@ class DiscoveryRunner:
         self._task: asyncio.Task[None] | None = None
         self._first_answer = asyncio.Event()
         self._pass_finished = asyncio.Event()
+        self._scenes: dict[str, dict[str, Any]] = {}
 
     def start(self) -> None:
         """Start a discovery in the background. Raises when one is running."""
@@ -140,14 +141,12 @@ class DiscoveryRunner:
         """Keep the scenes the scan classified, and save."""
         hub = self._hub
         self._set(FINALIZING, progress=_FINALIZING_FROM)
-        broadcasts = hub.engine.discovered_cf_broadcasts
-        if broadcasts:
-            hub.inventory.scenes = {
-                address: scene
-                for address, scene in flatten_cf_broadcasts(broadcasts).items()
-                # A shutter group cannot be given a direction by its address.
-                if not is_pure_roller_cf(scene)
-            }
+        hub.inventory.scenes = {
+            address: scene
+            for address, scene in self._scenes.items()
+            # A shutter group cannot be given a direction by its address.
+            if not is_pure_roller_cf(scene)
+        }
         await hub.inventory.async_save()
 
     def _set(self, phase: str, *, progress: int = 0, error: str | None = None) -> None:
@@ -169,6 +168,8 @@ class DiscoveryRunner:
 
     async def async_on_finished(self, **_kwargs: Any) -> None:
         """A pass of the library is over."""
+        # The library clears what it classified as soon as this returns.
+        self._scenes = flatten_cf_broadcasts(self._hub.engine.discovered_cf_broadcasts)
         self._pass_finished.set()
 
     def on_inventory_frame(self, message: str) -> None:

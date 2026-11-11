@@ -7,11 +7,12 @@ new version of the Nikobus integration in this repository: it is a
 clean-slate design, kept in its own folder under its own domain,
 `nikobus_ng`, so the two can be compared.
 
-**Status: experimental. It has never been run on Nikobus hardware.** It is
-tested against the real Home Assistant (2026.10.4) and against
-`nikobus-simulator`, the simulated PC-Link shipped with the library. The
-simulator serves no PC-Link inventory, so the first pass of a discovery is
-exercised only up to its error path. See [What is verified](#what-is-verified).
+**Status: experimental.** It is tested against the real Home Assistant
+(2026.10.4) and against `nikobus-simulator`, the simulated PC-Link shipped
+with the library, and has been set up on one real installation (a serial
+PC-Link, six output modules, 44 plates, 2026-11-11): the discovery ran to
+its end and every output was read. Commands, presses and shutters were not
+observed there. See [What is verified](#what-is-verified).
 
 The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
@@ -49,7 +50,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Keys | up to seven kinds of bus event, binary sensors, six classes | `event` entities, one bus event |
 | Relay as light | options flow | Home Assistant's *Show as* |
 | Unnamed outputs | no entity | an entity; disabled when no key drives it |
-| Tests | 923, against a stub of Home Assistant | 40, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 44, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -73,12 +74,17 @@ Everything below exists in the Nikobus integration and is absent here.
 
 | Verified against the real core and the simulator | Not verified |
 |---|---|
-| Config flow, reconfigure, options, `.nkb` names | Any behaviour on real hardware |
-| Setup, unload, removal, reconnection | The PC-Link inventory pass, end to end |
-| Reading and writing all three module types | A Feedback Module's pushed frames |
-| The link pass of a discovery, its save and reload | Timing on a serial line |
-| Presses: events, reads, the write guard | Shutter run times from real link tables |
-| Shutter position, scenes, motion sensors, diagnostics | Installations larger than three modules |
+| Config flow, reconfigure, options, `.nkb` names | Commands and presses on real hardware |
+| Setup, unload, removal, reconnection | A Feedback Module's pushed frames |
+| Reading and writing all three module types | Timing on a serial line |
+| The link pass of a discovery, its save and reload | Shutter run times from real link tables |
+| Presses: events, reads, the write guard | Motion detectors on real hardware |
+| Shutter position, scenes, motion sensors, diagnostics | |
+
+On the one real installation: setup, the PC-Link inventory pass and the
+link pass end to end, and the first read of every output group. That run
+created no scene where the installation has light scenes: the scenes were
+read after the library had cleared them, fixed in 0.1.1.
 
 ## Trying it
 

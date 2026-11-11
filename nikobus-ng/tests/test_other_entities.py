@@ -81,7 +81,7 @@ async def test_diagnostics_hold_the_installation_and_not_the_connection(hass: Ho
         ("4707", "switch_module", 12),
         ("9105", "roller_module", 6),
     ]
-    assert dump["keys"] == 16
+    assert dump["keys"] == 20
 
 
 async def test_a_first_setup_starts_a_discovery_by_itself(hass: HomeAssistant, hass_storage: dict[str, Any], entry: MockConfigEntry, monkeypatch: pytest.MonkeyPatch) -> None:

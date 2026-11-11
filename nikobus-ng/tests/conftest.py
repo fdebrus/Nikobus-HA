@@ -38,12 +38,13 @@ SWITCH, DIMMER, ROLLER = "4707", "0E6C", "9105"
 #: simulator matches a press on the frame a link names and only encodes
 #: frames of key code 0, which is 1C on a four-key plate; so every link
 #: here is on a 1C key, each on a plate of its own.
-PLATES = {"1843B4": "0B7086", "007234": "0B1380", "027234": "0B1390", "017234": "0B13A0"}
+PLATES = {"1843B4": "0B7086", "007234": "0B1380", "027234": "0B1390", "017234": "0B13A0", "037234": "0B13B0"}
 PLATE = "1843B4"
-KEY_SWITCH_1, KEY_SWITCH_8, KEY_DIMMER, KEY_ROLLER = PLATES.values()
+KEY_SWITCH_1, KEY_SWITCH_8, KEY_DIMMER, KEY_ROLLER, KEY_SCENE = PLATES.values()
 
-#: ``mode`` is the raw mode a record stores: 4 impulse on a switch
-#: module, 0 dim on/off on a dimmer, 0 open-stop-close on a roller.
+#: ``mode`` is the raw mode a record stores: 4 impulse and 11 light scene
+#: on (M14) on a switch module, 0 dim on/off on a dimmer, 0
+#: open-stop-close on a roller.
 INSTALLATION: dict[str, Any] = {
     "gateway": {"address": "86F5", "family": "pc_link"},
     "modules": [
@@ -54,6 +55,8 @@ INSTALLATION: dict[str, Any] = {
             "links": [
                 {"button": KEY_SWITCH_1, "key": 0, "channel": 1, "mode": 4},
                 {"button": KEY_SWITCH_8, "key": 0, "channel": 8, "mode": 4},
+                {"button": KEY_SCENE, "key": 0, "channel": 5, "mode": 11},
+                {"button": KEY_SCENE, "key": 0, "channel": 9, "mode": 11},
             ],
         },
         {
