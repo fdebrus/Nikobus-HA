@@ -14,6 +14,7 @@ writes it, with the library's own merge function.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
@@ -28,12 +29,16 @@ from homeassistant.core import HomeAssistant
 from nikobus_connect.discovery.fileio import merge_discovered_buttons
 from nikobus_connect.discovery.mapping import DEVICE_TYPES, KEY_MAPPING
 from nikobus_connect.discovery.protocol import convert_nikobus_address
+from nikobus_simulator.gateway import PRESS_DEBOUNCE
 from nikobus_simulator.server import NikobusSimulator
 from nikobus_simulator.topology import load_installation
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 ENTRY_ID = "nikobus_test"
 SWITCH, DIMMER, ROLLER = "4707", "0E6C", "9105"
+#: An audio distribution module with one zone. Its triggers are read out
+#: of the module by the link scan, like a real one's.
+AUDIO = "8334"
 #: Four four-key plates and the frame the key 1C of each sends. The
 #: simulator matches a press on the frame a link names and only encodes
 #: frames of key code 0, which is 1C on a four-key plate; so every link
@@ -71,6 +76,7 @@ INSTALLATION: dict[str, Any] = {
             "channels": 6,
             "links": [{"button": KEY_ROLLER, "key": 0, "channel": 1, "mode": 0}],
         },
+        {"address": AUDIO, "type": "audio_module", "zones": 1},
     ],
 }
 
@@ -81,6 +87,9 @@ def seeded_inventory() -> dict[str, Any]:
     """The stores as the inventory pass leaves them: modules and plates, no links."""
     modules: dict[str, Any] = {}
     for spec in INSTALLATION["modules"]:
+        if spec["type"] == "audio_module":
+            modules[spec["address"]] = {"module_type": "audio_module", "description": "audio_module_1", "model": "05-205"}
+            continue
         name, model, channels = _PRODUCTS[spec["type"]]
         modules[spec["address"]] = {
             "module_type": spec["type"],
@@ -115,13 +124,18 @@ class WallSimulator(NikobusSimulator):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._clients: list[asyncio.StreamWriter] = []
-        #: The key frames the host put on the bus, in order.
+        #: The keys the host pressed, in order. A press is a burst of the
+        #: same frame, as a held key is: the burst counts once.
         self.host_presses: list[str] = []
+        self._last_frame: tuple[str, float] = ("", 0.0)
         handle = self.gateway.handle
 
         def _recording(line: str) -> list[str]:
             if line.strip().startswith("#N"):
-                self.host_presses.append(line.strip()[2:8].upper())
+                frame, now = line.strip()[2:8].upper(), time.monotonic()
+                if (frame, True) != (self._last_frame[0], now - self._last_frame[1] < PRESS_DEBOUNCE):
+                    self.host_presses.append(frame)
+                self._last_frame = (frame, now)
             return handle(line)
 
         self.gateway.handle = _recording  # type: ignore[method-assign]

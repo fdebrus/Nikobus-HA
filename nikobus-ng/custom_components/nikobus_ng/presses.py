@@ -27,6 +27,7 @@ from .const import (
     PRESS_READ_DELAY,
     RELEASE_POLL,
     RELEASE_READ_DELAY,
+    RGB_MODULE,
 )
 
 if TYPE_CHECKING:
@@ -111,7 +112,7 @@ class PressHandler:
         """
         for address, group in self._hub.inventory.impacted_groups(bus_address):
             module_type = self._hub.inventory.module_type(address)
-            if module_type not in OUTPUT_MODULE_TYPES:
+            if module_type not in (*OUTPUT_MODULE_TYPES, RGB_MODULE):
                 continue
             dimmer = module_type == DIMMER_MODULE
             if dimmer and not released:

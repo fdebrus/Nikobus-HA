@@ -60,7 +60,7 @@ def output_platform(hub: NikobusHub, module: OutputModule, channel: int) -> Plat
     """What an output is in Home Assistant: its module's kind, unless the options say otherwise."""
     key = f"{module.address}:{channel}"
     if module.module_type == DIMMER_MODULE:
-        return Platform.LIGHT
+        return Platform.FAN if key in hub.fan_outputs else Platform.LIGHT
     if module.module_type == SWITCH_MODULE:
         return Platform.LIGHT if key in hub.light_outputs else Platform.SWITCH
     use_as = hub.shutters.get(key, {}).get(CONF_USE_AS)

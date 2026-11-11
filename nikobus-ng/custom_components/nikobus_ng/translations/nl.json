@@ -39,8 +39,9 @@
         "title": "Nikobus-opties",
         "menu_options": {
           "gateway": "Gateway",
-          "lights": "Relais die lampen zijn",
+          "outputs": "Lampen en ventilatoren",
           "shutter": "Een rolluikuitgang",
+          "led_key": "LED-toetsen van een uitgang",
           "names": "Namen uit het projectbestand"
         }
       },
@@ -51,15 +52,6 @@
         },
         "data_description": {
           "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit."
-        }
-      },
-      "lights": {
-        "title": "Relais die lampen zijn",
-        "data": {
-          "light_outputs": "Relais die lampen zijn"
-        },
-        "data_description": {
-          "light_outputs": "De relaisuitgangen die een lamp schakelen. Elke uitgang wordt een lichtentiteit in plaats van een schakelaar; de schakelaarentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf."
         }
       },
       "shutter": {
@@ -73,16 +65,18 @@
       },
       "shutter_settings": {
         "title": "Een rolluikuitgang",
-        "description": "De koppelingen van de module laten deze uitgang {open} lopen om te openen en {close} om te sluiten. Laat een tijd leeg om die waarde te gebruiken.",
+        "description": "De koppelingen van de module laten deze uitgang {open} lopen om te openen en {close} om te sluiten. Laat een tijd leeg om die waarde te gebruiken. Een leeg gelaten eindmarge is {margin}.",
         "data": {
           "use_as": "Ze stuurt",
           "open_time": "Tijd om volledig te openen",
-          "close_time": "Tijd om volledig te sluiten"
+          "close_time": "Tijd om volledig te sluiten",
+          "end_margin": "Eindmarge"
         },
         "data_description": {
           "use_as": "Een rolluik, of een last op het eerste relais van de uitgang, getoond als schakelaar of als lamp. Dit wijzigen verwijdert de entiteit die ze had.",
           "open_time": "Hoe lang het rolluik nodig heeft van gesloten naar open. De positie wordt hieruit geschat.",
-          "close_time": "Hoe lang het rolluik nodig heeft van open naar gesloten."
+          "close_time": "Hoe lang het rolluik nodig heeft van open naar gesloten.",
+          "end_margin": "Hoe lang de motor blijft lopen na een volledig open of gesloten schatting, zodat het rolluik zijn eindaanslag bereikt."
         }
       },
       "names": {
@@ -90,18 +84,54 @@
         "description": "Upload het .nkb-project van de Nikobus-software om de namen en ruimtes over te nemen die het bevat voor modules, bedieningen, uitgangen en lichtsferen. Namen die u in Home Assistant gaf, blijven behouden.",
         "data": {
           "project_file": "Projectbestand (.nkb)",
-          "rooms_as_areas": "De lokalen als ruimtes gebruiken"
+          "rooms_as_areas": "De lokalen als ruimtes gebruiken",
+          "use_as_inventory": "Als inventaris gebruiken"
         },
         "data_description": {
-          "rooms_as_areas": "Modules en bedieningen zonder ruimte komen in de ruimte met de naam van hun lokaal in het project; de ruimte wordt aangemaakt als ze niet bestaat. Uitgangen hebben geen lokaal in het project."
+          "rooms_as_areas": "Modules en bedieningen zonder ruimte komen in de ruimte met de naam van hun lokaal in het project; de ruimte wordt aangemaakt als ze niet bestaat. Uitgangen hebben geen lokaal in het project.",
+          "use_as_inventory": "Voor een installatie zonder PC-Link: de modules en bedieningen worden uit het projectbestand genomen, in de plaats van wat bekend is, en daarna worden de koppelingen uit de modules gelezen. Dat duurt enkele minuten; het item wordt herladen wanneer het klaar is."
+        }
+      },
+      "outputs": {
+        "title": "Lampen en ventilatoren",
+        "data": {
+          "light_outputs": "Relais die lampen zijn",
+          "fan_outputs": "Dimmeruitgangen die ventilatoren zijn"
+        },
+        "data_description": {
+          "light_outputs": "De relaisuitgangen die een lamp schakelen. Elke uitgang wordt een lichtentiteit in plaats van een schakelaar; de schakelaarentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf.",
+          "fan_outputs": "De dimmeruitgangen die een ventilator met regelbare snelheid sturen. Elke uitgang wordt een ventilatorentiteit met een snelheid in plaats van een lamp; de lichtentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf."
+        }
+      },
+      "led_key": {
+        "title": "LED-toetsen van een uitgang",
+        "data": {
+          "output": "Uitgang"
+        },
+        "data_description": {
+          "output": "De uitgang die Home Assistant moet schakelen door een toets in te drukken, zodat de LED van die toets volgt."
+        }
+      },
+      "led_key_settings": {
+        "title": "LED-toetsen van een uitgang",
+        "description": "De LED van een bediening volgt de telegrammen van haar toets, niet een uitgang die rechtstreeks wordt geschreven. Met een toets hier ingesteld schakelt Home Assistant de uitgang via die toets: het leest eerst de module en drukt niet als de uitgang al in de gewenste toestand is. De toetsen die aan deze uitgang gekoppeld zijn, worden voorgesteld; een ander adres kan worden ingetikt. Laat beide leeg om de uitgang opnieuw rechtstreeks te schrijven.",
+        "data": {
+          "on_key": "Toets die ze inschakelt",
+          "off_key": "Toets die ze uitschakelt"
+        },
+        "data_description": {
+          "on_key": "Voor een rolluik: de toets die het opent. Een wisseltoets kan voor beide worden opgegeven.",
+          "off_key": "Voor een rolluik: de toets die het sluit."
         }
       }
     },
     "error": {
-      "invalid_project_file": "Dit bestand kon niet als Nikobus-project worden gelezen."
+      "invalid_project_file": "Dit bestand kon niet als Nikobus-project worden gelezen.",
+      "invalid_key_address": "Een toetsadres bestaat uit zes hexadecimale cijfers, bijvoorbeeld 0B7086."
     },
     "abort": {
-      "not_loaded": "De integratie is niet geladen."
+      "not_loaded": "De integratie is niet geladen.",
+      "bus_taken": "Er loopt een ontdekking of een controle. Probeer opnieuw wanneer die klaar is."
     }
   },
   "entity": {
@@ -121,6 +151,9 @@
     "cover": {
       "output": {
         "name": "Uitgang {channel}"
+      },
+      "shutter_group": {
+        "name": "Rolluikgroep {address}"
       }
     },
     "event": {
@@ -193,6 +226,16 @@
       "light_level": {
         "name": "Lichtniveau"
       }
+    },
+    "media_player": {
+      "zone": {
+        "name": "Zone {zone}"
+      }
+    },
+    "fan": {
+      "output": {
+        "name": "Uitgang {channel}"
+      }
     }
   },
   "exceptions": {
@@ -209,7 +252,7 @@
       "message": "Er loopt al een ontdekking."
     },
     "no_pc_link": {
-      "message": "Geen PC-Link antwoordde op de inventaris. De ontdekking leest de installatie uit een PC-Link (05-200)."
+      "message": "Geen PC-Link beantwoordde de inventaris. Zonder PC-Link uploadt u het .nkb-project in de opties (Namen uit het projectbestand) en gebruikt u het als inventaris."
     },
     "no_modules": {
       "message": "De PC-Link bevat geen uitgangsmodule."
@@ -228,6 +271,12 @@
     },
     "unknown_module": {
       "message": "Geen uitgangsmodule heeft het adres {address}."
+    },
+    "rgb_no_key": {
+      "message": "Er is geen toets bekend die RGB-controller {address} schakelt. De toetsen die eraan gekoppeld zijn, staan alleen in het projectbestand: upload het .nkb-bestand in de opties."
+    },
+    "zone_function_missing": {
+      "message": "Deze functie is niet geprogrammeerd op deze zone."
     }
   },
   "selector": {

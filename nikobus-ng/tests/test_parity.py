@@ -123,12 +123,13 @@ async def test_a_roller_output_wired_to_a_load_is_a_switch(hass: HomeAssistant, 
 
 async def test_the_times_of_a_shutter_set_in_the_options_are_the_ones_used(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry) -> None:
     hub = await setup()
-    await _shutter_options(hass, entry, {"use_as": "cover", "open_time": 22, "close_time": 19.5})
+    settings = {"use_as": "cover", "open_time": 22, "close_time": 19.5, "end_margin": 1.5}
+    await _shutter_options(hass, entry, settings)
     await wait_for(lambda: entry.runtime_data is not hub and entry.runtime_data.connected)
     await hass.async_block_till_done()
-    assert entry.options[CONF_SHUTTERS] == {f"{ROLLER}:2": {"use_as": "cover", "open_time": 22, "close_time": 19.5}}
+    assert entry.options[CONF_SHUTTERS] == {f"{ROLLER}:2": settings}
     cover = hass.data["domain_entities"]["cover"]["cover.roller_shutter_module_9105_output_2"]
-    assert (cover._travel.time_up, cover._travel.time_down) == (22, 19.5)
+    assert (cover._travel.time_up, cover._travel.time_down, cover._end_margin) == (22, 19.5, 1.5)
 
 
 @pytest.mark.usefixtures("quick_timeouts")

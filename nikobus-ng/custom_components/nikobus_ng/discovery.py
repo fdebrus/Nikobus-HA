@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import HomeAssistantError
 from nikobus_connect.discovery import PHASE_REGISTER_SCAN, InventoryQueryType
-from nikobus_connect.discovery.store import flatten_cf_broadcasts, is_pure_roller_cf
+from nikobus_connect.discovery.store import flatten_cf_broadcasts
 
 from .const import DOMAIN, INVENTORY_CLOSE_TIMEOUT, INVENTORY_PROBE_TIMEOUT
 
@@ -84,7 +84,9 @@ class DiscoveryRunner:
         hub = self._hub
         hub.apply_write_guard()
         try:
-            await self._async_inventory()
+            if not hub.inventory.from_project:
+                # A project file's inventory stands in for the PC-Link's.
+                await self._async_inventory()
             await self._async_links()
             await self._async_finalize()
         except HomeAssistantError as err:
@@ -143,12 +145,7 @@ class DiscoveryRunner:
         """Keep the scenes the scan classified, and save."""
         hub = self._hub
         self._set(FINALIZING, progress=_FINALIZING_FROM)
-        hub.inventory.scenes = {
-            address: scene
-            for address, scene in self._scenes.items()
-            # A shutter group cannot be given a direction by its address.
-            if not is_pure_roller_cf(scene)
-        }
+        hub.inventory.scenes = dict(self._scenes)
         # The links are fresh: the next look at the checksums records them anew.
         hub.maintenance.forget_checksums()
         await hub.inventory.async_save()

@@ -25,9 +25,23 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   one button or by the first setup, with one progress sensor.
 - **Outputs.** A relay is a `switch`, or a `light` when it is ticked in the
   options as switching a lamp; a dimmer output is a `light` with brightness,
+  or a `fan` with a speed when ticked as driving one;
   a roller output a `cover` with a position estimated from its run times:
-  the ones the module's own links hold, or the ones set in the options. A
-  roller output wired to a load can be shown as a `switch` or a `light`.
+  the ones the module's own links hold, or the ones set in the options,
+  with the end margin. A roller output wired to a load can be shown as a
+  `switch` or a `light`.
+- **LED keys.** An output given a key in the options is switched by
+  pressing that key, so the plate's LED follows. The module is read first
+  and the key left alone when the output is already there.
+- **Shutter groups.** A central function that only moves shutters is a
+  `cover` that moves its members, each keeping its own position.
+- **Audio zones.** Each zone an audio distribution module holds is a
+  `media_player`: on, off, volume steps, source.
+- **Colour controllers.** A `light` that shows on or off and the colour,
+  switched by the keys the project file links to it.
+- **Without a PC-Link.** The `.nkb` project file can stand in for the
+  PC-Link's inventory: its modules and plates are taken, and the links are
+  then read from the modules.
 - **Keys.** One `event` entity per key with `pressed`, `hold`,
   `short_release` and `long_release`, one device per plate, and a bus event
   `nikobus_ng_press` for any address. A button per key presses it from Home
@@ -69,31 +83,27 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 3 339 lines |
+| Python | 15 036 lines | 4 098 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
 | Keys | up to seven kinds of bus event, binary sensors, six classes | `event` entities, one bus event |
-| Relay as light | module customisation, 17 flow steps | one tick list in the options |
+| Relay as light, dimmer as fan | module customisation, 17 flow steps | two tick lists in the options |
 | Unnamed outputs | no entity | an entity; disabled when no key drives it |
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
 | PC-Link clock | a timestamp sensor that changes every hour | the drift in seconds, and a button |
-| Settings | 17 options steps | a menu of four: gateway, lights, a roller output, names |
-| Tests | 923, against a stub of Home Assistant | 69, against the real core and a simulated bus |
+| Settings | 17 options steps | a menu of five: gateway, lights and fans, a roller output, LED keys, names |
+| Tests | 923, against a stub of Home Assistant | 78, against the real core and a simulated bus |
 
 ## What it does not do
 
-Everything below exists in the Nikobus integration and is absent here.
+What exists in the Nikobus integration and is absent here.
 
 | Feature | |
 |---|---|
-| Installations without a PC-Link (manual files) | not supported |
-| LED keys: driving an output by pressing its key so plate LEDs follow | not supported |
-| Audio distribution zones, RGB controller | not supported |
-| Fan entities for dimmer outputs | not supported |
-| Shutter groups from central functions | skipped |
-| End-stop margin per shutter | one margin for all (3 s) |
+| Installations without a PC-Link and without a project file (hand-written files) | not supported |
 | Scenes made in Home Assistant's options | use Home Assistant's own scenes |
+| Volume level and brightness of a colour controller | the bus offers neither |
 | Migration from the Nikobus integration | none: new domain, new entities |
 
 ## What is verified
@@ -108,14 +118,18 @@ Everything below exists in the Nikobus integration and is absent here.
 | Shutter position, scenes, motion sensors, diagnostics | Logical inputs on real hardware |
 | Logical inputs, actions, repairs, device removal | The PC-Link clock, read or set |
 | Module status and memory read; the backup files | A module's checksum (the simulator has none) |
-| The blueprint, in a real automation | |
+| The blueprint, in a real automation | LED keys with a real Feedback Module |
+| Fans, LED keys, shutter groups, a project file as inventory | An audio module and a colour controller, real ones |
+| Audio zones, read out of the simulated module by the link scan | The link scan through a gateway that is not a PC-Link |
+| A colour controller's state and keys (a stand-in answers its state query) | |
 
 On the one real installation: setup, the PC-Link inventory pass and the
 link pass end to end, and the first read of every output group. That run
 created no scene where the installation has light scenes: the scenes were
 read after the library had cleared them, fixed in 0.1.1. With 0.2.0 the
 same installation got its three light scenes back under the names of its
-project file.
+project file, and with 0.3.0 its six logical inputs and the clock of its
+PC-Link, an hour ahead.
 
 ## Trying it
 
@@ -147,12 +161,11 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 
 | File | Lines | |
 |---|---|---|
-| `hub.py` | 463 | the connection, output state, commands, polling, reconnection |
-| `maintenance.py` | 415 | the clock, the programming checks, the backup |
-| `config_flow.py` | 357 | setup, reconfigure, the options menu, `.nkb` upload |
-| `inventory.py` | 339 | the store, and every question asked of it |
-| `cover.py` | 229 | shutters and their position |
-| `discovery.py` | 192 | one discovery run |
+| `hub.py` | 548 | the connection, output state, commands, LED keys, polling, reconnection |
+| `config_flow.py` | 464 | setup, reconfigure, the options menu, `.nkb` upload |
+| `inventory.py` | 457 | the store, and every question asked of it |
+| `maintenance.py` | 405 | the clock, the programming checks, the backup |
+| `cover.py` | 364 | shutters, their position, shutter groups |
+| `discovery.py` | 189 | one discovery run |
 | `entity.py` | 184 | base classes, devices, which platform an output belongs to |
-| `presses.py` | 146 | keys, from first frame to release |
-| the rest | 1 014 | the platforms, repairs, actions, diagnostics |
+| the rest | 1 487 | the other platforms, presses, repairs, actions, diagnostics |

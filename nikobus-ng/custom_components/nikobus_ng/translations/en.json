@@ -39,8 +39,9 @@
         "title": "Nikobus options",
         "menu_options": {
           "gateway": "Gateway",
-          "lights": "Relays that are lights",
+          "outputs": "Lights and fans",
           "shutter": "A roller output",
+          "led_key": "LED keys of an output",
           "names": "Names from the project file"
         }
       },
@@ -51,15 +52,6 @@
         },
         "data_description": {
           "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself."
-        }
-      },
-      "lights": {
-        "title": "Relays that are lights",
-        "data": {
-          "light_outputs": "Relays that are lights"
-        },
-        "data_description": {
-          "light_outputs": "The relay outputs that switch a lamp. Each becomes a light entity instead of a switch; its switch entity is removed, with the name and area you gave it."
         }
       },
       "shutter": {
@@ -73,16 +65,18 @@
       },
       "shutter_settings": {
         "title": "A roller output",
-        "description": "The module's own links run this output {open} to open and {close} to close. Leave a time empty to use that.",
+        "description": "The module's own links run this output {open} to open and {close} to close. Leave a time empty to use that. An end margin left empty is {margin}.",
         "data": {
           "use_as": "It drives",
           "open_time": "Time to open fully",
-          "close_time": "Time to close fully"
+          "close_time": "Time to close fully",
+          "end_margin": "End margin"
         },
         "data_description": {
           "use_as": "A shutter, or a load wired to the output's first relay, shown as a switch or a light. Changing this removes the entity it had.",
           "open_time": "How long the shutter takes from closed to open. The position is estimated from it.",
-          "close_time": "How long the shutter takes from open to closed."
+          "close_time": "How long the shutter takes from open to closed.",
+          "end_margin": "How long the motor is left running past a fully open or closed estimate, so the shutter reaches its end stop."
         }
       },
       "names": {
@@ -90,18 +84,54 @@
         "description": "Upload the .nkb project of the Nikobus software to take the names it holds for modules, plates, outputs and light scenes. Names you gave in Home Assistant are kept.",
         "data": {
           "project_file": "Project file (.nkb)",
-          "rooms_as_areas": "Use its rooms as areas"
+          "rooms_as_areas": "Use its rooms as areas",
+          "use_as_inventory": "Use it as the inventory"
         },
         "data_description": {
-          "rooms_as_areas": "Modules and plates that have no area are put in the area named like their room in the project; the area is created when it does not exist. Outputs have no room in the project."
+          "rooms_as_areas": "Modules and plates that have no area are put in the area named like their room in the project; the area is created when it does not exist. Outputs have no room in the project.",
+          "use_as_inventory": "For an installation without a PC-Link: the modules and plates are taken from the project file instead, replacing what is known, and the links are then read from the modules. That takes a few minutes; the entry reloads when it ends."
+        }
+      },
+      "outputs": {
+        "title": "Lights and fans",
+        "data": {
+          "light_outputs": "Relays that are lights",
+          "fan_outputs": "Dimmer outputs that are fans"
+        },
+        "data_description": {
+          "light_outputs": "The relay outputs that switch a lamp. Each becomes a light entity instead of a switch; its switch entity is removed, with the name and area you gave it.",
+          "fan_outputs": "The dimmer outputs that drive a variable-speed fan. Each becomes a fan entity with a speed instead of a light; its light entity is removed, with the name and area you gave it."
+        }
+      },
+      "led_key": {
+        "title": "LED keys of an output",
+        "data": {
+          "output": "Output"
+        },
+        "data_description": {
+          "output": "The output that Home Assistant is to switch by pressing a key, so that the LED of that key follows."
+        }
+      },
+      "led_key_settings": {
+        "title": "LED keys of an output",
+        "description": "A plate's LED follows the telegrams of its key, not an output written directly. With a key set here, Home Assistant switches the output by that key: it reads the module first and leaves the key alone when the output is already there. Offered are the keys linked to this output; another address can be typed. Leave both empty to write the output directly again.",
+        "data": {
+          "on_key": "Key that switches it on",
+          "off_key": "Key that switches it off"
+        },
+        "data_description": {
+          "on_key": "For a shutter: the key that opens it. A key that toggles can be given for both.",
+          "off_key": "For a shutter: the key that closes it."
         }
       }
     },
     "error": {
-      "invalid_project_file": "This file could not be read as a Nikobus project."
+      "invalid_project_file": "This file could not be read as a Nikobus project.",
+      "invalid_key_address": "A key address is six hexadecimal digits, for example 0B7086."
     },
     "abort": {
-      "not_loaded": "The integration is not loaded."
+      "not_loaded": "The integration is not loaded.",
+      "bus_taken": "A discovery or a check is running. Try again when it has ended."
     }
   },
   "entity": {
@@ -121,6 +151,9 @@
     "cover": {
       "output": {
         "name": "Output {channel}"
+      },
+      "shutter_group": {
+        "name": "Shutter group {address}"
       }
     },
     "event": {
@@ -193,6 +226,16 @@
       "light_level": {
         "name": "Light level"
       }
+    },
+    "media_player": {
+      "zone": {
+        "name": "Zone {zone}"
+      }
+    },
+    "fan": {
+      "output": {
+        "name": "Output {channel}"
+      }
     }
   },
   "exceptions": {
@@ -209,7 +252,7 @@
       "message": "A discovery is already running."
     },
     "no_pc_link": {
-      "message": "No PC-Link answered the inventory. Discovery reads the installation from a PC-Link (05-200)."
+      "message": "No PC-Link answered the inventory. Without a PC-Link, upload the .nkb project in the options (Names from the project file) and use it as the inventory."
     },
     "no_modules": {
       "message": "The PC-Link holds no output module."
@@ -228,6 +271,12 @@
     },
     "unknown_module": {
       "message": "No output module has the address {address}."
+    },
+    "rgb_no_key": {
+      "message": "No key that switches RGB controller {address} is known. The keys linked to it are in the project file only: upload the .nkb in the options."
+    },
+    "zone_function_missing": {
+      "message": "This function is not programmed on this zone."
     }
   },
   "selector": {

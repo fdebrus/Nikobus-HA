@@ -14,12 +14,19 @@ CONF_CONNECTION: Final = "connection"
 CONF_FEEDBACK_MODULE: Final = "feedback_module"
 #: Relay outputs shown as lights, each ``"<module>:<channel>"``.
 CONF_LIGHT_OUTPUTS: Final = "light_outputs"
+#: Dimmer outputs shown as fans, each ``"<module>:<channel>"``.
+CONF_FAN_OUTPUTS: Final = "fan_outputs"
+#: Per output ``"<module>:<channel>"``: the keys pressed to switch it, so plate LEDs follow.
+CONF_LED_KEYS: Final = "led_keys"
+CONF_ON_KEY: Final = "on_key"
+CONF_OFF_KEY: Final = "off_key"
 #: Per roller output ``"<module>:<channel>"``: what it drives and its run times.
 CONF_SHUTTERS: Final = "shutters"
 CONF_OUTPUT: Final = "output"
 CONF_USE_AS: Final = "use_as"
 CONF_OPEN_TIME: Final = "open_time"
 CONF_CLOSE_TIME: Final = "close_time"
+CONF_END_MARGIN: Final = "end_margin"
 USE_AS_COVER: Final = "cover"
 USE_AS_SWITCH: Final = "switch"
 USE_AS_LIGHT: Final = "light"
@@ -30,7 +37,9 @@ PLATFORMS: Final = [
     Platform.BUTTON,
     Platform.COVER,
     Platform.EVENT,
+    Platform.FAN,
     Platform.LIGHT,
+    Platform.MEDIA_PLAYER,
     Platform.SCENE,
     Platform.SENSOR,
     Platform.SWITCH,
@@ -41,6 +50,8 @@ SWITCH_MODULE: Final = "switch_module"
 DIMMER_MODULE: Final = "dimmer_module"
 ROLLER_MODULE: Final = "roller_module"
 OUTPUT_MODULE_TYPES: Final = (SWITCH_MODULE, DIMMER_MODULE, ROLLER_MODULE)
+#: The colour controller: read like an output module, driven by its keys only.
+RGB_MODULE: Final = "rgb_module"
 #: Module types whose inputs the discovery files as plates of their own.
 INPUT_MODULE_TYPES: Final = ("pc_logic", "interface_module")
 

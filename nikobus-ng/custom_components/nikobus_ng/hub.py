@@ -38,18 +38,27 @@ from nikobus_connect.discovery import InventoryQueryType, NikobusDiscovery
 from .const import (
     CLOCK_READ_INTERVAL,
     CONF_CONNECTION,
+    CONF_FAN_OUTPUTS,
     CONF_FEEDBACK_MODULE,
+    CONF_LED_KEYS,
     CONF_LIGHT_OUTPUTS,
+    CONF_OFF_KEY,
+    CONF_ON_KEY,
     CONF_SHUTTERS,
+    COVER_OPENING,
+    COVER_STOPPED,
+    DIMMER_MODULE,
     DOMAIN,
     FEEDBACK_SAFETY_POLL,
     ISSUE_NOT_ANSWERING,
     POLL_INTERVAL,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
+    RELEASE_READ_DELAY,
     REPROGRAMMED_CHECK_DELAY,
     REPROGRAMMED_CHECK_INTERVAL,
     SILENT_READS,
+    SWITCH_MODULE,
 )
 from .discovery import DiscoveryRunner
 from .inventory import Inventory
@@ -76,7 +85,9 @@ class NikobusHub:
             CONF_FEEDBACK_MODULE, entry.data.get(CONF_FEEDBACK_MODULE, False)
         )
         self.light_outputs: frozenset[str] = frozenset(entry.options.get(CONF_LIGHT_OUTPUTS, ()))
+        self.fan_outputs: frozenset[str] = frozenset(entry.options.get(CONF_FAN_OUTPUTS, ()))
         self.shutters: dict[str, dict[str, Any]] = dict(entry.options.get(CONF_SHUTTERS, {}))
+        self.led_keys: dict[str, dict[str, str]] = dict(entry.options.get(CONF_LED_KEYS, {}))
         self.connected = False
         #: The gateway's device, which every other device hangs under.
         self.gateway_device_id: str = ""
@@ -159,7 +170,7 @@ class NikobusHub:
             self.connection, self.listener, module_states=self._states
         )
         self.nikobus_command = self.command
-        self.api = NikobusAPI(self.command, {})
+        self.api = NikobusAPI(self.command, self._led_key_table())
         self.allocate_states()
         self.apply_write_guard()
         try:
@@ -219,6 +230,9 @@ class NikobusHub:
             size = 12 if module.channels > 6 else 6
             if len(self._states.get(module.address, b"")) != size:
                 self._states[module.address] = bytearray(size)
+        for address, _ in self.inventory.rgb_modules():
+            if len(self._states.get(address, b"")) != 6:
+                self._states[address] = bytearray(6)
 
     def value(self, address: str, channel: int) -> int | None:
         """What an output was last known to be; ``None`` before its group was heard."""
@@ -226,6 +240,13 @@ class NikobusHub:
             return None
         buffer = self._states.get(address)
         return buffer[channel - 1] if buffer is not None and channel <= len(buffer) else None
+
+    def image(self, address: str, group: int) -> bytes | None:
+        """The six bytes a group last reported; ``None`` before it was heard."""
+        if (address, group) not in self._heard:
+            return None
+        start = 0 if group == 1 else 6
+        return bytes(self._states[address][start : start + 6])
 
     @callback
     def subscribe(self, address: str, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
@@ -270,10 +291,74 @@ class NikobusHub:
         self._apply(address, group, state)
         return True
 
+    def _led_key_table(self) -> dict[str, dict[str, Any]]:
+        """The LED keys of the options, in the shape the library looks them up in."""
+        table: dict[str, dict[str, Any]] = {}
+        for module in self.inventory.output_modules():
+            channels: list[dict[str, str]] = []
+            for channel in range(1, module.channels + 1):
+                keys = self.led_keys.get(f"{module.address}:{channel}", {})
+                channels.append(
+                    {
+                        name: key
+                        for name, key in (("led_on", keys.get(CONF_ON_KEY)), ("led_off", keys.get(CONF_OFF_KEY)))
+                        if key
+                    }
+                )
+            table.setdefault(module.module_type, {})[module.address] = {"channels": channels}
+        return table
+
+    async def _async_set_by_key(self, address: str, channel: int, value: int) -> bool:
+        """Make the change by pressing the output's LED key. ``False`` when it has none for it.
+
+        A plate's LED follows key telegrams, not a set-output: an output
+        with an LED key is therefore switched by that key. The library
+        reads the module first and leaves the key alone when the output
+        is already there, since a press that was not needed inverts the LED.
+        """
+        keys = self.led_keys.get(f"{address}:{channel}", {})
+        module_type = self.inventory.module_type(address)
+        before = self.value(address, channel) or 0
+        # A shutter's keys are its open key and its close key; a stop is
+        # the key of the direction it runs in.
+        opening = (value or before) == COVER_OPENING
+        towards_on = bool(value) if module_type in (SWITCH_MODULE, DIMMER_MODULE) else opening
+        key = keys.get(CONF_ON_KEY if towards_on else CONF_OFF_KEY)
+        if not key:
+            return False
+        api = self.api
+        self.note_press(key)
+        try:
+            if module_type == SWITCH_MODULE:
+                await (api.turn_on_switch if value else api.turn_off_switch)(address, channel)
+            elif module_type == DIMMER_MODULE and value:
+                await api.turn_on_light(address, channel, value, before)
+            elif module_type == DIMMER_MODULE:
+                await api.turn_off_light(address, channel, before)
+            elif value == COVER_STOPPED:
+                await api.stop_cover(address, channel, "opening" if opening else "closing")
+            else:
+                await (api.open_cover if opening else api.close_cover)(address, channel)
+        except (NikobusError, TimeoutError) as err:
+            self.hass.async_create_task(self.async_read_group(address, 1 if channel <= 6 else 2))
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="command_failed",
+                translation_placeholders={"address": address, "error": str(err)},
+            ) from err
+        # The key may drive more than this output: read what it reached.
+        self.note_press(key)
+        self.presses.schedule_reads(key, released=True)
+        self.presses.schedule_read(address, 1 if channel <= 6 else 2, RELEASE_READ_DELAY)
+        self.notify(address)
+        return True
+
     async def async_set_output(self, address: str, channel: int, value: int) -> None:
         """Write one output and wait for the module's acknowledgement."""
         if not self.connected:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="not_connected")
+        if self.led_keys and await self._async_set_by_key(address, channel, value):
+            return
         group = 1 if channel <= 6 else 2
         try:
             written = await self.command.set_output_state(address, channel, value)

@@ -8,7 +8,7 @@ from homeassistant.components.scene import Scene
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from nikobus_connect.discovery.store import is_button_backed_cf
+from nikobus_connect.discovery.store import is_button_backed_cf, is_pure_roller_cf
 
 from .const import DIMMER_READ_DELAY
 from .entity import NikobusEntity, gateway_device
@@ -32,7 +32,8 @@ async def async_setup_entry(
     async_add_entities(
         NikobusScene(hub, address, record, name)
         for address, record in sorted(hub.inventory.scenes.items())
-        if (name := hub.inventory.scene_name(record)) or not is_button_backed_cf(record)
+        if not is_pure_roller_cf(record)
+        and ((name := hub.inventory.scene_name(record)) or not is_button_backed_cf(record))
     )
 
 
