@@ -39,12 +39,21 @@ async def test_the_link_pass_files_every_link_and_reloads(hass: HomeAssistant, s
     assert hub.command.steady_groups == frozenset({(SWITCH, 1), (SWITCH, 2)})
 
 
-async def test_a_light_scene_the_scan_finds_becomes_a_scene(hass: HomeAssistant, scanned: SetupFixture) -> None:
+async def test_a_light_scene_the_scan_finds_is_a_scene_under_its_project_name(hass: HomeAssistant, hass_storage: dict, scanned: SetupFixture) -> None:
     """Through the real scan: the library clears what it classified once the pass is reported."""
+    hass_storage[f"{DOMAIN}.{ENTRY_ID}"]["data"]["names"] = {
+        "scenes": [{"name": "Dinner", "members": [[SWITCH, 5, "M14"], [SWITCH, 9, "M14"]]}]
+    }
     hub = await scanned()
     assert list(hub.inventory.scenes) == [KEY_SCENE]
-    entity_id = er.async_get(hass).async_get_entity_id("scene", DOMAIN, f"{KEY_SCENE}_scene")
-    assert hass.states.get(entity_id).attributes["outputs"] == 2
+    state = hass.states.get(er.async_get(hass).async_get_entity_id("scene", DOMAIN, f"{KEY_SCENE}_scene"))
+    assert (state.name, state.attributes["outputs"]) == ("Nikobus Dinner", 2)
+
+
+async def test_a_light_scene_the_project_does_not_name_stays_a_key(hass: HomeAssistant, scanned: SetupFixture) -> None:
+    hub = await scanned()
+    assert list(hub.inventory.scenes) == [KEY_SCENE]
+    assert er.async_get(hass).async_get_entity_id("scene", DOMAIN, f"{KEY_SCENE}_scene") is None
 
 
 async def test_an_output_no_key_drives_is_created_disabled_after_a_scan(hass: HomeAssistant, hass_storage: dict, entry: MockConfigEntry, setup: SetupFixture) -> None:

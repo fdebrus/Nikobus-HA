@@ -17,7 +17,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from nikobus_connect.discovery import find_operation_point, is_motion_detector
-from nikobus_connect.discovery.store import steady_groups
+from nikobus_connect.discovery.store import cf_member_set, steady_groups
 from nikobus_connect.press import impacted_groups
 
 from .const import DOMAIN, OUTPUT_MODULE_TYPES
@@ -64,7 +64,7 @@ class Inventory:
         self.modules: dict[str, Any] = {"nikobus_module": {}}
         self.buttons: dict[str, Any] = {"nikobus_button": {}}
         self.scenes: dict[str, dict[str, Any]] = {}
-        self.names: dict[str, dict[str, Any]] = {"channels": {}, "devices": {}}
+        self.names: dict[str, Any] = {"channels": {}, "devices": {}, "scenes": []}
         #: The module store by type, the shape the library's scan planner reads.
         self.grouped: dict[str, dict[str, Any]] = {}
         self._linked: set[tuple[str, int]] | None = None
@@ -82,7 +82,11 @@ class Inventory:
             self.scenes = stored["scenes"]
         names = stored.get("names")
         if isinstance(names, dict):
-            self.names = {"channels": names.get("channels") or {}, "devices": names.get("devices") or {}}
+            self.names = {
+                "channels": names.get("channels") or {},
+                "devices": names.get("devices") or {},
+                "scenes": names.get("scenes") or [],
+            }
         self.changed()
 
     def _payload(self) -> dict[str, Any]:
@@ -264,6 +268,14 @@ class Inventory:
         record = self.names["devices"].get(address.upper())
         name = record.get("name") if isinstance(record, dict) else None
         return name if isinstance(name, str) and name.strip() else None
+
+    def scene_name(self, scene: dict[str, Any]) -> str | None:
+        """The name of the project file's group with exactly this scene's outputs and modes."""
+        members = cf_member_set(scene)
+        for group in self.names["scenes"]:
+            if members and members == frozenset((m, c, code) for m, c, code in group["members"]):
+                return str(group["name"])
+        return None
 
     def device_area(self, address: str) -> str | None:
         """The room the project file puts a module or a plate in."""

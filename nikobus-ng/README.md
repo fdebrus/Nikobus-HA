@@ -23,17 +23,21 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 - **Discovers the installation in one action.** The PC-Link inventory and
   every output module's link table are read one after the other, started by
   one button or by the first setup, with one progress sensor.
-- **Outputs.** A relay is a `switch` (use *Show as* for a light), a dimmer
-  output a `light` with brightness, a roller output a `cover` with a
-  position estimated from the run times in the module's own links.
+- **Outputs.** A relay is a `switch`, or a `light` when it is ticked in the
+  options as switching a lamp; a dimmer output is a `light` with brightness,
+  a roller output a `cover` with a position estimated from the run times in
+  the module's own links.
 - **Keys.** One `event` entity per key with `pressed`, `hold`,
   `short_release` and `long_release`, one device per plate, and a bus event
   `nikobus_ng_press` for any address. A button per key presses it from Home
   Assistant; those are created disabled.
 - **Scenes.** The central functions the link scan classifies become scenes,
-  activated by their own telegram.
+  activated by their own telegram. A light scene on a wall key or an IR
+  code is a scene only under the name the project file gives it; unnamed,
+  it stays that key.
 - **Motion detectors** get an occupancy and a light-level sensor.
-- **Names** come from the `.nkb` project file, uploaded in the options.
+- **Names** of modules, plates, outputs and light scenes come from the
+  `.nkb` project file, uploaded in the options.
 - **Stays in step.** A press is followed by a read of what the key drives; a
   Feedback Module's reads are picked up; otherwise every group is read every
   two minutes. A command reads the module first only where the state may be
@@ -43,14 +47,14 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 2 158 lines |
+| Python | 15 036 lines | 2 271 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
 | Keys | up to seven kinds of bus event, binary sensors, six classes | `event` entities, one bus event |
-| Relay as light | options flow | Home Assistant's *Show as* |
+| Relay as light | module customisation, 17 flow steps | one tick list in the options |
 | Unnamed outputs | no entity | an entity; disabled when no key drives it |
-| Tests | 923, against a stub of Home Assistant | 44, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 48, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -116,11 +120,11 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 
 | File | Lines | |
 |---|---|---|
-| `hub.py` | 400 | the connection, output state, commands, polling, reconnection |
-| `inventory.py` | 272 | the store, and every question asked of it |
+| `hub.py` | 402 | the connection, output state, commands, polling, reconnection |
+| `inventory.py` | 284 | the store, and every question asked of it |
 | `cover.py` | 224 | shutters and their position |
-| `discovery.py` | 187 | one discovery run |
-| `config_flow.py` | 180 | setup, reconfigure, options, `.nkb` upload |
+| `config_flow.py` | 223 | setup, reconfigure, options, `.nkb` upload |
+| `discovery.py` | 188 | one discovery run |
 | `presses.py` | 146 | keys, from first frame to release |
-| `entity.py` | 119 | base classes and devices |
-| the other platforms | 630 | switch, light, event, button, scene, sensor, binary sensor, diagnostics |
+| `entity.py` | 140 | base classes and devices |
+| the other platforms | 664 | switch, light, event, button, scene, sensor, binary sensor, diagnostics |
