@@ -115,6 +115,16 @@ class WallSimulator(NikobusSimulator):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._clients: list[asyncio.StreamWriter] = []
+        #: The key frames the host put on the bus, in order.
+        self.host_presses: list[str] = []
+        handle = self.gateway.handle
+
+        def _recording(line: str) -> list[str]:
+            if line.strip().startswith("#N"):
+                self.host_presses.append(line.strip()[2:8].upper())
+            return handle(line)
+
+        self.gateway.handle = _recording  # type: ignore[method-assign]
 
     async def _serve_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         self._clients.append(writer)
@@ -153,6 +163,14 @@ def _quick_bus(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("nikobus_connect.connection.PRESENCE_PROBE_SETTLE", 0.0)
     monkeypatch.setattr("nikobus_connect.const.COMMAND_EXECUTION_DELAY", 0.0)
     monkeypatch.setattr("nikobus_connect.command.COMMAND_EXECUTION_DELAY", 0.0)
+
+
+@pytest.fixture
+def quick_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give up on a silent module in well under a second instead of fifteen."""
+    monkeypatch.setattr("nikobus_connect.command.COMMAND_ACK_WAIT_TIMEOUT", 0.6)
+    monkeypatch.setattr("nikobus_connect.command.COMMAND_ATTEMPT_TIMEOUT", 0.2)
+    monkeypatch.setattr("nikobus_connect.command.COMMAND_ANSWER_WAIT_TIMEOUT", 0.2)
 
 
 @pytest.fixture

@@ -11,15 +11,23 @@ from custom_components.nikobus_ng.const import (
     CONF_LIGHT_OUTPUTS,
     DOMAIN,
 )
-from homeassistant.config_entries import SOURCE_USER
+from homeassistant.config_entries import SOURCE_USER, ConfigFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from nikobus_connect.nkb import NkbData, SceneDef
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import DIMMER, PLATE, SWITCH, SetupFixture, WallSimulator, wait_for
+
+
+async def _options_step(hass: HomeAssistant, entry: MockConfigEntry, step: str) -> ConfigFlowResult:
+    """Open the options and pick an entry of their menu."""
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert result["type"] is FlowResultType.MENU
+    return await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": step})
 
 
 async def test_a_gateway_that_answers_creates_the_entry(hass: HomeAssistant, simulator: WallSimulator) -> None:
@@ -80,7 +88,7 @@ async def test_reconfigure_refuses_a_connection_that_does_not_answer(hass: HomeA
 async def test_the_feedback_module_option_reloads_the_entry(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry) -> None:
     hub = await setup()
     assert hub.feedback_module is False
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _options_step(hass, entry, "gateway")
     result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_FEEDBACK_MODULE: True})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -88,18 +96,21 @@ async def test_the_feedback_module_option_reloads_the_entry(hass: HomeAssistant,
     assert entry.runtime_data.feedback_module is True
 
 
-@pytest.mark.parametrize("option", [pytest.param(False, id="option-unchanged"), pytest.param(True, id="option-changed-too")])
-async def test_a_project_file_names_devices_and_outputs(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry, option: bool) -> None:
+@pytest.mark.parametrize(
+    ("areas", "area"),
+    [pytest.param(True, "Hall", id="rooms-as-areas"), pytest.param(False, None, id="names-only")],
+)
+async def test_a_project_file_names_devices_outputs_and_scenes(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry, areas: bool, area: str | None) -> None:
     hub = await setup()
     project = NkbData(
         addresses={SWITCH: ("Switch board", "Cellar"), PLATE: ("Front door", "Hall")},
         scenes=[SceneDef("Dinner", frozenset({(SWITCH, 5, "M14")}))],
         outputs={(SWITCH, 1): "Porch light"},
     )
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _options_step(hass, entry, "names")
     with patch("custom_components.nikobus_ng.config_flow._read_names", return_value=project):
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_FEEDBACK_MODULE: option, "project_file": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0"}
+            result["flow_id"], {"project_file": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0", "rooms_as_areas": areas}
         )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -107,19 +118,22 @@ async def test_a_project_file_names_devices_and_outputs(hass: HomeAssistant, set
     await hass.async_block_till_done()
     inventory = entry.runtime_data.inventory
     assert inventory.channel_name(SWITCH, 1) == "Porch light"
-    assert (inventory.device_name(PLATE), inventory.device_area(PLATE)) == ("Front door", "Hall")
+    assert inventory.device_name(PLATE) == "Front door"
     scene = {"outputs": [{"module_address": SWITCH, "channel": 5, "mode": "M14 (Light scene on)"}]}
     assert inventory.scene_name(scene) == "Dinner"
-    # A device already registered keeps its name; a new entity takes the output's.
-    assert dr.async_get(hass).async_get_device_by_identifier((DOMAIN, SWITCH), entry.entry_id) is not None
+    # The plate existed before the upload: its room still becomes its area.
+    plate = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, PLATE), entry.entry_id)
+    assert plate.name == "Front door"
+    areas_by_id = {a.id: a.name for a in ar.async_get(hass).async_list_areas()}
+    assert areas_by_id.get(plate.area_id) == area
 
 
 async def test_a_relay_ticked_as_a_light_becomes_a_light(hass: HomeAssistant, simulator: WallSimulator, setup: SetupFixture, entry: MockConfigEntry) -> None:
     hub = await setup()
     registry = er.async_get(hass)
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _options_step(hass, entry, "lights")
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_FEEDBACK_MODULE: False, CONF_LIGHT_OUTPUTS: [f"{SWITCH}:2"]}
+        result["flow_id"], {CONF_LIGHT_OUTPUTS: [f"{SWITCH}:2"]}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
@@ -140,10 +154,8 @@ async def test_a_relay_unticked_is_a_switch_again(hass: HomeAssistant, setup: Se
     hub = await setup()
     registry = er.async_get(hass)
     assert registry.async_get_entity_id("light", DOMAIN, f"{SWITCH}_2") is not None
-    result = await hass.config_entries.options.async_init(entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_FEEDBACK_MODULE: False, CONF_LIGHT_OUTPUTS: []}
-    )
+    result = await _options_step(hass, entry, "lights")
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_LIGHT_OUTPUTS: []})
     await hass.async_block_till_done()
     await wait_for(lambda: entry.runtime_data is not hub and entry.runtime_data.connected)
     await hass.async_block_till_done()
@@ -167,9 +179,9 @@ async def test_reconfigure_keeps_the_relays_that_are_lights(hass: HomeAssistant,
 
 async def test_a_file_that_is_not_a_project_keeps_the_form(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry) -> None:
     await setup()
-    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await _options_step(hass, entry, "names")
     with patch("custom_components.nikobus_ng.config_flow._read_names", side_effect=ValueError("not a zip")):
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_FEEDBACK_MODULE: False, "project_file": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0"}
+            result["flow_id"], {"project_file": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0", "rooms_as_areas": True}
         )
     assert (result["type"], result["errors"]) == (FlowResultType.FORM, {"base": "invalid_project_file"})

@@ -1,0 +1,33 @@
+press_key:
+  fields:
+    address:
+      required: true
+      example: "0B7086"
+      selector:
+        text:
+
+read_module:
+  fields:
+    address:
+      required: false
+      example: "4707"
+      selector:
+        text:
+
+verify_programming:
+  fields:
+    modules:
+      required: false
+      example: '["4707", "0E6C"]'
+      selector:
+        text:
+          multiple: true
+
+backup_programming:
+  fields:
+    modules:
+      required: false
+      example: '["4707", "0E6C"]'
+      selector:
+        text:
+          multiple: true

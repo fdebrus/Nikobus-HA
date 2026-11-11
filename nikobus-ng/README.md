@@ -25,8 +25,9 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   one button or by the first setup, with one progress sensor.
 - **Outputs.** A relay is a `switch`, or a `light` when it is ticked in the
   options as switching a lamp; a dimmer output is a `light` with brightness,
-  a roller output a `cover` with a position estimated from the run times in
-  the module's own links.
+  a roller output a `cover` with a position estimated from its run times:
+  the ones the module's own links hold, or the ones set in the options. A
+  roller output wired to a load can be shown as a `switch` or a `light`.
 - **Keys.** One `event` entity per key with `pressed`, `hold`,
   `short_release` and `long_release`, one device per plate, and a bus event
   `nikobus_ng_press` for any address. A button per key presses it from Home
@@ -36,8 +37,29 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   code is a scene only under the name the project file gives it; unnamed,
   it stays that key.
 - **Motion detectors** get an occupancy and a light-level sensor.
+- **Logical inputs** of a PC-Logic or a Modular Interface get a `switch`
+  that is on after the input's closing frame and off after its opening
+  frame, and sends them when it is turned on or off.
 - **Names** of modules, plates, outputs and light scenes come from the
-  `.nkb` project file, uploaded in the options.
+  `.nkb` project file, uploaded in the options; its rooms become the areas
+  of the modules and plates that have none.
+- **Maintenance**, read-only: how far the PC-Link's clock is from Home
+  Assistant's, with a button that sets it (the one thing ever written); a
+  check of every module's status and memory against its checksum; a backup
+  of every module's memory to `nikobus_ng_backup/<date>` in the
+  configuration directory.
+- **Repairs.** A module that was reprogrammed since its links were read
+  (its checksum moved) offers a new discovery; a module that stops
+  answering while the others do offers its removal; a memory error, a
+  checksum that does not match and a module of another type than the
+  inventory says are reported with what to do.
+- **Actions**: `nikobus_ng.press_key`, `read_module`,
+  `verify_programming` and `backup_programming` (the last two return their
+  result).
+- **Deleting a device** of a module or a plate forgets it; a device the
+  inventory no longer holds is removed at the next start.
+- **A blueprint**, `blueprints/automation/fdebrus/nikobus_ng_key_controls_entity.yaml`:
+  a key switches an entity of any integration.
 - **Stays in step.** A press is followed by a read of what the key drives; a
   Feedback Module's reads are picked up; otherwise every group is read every
   two minutes. A command reads the module first only where the state may be
@@ -47,14 +69,17 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 2 271 lines |
+| Python | 15 036 lines | 3 339 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
 | Keys | up to seven kinds of bus event, binary sensors, six classes | `event` entities, one bus event |
 | Relay as light | module customisation, 17 flow steps | one tick list in the options |
 | Unnamed outputs | no entity | an entity; disabled when no key drives it |
-| Tests | 923, against a stub of Home Assistant | 48, against the real core and a simulated bus |
+| Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
+| PC-Link clock | a timestamp sensor that changes every hour | the drift in seconds, and a button |
+| Settings | 17 options steps | a menu of four: gateway, lights, a roller output, names |
+| Tests | 923, against a stub of Home Assistant | 69, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -65,13 +90,10 @@ Everything below exists in the Nikobus integration and is absent here.
 | Installations without a PC-Link (manual files) | not supported |
 | LED keys: driving an output by pressing its key so plate LEDs follow | not supported |
 | Audio distribution zones, RGB controller | not supported |
-| PC-Logic and Modular Interface inputs as their own devices | plain keys only |
-| Backup and verify of module programming, PC-Link clock | not supported |
 | Fan entities for dimmer outputs | not supported |
 | Shutter groups from central functions | skipped |
-| Removing modules or plates that are gone (stale inventory) | not supported |
-| Repairs, services (`send_button_press` and others) | none |
-| Travel time and end-stop margin per shutter | from the links only |
+| End-stop margin per shutter | one margin for all (3 s) |
+| Scenes made in Home Assistant's options | use Home Assistant's own scenes |
 | Migration from the Nikobus integration | none: new domain, new entities |
 
 ## What is verified
@@ -83,12 +105,17 @@ Everything below exists in the Nikobus integration and is absent here.
 | Reading and writing all three module types | Timing on a serial line |
 | The link pass of a discovery, its save and reload | Shutter run times from real link tables |
 | Presses: events, reads, the write guard | Motion detectors on real hardware |
-| Shutter position, scenes, motion sensors, diagnostics | |
+| Shutter position, scenes, motion sensors, diagnostics | Logical inputs on real hardware |
+| Logical inputs, actions, repairs, device removal | The PC-Link clock, read or set |
+| Module status and memory read; the backup files | A module's checksum (the simulator has none) |
+| The blueprint, in a real automation | |
 
 On the one real installation: setup, the PC-Link inventory pass and the
 link pass end to end, and the first read of every output group. That run
 created no scene where the installation has light scenes: the scenes were
-read after the library had cleared them, fixed in 0.1.1.
+read after the library had cleared them, fixed in 0.1.1. With 0.2.0 the
+same installation got its three light scenes back under the names of its
+project file.
 
 ## Trying it
 
@@ -120,11 +147,12 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 
 | File | Lines | |
 |---|---|---|
-| `hub.py` | 402 | the connection, output state, commands, polling, reconnection |
-| `inventory.py` | 284 | the store, and every question asked of it |
-| `cover.py` | 224 | shutters and their position |
-| `config_flow.py` | 223 | setup, reconfigure, options, `.nkb` upload |
-| `discovery.py` | 188 | one discovery run |
+| `hub.py` | 463 | the connection, output state, commands, polling, reconnection |
+| `maintenance.py` | 415 | the clock, the programming checks, the backup |
+| `config_flow.py` | 357 | setup, reconfigure, the options menu, `.nkb` upload |
+| `inventory.py` | 339 | the store, and every question asked of it |
+| `cover.py` | 229 | shutters and their position |
+| `discovery.py` | 192 | one discovery run |
+| `entity.py` | 184 | base classes, devices, which platform an output belongs to |
 | `presses.py` | 146 | keys, from first frame to release |
-| `entity.py` | 140 | base classes and devices |
-| the other platforms | 664 | switch, light, event, button, scene, sensor, binary sensor, diagnostics |
+| the rest | 1 014 | the platforms, repairs, actions, diagnostics |

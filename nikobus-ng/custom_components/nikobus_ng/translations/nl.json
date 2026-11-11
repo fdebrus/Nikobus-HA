@@ -37,15 +37,63 @@
     "step": {
       "init": {
         "title": "Nikobus-opties",
-        "description": "Upload het .nkb-project van de Nikobus-software om de namen en ruimtes over te nemen die het bevat voor modules, bedieningen, uitgangen en lichtsferen. Namen die u in Home Assistant gaf, blijven behouden.",
+        "menu_options": {
+          "gateway": "Gateway",
+          "lights": "Relais die lampen zijn",
+          "shutter": "Een rolluikuitgang",
+          "names": "Namen uit het projectbestand"
+        }
+      },
+      "gateway": {
+        "title": "Gateway",
         "data": {
-          "feedback_module": "Er is een Feedbackmodule geïnstalleerd",
-          "light_outputs": "Relais die lampen zijn",
-          "project_file": "Projectbestand (.nkb)"
+          "feedback_module": "Er is een Feedbackmodule geïnstalleerd"
         },
         "data_description": {
-          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit.",
+          "feedback_module": "De eigen uitlezingen van de modules worden dan opgepikt, en Home Assistant leest alleen wat ze overslaat. Laat uit wanneer de seriële kabel op de Feedbackmodule zelf zit."
+        }
+      },
+      "lights": {
+        "title": "Relais die lampen zijn",
+        "data": {
+          "light_outputs": "Relais die lampen zijn"
+        },
+        "data_description": {
           "light_outputs": "De relaisuitgangen die een lamp schakelen. Elke uitgang wordt een lichtentiteit in plaats van een schakelaar; de schakelaarentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf."
+        }
+      },
+      "shutter": {
+        "title": "Een rolluikuitgang",
+        "data": {
+          "output": "Uitgang"
+        },
+        "data_description": {
+          "output": "De rolluikuitgang die u wilt instellen."
+        }
+      },
+      "shutter_settings": {
+        "title": "Een rolluikuitgang",
+        "description": "De koppelingen van de module laten deze uitgang {open} lopen om te openen en {close} om te sluiten. Laat een tijd leeg om die waarde te gebruiken.",
+        "data": {
+          "use_as": "Ze stuurt",
+          "open_time": "Tijd om volledig te openen",
+          "close_time": "Tijd om volledig te sluiten"
+        },
+        "data_description": {
+          "use_as": "Een rolluik, of een last op het eerste relais van de uitgang, getoond als schakelaar of als lamp. Dit wijzigen verwijdert de entiteit die ze had.",
+          "open_time": "Hoe lang het rolluik nodig heeft van gesloten naar open. De positie wordt hieruit geschat.",
+          "close_time": "Hoe lang het rolluik nodig heeft van open naar gesloten."
+        }
+      },
+      "names": {
+        "title": "Namen uit het projectbestand",
+        "description": "Upload het .nkb-project van de Nikobus-software om de namen en ruimtes over te nemen die het bevat voor modules, bedieningen, uitgangen en lichtsferen. Namen die u in Home Assistant gaf, blijven behouden.",
+        "data": {
+          "project_file": "Projectbestand (.nkb)",
+          "rooms_as_areas": "De lokalen als ruimtes gebruiken"
+        },
+        "data_description": {
+          "rooms_as_areas": "Modules en bedieningen zonder ruimte komen in de ruimte met de naam van hun lokaal in het project; de ruimte wordt aangemaakt als ze niet bestaat. Uitgangen hebben geen lokaal in het project."
         }
       }
     },
@@ -60,6 +108,9 @@
     "switch": {
       "output": {
         "name": "Uitgang {channel}"
+      },
+      "input": {
+        "name": "Toestand"
       }
     },
     "light": {
@@ -93,6 +144,15 @@
       },
       "press_key": {
         "name": "{key} indrukken"
+      },
+      "verify_programming": {
+        "name": "Programmering controleren"
+      },
+      "backup_programming": {
+        "name": "Back-up van de programmering"
+      },
+      "set_clock": {
+        "name": "Klok van de PC-Link instellen"
       }
     },
     "scene": {
@@ -109,6 +169,17 @@
           "links": "Koppelingen lezen",
           "finalizing": "Afronden",
           "error": "Gestopt"
+        }
+      },
+      "clock_drift": {
+        "name": "Klok van de PC-Link loopt voor met"
+      },
+      "programming": {
+        "name": "Programmering",
+        "state": {
+          "ok": "OK",
+          "problem": "Probleem",
+          "unknown": "Niet gecontroleerd"
         }
       }
     },
@@ -142,6 +213,115 @@
     },
     "no_modules": {
       "message": "De PC-Link bevat geen uitgangsmodule."
+    },
+    "maintenance_running": {
+      "message": "Er loopt een controle of een back-up van de programmering."
+    },
+    "no_pc_link_known": {
+      "message": "De inventaris bevat geen PC-Link."
+    },
+    "backup_failed": {
+      "message": "De back-up kon niet worden geschreven naar {path}: {error}"
+    },
+    "not_loaded": {
+      "message": "De integratie Nikobus NG is niet geladen."
+    },
+    "unknown_module": {
+      "message": "Geen uitgangsmodule heeft het adres {address}."
+    }
+  },
+  "selector": {
+    "use_as": {
+      "options": {
+        "cover": "Een rolluik",
+        "switch": "Een last, als schakelaar",
+        "light": "Een lamp, als licht"
+      }
+    }
+  },
+  "issues": {
+    "module_memory_error": {
+      "title": "{module} meldt een geheugenfout",
+      "description": "De module beantwoordde de statusvraag met haar geheugenfoutvlag. Haar programmering is mogelijk beschadigd, en haar toetsen werken misschien niet meer zoals geprogrammeerd.\n\n1. Open de installatie in de Nikobus-software en stuur de programmering opnieuw naar deze module.\n2. Druk op **Programmering controleren** op het Nikobus-apparaat in Home Assistant.\n\nDeze melding verdwijnt wanneer de controle de vlag gewist vindt."
+    },
+    "module_checksum_mismatch": {
+      "title": "Het geheugen van {module} komt niet overeen met de controlesom",
+      "description": "Home Assistant las het volledige geheugen van de module en berekende een andere controlesom dan degene die de module meldt. Ofwel is een byte fout gelezen op de bus, ofwel is het geheugen van de module beschadigd.\n\n1. Druk opnieuw op **Programmering controleren** op het Nikobus-apparaat; een leesfout herhaalt zich niet.\n2. Blijft de melding, stuur dan de programmering opnieuw naar deze module vanuit de Nikobus-software en controleer nog eens.\n\nDeze melding verdwijnt wanneer een controle beide sommen gelijk vindt."
+    },
+    "module_type_mismatch": {
+      "title": "{module} is niet het type dat de inventaris aangeeft",
+      "description": "De inventaris bevat deze module als {module_type}, maar ze antwoordt als {family}. Haar uitgangen worden dan als het verkeerde soort entiteit getoond.\n\n1. Druk op **Installatie ontdekken** op het Nikobus-apparaat, zodat de inventaris opnieuw uit de PC-Link wordt gelezen.\n2. Druk daarna op **Programmering controleren**.\n\nDeze melding verdwijnt wanneer de controle vindt dat beide overeenkomen. Blijft ze, meld dan het model van de module in een issue."
+    },
+    "module_reprogrammed": {
+      "title": "{module} werd opnieuw geprogrammeerd",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} werd opnieuw geprogrammeerd",
+            "description": "Het geheugen van de module is gewijzigd sinds Home Assistant haar koppelingen las: wat Home Assistant weet over haar toetsen, looptijden en sferen is mogelijk verouderd.\n\nVerzend om de installatie opnieuw te lezen. Dat duurt enkele minuten, waarin Home Assistant de uitgangen niet volgt; het item wordt herladen wanneer het klaar is."
+          }
+        },
+        "abort": {
+          "not_loaded": "De integratie is niet geladen.",
+          "bus_taken": "Er loopt al een ontdekking of een controle. Probeer opnieuw wanneer die klaar is."
+        }
+      }
+    },
+    "module_not_answering": {
+      "title": "{module} antwoordt niet",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} antwoordt niet",
+            "description": "De module antwoordde drie keer na elkaar niet terwijl andere modules dat wel deden: haar entiteiten tonen een oude toestand. Controleer eerst haar voeding en haar busbedrading; deze melding verdwijnt vanzelf wanneer ze opnieuw antwoordt.\n\nIs de module uit de installatie gehaald, verzend dan om ze met haar entiteiten uit Home Assistant te verwijderen. Een latere ontdekking brengt ze terug als de PC-Link ze nog vermeldt."
+          }
+        },
+        "abort": {
+          "not_loaded": "De integratie is niet geladen."
+        }
+      }
+    }
+  },
+  "services": {
+    "press_key": {
+      "name": "Een toets indrukken",
+      "description": "Zet het telegram van een toets op de bus, zoals een druk op die toets. Werkt ook voor een adres dat geen bediening uit de inventaris heeft, zoals een functie van de Nikobus-software.",
+      "fields": {
+        "address": {
+          "name": "Adres",
+          "description": "De zes hexadecimale cijfers die de toets verstuurt, zoals getoond op haar gebeurtenisentiteit."
+        }
+      }
+    },
+    "read_module": {
+      "name": "Een module lezen",
+      "description": "Leest nu de uitgangen van één module, of van alle modules, zonder op de volgende periodieke lezing te wachten.",
+      "fields": {
+        "address": {
+          "name": "Module",
+          "description": "De vier hexadecimale cijfers van de module. Leeg: alle modules."
+        }
+      }
+    },
+    "verify_programming": {
+      "name": "Programmering controleren",
+      "description": "Leest de status en het volledige geheugen van elke module en vergelijkt de controlesom. Alleen lezen; duurt minuten. Geeft het resultaat per module terug.",
+      "fields": {
+        "modules": {
+          "name": "Modules",
+          "description": "Adressen van de te controleren modules. Leeg: alle uitgangsmodules."
+        }
+      }
+    },
+    "backup_programming": {
+      "name": "Back-up van de programmering",
+      "description": "Controleert de modules en schrijft het geheugen van elk naar een gedateerde map onder nikobus_ng_backup in de configuratiemap. Alleen lezen; duurt minuten. Geeft de map en het resultaat per module terug.",
+      "fields": {
+        "modules": {
+          "name": "Modules",
+          "description": "Adressen van de modules voor de back-up. Leeg: alle uitgangsmodules."
+        }
+      }
     }
   }
 }

@@ -22,6 +22,7 @@ from homeassistant.components.cover import (
     CoverEntityFeature,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -30,14 +31,15 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from nikobus_connect.travel import CLOSING, OPENING, TravelCalculator
 
 from .const import (
+    CONF_CLOSE_TIME,
+    CONF_OPEN_TIME,
     COVER_CLOSING,
     COVER_DEFAULT_RUN_TIME,
     COVER_END_MARGIN,
     COVER_OPENING,
     COVER_STOPPED,
-    ROLLER_MODULE,
 )
-from .entity import ChannelEntity
+from .entity import ChannelEntity, outputs_of
 from .hub import NikobusHub
 from .inventory import OutputModule
 
@@ -55,13 +57,10 @@ async def async_setup_entry(
     entry: ConfigEntry[NikobusHub],
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
-    """One cover per roller output."""
+    """One cover per roller output that drives a shutter."""
     hub = entry.runtime_data
     async_add_entities(
-        NikobusCover(hub, module, channel)
-        for module in hub.inventory.output_modules()
-        if module.module_type == ROLLER_MODULE
-        for channel in range(1, module.channels + 1)
+        NikobusCover(hub, module, channel) for module, channel in outputs_of(hub, Platform.COVER)
     )
 
 
@@ -78,8 +77,14 @@ class NikobusCover(ChannelEntity, CoverEntity, RestoreEntity):
 
     def __init__(self, hub: NikobusHub, module: OutputModule, channel: int) -> None:
         super().__init__(hub, module, channel)
-        up = hub.inventory.run_time(module.address, channel, "up") or COVER_DEFAULT_RUN_TIME
-        down = hub.inventory.run_time(module.address, channel, "down") or up
+        # The times set in the options, else the ones the module's links hold.
+        settings = hub.shutters.get(f"{module.address}:{channel}", {})
+        up = (
+            settings.get(CONF_OPEN_TIME)
+            or hub.inventory.run_time(module.address, channel, "up")
+            or COVER_DEFAULT_RUN_TIME
+        )
+        down = settings.get(CONF_CLOSE_TIME) or hub.inventory.run_time(module.address, channel, "down") or up
         self._travel = TravelCalculator(up, down)
         self._moving: str | None = None
         self._target: float | None = None

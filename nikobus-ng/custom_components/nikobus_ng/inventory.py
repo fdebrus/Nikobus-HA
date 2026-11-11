@@ -20,7 +20,7 @@ from nikobus_connect.discovery import find_operation_point, is_motion_detector
 from nikobus_connect.discovery.store import cf_member_set, steady_groups
 from nikobus_connect.press import impacted_groups
 
-from .const import DOMAIN, OUTPUT_MODULE_TYPES
+from .const import DOMAIN, INPUT_MODULE_TYPES, OUTPUT_MODULE_TYPES
 
 STORAGE_VERSION = 1
 _SAVE_DELAY = 1.0
@@ -65,6 +65,8 @@ class Inventory:
         self.buttons: dict[str, Any] = {"nikobus_button": {}}
         self.scenes: dict[str, dict[str, Any]] = {}
         self.names: dict[str, Any] = {"channels": {}, "devices": {}, "scenes": []}
+        #: Each output module's checksum when its links were last known good.
+        self.programming: dict[str, dict[str, Any]] = {}
         #: The module store by type, the shape the library's scan planner reads.
         self.grouped: dict[str, dict[str, Any]] = {}
         self._linked: set[tuple[str, int]] | None = None
@@ -86,7 +88,10 @@ class Inventory:
                 "channels": names.get("channels") or {},
                 "devices": names.get("devices") or {},
                 "scenes": names.get("scenes") or [],
+                "areas": names.get("areas", True),
             }
+        if isinstance(stored.get("programming"), dict):
+            self.programming = stored["programming"]
         self.changed()
 
     def _payload(self) -> dict[str, Any]:
@@ -95,6 +100,7 @@ class Inventory:
             "buttons": self.buttons,
             "scenes": self.scenes,
             "names": self.names,
+            "programming": self.programming,
         }
 
     async def async_save(self) -> None:
@@ -151,6 +157,30 @@ class Inventory:
         channels = entry.get("channels") if entry else None
         return len(channels) if isinstance(channels, list) else 0
 
+    def pc_link_address(self) -> str | None:
+        """The address of the PC-Link the inventory names."""
+        for address, entry in sorted(self._module_entries().items()):
+            if entry.get("module_type") == "pc_link":
+                return address
+        return None
+
+    def addresses(self) -> set[str]:
+        """Every module and plate address the inventory holds."""
+        return {*self._module_entries(), *self._plates()}
+
+    def remove(self, address: str) -> bool:
+        """Forget a module or a plate. A discovery brings it back if the PC-Link still lists it."""
+        address = address.upper()
+        found = False
+        for store in (self.modules["nikobus_module"], self.buttons["nikobus_button"]):
+            for key in [key for key in store if str(key).upper() == address]:
+                del store[key]
+                found = True
+        self.programming.pop(address, None)
+        if found:
+            self.changed()
+        return found
+
     def output_modules(self) -> Iterator[OutputModule]:
         """The modules whose outputs become entities."""
         for address, entry in sorted(self._module_entries().items()):
@@ -202,6 +232,23 @@ class Inventory:
                 bus_address = str((point or {}).get("bus_address") or "").upper()
                 if len(bus_address) == 6:
                     yield Key(plate=plate, label=str(label), bus_address=bus_address, plate_entry=entry)
+
+    def logical_inputs(self) -> Iterator[tuple[str, dict[str, Any], str, str]]:
+        """``(plate, entry, on frame, off frame)`` of every PC-Logic or interface input.
+
+        Such an input sends one frame when it closes (1A) and another
+        when it opens (1B), and holds no level on the bus.
+        """
+        for plate, entry in sorted(self._plates().items()):
+            if entry.get("pc_logic_parent_type") not in INPUT_MODULE_TYPES:
+                continue
+            points = entry.get("operation_points")
+            frames = [
+                str((points.get(label) or {}).get("bus_address") or "").upper() if isinstance(points, dict) else ""
+                for label in ("1A", "1B")
+            ]
+            if all(len(frame) == 6 for frame in frames):
+                yield plate, entry, frames[0], frames[1]
 
     def motion_detectors(self) -> Iterator[tuple[str, dict[str, Any]]]:
         """The motion detectors with a Nikobus interface."""
@@ -277,8 +324,16 @@ class Inventory:
                 return str(group["name"])
         return None
 
+    def module_label(self, address: str) -> str:
+        """A module as a person would point at it: its name and its address."""
+        entry = self._module_entries().get(address.upper()) or {}
+        name = self.device_name(address) or self._module_label(entry, str(entry.get("module_type") or "module"))
+        return f"{name} ({address.upper()})"
+
     def device_area(self, address: str) -> str | None:
         """The room the project file puts a module or a plate in."""
+        if not self.names.get("areas", True):
+            return None
         record = self.names["devices"].get(address.upper())
         room = record.get("room") if isinstance(record, dict) else None
         return room if isinstance(room, str) and room.strip() else None
