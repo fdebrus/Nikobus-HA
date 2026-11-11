@@ -17,10 +17,16 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from nikobus_connect.discovery import find_operation_point, is_motion_detector
-from nikobus_connect.discovery.store import cf_member_set, steady_groups
+from nikobus_connect.discovery.store import (
+    cf_cover_members,
+    cf_member_set,
+    is_pure_roller_cf,
+    steady_groups,
+)
+from nikobus_connect.nkb import NkbConfig
 from nikobus_connect.press import impacted_groups
 
-from .const import DOMAIN, INPUT_MODULE_TYPES, OUTPUT_MODULE_TYPES
+from .const import DOMAIN, INPUT_MODULE_TYPES, OUTPUT_MODULE_TYPES, RGB_MODULE
 
 STORAGE_VERSION = 1
 _SAVE_DELAY = 1.0
@@ -67,6 +73,8 @@ class Inventory:
         self.names: dict[str, Any] = {"channels": {}, "devices": {}, "scenes": []}
         #: Each output module's checksum when its links were last known good.
         self.programming: dict[str, dict[str, Any]] = {}
+        #: Whether the modules and plates come from a project file, not from a PC-Link.
+        self.from_project = False
         #: The module store by type, the shape the library's scan planner reads.
         self.grouped: dict[str, dict[str, Any]] = {}
         self._linked: set[tuple[str, int]] | None = None
@@ -92,6 +100,7 @@ class Inventory:
             }
         if isinstance(stored.get("programming"), dict):
             self.programming = stored["programming"]
+        self.from_project = stored.get("from_project") is True
         self.changed()
 
     def _payload(self) -> dict[str, Any]:
@@ -101,6 +110,7 @@ class Inventory:
             "scenes": self.scenes,
             "names": self.names,
             "programming": self.programming,
+            "from_project": self.from_project,
         }
 
     async def async_save(self) -> None:
@@ -203,9 +213,105 @@ class Inventory:
         name = info.get("name") if isinstance(info, dict) else None
         return str(name).strip() if name else module_type.replace("_", " ").capitalize()
 
+    def rgb_modules(self) -> Iterator[tuple[str, dict[str, Any]]]:
+        """The colour controllers: read like an output group, driven by their keys only."""
+        for address, entry in sorted(self._module_entries().items()):
+            if entry.get("module_type") == RGB_MODULE:
+                yield address, entry
+
     def output_groups(self) -> list[tuple[str, int]]:
         """Every ``(module, group)`` whose state is read."""
-        return [(module.address, group) for module in self.output_modules() for group in module.groups]
+        groups = [(module.address, group) for module in self.output_modules() for group in module.groups]
+        return [*groups, *((address, 1) for address, _ in self.rgb_modules())]
+
+    def shutter_groups(self) -> Iterator[tuple[str, dict[str, Any], list[tuple[str, int]]]]:
+        """``(address, record, members)`` of the central functions that only move shutters."""
+        for address, record in sorted(self.scenes.items()):
+            if is_pure_roller_cf(record):
+                members = [(m["module_address"], m["channel"]) for m in cf_cover_members(record)]
+                if members:
+                    yield address, record, members
+
+    def audio_zones(self) -> dict[tuple[str, int], dict[str, str]]:
+        """``{(audio module, zone): {function: frame}}`` from the triggers discovery filed.
+
+        A trigger of the module itself sends the entry's own address; a
+        wall key sends its own frame. Zone 0 is the module's power, not a zone.
+        """
+        zones: dict[tuple[str, int], dict[str, str]] = {}
+        for plate, entry in self._plates().items():
+            points = entry.get("operation_points")
+            for label, point in (points.items() if isinstance(points, dict) else ()):
+                if not isinstance(point, dict):
+                    continue
+                frame = str(point.get("bus_address") or plate).upper()
+                for link in point.get("linked_modules") or []:
+                    module = str(link.get("module_address") or "").upper()
+                    records = [
+                        (output.get("audio_function"), output.get("audio_zone"))
+                        for output in link.get("outputs") or []
+                        if isinstance(output, dict) and output.get("audio_function")
+                    ]
+                    if not records and label == "AUD" and entry.get("audio_function"):
+                        records = [(entry.get("audio_function"), entry.get("audio_zone"))]
+                    for function, zone in records:
+                        if module and int(zone or 0):
+                            zones.setdefault((module, int(zone)), {})[str(function)] = frame
+        return zones
+
+    def use_project(self, config: NkbConfig) -> None:
+        """Take the modules and plates of a project file as the inventory.
+
+        For an installation without a PC-Link. The file names every
+        module with its outputs and every plate with the frame of each
+        key; which key drives which output is still read from the modules.
+        """
+        modules: dict[str, Any] = {}
+        for module_type, entries in config.module_config.items():
+            for entry in entries:
+                modules[str(entry["address"]).upper()] = {
+                    "module_type": module_type,
+                    "description": entry.get("description") or module_type,
+                    "model": entry.get("model") or "",
+                    "channels": [{"description": c.get("description") or ""} for c in entry["channels"]],
+                }
+        plates: dict[str, Any] = {}
+        for entry in config.button_config.get("nikobus_button", []):
+            frame = str(entry["address"]).upper()
+            name = str(entry.get("description") or "").strip()
+            face = (entry.get("linked_button") or [None])[0]
+            if not isinstance(face, dict):
+                # A single face: a sensor, a receiver, an interface.
+                plates.setdefault(
+                    frame,
+                    {
+                        "type": "Button",
+                        "model": "",
+                        "channels": 1,
+                        "description": name or f"Button {frame}",
+                        "operation_points": {"1A": {"bus_address": frame, "linked_modules": []}},
+                    },
+                )
+                continue
+            plate = plates.setdefault(
+                str(face["address"]).upper(),
+                {
+                    "type": face.get("type") or "Button",
+                    "model": face.get("model") or "",
+                    "channels": face["channels"],
+                    "description": name.rsplit(" (", 1)[0] or "Button",
+                    "operation_points": {},
+                },
+            )
+            plate["operation_points"][str(face["key"]).upper()] = {"bus_address": frame, "linked_modules": []}
+        self.modules["nikobus_module"].clear()
+        self.modules["nikobus_module"].update(modules)
+        self.buttons["nikobus_button"].clear()
+        self.buttons["nikobus_button"].update(plates)
+        self.scenes = {}
+        self.programming = {}
+        self.from_project = True
+        self.changed()
 
     def steady_groups(self) -> set[tuple[str, int]]:
         """The groups nothing but a key telegram changes (see the library)."""
@@ -271,6 +377,18 @@ class Inventory:
                         channel = output.get("channel")
                         if module and isinstance(channel, int):
                             yield module, channel, output
+
+    def keys_driving(self, address: str, channel: int) -> list[Key]:
+        """The keys with a link to this output, in plate order."""
+        return [
+            key
+            for key in self.iter_keys()
+            if any(
+                str(link.get("module_address") or "").upper() == address.upper()
+                and any(output.get("channel") == channel for output in link.get("outputs") or [])
+                for link in (key.plate_entry["operation_points"][key.label] or {}).get("linked_modules") or []
+            )
+        ]
 
     def is_linked(self, address: str, channel: int) -> bool:
         """Whether any key drives this output."""

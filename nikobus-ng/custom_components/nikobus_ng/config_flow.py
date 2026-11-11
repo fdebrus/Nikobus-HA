@@ -32,18 +32,27 @@ from homeassistant.helpers.selector import (
     TextSelector,
 )
 from nikobus_connect import NikobusConnect, NikobusConnectionError
-from nikobus_connect.nkb import NkbData, parse_nkb
+from nikobus_connect.discovery.store import apply_rgb_links
+from nikobus_connect.nkb import NkbConfig, NkbData, build_config_from_nkb, parse_nkb
 
 from .const import (
     CONF_CLOSE_TIME,
     CONF_CONNECTION,
+    CONF_END_MARGIN,
+    CONF_FAN_OUTPUTS,
     CONF_FEEDBACK_MODULE,
+    CONF_LED_KEYS,
     CONF_LIGHT_OUTPUTS,
+    CONF_OFF_KEY,
+    CONF_ON_KEY,
     CONF_OPEN_TIME,
     CONF_OUTPUT,
     CONF_SHUTTERS,
     CONF_USE_AS,
+    COVER_END_MARGIN,
+    DIMMER_MODULE,
     DOMAIN,
+    OUTPUT_MODULE_TYPES,
     ROLLER_MODULE,
     SWITCH_MODULE,
     USE_AS,
@@ -55,6 +64,7 @@ _LOGGER = logging.getLogger(__name__)
 
 CONF_PROJECT_FILE = "project_file"
 CONF_ROOMS_AS_AREAS = "rooms_as_areas"
+CONF_USE_AS_INVENTORY = "use_as_inventory"
 
 
 def _connection_schema(defaults: dict[str, Any]) -> vol.Schema:
@@ -149,13 +159,14 @@ class NikobusConfigFlow(ConfigFlow, domain=DOMAIN):
         return NikobusOptionsFlow()
 
 
-def _read_names(hass: HomeAssistant, upload_id: str) -> NkbData:
+def _read_names(hass: HomeAssistant, upload_id: str, inventory: bool) -> tuple[NkbData, NkbConfig | None]:
+    """The names of a project file, and its modules and plates when they are wanted."""
     with process_uploaded_file(hass, upload_id) as path:
-        return parse_nkb(Path(path))
+        return parse_nkb(Path(path)), build_config_from_nkb(Path(path)) if inventory else None
 
 
-def _output_options(inventory: Inventory, module_type: str) -> list[SelectOptionDict]:
-    """Every output of one kind of module, labelled the way its entity is named."""
+def _output_options(inventory: Inventory, *module_types: str) -> list[SelectOptionDict]:
+    """Every output of some kinds of module, labelled the way its entity is named."""
     return [
         SelectOptionDict(
             value=f"{module.address}:{channel}",
@@ -167,7 +178,7 @@ def _output_options(inventory: Inventory, module_type: str) -> list[SelectOption
             ),
         )
         for module in inventory.output_modules()
-        if module.module_type == module_type
+        if module.module_type in module_types
         for channel in range(1, module.channels + 1)
     ]
 
@@ -185,6 +196,7 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
     """
 
     _shutter: str
+    _led_output: str
 
     def _inventory(self) -> Inventory:
         inventory: Inventory = self.config_entry.runtime_data.inventory
@@ -199,10 +211,12 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
             return self.async_abort(reason="not_loaded")
         inventory = self._inventory()
         steps = ["gateway"]
-        if _output_options(inventory, SWITCH_MODULE):
-            steps.append("lights")
+        if _output_options(inventory, SWITCH_MODULE, DIMMER_MODULE):
+            steps.append("outputs")
         if _output_options(inventory, ROLLER_MODULE):
             steps.append("shutter")
+        if _output_options(inventory, *OUTPUT_MODULE_TYPES):
+            steps.append("led_key")
         steps.append("names")
         return self.async_show_menu(step_id="init", menu_options=steps)
 
@@ -221,21 +235,86 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
         )
         return self.async_show_form(step_id="gateway", data_schema=schema)
 
-    async def async_step_lights(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Which relays switch a lamp."""
+    async def async_step_outputs(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Which relays switch a lamp, and which dimmer outputs drive a fan."""
         if user_input is not None:
-            return self._save(**{CONF_LIGHT_OUTPUTS: sorted(user_input.get(CONF_LIGHT_OUTPUTS, []))})
-        relays = _output_options(self._inventory(), SWITCH_MODULE)
-        known = {option["value"] for option in relays}
-        current = [o for o in self.config_entry.options.get(CONF_LIGHT_OUTPUTS, []) if o in known]
+            return self._save(
+                **{
+                    CONF_LIGHT_OUTPUTS: sorted(user_input.get(CONF_LIGHT_OUTPUTS, [])),
+                    CONF_FAN_OUTPUTS: sorted(user_input.get(CONF_FAN_OUTPUTS, [])),
+                }
+            )
+        fields: dict[vol.Marker, Any] = {}
+        for option, module_type in ((CONF_LIGHT_OUTPUTS, SWITCH_MODULE), (CONF_FAN_OUTPUTS, DIMMER_MODULE)):
+            if outputs := _output_options(self._inventory(), module_type):
+                known = {output["value"] for output in outputs}
+                current = [o for o in self.config_entry.options.get(option, []) if o in known]
+                fields[vol.Optional(option, default=current)] = SelectSelector(
+                    SelectSelectorConfig(options=outputs, multiple=True, mode=SelectSelectorMode.DROPDOWN)
+                )
+        return self.async_show_form(step_id="outputs", data_schema=vol.Schema(fields))
+
+    async def async_step_led_key(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pick the output whose LED keys are to be set."""
+        if user_input is not None:
+            self._led_output = user_input[CONF_OUTPUT]
+            return await self.async_step_led_key_settings()
         schema = vol.Schema(
             {
-                vol.Optional(CONF_LIGHT_OUTPUTS, default=current): SelectSelector(
-                    SelectSelectorConfig(options=relays, multiple=True, mode=SelectSelectorMode.DROPDOWN)
+                vol.Required(CONF_OUTPUT): SelectSelector(
+                    SelectSelectorConfig(
+                        options=_output_options(self._inventory(), *OUTPUT_MODULE_TYPES),
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
                 )
             }
         )
-        return self.async_show_form(step_id="lights", data_schema=schema)
+        return self.async_show_form(step_id="led_key", data_schema=schema)
+
+    async def async_step_led_key_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """The key pressed to switch the output on, and the one to switch it off.
+
+        Offered are the keys with a link to the output; any other frame
+        can be typed. Both empty: the output is written directly again.
+        """
+        led_keys: dict[str, dict[str, str]] = dict(self.config_entry.options.get(CONF_LED_KEYS, {}))
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            keys = {
+                name: str(user_input[name]).strip().upper()
+                for name in (CONF_ON_KEY, CONF_OFF_KEY)
+                if str(user_input.get(name) or "").strip()
+            }
+            if any(len(key) != 6 or any(c not in "0123456789ABCDEF" for c in key) for key in keys.values()):
+                errors["base"] = "invalid_key_address"
+            else:
+                led_keys.pop(self._led_output, None)
+                if keys:
+                    led_keys[self._led_output] = keys
+                return self._save(**{CONF_LED_KEYS: led_keys})
+        address, _, channel = self._led_output.partition(":")
+        inventory = self._inventory()
+        candidates = [
+            SelectOptionDict(
+                value=key.bus_address,
+                label=f"{inventory.device_name(key.plate) or key.plate_entry.get('description') or key.plate}"
+                f" {key.label} ({key.bus_address})",
+            )
+            for key in inventory.keys_driving(address, int(channel))
+        ]
+        selector = SelectSelector(
+            SelectSelectorConfig(options=candidates, custom_value=True, mode=SelectSelectorMode.DROPDOWN)
+        )
+        current = led_keys.get(self._led_output, {})
+        schema = vol.Schema(
+            {
+                vol.Optional(name, description={"suggested_value": current.get(name)}): selector
+                for name in (CONF_ON_KEY, CONF_OFF_KEY)
+            }
+        )
+        return self.async_show_form(step_id="led_key_settings", data_schema=schema, errors=errors)
 
     async def async_step_shutter(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Pick the roller output to set up."""
@@ -285,6 +364,13 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
                 vol.Optional(
                     CONF_CLOSE_TIME, description={"suggested_value": current.get(CONF_CLOSE_TIME)}
                 ): _SECONDS,
+                vol.Optional(
+                    CONF_END_MARGIN, description={"suggested_value": current.get(CONF_END_MARGIN)}
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=30, step=0.5, unit_of_measurement="s", mode=NumberSelectorMode.BOX
+                    )
+                ),
             }
         )
         from_links = {
@@ -296,22 +382,32 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
             description_placeholders={
                 "open": f"{from_links['up']:g} s" if from_links["up"] else "-",
                 "close": f"{from_links['down']:g} s" if from_links["down"] else "-",
+                "margin": f"{COVER_END_MARGIN:g} s",
             },
         )
 
     async def async_step_names(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Take the names of a project file, and its rooms as areas."""
         entry = self.config_entry
+        hub = entry.runtime_data
+        # Where no inventory was read from a PC-Link, the file can stand in for it.
+        offer_inventory = self._inventory().is_empty or self._inventory().from_project
         errors: dict[str, str] = {}
         if user_input is not None:
+            as_inventory = offer_inventory and user_input.get(CONF_USE_AS_INVENTORY, False)
+            if as_inventory and (hub.busy or not hub.connected):
+                # Checked before the inventory is replaced: the link scan must be able to start.
+                return self.async_abort(reason="bus_taken")
             try:
-                project = await self.hass.async_add_executor_job(
-                    _read_names, self.hass, user_input[CONF_PROJECT_FILE]
+                project, config = await self.hass.async_add_executor_job(
+                    _read_names, self.hass, user_input[CONF_PROJECT_FILE], as_inventory
                 )
             except (ValueError, FileNotFoundError):
                 errors["base"] = "invalid_project_file"
             else:
                 inventory = self._inventory()
+                if config is not None:
+                    inventory.use_project(config)
                 inventory.names = {
                     "devices": {
                         address.upper(): {"name": name, "room": room}
@@ -327,19 +423,30 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
                     ],
                     "areas": user_input[CONF_ROOMS_AS_AREAS],
                 }
+                # Which keys drive a colour controller is in the project file only.
+                apply_rgb_links(
+                    inventory.modules["nikobus_module"],
+                    inventory.buttons["nikobus_button"],
+                    project.rgb_links,
+                )
                 await inventory.async_save()
                 if user_input[CONF_ROOMS_AS_AREAS]:
                     self._apply_rooms(inventory)
-                # Names change no option, so the entry is reloaded from here.
-                self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                if config is not None:
+                    # The links are read from the modules; the entry reloads when that ends.
+                    hub.allocate_states()
+                    hub.discovery.start()
+                else:
+                    # Names change no option, so the entry is reloaded from here.
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
                 return self._save()
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_PROJECT_FILE): FileSelector(FileSelectorConfig(accept=".nkb")),
-                vol.Required(CONF_ROOMS_AS_AREAS, default=True): BooleanSelector(),
-            }
-        )
-        return self.async_show_form(step_id="names", data_schema=schema, errors=errors)
+        fields: dict[vol.Marker, Any] = {
+            vol.Required(CONF_PROJECT_FILE): FileSelector(FileSelectorConfig(accept=".nkb")),
+            vol.Required(CONF_ROOMS_AS_AREAS, default=True): BooleanSelector(),
+        }
+        if offer_inventory:
+            fields[vol.Required(CONF_USE_AS_INVENTORY, default=self._inventory().is_empty)] = BooleanSelector()
+        return self.async_show_form(step_id="names", data_schema=vol.Schema(fields), errors=errors)
 
     def _apply_rooms(self, inventory: Inventory) -> None:
         """Put the devices that have no area in the room the project gives them."""

@@ -108,7 +108,7 @@ async def test_a_project_file_names_devices_outputs_and_scenes(hass: HomeAssista
         outputs={(SWITCH, 1): "Porch light"},
     )
     result = await _options_step(hass, entry, "names")
-    with patch("custom_components.nikobus_ng.config_flow._read_names", return_value=project):
+    with patch("custom_components.nikobus_ng.config_flow._read_names", return_value=(project, None)):
         result = await hass.config_entries.options.async_configure(
             result["flow_id"], {"project_file": "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0", "rooms_as_areas": areas}
         )
@@ -131,7 +131,7 @@ async def test_a_project_file_names_devices_outputs_and_scenes(hass: HomeAssista
 async def test_a_relay_ticked_as_a_light_becomes_a_light(hass: HomeAssistant, simulator: WallSimulator, setup: SetupFixture, entry: MockConfigEntry) -> None:
     hub = await setup()
     registry = er.async_get(hass)
-    result = await _options_step(hass, entry, "lights")
+    result = await _options_step(hass, entry, "outputs")
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {CONF_LIGHT_OUTPUTS: [f"{SWITCH}:2"]}
     )
@@ -154,7 +154,7 @@ async def test_a_relay_unticked_is_a_switch_again(hass: HomeAssistant, setup: Se
     hub = await setup()
     registry = er.async_get(hass)
     assert registry.async_get_entity_id("light", DOMAIN, f"{SWITCH}_2") is not None
-    result = await _options_step(hass, entry, "lights")
+    result = await _options_step(hass, entry, "outputs")
     result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_LIGHT_OUTPUTS: []})
     await hass.async_block_till_done()
     await wait_for(lambda: entry.runtime_data is not hub and entry.runtime_data.connected)

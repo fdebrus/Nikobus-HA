@@ -34,6 +34,8 @@ async def test_the_link_pass_files_every_link_and_reloads(hass: HomeAssistant, s
     assert inventory.impacted_groups(KEY_SWITCH_1) == [(SWITCH, 1)]
     assert inventory.impacted_groups(KEY_DIMMER) == [(DIMMER, 1)]
     assert inventory.impacted_groups(KEY_ROLLER) == [(ROLLER, 1)]
+    # What the options offer as LED keys of an output: the keys linked to it.
+    assert [key.bus_address for key in inventory.keys_driving(SWITCH, 1)] == [KEY_SWITCH_1]
     assert hub.discovery.status.phase == "idle"
     # Both groups of the switch module hold untimed links only.
     assert hub.command.steady_groups == frozenset({(SWITCH, 1), (SWITCH, 2)})

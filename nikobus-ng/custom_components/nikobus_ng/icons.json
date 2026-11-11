@@ -37,6 +37,16 @@
       "input": {
         "default": "mdi:import"
       }
+    },
+    "cover": {
+      "shutter_group": {
+        "default": "mdi:window-shutter-settings"
+      }
+    },
+    "media_player": {
+      "zone": {
+        "default": "mdi:speaker"
+      }
     }
   },
   "services": {

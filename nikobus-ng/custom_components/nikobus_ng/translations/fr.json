@@ -39,8 +39,9 @@
         "title": "Options Nikobus",
         "menu_options": {
           "gateway": "Passerelle",
-          "lights": "Relais qui sont des lumières",
+          "outputs": "Lumières et ventilateurs",
           "shutter": "Une sortie volet",
+          "led_key": "Touches LED d'une sortie",
           "names": "Noms du fichier projet"
         }
       },
@@ -51,15 +52,6 @@
         },
         "data_description": {
           "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même."
-        }
-      },
-      "lights": {
-        "title": "Relais qui sont des lumières",
-        "data": {
-          "light_outputs": "Relais qui sont des lumières"
-        },
-        "data_description": {
-          "light_outputs": "Les sorties relais qui commandent une lampe. Chacune devient une entité lumière au lieu d'un interrupteur ; son entité interrupteur est supprimée, avec le nom et la pièce que vous lui aviez donnés."
         }
       },
       "shutter": {
@@ -73,16 +65,18 @@
       },
       "shutter_settings": {
         "title": "Une sortie volet",
-        "description": "Les liens du module font tourner cette sortie {open} pour ouvrir et {close} pour fermer. Laissez un temps vide pour utiliser cette valeur.",
+        "description": "Les liens du module font tourner cette sortie {open} pour ouvrir et {close} pour fermer. Laissez un temps vide pour utiliser cette valeur. Une marge de fin de course laissée vide vaut {margin}.",
         "data": {
           "use_as": "Elle commande",
           "open_time": "Temps d'ouverture complète",
-          "close_time": "Temps de fermeture complète"
+          "close_time": "Temps de fermeture complète",
+          "end_margin": "Marge de fin de course"
         },
         "data_description": {
           "use_as": "Un volet, ou une charge câblée sur le premier relais de la sortie, affichée comme interrupteur ou comme lumière. Changer ce choix supprime l'entité qu'elle avait.",
           "open_time": "Le temps que met le volet de fermé à ouvert. La position est estimée à partir de ce temps.",
-          "close_time": "Le temps que met le volet d'ouvert à fermé."
+          "close_time": "Le temps que met le volet d'ouvert à fermé.",
+          "end_margin": "Le temps pendant lequel le moteur continue après une estimation complètement ouverte ou fermée, pour que le volet atteigne sa butée."
         }
       },
       "names": {
@@ -90,18 +84,54 @@
         "description": "Envoyez le projet .nkb du logiciel Nikobus pour reprendre les noms et les pièces qu'il contient pour les modules, les plaques, les sorties et les ambiances lumineuses. Les noms donnés dans Home Assistant sont conservés.",
         "data": {
           "project_file": "Fichier projet (.nkb)",
-          "rooms_as_areas": "Utiliser ses locaux comme pièces"
+          "rooms_as_areas": "Utiliser ses locaux comme pièces",
+          "use_as_inventory": "L'utiliser comme inventaire"
         },
         "data_description": {
-          "rooms_as_areas": "Les modules et les plaques sans pièce sont placés dans la pièce portant le nom de leur local dans le projet ; la pièce est créée si elle n'existe pas. Les sorties n'ont pas de local dans le projet."
+          "rooms_as_areas": "Les modules et les plaques sans pièce sont placés dans la pièce portant le nom de leur local dans le projet ; la pièce est créée si elle n'existe pas. Les sorties n'ont pas de local dans le projet.",
+          "use_as_inventory": "Pour une installation sans PC-Link : les modules et les plaques sont repris du fichier projet, à la place de ce qui est connu, puis les liens sont lus dans les modules. Cela prend quelques minutes ; l'entrée se recharge à la fin."
+        }
+      },
+      "outputs": {
+        "title": "Lumières et ventilateurs",
+        "data": {
+          "light_outputs": "Relais qui sont des lumières",
+          "fan_outputs": "Sorties variateur qui sont des ventilateurs"
+        },
+        "data_description": {
+          "light_outputs": "Les sorties relais qui commandent une lampe. Chacune devient une entité lumière au lieu d'un interrupteur ; son entité interrupteur est supprimée, avec le nom et la pièce que vous lui aviez donnés.",
+          "fan_outputs": "Les sorties variateur qui commandent un ventilateur à vitesse variable. Chacune devient une entité ventilateur avec une vitesse au lieu d'une lumière ; son entité lumière est supprimée, avec le nom et la pièce que vous lui aviez donnés."
+        }
+      },
+      "led_key": {
+        "title": "Touches LED d'une sortie",
+        "data": {
+          "output": "Sortie"
+        },
+        "data_description": {
+          "output": "La sortie que Home Assistant doit commuter en appuyant sur une touche, pour que la LED de cette touche suive."
+        }
+      },
+      "led_key_settings": {
+        "title": "Touches LED d'une sortie",
+        "description": "La LED d'une plaque suit les télégrammes de sa touche, pas une sortie écrite directement. Avec une touche définie ici, Home Assistant commute la sortie par cette touche : il lit d'abord le module et n'appuie pas si la sortie est déjà dans l'état voulu. Les touches liées à cette sortie sont proposées ; une autre adresse peut être saisie. Laissez les deux vides pour écrire de nouveau la sortie directement.",
+        "data": {
+          "on_key": "Touche qui l'allume",
+          "off_key": "Touche qui l'éteint"
+        },
+        "data_description": {
+          "on_key": "Pour un volet : la touche qui l'ouvre. Une touche à bascule peut être donnée pour les deux.",
+          "off_key": "Pour un volet : la touche qui le ferme."
         }
       }
     },
     "error": {
-      "invalid_project_file": "Ce fichier n'a pas pu être lu comme un projet Nikobus."
+      "invalid_project_file": "Ce fichier n'a pas pu être lu comme un projet Nikobus.",
+      "invalid_key_address": "Une adresse de touche comporte six chiffres hexadécimaux, par exemple 0B7086."
     },
     "abort": {
-      "not_loaded": "L'intégration n'est pas chargée."
+      "not_loaded": "L'intégration n'est pas chargée.",
+      "bus_taken": "Une découverte ou une vérification est en cours. Réessayez quand elle est terminée."
     }
   },
   "entity": {
@@ -121,6 +151,9 @@
     "cover": {
       "output": {
         "name": "Sortie {channel}"
+      },
+      "shutter_group": {
+        "name": "Groupe de volets {address}"
       }
     },
     "event": {
@@ -193,6 +226,16 @@
       "light_level": {
         "name": "Luminosité"
       }
+    },
+    "media_player": {
+      "zone": {
+        "name": "Zone {zone}"
+      }
+    },
+    "fan": {
+      "output": {
+        "name": "Sortie {channel}"
+      }
     }
   },
   "exceptions": {
@@ -209,7 +252,7 @@
       "message": "Une découverte est déjà en cours."
     },
     "no_pc_link": {
-      "message": "Aucun PC-Link n'a répondu à l'inventaire. La découverte lit l'installation depuis un PC-Link (05-200)."
+      "message": "Aucun PC-Link n'a répondu à l'inventaire. Sans PC-Link, envoyez le projet .nkb dans les options (Noms du fichier projet) et utilisez-le comme inventaire."
     },
     "no_modules": {
       "message": "Le PC-Link ne contient aucun module de sortie."
@@ -228,6 +271,12 @@
     },
     "unknown_module": {
       "message": "Aucun module de sortie n'a l'adresse {address}."
+    },
+    "rgb_no_key": {
+      "message": "Aucune touche qui commute le contrôleur RGB {address} n'est connue. Les touches qui lui sont liées ne figurent que dans le fichier projet : envoyez le .nkb dans les options."
+    },
+    "zone_function_missing": {
+      "message": "Cette fonction n'est pas programmée sur cette zone."
     }
   },
   "selector": {
