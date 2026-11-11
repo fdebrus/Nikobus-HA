@@ -37,15 +37,63 @@
     "step": {
       "init": {
         "title": "Nikobus options",
-        "description": "Upload the .nkb project of the Nikobus software to take the names and rooms it holds for modules, plates, outputs and light scenes. Names you gave in Home Assistant are kept.",
+        "menu_options": {
+          "gateway": "Gateway",
+          "lights": "Relays that are lights",
+          "shutter": "A roller output",
+          "names": "Names from the project file"
+        }
+      },
+      "gateway": {
+        "title": "Gateway",
         "data": {
-          "feedback_module": "A Feedback Module is installed",
-          "light_outputs": "Relays that are lights",
-          "project_file": "Project file (.nkb)"
+          "feedback_module": "A Feedback Module is installed"
         },
         "data_description": {
-          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself.",
+          "feedback_module": "Its own reads of the modules are then picked up, and Home Assistant only reads what it leaves out. Leave off when the serial cable is on the Feedback Module itself."
+        }
+      },
+      "lights": {
+        "title": "Relays that are lights",
+        "data": {
+          "light_outputs": "Relays that are lights"
+        },
+        "data_description": {
           "light_outputs": "The relay outputs that switch a lamp. Each becomes a light entity instead of a switch; its switch entity is removed, with the name and area you gave it."
+        }
+      },
+      "shutter": {
+        "title": "A roller output",
+        "data": {
+          "output": "Output"
+        },
+        "data_description": {
+          "output": "The roller output to set up."
+        }
+      },
+      "shutter_settings": {
+        "title": "A roller output",
+        "description": "The module's own links run this output {open} to open and {close} to close. Leave a time empty to use that.",
+        "data": {
+          "use_as": "It drives",
+          "open_time": "Time to open fully",
+          "close_time": "Time to close fully"
+        },
+        "data_description": {
+          "use_as": "A shutter, or a load wired to the output's first relay, shown as a switch or a light. Changing this removes the entity it had.",
+          "open_time": "How long the shutter takes from closed to open. The position is estimated from it.",
+          "close_time": "How long the shutter takes from open to closed."
+        }
+      },
+      "names": {
+        "title": "Names from the project file",
+        "description": "Upload the .nkb project of the Nikobus software to take the names it holds for modules, plates, outputs and light scenes. Names you gave in Home Assistant are kept.",
+        "data": {
+          "project_file": "Project file (.nkb)",
+          "rooms_as_areas": "Use its rooms as areas"
+        },
+        "data_description": {
+          "rooms_as_areas": "Modules and plates that have no area are put in the area named like their room in the project; the area is created when it does not exist. Outputs have no room in the project."
         }
       }
     },
@@ -60,6 +108,9 @@
     "switch": {
       "output": {
         "name": "Output {channel}"
+      },
+      "input": {
+        "name": "State"
       }
     },
     "light": {
@@ -93,6 +144,15 @@
       },
       "press_key": {
         "name": "Press {key}"
+      },
+      "verify_programming": {
+        "name": "Check programming"
+      },
+      "backup_programming": {
+        "name": "Back up programming"
+      },
+      "set_clock": {
+        "name": "Set PC-Link clock"
       }
     },
     "scene": {
@@ -109,6 +169,17 @@
           "links": "Reading the links",
           "finalizing": "Finishing",
           "error": "Stopped"
+        }
+      },
+      "clock_drift": {
+        "name": "PC-Link clock ahead by"
+      },
+      "programming": {
+        "name": "Programming",
+        "state": {
+          "ok": "OK",
+          "problem": "Problem",
+          "unknown": "Not checked"
         }
       }
     },
@@ -142,6 +213,115 @@
     },
     "no_modules": {
       "message": "The PC-Link holds no output module."
+    },
+    "maintenance_running": {
+      "message": "A check or a backup of the programming is running."
+    },
+    "no_pc_link_known": {
+      "message": "The inventory holds no PC-Link."
+    },
+    "backup_failed": {
+      "message": "The backup could not be written to {path}: {error}"
+    },
+    "not_loaded": {
+      "message": "The Nikobus NG integration is not loaded."
+    },
+    "unknown_module": {
+      "message": "No output module has the address {address}."
+    }
+  },
+  "selector": {
+    "use_as": {
+      "options": {
+        "cover": "A shutter",
+        "switch": "A load, as a switch",
+        "light": "A lamp, as a light"
+      }
+    }
+  },
+  "issues": {
+    "module_memory_error": {
+      "title": "{module} reports a memory error",
+      "description": "The module answered its status request with its memory-error flag set. Its programming may be damaged, and its keys may stop working as programmed.\n\n1. Open the installation in the Nikobus software and send the programming to this module again.\n2. Press **Check programming** on the Nikobus device in Home Assistant.\n\nThis notice goes away when the check finds the flag cleared."
+    },
+    "module_checksum_mismatch": {
+      "title": "The memory of {module} does not match its checksum",
+      "description": "Home Assistant read the whole memory of the module and computed another checksum than the one the module reports. Either a byte was read wrongly on the bus, or the module's memory is damaged.\n\n1. Press **Check programming** on the Nikobus device again; a read error does not repeat.\n2. If the notice stays, send the programming to this module again from the Nikobus software, then check once more.\n\nThis notice goes away when a check finds both checksums equal."
+    },
+    "module_type_mismatch": {
+      "title": "{module} is not the type the inventory says",
+      "description": "The inventory holds this module as a {module_type}, but it answers as a {family}. Its outputs are then shown as the wrong kind of entity.\n\n1. Press **Discover installation** on the Nikobus device, so the inventory is read from the PC-Link again.\n2. Press **Check programming** afterwards.\n\nThis notice goes away when the check finds the two agree. If it stays, please report the module's model in an issue."
+    },
+    "module_reprogrammed": {
+      "title": "{module} was reprogrammed",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} was reprogrammed",
+            "description": "The module's memory has changed since Home Assistant read its links, so what Home Assistant knows of its keys, run times and scenes may be out of date.\n\nSubmit to read the installation again. It takes a few minutes, during which Home Assistant does not follow the outputs; the entry reloads when it ends."
+          }
+        },
+        "abort": {
+          "not_loaded": "The integration is not loaded.",
+          "bus_taken": "A discovery or a check is already running. Try again when it has ended."
+        }
+      }
+    },
+    "module_not_answering": {
+      "title": "{module} does not answer",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} does not answer",
+            "description": "The module has not answered three reads in a row while other modules did, so its entities show an old state. Check its power and its bus wiring first; this notice goes away by itself when it answers again.\n\nIf the module was taken out of the installation, submit to remove it and its entities from Home Assistant. A later discovery brings it back if the PC-Link still lists it."
+          }
+        },
+        "abort": {
+          "not_loaded": "The integration is not loaded."
+        }
+      }
+    }
+  },
+  "services": {
+    "press_key": {
+      "name": "Press a key",
+      "description": "Puts the telegram of a key on the bus, as a press of that key does. Works for an address no plate of the inventory has, such as a function of the Nikobus software.",
+      "fields": {
+        "address": {
+          "name": "Address",
+          "description": "The six hexadecimal digits the key sends, as shown on its event entity."
+        }
+      }
+    },
+    "read_module": {
+      "name": "Read a module",
+      "description": "Reads the outputs of one module now, or of every module, instead of waiting for the next periodic read.",
+      "fields": {
+        "address": {
+          "name": "Module",
+          "description": "The four hexadecimal digits of the module. Empty reads every module."
+        }
+      }
+    },
+    "verify_programming": {
+      "name": "Check programming",
+      "description": "Reads each module's status and whole memory and compares its checksum. Read-only; takes minutes. Returns the result per module.",
+      "fields": {
+        "modules": {
+          "name": "Modules",
+          "description": "Module addresses to check. Empty checks every output module."
+        }
+      }
+    },
+    "backup_programming": {
+      "name": "Back up programming",
+      "description": "Checks the modules and writes the memory of each to a dated folder under nikobus_ng_backup in the configuration directory. Read-only; takes minutes. Returns the folder and the result per module.",
+      "fields": {
+        "modules": {
+          "name": "Modules",
+          "description": "Module addresses to back up. Empty backs up every output module."
+        }
+      }
     }
   }
 }

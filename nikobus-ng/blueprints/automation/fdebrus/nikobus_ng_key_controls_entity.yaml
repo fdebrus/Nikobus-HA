@@ -1,0 +1,91 @@
+blueprint:
+  name: Nikobus NG key controls any entity
+  description: >-
+    A Nikobus wall key switches a light, switch, fan or cover of any
+    integration, for example a relay of another brand that took over a load
+    from a Nikobus module.
+
+
+    The automation runs only while Home Assistant runs. A plate's LED follows
+    Nikobus outputs only, so the LED of this key does not follow an entity of
+    another integration.
+  domain: automation
+  author: fdebrus
+  source_url: https://github.com/fdebrus/Nikobus-HA/blob/main/nikobus-ng/blueprints/automation/fdebrus/nikobus_ng_key_controls_entity.yaml
+  homeassistant:
+    min_version: "2024.10.0"
+  input:
+    key:
+      name: Key
+      description: The event entity of the key, on its plate's device.
+      selector:
+        entity:
+          filter:
+            - integration: nikobus_ng
+              domain: event
+    press:
+      name: Press
+      description: When the action runs.
+      default: pressed
+      selector:
+        select:
+          options:
+            - label: As soon as the key is pressed
+              value: pressed
+            - label: Short press, on release
+              value: short_release
+            - label: Long press, on release
+              value: long_release
+    target_entities:
+      name: What the key controls
+      selector:
+        target:
+          entity:
+            - domain:
+                - light
+                - switch
+                - fan
+                - cover
+                - input_boolean
+    behaviour:
+      name: Action
+      description: >-
+        Toggle flips each target on its own. For a key pair (one key on, the
+        other off), make one automation per key with Turn on and Turn off.
+      default: toggle
+      selector:
+        select:
+          options:
+            - label: Toggle
+              value: toggle
+            - label: Turn on (open a cover)
+              value: turn_on
+            - label: Turn off (close a cover)
+              value: turn_off
+
+# Each press acts once, in order, even when pressed again before the
+# previous action finished.
+mode: queued
+max: 10
+max_exceeded: silent
+
+triggers:
+  - trigger: state
+    entity_id: !input key
+    not_from: unavailable
+    not_to:
+      - unavailable
+      - unknown
+
+conditions:
+  - condition: state
+    entity_id: !input key
+    attribute: event_type
+    state: !input press
+
+variables:
+  behaviour: !input behaviour
+
+actions:
+  - action: "homeassistant.{{ behaviour }}"
+    target: !input target_entities

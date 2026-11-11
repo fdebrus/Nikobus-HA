@@ -22,7 +22,8 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
-from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from nikobus_connect import (
     NikobusAPI,
     NikobusCommandHandler,
@@ -35,17 +36,24 @@ from nikobus_connect.const import DEVICE_ADDRESS_INVENTORY, DEVICE_INVENTORY_ANS
 from nikobus_connect.discovery import InventoryQueryType, NikobusDiscovery
 
 from .const import (
+    CLOCK_READ_INTERVAL,
     CONF_CONNECTION,
     CONF_FEEDBACK_MODULE,
     CONF_LIGHT_OUTPUTS,
+    CONF_SHUTTERS,
     DOMAIN,
     FEEDBACK_SAFETY_POLL,
+    ISSUE_NOT_ANSWERING,
     POLL_INTERVAL,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
+    REPROGRAMMED_CHECK_DELAY,
+    REPROGRAMMED_CHECK_INTERVAL,
+    SILENT_READS,
 )
 from .discovery import DiscoveryRunner
 from .inventory import Inventory
+from .maintenance import Maintenance
 from .presses import PressHandler
 
 if TYPE_CHECKING:
@@ -63,10 +71,12 @@ class NikobusHub:
         self.inventory = Inventory(hass, entry.entry_id)
         self.presses = PressHandler(self)
         self.discovery = DiscoveryRunner(self)
+        self.maintenance = Maintenance(self)
         self.feedback_module: bool = entry.options.get(
             CONF_FEEDBACK_MODULE, entry.data.get(CONF_FEEDBACK_MODULE, False)
         )
         self.light_outputs: frozenset[str] = frozenset(entry.options.get(CONF_LIGHT_OUTPUTS, ()))
+        self.shutters: dict[str, dict[str, Any]] = dict(entry.options.get(CONF_SHUTTERS, {}))
         self.connected = False
         #: The gateway's device, which every other device hangs under.
         self.gateway_device_id: str = ""
@@ -79,6 +89,7 @@ class NikobusHub:
 
         self._states: dict[str, bytearray] = {}
         self._heard: dict[tuple[str, int], float] = {}
+        self._silent: dict[str, int] = defaultdict(int)
         self._module_listeners: dict[str, list[CALLBACK_TYPE]] = defaultdict(list)
         self._status_listeners: list[CALLBACK_TYPE] = []
         self._reconnect_task: asyncio.Task[None] | None = None
@@ -168,8 +179,22 @@ class NikobusHub:
             async_track_time_interval(self.hass, self._async_poll, interval)
         )
         self.entry.async_create_background_task(
-            self.hass, self._async_poll(), name=f"{DOMAIN}_first_read"
+            self.hass, self._async_first_reads(), name=f"{DOMAIN}_first_read"
         )
+        maintenance = self.maintenance
+        for unsubscribe in (
+            async_track_time_interval(self.hass, maintenance.async_scheduled_clock, CLOCK_READ_INTERVAL),
+            async_call_later(self.hass, REPROGRAMMED_CHECK_DELAY, maintenance.async_scheduled_check),
+            async_track_time_interval(
+                self.hass, maintenance.async_scheduled_check, REPROGRAMMED_CHECK_INTERVAL
+            ),
+        ):
+            self.entry.async_on_unload(unsubscribe)
+
+    async def _async_first_reads(self) -> None:
+        """Every output group once, then the PC-Link's clock."""
+        await self._async_poll()
+        await self.maintenance.async_scheduled_clock()
 
     async def async_stop(self) -> None:
         """Stop listening and close the connection."""
@@ -237,7 +262,7 @@ class NikobusHub:
         """Read one output group from its module. ``False`` when it did not answer."""
         try:
             state = await self.command.get_output_state(address, group)
-        except NikobusError as err:
+        except (NikobusError, TimeoutError) as err:
             _LOGGER.debug("Module %s group %d did not answer: %s", address, group, err)
             return False
         if not state:
@@ -255,7 +280,7 @@ class NikobusHub:
             # The buffer holds the new value from here on.
             self.notify(address)
             await written
-        except NikobusError as err:
+        except (NikobusError, TimeoutError) as err:
             # The buffer may now hold a value the module never took.
             self.hass.async_create_task(self.async_read_group(address, group))
             raise HomeAssistantError(
@@ -298,7 +323,7 @@ class NikobusHub:
 
         try:
             await self.api.press_button(bus_address, completion_handler=_on_the_wire)
-        except NikobusError as err:
+        except (NikobusError, TimeoutError) as err:
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="command_failed",
@@ -329,8 +354,8 @@ class NikobusHub:
 
     @property
     def busy(self) -> bool:
-        """Whether a discovery has the bus."""
-        return self.discovery.running or self.discovery_running
+        """Whether a discovery or a maintenance run has the bus."""
+        return self.discovery.running or self.discovery_running or self.maintenance.running
 
     def apply_write_guard(self) -> None:
         """Tell the library which groups need no read before a write.
@@ -353,14 +378,50 @@ class NikobusHub:
             for key in self.inventory.output_groups()
             if not self.feedback_module or self._heard.get(key, float("-inf")) < horizon
         ]
-        answered = 0
+        answered: set[str] = set()
         for address, group in due:
             if not self.connected or self.busy:
                 return
-            answered += await self.async_read_group(address, group)
+            if await self.async_read_group(address, group):
+                answered.add(address)
         if due and not answered and any(key in self._heard for key in due):
             _LOGGER.warning("No module answered a state read: reconnecting")
             await self._async_connection_lost()
+        elif answered:
+            self._note_silent({address for address, _ in due}, answered)
+
+    def _note_silent(self, asked: set[str], answered: set[str]) -> None:
+        """Report a module that stays silent while the others answer."""
+        for address in asked:
+            issue_id = f"{ISSUE_NOT_ANSWERING}_{address.lower()}"
+            if address in answered:
+                if self._silent.pop(address, 0) >= SILENT_READS:
+                    ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                continue
+            self._silent[address] += 1
+            if self._silent[address] == SILENT_READS:
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    issue_id,
+                    is_fixable=True,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key=ISSUE_NOT_ANSWERING,
+                    translation_placeholders={"module": self.inventory.module_label(address)},
+                    data={"entry_id": self.entry.entry_id, "address": address},
+                )
+
+    async def async_forget(self, address: str) -> None:
+        """Take a module or a plate out of the inventory; a discovery may bring it back."""
+        address = address.upper()
+        if self.inventory.remove(address):
+            await self.inventory.async_save()
+        self._states.pop(address, None)
+        for key in [key for key in self._heard if key[0] == address]:
+            del self._heard[key]
+        self._silent.pop(address, None)
+        ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_NOT_ANSWERING}_{address.lower()}")
+        self.apply_write_guard()
 
     async def _async_connection_lost(self) -> None:
         """The line dropped, or went silent: reconnect in the background."""

@@ -37,15 +37,63 @@
     "step": {
       "init": {
         "title": "Options Nikobus",
-        "description": "Envoyez le projet .nkb du logiciel Nikobus pour reprendre les noms et les pièces qu'il contient pour les modules, les plaques, les sorties et les ambiances lumineuses. Les noms donnés dans Home Assistant sont conservés.",
+        "menu_options": {
+          "gateway": "Passerelle",
+          "lights": "Relais qui sont des lumières",
+          "shutter": "Une sortie volet",
+          "names": "Noms du fichier projet"
+        }
+      },
+      "gateway": {
+        "title": "Passerelle",
         "data": {
-          "feedback_module": "Un module Feedback est installé",
-          "light_outputs": "Relais qui sont des lumières",
-          "project_file": "Fichier projet (.nkb)"
+          "feedback_module": "Un module Feedback est installé"
         },
         "data_description": {
-          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même.",
+          "feedback_module": "Ses propres lectures des modules sont alors captées, et Home Assistant ne lit que ce qu'il laisse de côté. Laissez désactivé si le câble série est sur le module Feedback lui-même."
+        }
+      },
+      "lights": {
+        "title": "Relais qui sont des lumières",
+        "data": {
+          "light_outputs": "Relais qui sont des lumières"
+        },
+        "data_description": {
           "light_outputs": "Les sorties relais qui commandent une lampe. Chacune devient une entité lumière au lieu d'un interrupteur ; son entité interrupteur est supprimée, avec le nom et la pièce que vous lui aviez donnés."
+        }
+      },
+      "shutter": {
+        "title": "Une sortie volet",
+        "data": {
+          "output": "Sortie"
+        },
+        "data_description": {
+          "output": "La sortie volet à régler."
+        }
+      },
+      "shutter_settings": {
+        "title": "Une sortie volet",
+        "description": "Les liens du module font tourner cette sortie {open} pour ouvrir et {close} pour fermer. Laissez un temps vide pour utiliser cette valeur.",
+        "data": {
+          "use_as": "Elle commande",
+          "open_time": "Temps d'ouverture complète",
+          "close_time": "Temps de fermeture complète"
+        },
+        "data_description": {
+          "use_as": "Un volet, ou une charge câblée sur le premier relais de la sortie, affichée comme interrupteur ou comme lumière. Changer ce choix supprime l'entité qu'elle avait.",
+          "open_time": "Le temps que met le volet de fermé à ouvert. La position est estimée à partir de ce temps.",
+          "close_time": "Le temps que met le volet d'ouvert à fermé."
+        }
+      },
+      "names": {
+        "title": "Noms du fichier projet",
+        "description": "Envoyez le projet .nkb du logiciel Nikobus pour reprendre les noms et les pièces qu'il contient pour les modules, les plaques, les sorties et les ambiances lumineuses. Les noms donnés dans Home Assistant sont conservés.",
+        "data": {
+          "project_file": "Fichier projet (.nkb)",
+          "rooms_as_areas": "Utiliser ses locaux comme pièces"
+        },
+        "data_description": {
+          "rooms_as_areas": "Les modules et les plaques sans pièce sont placés dans la pièce portant le nom de leur local dans le projet ; la pièce est créée si elle n'existe pas. Les sorties n'ont pas de local dans le projet."
         }
       }
     },
@@ -60,6 +108,9 @@
     "switch": {
       "output": {
         "name": "Sortie {channel}"
+      },
+      "input": {
+        "name": "État"
       }
     },
     "light": {
@@ -93,6 +144,15 @@
       },
       "press_key": {
         "name": "Appuyer sur {key}"
+      },
+      "verify_programming": {
+        "name": "Vérifier la programmation"
+      },
+      "backup_programming": {
+        "name": "Sauvegarder la programmation"
+      },
+      "set_clock": {
+        "name": "Régler l'horloge du PC-Link"
       }
     },
     "scene": {
@@ -109,6 +169,17 @@
           "links": "Lecture des liens",
           "finalizing": "Finalisation",
           "error": "Arrêtée"
+        }
+      },
+      "clock_drift": {
+        "name": "Avance de l'horloge du PC-Link"
+      },
+      "programming": {
+        "name": "Programmation",
+        "state": {
+          "ok": "OK",
+          "problem": "Problème",
+          "unknown": "Non vérifiée"
         }
       }
     },
@@ -142,6 +213,115 @@
     },
     "no_modules": {
       "message": "Le PC-Link ne contient aucun module de sortie."
+    },
+    "maintenance_running": {
+      "message": "Une vérification ou une sauvegarde de la programmation est en cours."
+    },
+    "no_pc_link_known": {
+      "message": "L'inventaire ne contient pas de PC-Link."
+    },
+    "backup_failed": {
+      "message": "La sauvegarde n'a pas pu être écrite dans {path} : {error}"
+    },
+    "not_loaded": {
+      "message": "L'intégration Nikobus NG n'est pas chargée."
+    },
+    "unknown_module": {
+      "message": "Aucun module de sortie n'a l'adresse {address}."
+    }
+  },
+  "selector": {
+    "use_as": {
+      "options": {
+        "cover": "Un volet",
+        "switch": "Une charge, comme interrupteur",
+        "light": "Une lampe, comme lumière"
+      }
+    }
+  },
+  "issues": {
+    "module_memory_error": {
+      "title": "{module} signale une erreur de mémoire",
+      "description": "Le module a répondu à la demande d'état avec son indicateur d'erreur de mémoire. Sa programmation est peut-être endommagée, et ses touches peuvent ne plus fonctionner comme programmé.\n\n1. Ouvrez l'installation dans le logiciel Nikobus et envoyez de nouveau la programmation à ce module.\n2. Appuyez sur **Vérifier la programmation** sur l'appareil Nikobus dans Home Assistant.\n\nCet avis disparaît quand la vérification trouve l'indicateur effacé."
+    },
+    "module_checksum_mismatch": {
+      "title": "La mémoire de {module} ne correspond pas à sa somme de contrôle",
+      "description": "Home Assistant a lu toute la mémoire du module et a calculé une autre somme de contrôle que celle que le module annonce. Soit un octet a été mal lu sur le bus, soit la mémoire du module est endommagée.\n\n1. Appuyez de nouveau sur **Vérifier la programmation** sur l'appareil Nikobus ; une erreur de lecture ne se répète pas.\n2. Si l'avis reste, envoyez de nouveau la programmation à ce module depuis le logiciel Nikobus, puis vérifiez encore.\n\nCet avis disparaît quand une vérification trouve les deux sommes égales."
+    },
+    "module_type_mismatch": {
+      "title": "{module} n'est pas du type indiqué par l'inventaire",
+      "description": "L'inventaire contient ce module comme {module_type}, mais il répond comme {family}. Ses sorties sont alors affichées avec le mauvais type d'entité.\n\n1. Appuyez sur **Découvrir l'installation** sur l'appareil Nikobus, pour relire l'inventaire du PC-Link.\n2. Appuyez ensuite sur **Vérifier la programmation**.\n\nCet avis disparaît quand la vérification trouve les deux d'accord. S'il reste, signalez le modèle du module dans un ticket."
+    },
+    "module_reprogrammed": {
+      "title": "{module} a été reprogrammé",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} a été reprogrammé",
+            "description": "La mémoire du module a changé depuis que Home Assistant a lu ses liens : ce que Home Assistant sait de ses touches, de ses temps de marche et de ses ambiances n'est peut-être plus à jour.\n\nValidez pour relire l'installation. Cela prend quelques minutes, pendant lesquelles Home Assistant ne suit pas les sorties ; l'entrée se recharge à la fin."
+          }
+        },
+        "abort": {
+          "not_loaded": "L'intégration n'est pas chargée.",
+          "bus_taken": "Une découverte ou une vérification est déjà en cours. Réessayez quand elle est terminée."
+        }
+      }
+    },
+    "module_not_answering": {
+      "title": "{module} ne répond pas",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{module} ne répond pas",
+            "description": "Le module n'a pas répondu à trois lectures de suite alors que d'autres modules répondaient : ses entités affichent un ancien état. Vérifiez d'abord son alimentation et son câblage au bus ; cet avis disparaît de lui-même quand il répond de nouveau.\n\nSi le module a été retiré de l'installation, validez pour le supprimer de Home Assistant avec ses entités. Une découverte ultérieure le ramène si le PC-Link le liste encore."
+          }
+        },
+        "abort": {
+          "not_loaded": "L'intégration n'est pas chargée."
+        }
+      }
+    }
+  },
+  "services": {
+    "press_key": {
+      "name": "Appuyer sur une touche",
+      "description": "Met sur le bus le télégramme d'une touche, comme un appui sur cette touche. Fonctionne pour une adresse qu'aucune plaque de l'inventaire ne possède, par exemple une fonction du logiciel Nikobus.",
+      "fields": {
+        "address": {
+          "name": "Adresse",
+          "description": "Les six chiffres hexadécimaux que la touche envoie, affichés sur son entité événement."
+        }
+      }
+    },
+    "read_module": {
+      "name": "Lire un module",
+      "description": "Lit maintenant les sorties d'un module, ou de tous les modules, sans attendre la prochaine lecture périodique.",
+      "fields": {
+        "address": {
+          "name": "Module",
+          "description": "Les quatre chiffres hexadécimaux du module. Vide : tous les modules."
+        }
+      }
+    },
+    "verify_programming": {
+      "name": "Vérifier la programmation",
+      "description": "Lit l'état et toute la mémoire de chaque module et compare sa somme de contrôle. Lecture seule ; prend plusieurs minutes. Renvoie le résultat par module.",
+      "fields": {
+        "modules": {
+          "name": "Modules",
+          "description": "Adresses des modules à vérifier. Vide : tous les modules de sortie."
+        }
+      }
+    },
+    "backup_programming": {
+      "name": "Sauvegarder la programmation",
+      "description": "Vérifie les modules et écrit la mémoire de chacun dans un dossier daté sous nikobus_ng_backup dans le répertoire de configuration. Lecture seule ; prend plusieurs minutes. Renvoie le dossier et le résultat par module.",
+      "fields": {
+        "modules": {
+          "name": "Modules",
+          "description": "Adresses des modules à sauvegarder. Vide : tous les modules de sortie."
+        }
+      }
     }
   }
 }

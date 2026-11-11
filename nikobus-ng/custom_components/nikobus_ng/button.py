@@ -1,4 +1,4 @@
-"""The discovery button, and a button per key that presses it."""
+"""The gateway's buttons, and a button per key that presses it."""
 
 from __future__ import annotations
 
@@ -23,7 +23,15 @@ async def async_setup_entry(
 ) -> None:
     """The gateway's button, and the keys' press buttons (not enabled)."""
     hub = entry.runtime_data
-    async_add_entities([NikobusDiscoverButton(hub)])
+    async_add_entities(
+        [
+            NikobusDiscoverButton(hub),
+            NikobusMaintenanceButton(hub, "verify_programming"),
+            NikobusMaintenanceButton(hub, "backup_programming"),
+        ]
+    )
+    if hub.maintenance.pc_link_address is not None:
+        async_add_entities([NikobusMaintenanceButton(hub, "set_clock")])
     async_add_entities(
         NikobusKeyButton(hub, key)
         for key in hub.inventory.iter_keys()
@@ -41,12 +49,39 @@ class NikobusDiscoverButton(GatewayEntity, ButtonEntity):
 
     @property
     def available(self) -> bool:
-        """Not while a discovery runs."""
-        return self.hub.connected and not self.hub.discovery.running
+        """Not while a discovery or a maintenance run has the bus."""
+        return self.hub.connected and not self.hub.busy
 
     async def async_press(self) -> None:
         """Start a discovery in the background."""
         self.hub.discovery.start()
+
+
+class NikobusMaintenanceButton(GatewayEntity, ButtonEntity):
+    """Sets the PC-Link's clock, checks the modules' programming, or backs it up.
+
+    A check or a backup reads every module's memory, which takes minutes:
+    it runs in the background and its result is on the programming sensor.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, hub: NikobusHub, key: str) -> None:
+        super().__init__(hub, key)
+        self._key = key
+
+    @property
+    def available(self) -> bool:
+        """Not while a discovery or a maintenance run has the bus."""
+        return self.hub.connected and not self.hub.busy
+
+    async def async_press(self) -> None:
+        """Set the clock now; start a check or a backup in the background."""
+        maintenance = self.hub.maintenance
+        if self._key == "set_clock":
+            await maintenance.async_set_clock()
+            return
+        maintenance.start(backup=self._key == "backup_programming")
 
 
 class NikobusKeyButton(NikobusEntity, ButtonEntity):

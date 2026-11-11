@@ -9,12 +9,21 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.const import Platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
-from .const import DOMAIN, MANUFACTURER, SWITCH_MODULE
+from .const import (
+    CONF_USE_AS,
+    DIMMER_MODULE,
+    DOMAIN,
+    MANUFACTURER,
+    ROLLER_MODULE,
+    SWITCH_MODULE,
+    USE_AS_LIGHT,
+    USE_AS_SWITCH,
+)
 
 if TYPE_CHECKING:
     from .hub import NikobusHub
@@ -47,23 +56,32 @@ def plate_device(hub: NikobusHub, address: str, entry: dict[str, Any]) -> Device
     )
 
 
-def relay_outputs(hub: NikobusHub, *, as_light: bool) -> list[tuple[OutputModule, int]]:
-    """The relays shown as lights, or the ones left as switches."""
-    return [
-        (module, channel)
-        for module in hub.inventory.output_modules()
-        if module.module_type == SWITCH_MODULE
-        for channel in range(1, module.channels + 1)
-        if (f"{module.address}:{channel}" in hub.light_outputs) is as_light
-    ]
+def output_platform(hub: NikobusHub, module: OutputModule, channel: int) -> Platform:
+    """What an output is in Home Assistant: its module's kind, unless the options say otherwise."""
+    key = f"{module.address}:{channel}"
+    if module.module_type == DIMMER_MODULE:
+        return Platform.LIGHT
+    if module.module_type == SWITCH_MODULE:
+        return Platform.LIGHT if key in hub.light_outputs else Platform.SWITCH
+    use_as = hub.shutters.get(key, {}).get(CONF_USE_AS)
+    return {USE_AS_SWITCH: Platform.SWITCH, USE_AS_LIGHT: Platform.LIGHT}.get(use_as, Platform.COVER)
 
 
-def remove_relay_entities(hass: HomeAssistant, domain: str, outputs: list[tuple[OutputModule, int]]) -> None:
-    """Remove the entity a relay had in ``domain`` before the options moved it."""
-    registry = er.async_get(hass)
-    for module, channel in outputs:
-        if entity_id := registry.async_get_entity_id(domain, DOMAIN, f"{module.address}_{channel}"):
-            registry.async_remove(entity_id)
+def outputs_of(hub: NikobusHub, platform: Platform) -> list[tuple[OutputModule, int]]:
+    """The outputs a platform creates entities for, and drops the moved ones' old entities.
+
+    An output the options moved to another platform keeps its unique id
+    there; the entity it had here is removed from the registry.
+    """
+    registry = er.async_get(hub.hass)
+    mine: list[tuple[OutputModule, int]] = []
+    for module in hub.inventory.output_modules():
+        for channel in range(1, module.channels + 1):
+            if output_platform(hub, module, channel) is platform:
+                mine.append((module, channel))
+            elif entity_id := registry.async_get_entity_id(platform, DOMAIN, f"{module.address}_{channel}"):
+                registry.async_remove(entity_id)
+    return mine
 
 
 class NikobusEntity(Entity):
@@ -138,3 +156,29 @@ class ChannelEntity(NikobusEntity):
     def _value(self) -> int | None:
         """The output's byte; ``None`` until its group was heard."""
         return self.hub.value(self._address, self._channel)
+
+
+class OnOffEntity(ChannelEntity):
+    """An output that is on or off: a relay, or a roller output wired to a load.
+
+    A relay is closed with 0xFF. A roller output has two relays, of which
+    the first is the one a load is wired to: it is closed with 0x01.
+    """
+
+    def __init__(self, hub: NikobusHub, module: OutputModule, channel: int) -> None:
+        super().__init__(hub, module, channel)
+        self._on_value = 0x01 if module.module_type == ROLLER_MODULE else 0xFF
+
+    @property
+    def is_on(self) -> bool | None:
+        """Whether the output is on; unknown until its group was heard."""
+        value = self._value
+        return None if value is None else value != 0
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Close the relay."""
+        await self.hub.async_set_output(self._address, self._channel, self._on_value)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Open the relay."""
+        await self.hub.async_set_output(self._address, self._channel, 0x00)

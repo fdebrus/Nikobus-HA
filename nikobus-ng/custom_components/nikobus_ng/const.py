@@ -14,6 +14,16 @@ CONF_CONNECTION: Final = "connection"
 CONF_FEEDBACK_MODULE: Final = "feedback_module"
 #: Relay outputs shown as lights, each ``"<module>:<channel>"``.
 CONF_LIGHT_OUTPUTS: Final = "light_outputs"
+#: Per roller output ``"<module>:<channel>"``: what it drives and its run times.
+CONF_SHUTTERS: Final = "shutters"
+CONF_OUTPUT: Final = "output"
+CONF_USE_AS: Final = "use_as"
+CONF_OPEN_TIME: Final = "open_time"
+CONF_CLOSE_TIME: Final = "close_time"
+USE_AS_COVER: Final = "cover"
+USE_AS_SWITCH: Final = "switch"
+USE_AS_LIGHT: Final = "light"
+USE_AS: Final = (USE_AS_COVER, USE_AS_SWITCH, USE_AS_LIGHT)
 
 PLATFORMS: Final = [
     Platform.BINARY_SENSOR,
@@ -31,6 +41,8 @@ SWITCH_MODULE: Final = "switch_module"
 DIMMER_MODULE: Final = "dimmer_module"
 ROLLER_MODULE: Final = "roller_module"
 OUTPUT_MODULE_TYPES: Final = (SWITCH_MODULE, DIMMER_MODULE, ROLLER_MODULE)
+#: Module types whose inputs the discovery files as plates of their own.
+INPUT_MODULE_TYPES: Final = ("pc_logic", "interface_module")
 
 #: Every output group is read this often when nothing pushes its state.
 POLL_INTERVAL: Final = timedelta(seconds=120)
@@ -64,6 +76,16 @@ COVER_DEFAULT_RUN_TIME: Final = 30.0
 #: The motor is left running this long past a fully open or closed
 #: estimate, so the shutter reaches its end stop.
 COVER_END_MARGIN: Final = 3.0
+
+#: The PC-Link's clock is read this often.
+CLOCK_READ_INTERVAL: Final = timedelta(hours=1)
+#: The modules' checksums are compared this long after a start, then daily.
+REPROGRAMMED_CHECK_DELAY: Final = timedelta(minutes=10)
+REPROGRAMMED_CHECK_INTERVAL: Final = timedelta(days=1)
+
+#: A module silent for this many reads in a row, while others answer, is reported.
+SILENT_READS: Final = 3
+ISSUE_NOT_ANSWERING: Final = "module_not_answering"
 
 #: Fired for every key press seen on the bus, known key or not.
 EVENT_PRESS: Final = "nikobus_ng_press"

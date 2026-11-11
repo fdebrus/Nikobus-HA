@@ -48,7 +48,16 @@ async def async_get_config_entry_diagnostics(
             for module in inventory.output_modules()
         ],
         "keys": sum(1 for _ in inventory.iter_keys()),
+        "logical_inputs": sum(1 for _ in inventory.logical_inputs()),
         "scenes": len(inventory.scenes),
+        "scenes_named": sum(1 for scene in inventory.scenes.values() if inventory.scene_name(scene)),
+        "project_scene_names": len(inventory.names["scenes"]),
+        "maintenance": {
+            "pc_link": hub.maintenance.pc_link_address,
+            "clock_drift": hub.maintenance.clock_drift,
+            **hub.maintenance.report(),
+            "reprogrammed": list(hub.maintenance.reprogrammed),
+        },
         "written_without_a_read_first": [
             f"{address} g{group}" for address, group in sorted(hub.command.steady_groups)
         ],

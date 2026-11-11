@@ -67,6 +67,8 @@ class DiscoveryRunner:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="discovery_running")
         if not self._hub.connected:
             raise HomeAssistantError(translation_domain=DOMAIN, translation_key="not_connected")
+        if self._hub.maintenance.running:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="maintenance_running")
         self.running = True
         self._task = self._hub.entry.async_create_background_task(
             self._hub.hass, self._async_run(), name=f"{DOMAIN}_discovery"
@@ -147,6 +149,8 @@ class DiscoveryRunner:
             # A shutter group cannot be given a direction by its address.
             if not is_pure_roller_cf(scene)
         }
+        # The links are fresh: the next look at the checksums records them anew.
+        hub.maintenance.forget_checksums()
         await hub.inventory.async_save()
 
     def _set(self, phase: str, *, progress: int = 0, error: str | None = None) -> None:
