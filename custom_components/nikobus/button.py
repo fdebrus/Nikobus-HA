@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
@@ -411,7 +411,7 @@ class _NikobusMaintenanceButton(_NikobusBridgeButton):
     press handlers re-check it so a race can't start two bus runs.
     """
 
-    def _start(self, coro: Any, name: str) -> None:
+    def _start(self, run: Callable[[], Awaitable[Any]], name: str) -> None:
         programming = self._coordinator.programming
         if self._coordinator.discovery_running:
             raise HomeAssistantError(
@@ -424,7 +424,7 @@ class _NikobusMaintenanceButton(_NikobusBridgeButton):
 
         async def _run() -> None:
             try:
-                await coro
+                await run()
             except Exception:  # a failed run is reported, not lost
                 _LOGGER.exception("%s failed", name)
 
@@ -456,7 +456,7 @@ class NikobusVerifyProgrammingButton(_NikobusMaintenanceButton):
     async def async_press(self) -> None:
         _LOGGER.info("Module programming check triggered via UI button")
         self._start(
-            self._coordinator.programming.async_verify_modules(),
+            self._coordinator.programming.async_verify_modules,
             "nikobus_verify_programming",
         )
 
@@ -473,7 +473,7 @@ class NikobusBackupProgrammingButton(_NikobusMaintenanceButton):
     async def async_press(self) -> None:
         _LOGGER.info("Module programming backup triggered via UI button")
         self._start(
-            self._coordinator.programming.async_backup_modules(),
+            self._coordinator.programming.async_backup_modules,
             "nikobus_backup_programming",
         )
 

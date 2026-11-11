@@ -17,7 +17,7 @@ jobs:
     name: Ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # Lints custom_components/nikobus per ruff defaults. The version is
       # pinned: ruff-action installs the latest release when it finds no
       # pyproject.toml (the config is in ruff.toml), so a new release
@@ -35,8 +35,8 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       # Home Assistant itself is stubbed in tests/conftest.py, but the
@@ -63,8 +63,8 @@ jobs:
     name: Tests (minimum nikobus-connect)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - run: pip install pytest pytest-asyncio aiofiles voluptuous pyyaml
@@ -84,8 +84,8 @@ jobs:
     name: Nikobus NG (real Home Assistant, simulated bus)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
       - run: pip install -r nikobus-ng/requirements_test.txt
@@ -96,14 +96,14 @@ jobs:
     name: Hassfest (manifest validation)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: home-assistant/actions/hassfest@master
 
   hacs:
     name: HACS validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: hacs/action@main
         with:
           category: integration
