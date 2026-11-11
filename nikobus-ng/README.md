@@ -88,8 +88,12 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   result).
 - **Every output names what drives it**, in its `controlled_by`
   attribute: the keys, and the PC-Link calendar channels.
-- **Deleting a device** of a module or a plate forgets it; a device the
-  inventory no longer holds is removed at the next start.
+- **Deleting a device** of a module or a plate leaves it out from then
+  on, through later discoveries too: a PC-Link goes on listing what was
+  once in its project. The discover action with its address brings it
+  back. A device the inventory no longer holds is removed at the next
+  start. A module that stays silent is asked once an hour only, since
+  each read of it is a timeout on the bus.
 - **A blueprint**, `blueprints/automation/fdebrus/nikobus_ng_key_controls_entity.yaml`:
   a key switches an entity of any integration.
 - **Stays in step.** A press is followed by a read of what the key drives; a
@@ -111,7 +115,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
 | PC-Link clock | a timestamp sensor that changes every hour | the drift in seconds, and a button |
 | Settings | 17 options steps | a menu: gateway, lights and fans, a roller output, LED keys, a module's type, names, files |
-| Tests | 923, against a stub of Home Assistant | 96, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 98, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -152,7 +156,10 @@ created no scene where the installation has light scenes: the scenes were
 read after the library had cleared them, fixed in 0.1.1. With 0.2.0 the
 same installation got its three light scenes back under the names of its
 project file, and with 0.3.0 its six logical inputs and the clock of its
-PC-Link, an hour ahead.
+PC-Link, an hour ahead. With 0.6.0 its PC-Link turned out to list a
+colour controller that is not on the bus: every read of it was a
+fifteen-second timeout, and with a Feedback Module it was never counted
+as silent, fixed in 0.6.1.
 
 ## Trying it
 

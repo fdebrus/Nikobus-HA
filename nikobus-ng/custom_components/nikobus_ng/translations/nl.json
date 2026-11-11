@@ -356,7 +356,7 @@
         "step": {
           "confirm": {
             "title": "{module} antwoordt niet",
-            "description": "De module antwoordde drie keer na elkaar niet terwijl andere modules dat wel deden: haar entiteiten tonen een oude toestand. Controleer eerst haar voeding en haar busbedrading; deze melding verdwijnt vanzelf wanneer ze opnieuw antwoordt.\n\nIs de module uit de installatie gehaald, verzend dan om ze met haar entiteiten uit Home Assistant te verwijderen. Een latere ontdekking brengt ze terug als de PC-Link ze nog vermeldt."
+            "description": "De module antwoordde drie keer na elkaar niet terwijl andere modules dat wel deden: haar entiteiten tonen een oude toestand. Controleer eerst haar voeding en haar busbedrading; deze melding verdwijnt vanzelf wanneer ze opnieuw antwoordt.\n\nIs de module uit de installatie gehaald, verzend dan om ze met haar entiteiten uit Home Assistant te verwijderen. Ze blijft verwijderd bij latere ontdekkingen, ook als de PC-Link ze nog vermeldt. De actie **Ontdekken** met haar adres brengt ze terug."
           }
         },
         "abort": {

@@ -356,7 +356,7 @@
         "step": {
           "confirm": {
             "title": "{module} does not answer",
-            "description": "The module has not answered three reads in a row while other modules did, so its entities show an old state. Check its power and its bus wiring first; this notice goes away by itself when it answers again.\n\nIf the module was taken out of the installation, submit to remove it and its entities from Home Assistant. A later discovery brings it back if the PC-Link still lists it."
+            "description": "The module has not answered three reads in a row while other modules did, so its entities show an old state. Check its power and its bus wiring first; this notice goes away by itself when it answers again.\n\nIf the module was taken out of the installation, submit to remove it and its entities from Home Assistant. It stays removed through later discoveries, even while the PC-Link still lists it. The **Discover** action with its address brings it back."
           }
         },
         "abort": {

@@ -77,6 +77,8 @@ class Inventory:
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         #: The type the options give a module, over the one the inventory holds.
         self.module_types = {address.upper(): kind for address, kind in (module_types or {}).items()}
+        #: The modules and plates the user removed, kept out through later discoveries.
+        self.removed: list[str] = []
         #: The type each such module's links were last read as.
         self.links_read_as: dict[str, str] = {}
         #: What Home Assistant last wrote to each module, for a gateway that answers no state read.
@@ -119,6 +121,8 @@ class Inventory:
         for name in ("links_read_as", "states"):
             if isinstance(stored.get(name), dict):
                 setattr(self, name, stored[name])
+        if isinstance(stored.get("removed"), list):
+            self.removed = [str(address).upper() for address in stored["removed"]]
         self.changed()
 
     def _payload(self) -> dict[str, Any]:
@@ -131,6 +135,7 @@ class Inventory:
             "from_project": self.from_project,
             "links_read_as": self.links_read_as,
             "states": self.states,
+            "removed": self.removed,
         }
 
     async def async_save(self) -> None:
@@ -165,6 +170,8 @@ class Inventory:
             if not isinstance(entry, dict):
                 continue
             address = str(key).upper()
+            if address in self.removed:
+                continue
             kind = self.module_types.get(address)
             if kind in MODULE_CHANNELS and kind != entry.get("module_type"):
                 # The outputs it has as that type: the number the inventory
@@ -222,7 +229,7 @@ class Inventory:
         return {
             str(address).upper(): entry
             for address, entry in self.buttons["nikobus_button"].items()
-            if isinstance(entry, dict)
+            if isinstance(entry, dict) and str(address).upper() not in self.removed
         }
 
     @property
@@ -253,17 +260,27 @@ class Inventory:
         return {*self._module_entries(), *self._plates()}
 
     def remove(self, address: str) -> bool:
-        """Forget a module or a plate. A discovery brings it back if the PC-Link still lists it."""
+        """Leave a module or a plate out from now on.
+
+        A PC-Link goes on listing what was once in its project, so a
+        discovery would bring a removed module straight back. It is kept
+        out until ``restore`` is asked for it.
+        """
         address = address.upper()
-        found = False
-        for store in (self.modules["nikobus_module"], self.buttons["nikobus_button"]):
-            for key in [key for key in store if str(key).upper() == address]:
-                del store[key]
-                found = True
+        if address not in self.addresses():
+            return False
+        self.removed.append(address)
         self.programming.pop(address, None)
-        if found:
-            self.changed()
-        return found
+        self.changed()
+        return True
+
+    def restore(self, address: str) -> bool:
+        """Take a removed module or plate back in."""
+        if address.upper() not in self.removed:
+            return False
+        self.removed.remove(address.upper())
+        self.changed()
+        return True
 
     def output_modules(self) -> Iterator[OutputModule]:
         """The modules whose outputs become entities."""
@@ -384,6 +401,7 @@ class Inventory:
         self.buttons["nikobus_button"].update(plates)
         self.scenes = {}
         self.programming = {}
+        self.removed = []
         self.from_project = True
         self.changed()
 

@@ -129,6 +129,8 @@ class WallSimulator(NikobusSimulator):
         #: same frame, as a held key is: the burst counts once.
         self.host_presses: list[str] = []
         self._last_frame: tuple[str, float] = ("", 0.0)
+        #: Every command the host sent to a module, as it came off the wire.
+        self.host_commands: list[str] = []
         #: Nothing answers while set: a port with no Nikobus device behind it.
         self.silent = False
         handle = self.gateway.handle
@@ -136,6 +138,8 @@ class WallSimulator(NikobusSimulator):
         def _recording(line: str) -> list[str]:
             if self.silent:
                 return []
+            if line.strip().startswith("$"):
+                self.host_commands.append(line.strip())
             if line.strip().startswith("#N"):
                 frame, now = line.strip()[2:8].upper(), time.monotonic()
                 if (frame, True) != (self._last_frame[0], now - self._last_frame[1] < PRESS_DEBOUNCE):

@@ -356,7 +356,7 @@
         "step": {
           "confirm": {
             "title": "{module} ne répond pas",
-            "description": "Le module n'a pas répondu à trois lectures de suite alors que d'autres modules répondaient : ses entités affichent un ancien état. Vérifiez d'abord son alimentation et son câblage au bus ; cet avis disparaît de lui-même quand il répond de nouveau.\n\nSi le module a été retiré de l'installation, validez pour le supprimer de Home Assistant avec ses entités. Une découverte ultérieure le ramène si le PC-Link le liste encore."
+            "description": "Le module n'a pas répondu à trois lectures de suite alors que d'autres modules répondaient : ses entités affichent un ancien état. Vérifiez d'abord son alimentation et son câblage au bus ; cet avis disparaît de lui-même quand il répond de nouveau.\n\nSi le module a été retiré de l'installation, validez pour le supprimer de Home Assistant avec ses entités. Il reste supprimé lors des découvertes suivantes, même si le PC-Link le liste encore. L'action **Découvrir** avec son adresse le ramène."
           }
         },
         "abort": {

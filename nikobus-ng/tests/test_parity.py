@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
-from custom_components.nikobus_ng.const import CONF_SHUTTERS, DOMAIN
+from custom_components.nikobus_ng.const import (
+    CONF_FEEDBACK_MODULE,
+    CONF_SHUTTERS,
+    DOMAIN,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ServiceValidationError
@@ -13,6 +18,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
+from nikobus_simulator.gateway import wire_address
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import (
     ClientSessionGenerator,
@@ -137,7 +143,7 @@ async def test_a_module_that_stays_silent_is_a_repair_that_removes_it(hass: Home
     assert await async_setup_component(hass, "repairs", {})
     hub = await setup()
     issue_id = f"module_not_answering_{ROLLER.lower()}"
-    del simulator.gateway.modules[ROLLER]
+    module = simulator.gateway.modules.pop(ROLLER)
     for _ in range(3):
         assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
         await hub._async_poll()
@@ -153,10 +159,64 @@ async def test_a_module_that_stays_silent_is_a_repair_that_removes_it(hass: Home
     assert er.async_get(hass).async_get_entity_id("cover", DOMAIN, f"{ROLLER}_1") is None
     assert ROLLER not in hub.inventory.addresses()
     assert all(address != ROLLER for address, _ in hub.inventory.output_groups())
+    # A PC-Link goes on listing it: it stays out when the inventory is read again,
+    assert ROLLER in hub.inventory.modules["nikobus_module"]
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert ROLLER not in entry.runtime_data.inventory.addresses()
+    # until it is asked for by its address.
+    simulator.gateway.modules[ROLLER] = module
+    scanning = entry.runtime_data
+    await hass.services.async_call(DOMAIN, "discover", {"address": ROLLER}, blocking=True)
+    assert ROLLER in scanning.inventory.addresses()
+    # Let the scan and the reload that ends it finish before the test does.
+    await scanning.discovery.async_wait()
+    await hass.async_block_till_done()
+    await wait_for(lambda: entry.runtime_data is not scanning and entry.runtime_data.connected)
+    back = entry.runtime_data
+    await wait_for(lambda: all(back.value(a, 1 if g == 1 else 7) is not None for a, g in back.inventory.output_groups()))
+    await hass.async_block_till_done()
 
 
 @pytest.mark.usefixtures("quick_timeouts")
-async def test_a_module_that_answers_again_clears_its_repair(hass: HomeAssistant, simulator: WallSimulator, setup: SetupFixture) -> None:
+async def test_a_silent_module_is_then_asked_only_now_and_then(hass: HomeAssistant, simulator: WallSimulator, setup: SetupFixture) -> None:
+    """Each read of it is a timeout during which nothing else gets on the bus."""
+    hub = await setup()
+    del simulator.gateway.modules[ROLLER]
+    for _ in range(3):
+        await hub._async_poll()
+    reads = f"$1012{wire_address(ROLLER)}"
+    asked = sum(1 for command in simulator.host_commands if command.startswith(reads))
+    await hub._async_poll()
+    assert sum(1 for command in simulator.host_commands if command.startswith(reads)) == asked
+    # The others are still read.
+    assert sum(1 for command in simulator.host_commands if command.startswith(f"$1012{wire_address(SWITCH)}")) >= 5
+
+
+@pytest.mark.usefixtures("quick_timeouts")
+async def test_a_module_that_never_answered_is_noticed_with_a_feedback_module_too(hass: HomeAssistant, simulator: WallSimulator, entry: MockConfigEntry) -> None:
+    """With a Feedback Module, only what was not heard is asked: the silent module alone.
+
+    That nobody answered a poll then says nothing about the line; the
+    modules heard a moment ago do.
+    """
+    hass.config_entries.async_update_entry(entry, options={CONF_FEEDBACK_MODULE: True})
+    del simulator.gateway.modules[ROLLER]
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    hub = entry.runtime_data
+    await wait_for(lambda: hub.value(SWITCH, 7) is not None and hub._silent[ROLLER] == 1, timeout=10)
+    issue_id = f"module_not_answering_{ROLLER.lower()}"
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+    await hub._async_poll()
+    await hub._async_poll()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is not None
+    assert hub.connected
+    await hass.async_block_till_done()
+
+
+@pytest.mark.usefixtures("quick_timeouts")
+async def test_a_module_that_answers_again_clears_its_repair(hass: HomeAssistant, simulator: WallSimulator, setup: SetupFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("custom_components.nikobus_ng.hub.SILENT_RETRY", timedelta(0))
     hub = await setup()
     module = simulator.gateway.modules.pop(ROLLER)
     for _ in range(3):

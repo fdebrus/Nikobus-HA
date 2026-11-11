@@ -65,6 +65,7 @@ from .const import (
     REPROGRAMMED_CHECK_DELAY,
     REPROGRAMMED_CHECK_INTERVAL,
     SILENT_READS,
+    SILENT_RETRY,
     SWITCH_MODULE,
 )
 from .discovery import DiscoveryRunner
@@ -110,6 +111,7 @@ class NikobusHub:
         self._states: dict[str, bytearray] = {}
         self._heard: dict[tuple[str, int], float] = {}
         self._silent: dict[str, int] = defaultdict(int)
+        self._silent_until: dict[str, float] = {}
         self._feedback_port_reported = False
         self._module_listeners: dict[str, list[CALLBACK_TYPE]] = defaultdict(list)
         self._status_listeners: list[CALLBACK_TYPE] = []
@@ -553,11 +555,14 @@ class NikobusHub:
         """Read the groups nothing has reported for a whole period."""
         if not self.connected or self.busy:
             return
-        horizon = time.monotonic() - FEEDBACK_SAFETY_POLL.total_seconds()
+        now = time.monotonic()
+        horizon = now - FEEDBACK_SAFETY_POLL.total_seconds()
         due = [
             key
             for key in self.inventory.output_groups()
-            if not self.feedback_module or self._heard.get(key, float("-inf")) < horizon
+            if (not self.feedback_module or self._heard.get(key, float("-inf")) < horizon)
+            # A module that stays silent costs a timeout each time it is asked.
+            and now >= self._silent_until.get(key[0], 0.0)
         ]
         answered: set[str] = set()
         for address, group in due:
@@ -565,21 +570,31 @@ class NikobusHub:
                 return
             if await self.async_read_group(address, group):
                 answered.add(address)
-        if due and not answered and any(key in self._heard for key in due):
+        asked = {address for address, _ in due}
+        # The line is alive when a module answered now, or one that was not
+        # asked was heard lately: a Feedback Module's reads leave only the
+        # silent ones to ask.
+        alive = bool(answered) or any(
+            heard >= horizon for (address, _), heard in self._heard.items() if address not in asked
+        )
+        if alive:
+            self._note_silent(asked, answered)
+        elif due and any(key in self._heard for key in due):
             _LOGGER.warning("No module answered a state read: reconnecting")
             await self._async_connection_lost()
-        elif answered:
-            self._note_silent({address for address, _ in due}, answered)
 
     def _note_silent(self, asked: set[str], answered: set[str]) -> None:
-        """Report a module that stays silent while the others answer."""
+        """Report a module that stays silent while the others answer, and ask it less often."""
         for address in asked:
             issue_id = f"{ISSUE_NOT_ANSWERING}_{address.lower()}"
             if address in answered:
+                self._silent_until.pop(address, None)
                 if self._silent.pop(address, 0) >= SILENT_READS:
                     ir.async_delete_issue(self.hass, DOMAIN, issue_id)
                 continue
             self._silent[address] += 1
+            if self._silent[address] >= SILENT_READS:
+                self._silent_until[address] = time.monotonic() + SILENT_RETRY.total_seconds()
             if self._silent[address] == SILENT_READS:
                 ir.async_create_issue(
                     self.hass,
@@ -593,7 +608,7 @@ class NikobusHub:
                 )
 
     async def async_forget(self, address: str) -> None:
-        """Take a module or a plate out of the inventory; a discovery may bring it back."""
+        """Take a module or a plate out of the inventory, through later discoveries too."""
         address = address.upper()
         if self.inventory.remove(address):
             await self.inventory.async_save()
@@ -601,6 +616,7 @@ class NikobusHub:
         for key in [key for key in self._heard if key[0] == address]:
             del self._heard[key]
         self._silent.pop(address, None)
+        self._silent_until.pop(address, None)
         ir.async_delete_issue(self.hass, DOMAIN, f"{ISSUE_NOT_ANSWERING}_{address.lower()}")
         self.apply_write_guard()
 

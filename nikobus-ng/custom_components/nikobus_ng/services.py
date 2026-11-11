@@ -74,6 +74,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def discover(call: ServiceCall) -> None:
         hub = _hub(hass)
         module = call.data.get(ATTR_ADDRESS)
+        if module is not None and hub.inventory.restore(module):
+            # Asked for by its address: a removed module is taken back in.
+            await hub.inventory.async_save()
+            hub.allocate_states()
         if module is not None and module not in hub.inventory.addresses():
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
