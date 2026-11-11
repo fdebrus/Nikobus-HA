@@ -12,7 +12,9 @@ from .const import DOMAIN, PLATFORMS
 from .entity import gateway_device
 from .hub import NikobusHub
 from .inventory import Inventory
+from .llm_api import async_register_llm_api
 from .services import async_setup_services
+from .takeover import apply_pending
 
 type NikobusConfigEntry = ConfigEntry[NikobusHub]
 
@@ -40,7 +42,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     except BaseException:
         await hub.async_stop()
         raise
+    entry.async_on_unload(async_register_llm_api(hass, hub))
     inventory = hub.inventory
+    if inventory.takeover["pending"]:
+        apply_pending(hass, hub)
+        await inventory.async_save()
     if inventory.is_empty:
         # Nothing is known yet: read the installation, then reload.
         hub.discovery.start()

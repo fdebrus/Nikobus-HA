@@ -77,6 +77,8 @@ class Inventory:
         self._store: Store[dict[str, Any]] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         #: The type the options give a module, over the one the inventory holds.
         self.module_types = {address.upper(): kind for address, kind in (module_types or {}).items()}
+        #: A take-over from the Nikobus integration: what is to move, and what moved.
+        self.takeover: dict[str, list[dict[str, str]]] = {"pending": [], "done": []}
         #: The modules and plates the user removed, kept out through later discoveries.
         self.removed: list[str] = []
         #: The type each such module's links were last read as.
@@ -121,6 +123,9 @@ class Inventory:
         for name in ("links_read_as", "states"):
             if isinstance(stored.get(name), dict):
                 setattr(self, name, stored[name])
+        takeover = stored.get("takeover")
+        if isinstance(takeover, dict):
+            self.takeover = {"pending": takeover.get("pending") or [], "done": takeover.get("done") or []}
         if isinstance(stored.get("removed"), list):
             self.removed = [str(address).upper() for address in stored["removed"]]
         self.changed()
@@ -136,6 +141,7 @@ class Inventory:
             "links_read_as": self.links_read_as,
             "states": self.states,
             "removed": self.removed,
+            "takeover": self.takeover,
         }
 
     async def async_save(self) -> None:

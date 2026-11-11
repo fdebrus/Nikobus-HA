@@ -94,6 +94,22 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   back. A device the inventory no longer holds is removed at the next
   start. A module that stays silent is asked once an hour only, since
   each read of it is a timeout on the bus.
+- **For a language model.** What Home Assistant cannot show of an
+  installation is its wiring. The `nikobus_ng.describe` action returns it
+  as data: every output with the keys that drive it, their modes and
+  times, every key with what it drives, the scenes with their outputs.
+  The same is offered to Home Assistant's conversation agents as an LLM
+  API, "Nikobus NG", with six tools: an overview, one output, one key,
+  the scenes, the health of the bus, and pressing a key. Five only read;
+  none touches a module's programming. Home Assistant's MCP server passes
+  them on.
+- **Taking over from the Nikobus integration.** An options step moves
+  the entity ids, shown names, areas, aliases, labels, icons and
+  voice-assistant exposure of the Nikobus integration's lights, switches,
+  covers, fans, scenes and input switches onto this integration's
+  entities, and makes relays lights where they were. The Nikobus entities
+  are parked, not deleted, and "Give back" undoes it. Keys are not taken
+  over: they are other kinds of entity here.
 - **A blueprint**, `blueprints/automation/fdebrus/nikobus_ng_key_controls_entity.yaml`:
   a key switches an entity of any integration.
 - **Stays in step.** A press is followed by a read of what the key drives; a
@@ -105,7 +121,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 4 702 lines |
+| Python | 15 036 lines | 5 444 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
@@ -115,7 +131,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
 | PC-Link clock | a timestamp sensor that changes every hour | the drift in seconds, and a button |
 | Settings | 17 options steps | a menu: gateway, lights and fans, a roller output, LED keys, a module's type, names, files |
-| Tests | 923, against a stub of Home Assistant | 98, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 106, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -128,7 +144,7 @@ What exists in the Nikobus integration and is absent here.
 | A refresh interval to set | fixed |
 | A device per PC-Link calendar channel | named in `controlled_by` only |
 | Volume level and brightness of a colour controller | the bus offers neither |
-| Migration from the Nikobus integration | none: new domain, new entities |
+| A migration of key entities and of automations on Nikobus bus events | outputs, scenes and input switches are taken over; the rest is by hand |
 
 ## What is verified
 
@@ -146,6 +162,8 @@ What exists in the Nikobus integration and is absent here.
 | One module read again; a port nothing answers on; states pushed without their queries | A link table that does not line up (the library's flag is set by the test) |
 | A module given another type, from the options and from the repair | A PC-Link older than generation 3: what it answers is taken from the Nikobus integration's handling of it |
 | Two hand-written files as the inventory; press repeats; calendar channels; a scene at the wall | |
+| The description and the LLM tools, called as Home Assistant calls them | The tools used by a real conversation agent |
+| A take-over and its undo, on registry entries made like the Nikobus integration's | A take-over of a real installation |
 | Fans, LED keys, shutter groups, a project file as inventory | An audio module and a colour controller, real ones |
 | Audio zones, read out of the simulated module by the link scan | The link scan through a gateway that is not a PC-Link |
 | A colour controller's state and keys (a stand-in answers its state query) | |
@@ -191,11 +209,12 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 
 | File | Lines | |
 |---|---|---|
-| `hub.py` | 645 | the connection, output state, commands, LED keys, polling, reconnection |
-| `config_flow.py` | 564 | setup, reconfigure, the options menu, the uploads |
-| `inventory.py` | 563 | the store, and every question asked of it |
+| `hub.py` | 661 | the connection, output state, commands, LED keys, polling, reconnection |
+| `config_flow.py` | 612 | setup, reconfigure, the options menu, the uploads |
+| `inventory.py` | 587 | the store, and every question asked of it |
 | `maintenance.py` | 416 | the clock, the programming checks, the backup |
 | `cover.py` | 364 | shutters, their position, shutter groups |
 | `discovery.py` | 241 | one discovery run, of everything or of one module |
-| `entity.py` | 193 | base classes, devices, which platform an output belongs to |
-| the rest | 1 716 | the other platforms, presses, repairs, actions, the hand-written files, diagnostics |
+| `describe.py` | 234 | the installation as data, for a person or a model |
+| `takeover.py` | 200 | taking over the Nikobus integration's entities, and giving them back |
+| the rest | 2 129 | the platforms, presses, repairs, actions, the LLM tools, the hand-written files, diagnostics |

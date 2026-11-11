@@ -44,7 +44,9 @@
           "led_key": "Touches LED d'une sortie",
           "module_type": "Le type d'un module",
           "names": "Noms du fichier projet",
-          "files": "Inventaire à partir de deux fichiers"
+          "files": "Inventaire à partir de deux fichiers",
+          "take_over": "Reprendre de l'intégration Nikobus",
+          "give_back": "Rendre à l'intégration Nikobus"
         }
       },
       "gateway": {
@@ -148,6 +150,14 @@
           "module_file": "Fichier des modules (nikobus_module_config.json)",
           "button_file": "Fichier des touches (nikobus_button_config.json)"
         }
+      },
+      "take_over": {
+        "title": "Reprendre de l'intégration Nikobus",
+        "description": "{entities} entités de l'intégration Nikobus ont un équivalent ici : ses lumières, interrupteurs, volets, ventilateurs, ambiances et interrupteurs d'entrée. En validant, l'ID d'entité, le nom affiché, la pièce, les alias, les étiquettes, l'icône et l'exposition aux assistants vocaux de chacune passent sur l'entité de cette intégration : les tableaux de bord, les automatisations et l'historique continuent de fonctionner. {lights} relais deviennent des lumières ici pour correspondre.\n\nLes entités Nikobus sont conservées, rangées sous leur ID suivi de `_nikobus`, et **Rendre** annule le tout.\n\nNon repris : {left} autres entités Nikobus, surtout ses capteurs de touche et ses boutons d'appui, qui sont ici des entités événement. Les automatisations qui les utilisent, ou qui utilisent par leur nom les événements et actions de Nikobus, doivent être modifiées à la main.\n\nLaissez l'entrée Nikobus désactivée : un seul programme peut parler au bus."
+      },
+      "give_back": {
+        "title": "Rendre à l'intégration Nikobus",
+        "description": "{entities} entités ont été reprises. En validant, chaque entité Nikobus retrouve son ID d'entité, et les entités de cette intégration les ID qu'elles avaient avant. Les noms, pièces et alias restent tels quels des deux côtés."
       }
     },
     "error": {
@@ -157,7 +167,8 @@
     },
     "abort": {
       "not_loaded": "L'intégration n'est pas chargée.",
-      "bus_taken": "Une découverte ou une vérification est en cours. Réessayez quand elle est terminée."
+      "bus_taken": "Une découverte ou une vérification est en cours. Réessayez quand elle est terminée.",
+      "nikobus_running": "L'intégration Nikobus est en cours d'exécution. Désactivez d'abord son entrée : un seul programme peut parler au bus, et ses entités sont utilisées."
     }
   },
   "entity": {
@@ -303,6 +314,12 @@
     },
     "zone_function_missing": {
       "message": "Cette fonction n'est pas programmée sur cette zone."
+    },
+    "llm_not_an_output": {
+      "message": "{entity_id} n'est pas une sortie de cette installation Nikobus."
+    },
+    "llm_not_a_key": {
+      "message": "{key} n'est pas une touche de cette installation Nikobus."
     }
   },
   "selector": {
@@ -451,6 +468,10 @@
           "description": "Les quatre chiffres hexadécimaux d'un module, pour ne relire que ses liens, par exemple après l'avoir reprogrammé. Vide : toute l'installation."
         }
       }
+    },
+    "describe": {
+      "name": "Décrire l'installation",
+      "description": "Renvoie l'installation sous forme de données : chaque sortie avec les touches qui la commandent, leurs modes et leurs temps, chaque touche avec ce qu'elle commande, les ambiances avec leurs sorties, les entrées logiques et l'état du bus. Lu dans ce que la découverte a enregistré ; rien n'est envoyé sur le bus."
     }
   }
 }
