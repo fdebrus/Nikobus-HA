@@ -109,7 +109,8 @@ async def test_the_press_tool_puts_the_key_on_the_bus(hass: HomeAssistant, simul
 
 
 def _nikobus_entities(hass: HomeAssistant) -> MockConfigEntry:
-    """What a disabled Nikobus entry leaves in the registry: a relay shown as a light, a dimmer, a key."""
+    """What a disabled Nikobus entry leaves in the registry, under the unique ids it gives:
+    a relay shown as a light, a dimmer, a key's sensor and press button, a sensor of its bridge."""
     old = MockConfigEntry(domain="nikobus", title="Nikobus")
     old.add_to_hass(hass)
     registry = er.async_get(hass)
@@ -124,9 +125,17 @@ def _nikobus_entities(hass: HomeAssistant) -> MockConfigEntry:
         "light", "nikobus", f"nikobus_light_dimmer_light_{DIMMER}_1", config_entry=old,
         suggested_object_id="living_spots", original_name="Living spots",
     )
+    key = registry.async_get_or_create(
+        "binary_sensor", "nikobus", f"nikobus_button_{KEY_SWITCH_1}", config_entry=old,
+        suggested_object_id="bt_hall_ceiling_up", original_name="Hall Key 1C",
+    )
+    registry.async_update_entity(key.entity_id, area_id=area.id, labels={"nikobus_button"})
     registry.async_get_or_create(
-        "binary_sensor", "nikobus", f"nikobus_binary_sensor_{KEY_SWITCH_1}", config_entry=old,
-        suggested_object_id="hall_key",
+        "button", "nikobus", f"nikobus_push_button_{KEY_SWITCH_1}", config_entry=old,
+        suggested_object_id="bt_hall_ceiling_up",
+    )
+    registry.async_get_or_create(
+        "sensor", "nikobus", "nikobus_pc_link_clock", config_entry=old, suggested_object_id="bridge_clock"
     )
     return old
 
@@ -139,7 +148,7 @@ async def test_a_take_over_moves_ids_names_areas_and_exposure_and_can_be_undone(
     assert before == "switch.switch_module_4707_output_2"
 
     result = await _options(hass, entry, {"next_step_id": "take_over"})
-    assert result["description_placeholders"] == {"entities": "2", "left": "1", "lights": "1"}
+    assert result["description_placeholders"] == {"entities": "4", "left": "1", "lights": "1"}
     # Nothing has moved yet: the form only says what would.
     assert registry.async_get("light.kitchen_ceiling").platform == "nikobus"
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
@@ -157,9 +166,18 @@ async def test_a_take_over_moves_ids_names_areas_and_exposure_and_can_be_undone(
     assert (state.name, state.state) == ("Kitchen ceiling", "off")
     assert ar.async_get(hass).async_get_area(mine.area_id).name == "Kitchen"
     assert hass.states.get("light.living_spots").name == "Living spots"
-    # The Nikobus entities are parked, not deleted; its key sensor is left alone.
+    # The Nikobus entities are parked, not deleted.
     assert registry.async_get("light.kitchen_ceiling_nikobus").platform == "nikobus"
-    assert registry.async_get("binary_sensor.hall_key").platform == "nikobus"
+    # A key is an event entity here: it takes the sensor's id under its own domain, and the sensor keeps its id.
+    event = registry.async_get("event.bt_hall_ceiling_up")
+    assert (event.platform, event.unique_id, event.labels) == (DOMAIN, f"{KEY_SWITCH_1}_event", {"nikobus_button"})
+    assert hass.states.get("event.bt_hall_ceiling_up").name == "Hall Key 1C"
+    assert ar.async_get(hass).async_get_area(event.area_id).name == "Kitchen"
+    assert registry.async_get("binary_sensor.bt_hall_ceiling_up").platform == "nikobus"
+    # Its press button changes hands like an output, and is enabled here as it was there.
+    press = registry.async_get("button.bt_hall_ceiling_up")
+    assert (press.platform, press.unique_id, press.disabled_by) == (DOMAIN, f"{KEY_SWITCH_1}_press", None)
+    assert registry.async_get("button.bt_hall_ceiling_up_nikobus").platform == "nikobus"
     # And it is the real output behind the taken-over id.
     await hass.services.async_call("light", "turn_on", {"entity_id": "light.kitchen_ceiling"}, blocking=True)
     assert simulator.output(SWITCH, 2) == 0xFF
@@ -169,6 +187,8 @@ async def test_a_take_over_moves_ids_names_areas_and_exposure_and_can_be_undone(
     given = await _reloaded(hass, entry, taken)
     assert registry.async_get("light.kitchen_ceiling").platform == "nikobus"
     assert registry.async_get("light.kitchen_ceiling_nikobus") is None
+    assert registry.async_get("button.bt_hall_ceiling_up").platform == "nikobus"
+    assert registry.async_get_entity_id("event", DOMAIN, f"{KEY_SWITCH_1}_event") == KEY_EVENT
     assert registry.async_get_entity_id("light", DOMAIN, f"{DIMMER}_1") == "light.dim_controller_module_0e6c_output_1"
     assert given.inventory.takeover == {"pending": [], "done": []}
 

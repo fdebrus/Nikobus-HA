@@ -8,10 +8,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_LABELS, DOMAIN, PLATFORMS
 from .entity import gateway_device
 from .hub import NikobusHub
 from .inventory import Inventory
+from .labels import apply_labels
 from .llm_api import async_register_llm_api
 from .services import async_setup_services
 from .takeover import apply_pending
@@ -47,6 +48,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     if inventory.takeover["pending"]:
         apply_pending(hass, hub)
         await inventory.async_save()
+    if entry.options.get(CONF_LABELS, False):
+        apply_labels(hass, entry)
     if inventory.is_empty:
         # Nothing is known yet: read the installation, then reload.
         hub.discovery.start()

@@ -39,7 +39,7 @@
         "title": "Nikobus-opties",
         "menu_options": {
           "gateway": "Gateway",
-          "outputs": "Lampen en ventilatoren",
+          "outputs": "Lampen, ventilatoren en labels",
           "shutter": "Een rolluikuitgang",
           "led_key": "LED-toetsen van een uitgang",
           "module_type": "Het type van een module",
@@ -101,14 +101,16 @@
         }
       },
       "outputs": {
-        "title": "Lampen en ventilatoren",
+        "title": "Lampen, ventilatoren en labels",
         "data": {
           "light_outputs": "Relais die lampen zijn",
-          "fan_outputs": "Dimmeruitgangen die ventilatoren zijn"
+          "fan_outputs": "Dimmeruitgangen die ventilatoren zijn",
+          "labels": "De entiteiten per soort labelen"
         },
         "data_description": {
           "light_outputs": "De relaisuitgangen die een lamp schakelen. Elke uitgang wordt een lichtentiteit in plaats van een schakelaar; de schakelaarentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf.",
-          "fan_outputs": "De dimmeruitgangen die een ventilator met regelbare snelheid sturen. Elke uitgang wordt een ventilatorentiteit met een snelheid in plaats van een lamp; de lichtentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf."
+          "fan_outputs": "De dimmeruitgangen die een ventilator met regelbare snelheid sturen. Elke uitgang wordt een ventilatorentiteit met een snelheid in plaats van een lamp; de lichtentiteit wordt verwijderd, met de naam en de ruimte die u eraan gaf.",
+          "labels": "Elke uitgang krijgt het label \"Nikobus Output\", elke toets \"Nikobus Button\" en elke scène \"Nikobus Scene\", de labels van de Nikobus-integratie, om op te filteren in tabellen en keuzelijsten. Labels worden alleen toegevoegd, bij elke start; dit uitzetten verwijdert er geen."
         }
       },
       "led_key": {
@@ -153,7 +155,7 @@
       },
       "take_over": {
         "title": "Overnemen van de Nikobus-integratie",
-        "description": "{entities} entiteiten van de Nikobus-integratie hebben hier een tegenhanger: haar lampen, schakelaars, rolluiken, ventilatoren, sferen en ingangsschakelaars. Bij verzenden gaan van elk de entiteits-ID, de getoonde naam, de ruimte, de aliassen, de labels, het pictogram en de blootstelling aan spraakassistenten over naar de entiteit van deze integratie: dashboards, automatiseringen en geschiedenis blijven werken. {lights} relais worden hier lampen om overeen te komen.\n\nDe Nikobus-entiteiten blijven bewaard, geparkeerd onder hun ID gevolgd door `_nikobus`, en **Teruggeven** maakt alles ongedaan.\n\nNiet overgenomen: {left} andere Nikobus-entiteiten, vooral haar toetssensoren en drukknoppen, die hier gebeurtenisentiteiten zijn. Automatiseringen die deze gebruiken, of die de busgebeurtenissen en acties van Nikobus bij naam gebruiken, moeten met de hand worden aangepast.\n\nLaat het Nikobus-item uitgeschakeld: slechts één programma mag met de bus praten."
+        "description": "{entities} entiteiten van de Nikobus-integratie hebben hier een tegenhanger: haar lampen, schakelaars, rolluiken, ventilatoren, sferen, ingangsschakelaars en toetsen. Bij verzenden gaan van elk de entiteits-ID, de getoonde naam, de ruimte, de aliassen, de labels, het pictogram en de blootstelling aan spraakassistenten over naar de entiteit van deze integratie: dashboards, automatiseringen en geschiedenis blijven werken. {lights} relais worden hier lampen om overeen te komen.\n\nDe Nikobus-entiteiten blijven bewaard, geparkeerd onder hun ID gevolgd door `_nikobus`, en **Teruggeven** maakt alles ongedaan.\n\nEen toets is daar een binaire sensor en hier een gebeurtenisentiteit. De gebeurtenisentiteit neemt de ID van de sensor over onder `event.`, met naam, ruimte en labels; de sensor behoudt zijn eigen ID. Automatiseringen die de sensor van een toets lezen, of die de busgebeurtenissen en acties van Nikobus bij naam gebruiken, moeten met de hand worden aangepast.\n\nNiet overgenomen: {left} andere Nikobus-entiteiten, vooral die van haar bridge.\n\nLaat het Nikobus-item uitgeschakeld: slechts één programma mag met de bus praten."
       },
       "give_back": {
         "title": "Teruggeven aan de Nikobus-integratie",
@@ -241,8 +243,8 @@
           "error": "Gestopt"
         }
       },
-      "clock_drift": {
-        "name": "Klok van de PC-Link loopt voor met"
+      "clock": {
+        "name": "Klok van de PC-Link"
       },
       "programming": {
         "name": "Programmering",

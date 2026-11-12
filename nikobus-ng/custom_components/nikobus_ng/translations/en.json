@@ -39,7 +39,7 @@
         "title": "Nikobus options",
         "menu_options": {
           "gateway": "Gateway",
-          "outputs": "Lights and fans",
+          "outputs": "Lights, fans and labels",
           "shutter": "A roller output",
           "led_key": "LED keys of an output",
           "module_type": "The type of a module",
@@ -101,14 +101,16 @@
         }
       },
       "outputs": {
-        "title": "Lights and fans",
+        "title": "Lights, fans and labels",
         "data": {
           "light_outputs": "Relays that are lights",
-          "fan_outputs": "Dimmer outputs that are fans"
+          "fan_outputs": "Dimmer outputs that are fans",
+          "labels": "Label the entities by kind"
         },
         "data_description": {
           "light_outputs": "The relay outputs that switch a lamp. Each becomes a light entity instead of a switch; its switch entity is removed, with the name and area you gave it.",
-          "fan_outputs": "The dimmer outputs that drive a variable-speed fan. Each becomes a fan entity with a speed instead of a light; its light entity is removed, with the name and area you gave it."
+          "fan_outputs": "The dimmer outputs that drive a variable-speed fan. Each becomes a fan entity with a speed instead of a light; its light entity is removed, with the name and area you gave it.",
+          "labels": "Each output gets the label \"Nikobus Output\", each key \"Nikobus Button\" and each scene \"Nikobus Scene\", the labels of the Nikobus integration, to filter by in tables and pickers. Labels are only added, at every start; turning this off removes none."
         }
       },
       "led_key": {
@@ -153,7 +155,7 @@
       },
       "take_over": {
         "title": "Take over from the Nikobus integration",
-        "description": "{entities} entities of the Nikobus integration have a counterpart here: its lights, switches, covers, fans, scenes and input switches. Submitting moves each one's entity ID, name as shown, area, aliases, labels, icon and voice-assistant exposure onto this integration's entity, so dashboards, automations and history keep working. {lights} relays become lights here to match.\n\nThe Nikobus entities are kept, parked under their ID followed by `_nikobus`, and **Give back** undoes all of it.\n\nNot taken over: {left} other Nikobus entities, mostly its key sensors and press buttons, which are event entities here. Automations that use those, or the Nikobus bus events and actions by name, have to be changed by hand.\n\nKeep the Nikobus entry disabled: only one program may talk to the bus."
+        "description": "{entities} entities of the Nikobus integration have a counterpart here: its lights, switches, covers, fans, scenes, input switches and keys. Submitting moves each one's entity ID, name as shown, area, aliases, labels, icon and voice-assistant exposure onto this integration's entity, so dashboards, automations and history keep working. {lights} relays become lights here to match.\n\nThe Nikobus entities are kept, parked under their ID followed by `_nikobus`, and **Give back** undoes all of it.\n\nA key is a binary sensor there and an event entity here. The event entity takes the sensor's ID under `event.`, with its name, area and labels; the sensor keeps its own ID. Automations that read a key's sensor, or use the Nikobus bus events and actions by name, have to be changed by hand.\n\nNot taken over: {left} other Nikobus entities, mostly those of its bridge.\n\nKeep the Nikobus entry disabled: only one program may talk to the bus."
       },
       "give_back": {
         "title": "Give back to the Nikobus integration",
@@ -241,8 +243,8 @@
           "error": "Stopped"
         }
       },
-      "clock_drift": {
-        "name": "PC-Link clock ahead by"
+      "clock": {
+        "name": "PC-Link clock"
       },
       "programming": {
         "name": "Programming",

@@ -39,7 +39,7 @@
         "title": "Options Nikobus",
         "menu_options": {
           "gateway": "Passerelle",
-          "outputs": "Lumières et ventilateurs",
+          "outputs": "Lampes, ventilateurs et étiquettes",
           "shutter": "Une sortie volet",
           "led_key": "Touches LED d'une sortie",
           "module_type": "Le type d'un module",
@@ -101,14 +101,16 @@
         }
       },
       "outputs": {
-        "title": "Lumières et ventilateurs",
+        "title": "Lampes, ventilateurs et étiquettes",
         "data": {
           "light_outputs": "Relais qui sont des lumières",
-          "fan_outputs": "Sorties variateur qui sont des ventilateurs"
+          "fan_outputs": "Sorties variateur qui sont des ventilateurs",
+          "labels": "Étiqueter les entités par type"
         },
         "data_description": {
           "light_outputs": "Les sorties relais qui commandent une lampe. Chacune devient une entité lumière au lieu d'un interrupteur ; son entité interrupteur est supprimée, avec le nom et la pièce que vous lui aviez donnés.",
-          "fan_outputs": "Les sorties variateur qui commandent un ventilateur à vitesse variable. Chacune devient une entité ventilateur avec une vitesse au lieu d'une lumière ; son entité lumière est supprimée, avec le nom et la pièce que vous lui aviez donnés."
+          "fan_outputs": "Les sorties variateur qui commandent un ventilateur à vitesse variable. Chacune devient une entité ventilateur avec une vitesse au lieu d'une lumière ; son entité lumière est supprimée, avec le nom et la pièce que vous lui aviez donnés.",
+          "labels": "Chaque sortie reçoit l'étiquette « Nikobus Output », chaque touche « Nikobus Button » et chaque scène « Nikobus Scene », les étiquettes de l'intégration Nikobus, pour filtrer dans les tableaux et les sélecteurs. Les étiquettes sont seulement ajoutées, à chaque démarrage ; désactiver cette option n'en retire aucune."
         }
       },
       "led_key": {
@@ -153,7 +155,7 @@
       },
       "take_over": {
         "title": "Reprendre de l'intégration Nikobus",
-        "description": "{entities} entités de l'intégration Nikobus ont un équivalent ici : ses lumières, interrupteurs, volets, ventilateurs, ambiances et interrupteurs d'entrée. En validant, l'ID d'entité, le nom affiché, la pièce, les alias, les étiquettes, l'icône et l'exposition aux assistants vocaux de chacune passent sur l'entité de cette intégration : les tableaux de bord, les automatisations et l'historique continuent de fonctionner. {lights} relais deviennent des lumières ici pour correspondre.\n\nLes entités Nikobus sont conservées, rangées sous leur ID suivi de `_nikobus`, et **Rendre** annule le tout.\n\nNon repris : {left} autres entités Nikobus, surtout ses capteurs de touche et ses boutons d'appui, qui sont ici des entités événement. Les automatisations qui les utilisent, ou qui utilisent par leur nom les événements et actions de Nikobus, doivent être modifiées à la main.\n\nLaissez l'entrée Nikobus désactivée : un seul programme peut parler au bus."
+        "description": "{entities} entités de l'intégration Nikobus ont un équivalent ici : ses lumières, interrupteurs, volets, ventilateurs, ambiances, interrupteurs d'entrée et touches. En validant, l'ID d'entité, le nom affiché, la pièce, les alias, les étiquettes, l'icône et l'exposition aux assistants vocaux de chacune passent sur l'entité de cette intégration : les tableaux de bord, les automatisations et l'historique continuent de fonctionner. {lights} relais deviennent des lumières ici pour correspondre.\n\nLes entités Nikobus sont conservées, rangées sous leur ID suivi de `_nikobus`, et **Rendre** annule le tout.\n\nUne touche est un capteur binaire là-bas et une entité événement ici. L'entité événement prend l'ID du capteur sous `event.`, avec son nom, sa pièce et ses étiquettes ; le capteur garde son propre ID. Les automatisations qui lisent le capteur d'une touche, ou qui utilisent par leur nom les événements et actions de Nikobus, doivent être modifiées à la main.\n\nNon repris : {left} autres entités Nikobus, surtout celles de son pont.\n\nLaissez l'entrée Nikobus désactivée : un seul programme peut parler au bus."
       },
       "give_back": {
         "title": "Rendre à l'intégration Nikobus",
@@ -241,8 +243,8 @@
           "error": "Arrêtée"
         }
       },
-      "clock_drift": {
-        "name": "Avance de l'horloge du PC-Link"
+      "clock": {
+        "name": "Horloge du PC-Link"
       },
       "programming": {
         "name": "Programmation",

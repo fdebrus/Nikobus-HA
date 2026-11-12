@@ -10,8 +10,11 @@ from custom_components.nikobus_ng.const import DOMAIN
 from custom_components.nikobus_ng.describe import _explained
 from custom_components.nikobus_ng.llm_api import API_PROMPT
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from nikobus_connect.discovery import meaning
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -26,7 +29,9 @@ from .conftest import (
     SWITCH,
     SetupFixture,
 )
-from .test_remaining import _reloaded
+from .test_remaining import _options, _reloaded
+
+KEY_EVENT = "event.bus_push_button_4_control_buttons_n1843b4_key_1c"
 
 
 async def test_a_scanned_link_is_said_in_words_with_its_values_named(hass: HomeAssistant, scanned: SetupFixture) -> None:
@@ -133,3 +138,28 @@ async def test_an_output_is_described_in_the_area_of_its_device(
     devices.async_update_device(module.id, area_id=ar.async_get(hass).async_get_or_create("Cellar").id)
     described = await hass.services.async_call(DOMAIN, "describe", {}, blocking=True, return_response=True)
     assert {o["area"] for o in described["outputs"] if o["module"] == SWITCH and o["enabled"]} == {"Cellar"}
+
+
+async def test_entities_are_labelled_by_kind_when_asked(
+    hass: HomeAssistant, hass_storage: dict[str, Any], scanned: SetupFixture, entry: MockConfigEntry
+) -> None:
+    """The labels of the Nikobus integration, under its names; one already there is used, not doubled."""
+    hass_storage[f"{DOMAIN}.{ENTRY_ID}"]["data"]["names"] = {
+        "scenes": [{"name": "Dinner", "members": [[SWITCH, 5, "M14"], [SWITCH, 9, "M14"]]}]
+    }
+    labels = lr.async_get(hass)
+    existing = labels.async_create("Nikobus Button")
+    hub = await scanned()
+    registry = er.async_get(hass)
+    assert not registry.async_get(KEY_EVENT).labels
+    result = await _options(hass, entry, {"next_step_id": "outputs"}, {"labels": True})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await _reloaded(hass, entry, hub)
+    by_name = {label.name: label.label_id for label in labels.async_list_labels()}
+    assert sorted(by_name) == ["Nikobus Button", "Nikobus Output", "Nikobus Scene"]
+    assert registry.async_get(KEY_EVENT).labels == {existing.label_id}
+    assert registry.async_get("switch.switch_module_4707_output_1").labels == {by_name["Nikobus Output"]}
+    scene = registry.async_get_entity_id("scene", DOMAIN, f"{KEY_SCENE}_scene")
+    assert registry.async_get(scene).labels == {by_name["Nikobus Scene"]}
+    # The gateway's own entities are none of the three kinds.
+    assert not registry.async_get("sensor.nikobus_bridge_discovery").labels

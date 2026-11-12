@@ -26,8 +26,8 @@
       "discovery": {
         "default": "mdi:radar"
       },
-      "clock_drift": {
-        "default": "mdi:clock-alert"
+      "clock": {
+        "default": "mdi:clock-outline"
       },
       "programming": {
         "default": "mdi:memory"

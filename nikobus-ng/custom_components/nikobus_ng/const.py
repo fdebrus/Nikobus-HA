@@ -21,6 +21,8 @@ DEFAULT_PRESS_REPEAT: Final = 3
 CONF_OLD_PC_LINK: Final = "old_pc_link"
 #: Per module address: the type to treat it as, when the inventory has it wrong.
 CONF_MODULE_TYPES: Final = "module_types"
+#: Each entity is given the label of its kind: output, button or scene.
+CONF_LABELS: Final = "labels"
 #: Dimmer outputs shown as fans, each ``"<module>:<channel>"``.
 CONF_FAN_OUTPUTS: Final = "fan_outputs"
 #: Per output ``"<module>:<channel>"``: the keys pressed to switch it, so plate LEDs follow.

@@ -42,6 +42,7 @@ from .const import (
     CONF_END_MARGIN,
     CONF_FAN_OUTPUTS,
     CONF_FEEDBACK_MODULE,
+    CONF_LABELS,
     CONF_LED_KEYS,
     CONF_LIGHT_OUTPUTS,
     CONF_MODULE_TYPES,
@@ -349,12 +350,13 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
         return self.async_show_form(step_id="files", data_schema=schema, errors=errors)
 
     async def async_step_outputs(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Which relays switch a lamp, and which dimmer outputs drive a fan."""
+        """Which relays switch a lamp, which dimmer outputs drive a fan, and whether entities are labelled."""
         if user_input is not None:
             return self._save(
                 **{
                     CONF_LIGHT_OUTPUTS: sorted(user_input.get(CONF_LIGHT_OUTPUTS, [])),
                     CONF_FAN_OUTPUTS: sorted(user_input.get(CONF_FAN_OUTPUTS, [])),
+                    CONF_LABELS: user_input[CONF_LABELS],
                 }
             )
         fields: dict[vol.Marker, Any] = {}
@@ -365,6 +367,8 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
                 fields[vol.Optional(option, default=current)] = SelectSelector(
                     SelectSelectorConfig(options=outputs, multiple=True, mode=SelectSelectorMode.DROPDOWN)
                 )
+        labels = self.config_entry.options.get(CONF_LABELS, False)
+        fields[vol.Required(CONF_LABELS, default=labels)] = BooleanSelector()
         return self.async_show_form(step_id="outputs", data_schema=vol.Schema(fields))
 
     async def async_step_led_key(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

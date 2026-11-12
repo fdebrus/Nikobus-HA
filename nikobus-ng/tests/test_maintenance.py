@@ -17,6 +17,7 @@ import pytest
 from custom_components.nikobus_ng.const import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
@@ -28,7 +29,7 @@ from .conftest import ENTRY_ID, SWITCH, SetupFixture, wait_for
 
 PC_LINK = "86F5"
 PROGRAMMING = "sensor.nikobus_bridge_programming"
-DRIFT = "sensor.nikobus_bridge_pc_link_clock_ahead_by"
+CLOCK = "sensor.nikobus_bridge_pc_link_clock"
 
 
 @pytest.fixture
@@ -116,8 +117,11 @@ async def test_the_clock_is_read_and_set_through_the_pc_link(hass: HomeAssistant
     ahead = AsyncMock(side_effect=lambda _address: dt_util.now().replace(tzinfo=None) + timedelta(hours=1))
     with patch.object(NikobusAPI, "get_pc_link_time", ahead):
         await setup()
-        await wait_for(lambda: hass.states.get(DRIFT).state not in ("unknown", "unavailable"))
-        assert abs(float(hass.states.get(DRIFT).state) - 3600) <= 2
+        await wait_for(lambda: hass.states.get(CLOCK).state not in ("unknown", "unavailable"))
+        clock = hass.states.get(CLOCK)
+        # The clock itself, an hour ahead; how far it is off is an attribute.
+        assert abs((dt_util.parse_datetime(clock.state) - dt_util.utcnow()).total_seconds() - 3600) <= 5
+        assert abs(clock.attributes["seconds_ahead"] - 3600) <= 2
         on_time = AsyncMock(side_effect=lambda _address: dt_util.now().replace(tzinfo=None))
         with (
             patch.object(NikobusAPI, "set_pc_link_time", AsyncMock()) as written,
@@ -131,10 +135,18 @@ async def test_the_clock_is_read_and_set_through_the_pc_link(hass: HomeAssistant
     # Local wall time, without a zone: what the PC-Link keeps.
     assert isinstance(moment, datetime) and moment.tzinfo is None
     assert abs((moment - dt_util.now().replace(tzinfo=None)).total_seconds()) < 5
-    assert abs(float(hass.states.get(DRIFT).state)) <= 2
+    assert abs(hass.states.get(CLOCK).attributes["seconds_ahead"]) <= 2
 
 
 async def test_without_a_pc_link_there_is_no_clock(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry) -> None:
     await setup()
-    assert hass.states.get(DRIFT) is None
+    assert hass.states.get(CLOCK) is None
     assert hass.states.get("button.nikobus_bridge_set_pc_link_clock") is None
+
+
+async def test_the_sensor_of_the_clocks_distance_is_removed(hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry) -> None:
+    """Up to 0.7.0 the clock was a number of seconds; that entity would stay behind, unavailable."""
+    registry = er.async_get(hass)
+    former = registry.async_get_or_create("sensor", DOMAIN, f"{ENTRY_ID}_clock_drift", config_entry=entry)
+    await setup()
+    assert registry.async_get(former.entity_id) is None
