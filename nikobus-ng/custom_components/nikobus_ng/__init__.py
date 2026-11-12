@@ -15,7 +15,7 @@ from .inventory import Inventory
 from .labels import apply_labels
 from .llm_api import async_register_llm_api
 from .services import async_setup_services
-from .takeover import apply_pending
+from .takeover import apply_pending, repair_taken
 
 type NikobusConfigEntry = ConfigEntry[NikobusHub]
 
@@ -48,6 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     if inventory.takeover["pending"]:
         apply_pending(hass, hub)
         await inventory.async_save()
+    repair_taken(hass, hub)
     if entry.options.get(CONF_LABELS, False):
         apply_labels(hass, entry)
     if inventory.is_empty:

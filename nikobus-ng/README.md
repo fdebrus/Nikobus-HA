@@ -129,7 +129,10 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   Nikobus entities are parked, not deleted, and "Give back" undoes it. A
   key is a binary sensor there and an event entity here: the event
   entity takes the sensor's id under `event.`, with its name, area and
-  labels, and the sensor keeps its own id.
+  labels, and the sensor keeps its own id. It can be run again: what was
+  taken before is left alone. From Home Assistant 2026.11 the device's
+  name is always shown in front of an entity's, so only the entity's own
+  name is carried, not the whole name it was shown under.
 - **Labels by kind**, an option: "Nikobus Output", "Nikobus Button" and
   "Nikobus Scene", the labels of the Nikobus integration, on outputs,
   keys and scenes.
@@ -150,7 +153,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 5 594 lines |
+| Python | 15 036 lines | 5 652 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
@@ -160,7 +163,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
 | PC-Link clock | a timestamp sensor, read every hour | the same, with how far it is off as an attribute, and a button |
 | Settings | 17 options steps | a menu: gateway, lights and fans, a roller output, LED keys, a module's type, names, files |
-| Tests | 923, against a stub of Home Assistant | 127, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 133, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -192,7 +195,7 @@ What exists in the Nikobus integration and is absent here.
 | A module given another type, from the options and from the repair | A PC-Link older than generation 3: what it answers is taken from the Nikobus integration's handling of it |
 | Two hand-written files as the inventory; press repeats; calendar channels; a scene at the wall | |
 | The description and the LLM tools, called as Home Assistant calls them | The tools used by a real conversation agent |
-| A take-over and its undo, on registry entries made like the Nikobus integration's | A take-over of a real installation |
+| A take-over and its undo, on registry entries made like the Nikobus integration's | Which name is carried from Home Assistant 2026.11: the test harness is on 2026.10, so the rule runs on stand-ins for the registry entry |
 | Fans, LED keys, shutter groups, a project file as inventory | An audio module and a colour controller, real ones |
 | Audio zones, read out of the simulated module by the link scan | The link scan through a gateway that is not a PC-Link |
 | A colour controller's state and keys (a stand-in answers its state query) | |
@@ -213,7 +216,15 @@ read back; the button that sets the PC-Link's clock took it from 47
 minutes ahead to one second; the description returned 52 outputs, 154
 keys, 4 scenes and 6 logical inputs. The silent colour controller was
 asked at two polls and the entry was disabled before the third, so the
-hour's pause was not seen.
+hour's pause was not seen. With 0.8.0 (2026-11-12, Home Assistant
+2026.11.1): the names with number and room, the clock as a time, and the
+colour controller, once its device was deleted, staying out. A take-over
+run under 0.7.0 showed three faults there, fixed in 0.8.1: names read
+with the device's name twice ("Scene - TV Scene - TV"), because 2026.11
+puts the device's name in front of a name set in the registry; two
+shutters no key drives stayed disabled, because their Nikobus entities
+were disabled with their entry; and the take-over could not be run again
+to take the keys.
 
 ## Trying it
 
@@ -246,11 +257,11 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 | File | Lines | |
 |---|---|---|
 | `hub.py` | 661 | the connection, output state, commands, LED keys, polling, reconnection |
-| `config_flow.py` | 616 | setup, reconfigure, the options menu, the uploads |
+| `config_flow.py` | 621 | setup, reconfigure, the options menu, the uploads |
 | `inventory.py` | 602 | the store, and every question asked of it |
 | `maintenance.py` | 420 | the clock, the programming checks, the backup |
 | `cover.py` | 364 | shutters, their position, shutter groups |
 | `discovery.py` | 241 | one discovery run, of everything or of one module |
 | `describe.py` | 246 | the installation as data, for a person or a model |
-| `takeover.py` | 221 | taking over the Nikobus integration's entities, and giving them back |
-| the rest | 2 223 | the platforms, presses, repairs, actions, the LLM tools, the hand-written files, diagnostics |
+| `takeover.py` | 272 | taking over the Nikobus integration's entities, and giving them back |
+| the rest | 2 225 | the platforms, presses, repairs, actions, the LLM tools, the hand-written files, diagnostics |

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from custom_components.nikobus_ng.const import CONF_LIGHT_OUTPUTS, DOMAIN
+from custom_components.nikobus_ng.takeover import _carried_name
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -137,18 +139,26 @@ def _nikobus_entities(hass: HomeAssistant) -> MockConfigEntry:
     registry.async_get_or_create(
         "sensor", "nikobus", "nikobus_pc_link_clock", config_entry=old, suggested_object_id="bridge_clock"
     )
+    # An output no key drives, used from Home Assistant only. Its entry is disabled, and so is it.
+    registry.async_get_or_create(
+        "light", "nikobus", f"nikobus_light_relay_switch_{SWITCH}_3", config_entry=old,
+        suggested_object_id="attic_fan", original_name="Attic fan",
+        disabled_by=er.RegistryEntryDisabler.CONFIG_ENTRY,
+    )
     return old
 
 
 async def test_a_take_over_moves_ids_names_areas_and_exposure_and_can_be_undone(hass: HomeAssistant, simulator: WallSimulator, setup: SetupFixture, entry: MockConfigEntry) -> None:
-    _nikobus_entities(hass)
+    old = _nikobus_entities(hass)
     hub = await setup()
     registry = er.async_get(hass)
     before = registry.async_get_entity_id("switch", DOMAIN, f"{SWITCH}_2")
     assert before == "switch.switch_module_4707_output_2"
 
     result = await _options(hass, entry, {"next_step_id": "take_over"})
-    assert result["description_placeholders"] == {"entities": "4", "left": "1", "lights": "1"}
+    # As an output no key drives is created on a new installation: disabled.
+    registry.async_update_entity("switch.switch_module_4707_output_3", disabled_by=er.RegistryEntryDisabler.INTEGRATION)
+    assert result["description_placeholders"] == {"entities": "5", "left": "1", "lights": "2"}
     # Nothing has moved yet: the form only says what would.
     assert registry.async_get("light.kitchen_ceiling").platform == "nikobus"
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
@@ -156,7 +166,9 @@ async def test_a_take_over_moves_ids_names_areas_and_exposure_and_can_be_undone(
     taken = await _reloaded(hass, entry, hub)
 
     # The relay is a light here too, and carries the id, the name and what went with it.
-    assert entry.options[CONF_LIGHT_OUTPUTS] == [f"{SWITCH}:2"]
+    assert entry.options[CONF_LIGHT_OUTPUTS] == [f"{SWITCH}:2", f"{SWITCH}:3"]
+    # Disabled there only because its entry is: it was in use, so it is enabled here.
+    assert registry.async_get("light.attic_fan").disabled_by is None
     assert registry.async_get_entity_id("switch", DOMAIN, f"{SWITCH}_2") is None
     mine = registry.async_get("light.kitchen_ceiling")
     assert (mine.platform, mine.unique_id) == (DOMAIN, f"{SWITCH}_2")
@@ -182,6 +194,18 @@ async def test_a_take_over_moves_ids_names_areas_and_exposure_and_can_be_undone(
     await hass.services.async_call("light", "turn_on", {"entity_id": "light.kitchen_ceiling"}, blocking=True)
     assert simulator.output(SWITCH, 2) == 0xFF
 
+    # Nothing is left to take, so it is not offered; an entity that turns up later is, alone.
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert "take_over" not in menu["menu_options"]
+    hass.config_entries.options.async_abort(menu["flow_id"])
+    registry.async_get_or_create(
+        "light", "nikobus", f"nikobus_light_relay_switch_{SWITCH}_4", config_entry=old, suggested_object_id="porch"
+    )
+    again = await _options(hass, entry, {"next_step_id": "take_over"})
+    assert again["description_placeholders"]["entities"] == "1"
+    hass.config_entries.options.async_abort(again["flow_id"])
+    registry.async_remove("light.porch")
+
     result = await _options(hass, taken.entry, {"next_step_id": "give_back"}, {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     given = await _reloaded(hass, entry, taken)
@@ -206,3 +230,54 @@ async def test_without_nikobus_entities_there_is_nothing_to_take_over(hass: Home
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert "take_over" not in result["menu_options"]
     assert "give_back" not in result["menu_options"]
+
+
+@pytest.mark.parametrize(
+    ("name", "original", "mine", "carried"),
+    [
+        pytest.param("Wall lights", "Salon Appliques", "Output 1", "Wall lights", id="a-name-a-person-gave"),
+        pytest.param(None, "Bedroom shutter", "Output 3", "Bedroom shutter", id="the-name-nikobus-gave"),
+        pytest.param("Wall lights", None, "Wall lights", None, id="already-this-entitys-name"),
+        pytest.param("", None, None, None, id="named-by-its-device"),
+    ],
+)
+def test_from_2026_11_only_the_entitys_own_part_of_the_name_is_carried(
+    name: str | None, original: str | None, mine: str | None, carried: str | None
+) -> None:
+    """Home Assistant 2026.11 puts the device's name in front of a name set in the registry.
+
+    The tests run on 2026.10, whose registry entry has no ``compat_name``;
+    the 2026.11 entry is stood in for by the three fields read here. Not
+    modelled: the registry itself, and how 2026.11 then shows the name.
+    """
+    old = SimpleNamespace(name=name, original_name=original, compat_name=None)
+    assert _carried_name(old, SimpleNamespace(original_name=mine), "Module Wall lights") == carried
+
+
+def test_up_to_2026_10_the_whole_shown_name_is_carried() -> None:
+    old = SimpleNamespace(name=None, original_name="Bedroom shutter")
+    assert _carried_name(old, SimpleNamespace(original_name="Output 3"), "Module Bedroom shutter") == "Module Bedroom shutter"
+
+
+async def test_an_entity_an_earlier_take_over_left_disabled_is_enabled(
+    hass: HomeAssistant, setup: SetupFixture, entry: MockConfigEntry
+) -> None:
+    """Up to 0.8.0 an entity whose Nikobus entry was disabled counted as unused."""
+    old = MockConfigEntry(domain="nikobus", title="Nikobus")
+    old.add_to_hass(hass)
+    registry = er.async_get(hass)
+    parked = registry.async_get_or_create(
+        "light", "nikobus", f"nikobus_light_relay_switch_{SWITCH}_3", config_entry=old,
+        suggested_object_id="attic_fan_nikobus", disabled_by=er.RegistryEntryDisabler.CONFIG_ENTRY,
+    )
+    hub = await setup()
+    mine = registry.async_get_entity_id("switch", DOMAIN, f"{SWITCH}_3")
+    # As an output no key drives is created on a new installation: disabled.
+    registry.async_update_entity(mine, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
+    hub.inventory.takeover["done"] = [
+        {"entity_id": "light.attic_fan", "domain": "switch", "unique_id": f"{SWITCH}_3", "name": "", "previous_entity_id": mine, "parked": parked.entity_id}
+    ]
+    await hub.inventory.async_save()
+    await hass.config_entries.async_reload(entry.entry_id)
+    await _reloaded(hass, entry, hub)
+    assert registry.async_get(mine).disabled_by is None
