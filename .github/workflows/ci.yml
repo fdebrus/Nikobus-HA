@@ -78,20 +78,6 @@ jobs:
           pip install -r "$RUNNER_TEMP/manifest-minimum.txt"
       - run: python -m pytest -q
 
-  nikobus-ng:
-    # The clean-slate integration in nikobus-ng/, tested against the real
-    # Home Assistant and the library's simulated PC-Link.
-    name: Nikobus NG (real Home Assistant, simulated bus)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-      - run: pip install -r nikobus-ng/requirements_test.txt
-      - run: python -m pytest -q
-        working-directory: nikobus-ng
-
   hassfest:
     name: Hassfest (manifest validation)
     runs-on: ubuntu-latest

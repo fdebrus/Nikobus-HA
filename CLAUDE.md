@@ -40,10 +40,10 @@ fields from either.
   material (protocol notes, memory maps, vendor manuals, code audits).
 - `blueprints/` automation blueprints users import from GitHub (not shipped
   by HACS); `tests/test_blueprints.py` pins them to the events fired.
-- `nikobus-ng/` a second, independent integration (domain `nikobus_ng`),
-  written from scratch on the same library; experimental, not shipped by
-  HACS. Its tests run from that folder against the real Home Assistant and
-  `nikobus-simulator` (Python 3.14). See its README and REVIEW.md.
+- `nikobus-ng/` a pointer: Nikobus NG, the second integration written here
+  (domain `nikobus_ng`), lives in [Nikobus-NG](https://github.com/fdebrus/Nikobus-NG)
+  since its 0.10.0. `documentation/nikobus-ng-review.md` is the review of this
+  integration that its design started from.
 
 ## Rules that must not be broken
 
