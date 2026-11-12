@@ -1,3 +1,0 @@
-pytest-homeassistant-custom-component
-nikobus-connect>=0.57.7
-nikobus-simulator @ git+https://github.com/fdebrus/nikobus-connect@v0.57.5#subdirectory=simulator
