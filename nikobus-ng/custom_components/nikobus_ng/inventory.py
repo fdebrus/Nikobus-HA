@@ -303,6 +303,19 @@ class Inventory:
                 model=str(entry.get("model") or "").strip(),
             )
 
+    def system_modules(self) -> Iterator[tuple[str, str, str]]:
+        """``(address, what the inventory calls it, model)`` of every module that is not an output.
+
+        A PC-Logic, a Feedback Module, a Modular Interface, a PC-Link: on
+        the bus, with nothing to switch. An audio module and a colour
+        controller are left out: their own entities bring their device.
+        """
+        own_device = (*OUTPUT_MODULE_TYPES, RGB_MODULE, "audio_module")
+        for address, entry in sorted(self._module_entries().items()):
+            module_type = str(entry.get("module_type") or "")
+            if module_type and module_type not in own_device:
+                yield address, self._module_label(entry, module_type), str(entry.get("model") or "").strip()
+
     @staticmethod
     def _module_label(entry: dict[str, Any], module_type: str) -> str:
         """What the inventory calls the product, e.g. "Switch module"."""

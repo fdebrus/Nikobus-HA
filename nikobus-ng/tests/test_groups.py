@@ -14,6 +14,7 @@ from nikobus_connect.discovery.mapping import DEVICE_TYPES
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .conftest import AUDIO, ENTRY_ID, KEY_SCENE, PLATE, SWITCH, SetupFixture
+from .test_parity import INPUT, _with_logical_input
 from .test_remaining import _reloaded
 
 
@@ -62,6 +63,14 @@ async def test_devices_hang_under_their_kind_and_no_kind_is_empty(
     }
     # The installation has no remote, no interface and no shutter group.
     assert groups == {"Output modules", "System modules", "Wall buttons", "Scenes"}
+    # A group is a service to Home Assistant, a module or a plate a device.
+    kinds = {
+        device.entry_type
+        for device in dr.async_entries_for_config_entry(devices, entry.entry_id)
+        if device.via_device_id == hub.gateway_device_id
+    }
+    assert kinds == {dr.DeviceEntryType.SERVICE}
+    assert devices.async_get_device_by_identifier((DOMAIN, SWITCH), entry.entry_id).entry_type is None
 
 
 async def test_a_kind_nothing_is_filed_under_any_more_goes_and_none_can_be_deleted(
@@ -82,3 +91,27 @@ async def test_a_kind_nothing_is_filed_under_any_more_goes_and_none_can_be_delet
     await _reloaded(hass, entry, hub)
     assert devices.async_get(scenes.id) is None
     assert devices.async_get_device_by_identifier((DOMAIN, f"{KEY_SCENE}_scene"), entry.entry_id) is None
+
+
+async def test_a_system_module_has_a_device_and_its_inputs_hang_under_it(
+    hass: HomeAssistant, hass_storage: dict[str, Any], setup: SetupFixture, entry: MockConfigEntry
+) -> None:
+    """As the Nikobus integration shows them: the PC-Logic under the system modules, its inputs under it."""
+    _with_logical_input(hass_storage)
+    modules = hass_storage[f"{DOMAIN}.{ENTRY_ID}"]["data"]["modules"]["nikobus_module"]
+    modules["64A0"] = {"module_type": "pc_logic", "model": "05-201", "discovered_info": {"name": "PC-Logic"}}
+    modules["7A11"] = {"module_type": "feedback_module", "model": "05-207"}
+    # The gateway the simulator presents is a PC-Link at this address: it is the bridge already.
+    modules["86F5"] = {"module_type": "pc_link", "model": "05-200"}
+    hub = await setup()
+    devices = dr.async_get(hass)
+    system = hub.group_device_id("system_modules")
+    logic = devices.async_get_device_by_identifier((DOMAIN, "64A0"), entry.entry_id)
+    feedback = devices.async_get_device_by_identifier((DOMAIN, "7A11"), entry.entry_id)
+    assert logic is not None and feedback is not None
+    assert (logic.name, logic.model, logic.via_device_id) == ("PC-Logic 64A0", "05-201", system)
+    assert (feedback.name, feedback.via_device_id) == ("Feedback module 7A11", system)
+    logical_input = devices.async_get_device_by_identifier((DOMAIN, INPUT), entry.entry_id)
+    assert logical_input is not None
+    assert logical_input.via_device_id == logic.id
+    assert devices.async_get_device_by_identifier((DOMAIN, "86F5"), entry.entry_id) is None

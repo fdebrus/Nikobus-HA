@@ -163,3 +163,27 @@ async def test_entities_are_labelled_by_kind_when_asked(
     assert registry.async_get(scene).labels == {by_name["Nikobus Scene"]}
     # The gateway's own entities are none of the three kinds.
     assert not registry.async_get("sensor.nikobus_bridge_discovery").labels
+
+
+@pytest.mark.parametrize(
+    ("named", "name", "entity_id"),
+    [
+        pytest.param(
+            [{"name": "Dinner", "members": [[SWITCH, 5, "M14"], [SWITCH, 9, "M14"]]}], "Dinner", "scene.dinner", id="named-by-the-project"
+        ),
+        pytest.param([], None, None, id="a-key-and-nothing-more"),
+    ],
+)
+async def test_an_output_names_the_scenes_it_is_part_of(
+    hass: HomeAssistant,
+    hass_storage: dict[str, Any],
+    scanned: SetupFixture,
+    named: list[dict[str, Any]],
+    name: str | None,
+    entity_id: str | None,
+) -> None:
+    hass_storage[f"{DOMAIN}.{ENTRY_ID}"]["data"]["names"] = {"scenes": named}
+    await scanned()
+    described = await hass.services.async_call(DOMAIN, "describe", {}, blocking=True, return_response=True)
+    output = next(o for o in described["outputs"] if (o["module"], o["channel"]) == (SWITCH, 5))
+    assert output["scenes"] == [{"address": KEY_SCENE, "name": name, "entity_id": entity_id}]

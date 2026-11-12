@@ -56,6 +56,7 @@ from .const import (
     DOMAIN,
     FEEDBACK_PORT_ANSWERS,
     FEEDBACK_SAFETY_POLL,
+    GROUP_SYSTEM_MODULES,
     ISSUE_FEEDBACK_PORT,
     ISSUE_NO_DEVICE,
     ISSUE_NOT_ANSWERING,
@@ -104,6 +105,8 @@ class NikobusHub:
         #: The gateway's device, which every other device hangs under.
         self.gateway_device_id: str = ""
         self._groups: dict[str, str] = {}
+        #: The device of each module that is not an output, by its address.
+        self.system_module_ids: dict[str, str] = {}
         #: The devices of the scenes and shutter groups that have an entity this run.
         self.function_identifiers: set[str] = set()
 
@@ -319,6 +322,8 @@ class NikobusHub:
                 dr.async_get(self.hass)
                 .async_get_or_create(
                     config_entry_id=self.entry.entry_id,
+                    # Not a thing on the bus: Home Assistant lists it apart and under another icon.
+                    entry_type=dr.DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, self.group_identifier(group))},
                     manufacturer=MANUFACTURER,
                     translation_key=group,
@@ -327,6 +332,27 @@ class NikobusHub:
                 .id
             )
         return self._groups[group]
+
+    def register_system_modules(self) -> None:
+        """Give each module that is not an output a device, filed under the system modules.
+
+        Such a module has no entity; its device is there for what hangs
+        under it, the logical inputs of a PC-Logic, and so that the
+        installation is seen whole. The gateway is one already.
+        """
+        devices = dr.async_get(self.hass)
+        for address, description, model in self.inventory.system_modules():
+            if address == self.connection.gateway_address:
+                continue
+            self.system_module_ids[address] = devices.async_get_or_create(
+                config_entry_id=self.entry.entry_id,
+                identifiers={(DOMAIN, address)},
+                manufacturer=MANUFACTURER,
+                model=model or None,
+                name=self.inventory.device_name(address) or f"{description} {address}",
+                suggested_area=self.inventory.device_area(address),
+                via_device_id=self.group_device_id(GROUP_SYSTEM_MODULES),
+            ).id
 
     def group_identifier(self, group: str) -> str:
         """What a group's device is known by in the device registry."""

@@ -38,6 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
         .async_get_or_create(config_entry_id=entry.entry_id, **gateway_device(hub))
         .id
     )
+    hub.register_system_modules()
     try:
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException:
