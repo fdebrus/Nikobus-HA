@@ -2,7 +2,7 @@
 
 A review of `custom_components/nikobus` at 3.31.6 (15 036 lines of Python,
 923 tests), written before `nikobus-ng`
-([Nikobus-NG](https://github.com/fdebrus/Nikobus-NG), in a repository of its
+([Nikobus_NG](https://github.com/fdebrus/Nikobus_NG), in a repository of its
 own since 0.10.0) and as its brief: what to keep,
 and what a clean-slate design would do differently.
 
@@ -91,7 +91,7 @@ point, which is luck and care, not coverage.
 **Recommendation, independent of nikobus-ng:** add one CI job that sets
 the existing integration up under `pytest-homeassistant-custom-component`
 with the simulator. The harness in `tests/conftest.py` of
-[Nikobus-NG](https://github.com/fdebrus/Nikobus-NG) does it
+[Nikobus_NG](https://github.com/fdebrus/Nikobus_NG) does it
 for the existing integration in about thirty lines; that is how the
 "runs clean" statement above was obtained.
 

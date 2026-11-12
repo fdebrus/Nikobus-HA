@@ -41,7 +41,7 @@ fields from either.
 - `blueprints/` automation blueprints users import from GitHub (not shipped
   by HACS); `tests/test_blueprints.py` pins them to the events fired.
 - `nikobus-ng/` a pointer: Nikobus NG, the second integration written here
-  (domain `nikobus_ng`), lives in [Nikobus-NG](https://github.com/fdebrus/Nikobus-NG)
+  (domain `nikobus_ng`), lives in [Nikobus_NG](https://github.com/fdebrus/Nikobus_NG)
   since its 0.10.0. `documentation/nikobus-ng-review.md` is the review of this
   integration that its design started from.
 
