@@ -8,10 +8,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
-from .const import DOMAIN, PLATFORMS
+from .const import CONF_LABELS, DOMAIN, PLATFORMS
 from .entity import gateway_device
 from .hub import NikobusHub
 from .inventory import Inventory
+from .labels import apply_labels
 from .llm_api import async_register_llm_api
 from .services import async_setup_services
 from .takeover import apply_pending
@@ -47,6 +48,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
     if inventory.takeover["pending"]:
         apply_pending(hass, hub)
         await inventory.async_save()
+    if entry.options.get(CONF_LABELS, False):
+        apply_labels(hass, entry)
     if inventory.is_empty:
         # Nothing is known yet: read the installation, then reload.
         hub.discovery.start()
@@ -62,20 +65,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
 
 def _remove_devices_no_longer_known(hass: HomeAssistant, entry: NikobusConfigEntry, hub: NikobusHub) -> None:
-    """Delete the devices of modules and plates the inventory lost."""
-    known = {entry.entry_id, *hub.inventory.addresses()}
+    """Delete the devices of modules, plates and central functions the inventory lost."""
+    known = {entry.entry_id, *hub.inventory.addresses(), *hub.inventory.scenes}
     devices = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
-        if not any(domain == DOMAIN and identifier in known for domain, identifier in device.identifiers):
+        if not any(
+            domain == DOMAIN and identifier.removesuffix("_scene").removesuffix("_group") in known
+            for domain, identifier in device.identifiers
+        ):
             devices.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
 
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: NikobusConfigEntry, device: dr.DeviceEntry
 ) -> bool:
-    """Deleting a module or a plate forgets it; the gateway stays."""
+    """Deleting a module or a plate forgets it; the gateway stays, and so does what the modules hold."""
     addresses = [identifier for domain, identifier in device.identifiers if domain == DOMAIN]
-    if entry.entry_id in addresses:
+    if entry.entry_id in addresses or any(address.endswith(("_scene", "_group")) for address in addresses):
         return False
     for address in addresses:
         await entry.runtime_data.async_forget(address)

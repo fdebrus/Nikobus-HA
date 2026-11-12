@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import Platform
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
+from nikobus_connect.discovery import describe_link
 
 from .const import DOMAIN
 from .entity import output_platform
@@ -27,6 +29,16 @@ if TYPE_CHECKING:
     from .inventory import Key, OutputModule
 
 
+def _explained(module_type: str | None, output: dict[str, Any]) -> dict[str, Any]:
+    """A link's mode, what a press then does, and its values under what they are."""
+    mode = output.get("mode")
+    meaning = describe_link(module_type, mode, output.get("t1"), output.get("t2"))
+    if meaning is None:
+        # A mode the library has no words for keeps its values as they were read.
+        return {"mode": mode, **{name: output[name] for name in ("t1", "t2") if output.get(name)}}
+    return {"mode": mode, "does": meaning.summary, **meaning.parameters}
+
+
 class Describer:
     """Answers questions about one installation."""
 
@@ -34,6 +46,7 @@ class Describer:
         self._hub = hub
         self._entities = er.async_get(hub.hass)
         self._areas = ar.async_get(hub.hass)
+        self._devices = dr.async_get(hub.hass)
 
     def _entity(self, platform: str, unique_id: str) -> dict[str, Any]:
         """An entity as a model can point at it: its id, its name, its area."""
@@ -42,7 +55,10 @@ class Describer:
             return {"entity_id": None}
         entry = self._entities.async_get(entity_id)
         state = self._hub.hass.states.get(entity_id)
-        area = self._areas.async_get_area(entry.area_id) if entry and entry.area_id else None
+        # An entity with no area of its own is in its device's.
+        device = self._devices.async_get(entry.device_id) if entry and entry.device_id else None
+        area_id = (entry.area_id if entry else None) or (device.area_id if device else None)
+        area = self._areas.async_get_area(area_id) if area_id else None
         return {
             "entity_id": entity_id,
             "name": state.name if state else (entry.name or entry.original_name if entry else None),
@@ -57,25 +73,20 @@ class Describer:
             **self._entity(output_platform(self._hub, module, channel), f"{module.address}_{channel}"),
         }
 
-    def _links_of(self, key: Key) -> list[dict[str, Any]]:
-        """What a key drives, with the mode and the times of each link."""
+    def _links_of(self, key: Key) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+        """Each output a key drives, and the link that drives it."""
         modules = {module.address: module for module in self._hub.inventory.output_modules()}
         links = []
         point = key.plate_entry["operation_points"][key.label] or {}
         for link in point.get("linked_modules") or []:
             address = str(link.get("module_address") or "").upper()
+            module = modules.get(address)
             for output in link.get("outputs") or []:
                 channel = output.get("channel")
                 target: dict[str, Any] = {"module": address, "channel": channel}
-                if address in modules and isinstance(channel, int):
-                    target = self._output_ref(modules[address], channel)
-                links.append(
-                    {
-                        **target,
-                        "mode": output.get("mode"),
-                        **{name: output[name] for name in ("t1", "t2") if output.get(name)},
-                    }
-                )
+                if module is not None and isinstance(channel, int):
+                    target = self._output_ref(module, channel)
+                links.append((target, _explained(module.module_type if module else None, output)))
         return links
 
     def key(self, key: Key) -> dict[str, Any]:
@@ -87,7 +98,7 @@ class Describer:
             "key": key.label,
             "address": key.bus_address,
             **self._entity(Platform.EVENT, f"{key.bus_address}_event"),
-            "drives": self._links_of(key),
+            "drives": [{**target, **link} for target, link in self._links_of(key)],
         }
 
     def output(self, module: OutputModule, channel: int) -> dict[str, Any]:
@@ -97,15 +108,15 @@ class Describer:
         for key in inventory.keys_driving(module.address, channel):
             mine = [
                 link
-                for link in self._links_of(key)
-                if (link.get("module"), link.get("channel")) == (module.address, channel)
+                for target, link in self._links_of(key)
+                if (target["module"], target["channel"]) == (module.address, channel)
             ]
             drivers.append(
                 {
                     "plate": inventory.device_name(key.plate) or key.plate_entry.get("description") or key.plate,
                     "key": key.label,
                     "address": key.bus_address,
-                    "links": [{k: v for k, v in link.items() if k in ("mode", "t1", "t2")} for link in mine],
+                    "links": mine,
                 }
             )
         return {
@@ -132,9 +143,10 @@ class Describer:
                 module = str(output.get("module_address") or "").upper()
                 channel = output.get("channel")
                 target: dict[str, Any] = {"module": module, "channel": channel}
-                if module in modules and isinstance(channel, int):
-                    target = self._output_ref(modules[module], channel)
-                outputs.append({**target, "mode": output.get("mode")})
+                known = modules.get(module)
+                if known is not None and isinstance(channel, int):
+                    target = self._output_ref(known, channel)
+                outputs.append({**target, **_explained(known.module_type if known else None, output)})
             entity = self._entity(Platform.SCENE, f"{address}_scene")
             if entity["entity_id"] is None:
                 entity = self._entity(Platform.COVER, f"{address}_group")

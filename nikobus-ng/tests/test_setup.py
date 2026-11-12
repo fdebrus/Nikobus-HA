@@ -61,7 +61,7 @@ async def test_outputs_show_what_the_modules_report(hass: HomeAssistant, simulat
     light = hass.states.get("light.dim_controller_module_0e6c_output_1")
     assert (light.state, light.attributes["brightness"]) == ("on", 0x80)
     assert hass.states.get("cover.roller_shutter_module_9105_output_1") is not None
-    assert hass.states.get("binary_sensor.nikobus_connection").state == "on"
+    assert hass.states.get("binary_sensor.nikobus_bridge_connection").state == "on"
 
 
 async def test_key_press_buttons_are_not_enabled(hass: HomeAssistant, setup: SetupFixture) -> None:

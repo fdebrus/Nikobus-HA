@@ -96,6 +96,8 @@ class Maintenance:
     def __init__(self, hub: NikobusHub) -> None:
         self._hub = hub
         self.running = False
+        #: The clock as last read, in Home Assistant's time zone.
+        self.clock: datetime | None = None
         self.clock_drift: float | None = None
         self.clock_read_at: datetime | None = None
         self.checks: dict[str, ModuleCheck] = {}
@@ -166,6 +168,7 @@ class Maintenance:
             clock = await self._hub.api.get_pc_link_time(address)
         except ValueError:
             # It answered, with a clock that was never set.
+            self.clock = None
             self.clock_drift = None
         except (NikobusError, TimeoutError) as err:
             raise HomeAssistantError(
@@ -175,6 +178,7 @@ class Maintenance:
             ) from err
         else:
             # The PC-Link keeps local wall time and knows no time zone.
+            self.clock = clock.replace(tzinfo=dt_util.get_default_time_zone())
             self.clock_drift = round((clock - dt_util.now().replace(tzinfo=None)).total_seconds())
         self.clock_read_at = dt_util.utcnow()
         self._hub.notify()

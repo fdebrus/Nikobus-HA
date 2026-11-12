@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from nikobus_connect.discovery.store import is_button_backed_cf, is_pure_roller_cf
 
 from .const import DIMMER_READ_DELAY
-from .entity import NikobusEntity, gateway_device
+from .entity import NikobusEntity, function_device
 from .hub import NikobusHub
 from .presses import PRESSED
 
@@ -51,12 +51,10 @@ class NikobusScene(NikobusEntity, Scene):
             }
         )
         self._attr_unique_id = f"{address}_scene"
-        if name:
-            self._attr_name = name
-        else:
-            self._attr_translation_key = "central_function"
-            self._attr_translation_placeholders = {"address": self._bus_address}
-        self._attr_device_info = gateway_device(hub)
+        self._attr_name = None
+        self._attr_device_info = function_device(
+            hub, self._attr_unique_id, "central_function", self._bus_address, name
+        )
         # Every frame that activates it: one central function can be on several keys.
         self._triggers = sorted(
             {self._bus_address, *(str(frame).upper() for frame in record.get("triggered_by") or [])}

@@ -106,6 +106,7 @@ async def test_a_project_file_names_devices_outputs_and_scenes(hass: HomeAssista
         addresses={SWITCH: ("Switch board", "Cellar"), PLATE: ("Front door", "Hall")},
         scenes=[SceneDef("Dinner", frozenset({(SWITCH, 5, "M14")}))],
         outputs={(SWITCH, 1): "Porch light"},
+        numbers={PLATE: 11},
     )
     result = await _options_step(hass, entry, "names")
     with patch("custom_components.nikobus_ng.config_flow._read_names", return_value=(project, None)):
@@ -118,12 +119,12 @@ async def test_a_project_file_names_devices_outputs_and_scenes(hass: HomeAssista
     await hass.async_block_till_done()
     inventory = entry.runtime_data.inventory
     assert inventory.channel_name(SWITCH, 1) == "Porch light"
-    assert inventory.device_name(PLATE) == "Front door"
+    assert inventory.device_name(SWITCH) == "Switch board (Cellar)"
     scene = {"outputs": [{"module_address": SWITCH, "channel": 5, "mode": "M14 (Light scene on)"}]}
     assert inventory.scene_name(scene) == "Dinner"
     # The plate existed before the upload: its room still becomes its area.
     plate = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, PLATE), entry.entry_id)
-    assert plate.name == "Front door"
+    assert plate.name == "11: Front door (Hall)"
     areas_by_id = {a.id: a.name for a in ar.async_get(hass).async_list_areas()}
     assert areas_by_id.get(plate.area_id) == area
 

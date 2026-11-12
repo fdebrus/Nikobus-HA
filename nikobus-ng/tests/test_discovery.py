@@ -49,7 +49,8 @@ async def test_a_light_scene_the_scan_finds_is_a_scene_under_its_project_name(ha
     hub = await scanned()
     assert list(hub.inventory.scenes) == [KEY_SCENE]
     state = hass.states.get(er.async_get(hass).async_get_entity_id("scene", DOMAIN, f"{KEY_SCENE}_scene"))
-    assert (state.name, state.attributes["outputs"]) == ("Nikobus Dinner", 2)
+    # A device of its own, so the scene is shown under the project's name and nothing else.
+    assert (state.name, state.attributes["outputs"]) == ("Dinner", 2)
 
 
 async def test_a_light_scene_the_project_does_not_name_stays_a_key(hass: HomeAssistant, scanned: SetupFixture) -> None:
@@ -76,7 +77,7 @@ async def test_a_discovery_is_refused_while_one_runs(hass: HomeAssistant, setup:
     hub.discovery.running = True
     with pytest.raises(HomeAssistantError):
         hub.discovery.start()
-    assert hass.states.get("button.nikobus_discover_installation").state == "unknown"
+    assert hass.states.get("button.nikobus_bridge_discover_installation").state == "unknown"
 
 
 async def test_no_pc_link_ends_in_an_error_the_sensor_shows(hass: HomeAssistant, setup: SetupFixture, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -84,13 +85,13 @@ async def test_no_pc_link_ends_in_an_error_the_sensor_shows(hass: HomeAssistant,
     monkeypatch.setattr("custom_components.nikobus_ng.discovery.INVENTORY_PROBE_TIMEOUT", 0.2)
     monkeypatch.setattr("custom_components.nikobus_ng.discovery.INVENTORY_CLOSE_TIMEOUT", 0.2)
     hub = await setup()
-    await hass.services.async_call("button", "press", {"entity_id": "button.nikobus_discover_installation"}, blocking=True)
+    await hass.services.async_call("button", "press", {"entity_id": "button.nikobus_bridge_discover_installation"}, blocking=True)
     await hub.discovery.async_wait()
     await hass.async_block_till_done()
-    state = hass.states.get("sensor.nikobus_discovery")
+    state = hass.states.get("sensor.nikobus_bridge_discovery")
     assert (state.state, state.attributes["error"]) == ("error", "no_pc_link")
     assert not hub.discovery.running
-    await wait_for(lambda: hass.states.get("button.nikobus_discover_installation").state != "unavailable")
+    await wait_for(lambda: hass.states.get("button.nikobus_bridge_discover_installation").state != "unavailable")
 
 
 @pytest.mark.parametrize(

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.const import EntityCategory, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .const import DOMAIN
 from .discovery import PHASES
 from .entity import GatewayEntity
 from .hub import NikobusHub
@@ -27,7 +30,11 @@ async def async_setup_entry(
     hub = entry.runtime_data
     async_add_entities([NikobusDiscoverySensor(hub), NikobusProgrammingSensor(hub)])
     if hub.maintenance.pc_link_address is not None:
-        async_add_entities([NikobusClockDriftSensor(hub)])
+        async_add_entities([NikobusClockSensor(hub)])
+    # Up to 0.7.0 the clock was shown as its distance from Home Assistant's.
+    registry = er.async_get(hass)
+    if former := registry.async_get_entity_id(Platform.SENSOR, DOMAIN, f"{entry.entry_id}_clock_drift"):
+        registry.async_remove(former)
 
 
 class NikobusDiscoverySensor(GatewayEntity, SensorEntity):
@@ -57,31 +64,34 @@ class NikobusDiscoverySensor(GatewayEntity, SensorEntity):
         return {"progress": status.progress, "module": status.module, "error": status.error}
 
 
-class NikobusClockDriftSensor(GatewayEntity, SensorEntity):
-    """How far the PC-Link's clock is ahead of Home Assistant's.
+class NikobusClockSensor(GatewayEntity, SensorEntity):
+    """The PC-Link's clock, as it stood when it was last read.
 
     The PC-Link keeps local time and does not follow summer time, so its
-    calendar runs an hour off twice a year until the clock is set.
+    calendar runs an hour off twice a year until the clock is set. It is
+    read once an hour; how far it was off then is an attribute.
     """
 
-    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
-    _attr_suggested_display_precision = 0
 
     def __init__(self, hub: NikobusHub) -> None:
-        super().__init__(hub, "clock_drift")
+        super().__init__(hub, "clock")
 
     @property
-    def native_value(self) -> float | None:
-        """Seconds ahead (positive) or behind; unknown until read, or when never set."""
-        return self.hub.maintenance.clock_drift
+    def native_value(self) -> datetime | None:
+        """The clock at the last read; unknown until read, or when it was never set."""
+        return self.hub.maintenance.clock
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """When the clock was last read."""
-        read_at = self.hub.maintenance.clock_read_at
-        return {"read_at": read_at.isoformat() if read_at else None}
+        """How far ahead of Home Assistant's clock it was, and when it was read."""
+        maintenance = self.hub.maintenance
+        read_at = maintenance.clock_read_at
+        return {
+            "seconds_ahead": maintenance.clock_drift,
+            "read_at": read_at.isoformat() if read_at else None,
+        }
 
 
 class NikobusProgrammingSensor(GatewayEntity, SensorEntity):

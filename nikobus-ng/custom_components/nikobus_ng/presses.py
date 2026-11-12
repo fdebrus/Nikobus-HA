@@ -91,7 +91,8 @@ class PressHandler:
             self._emit(
                 state.address,
                 SHORT_RELEASE if state.is_short else LONG_RELEASE,
-                {"duration": round(state.duration_s, 2)},
+                # The whole seconds it was held, 3 for three or more, to match on without arithmetic.
+                {"duration": round(state.duration_s, 2), "seconds": state.bucket},
             )
             self.schedule_reads(state.address, released=True)
             return

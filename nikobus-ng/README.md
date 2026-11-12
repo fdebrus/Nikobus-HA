@@ -56,10 +56,22 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   is kept across restarts.
 - **A scene activated at the wall** records the activation on its entity,
   whichever of its keys was pressed.
-- **Keys.** One `event` entity per key with `pressed`, `hold`,
-  `short_release` and `long_release`, one device per plate, and a bus event
-  `nikobus_ng_press` for any address. A button per key presses it from Home
+- **Keys.** One `event` entity per key, one device per plate, and a bus
+  event `nikobus_ng_press` for any address, known key or not. A press
+  gives `pressed` at its first telegram, `hold` with `seconds` 1, 2 and 3
+  as it goes on, and at its end `short_release` (under a second) or
+  `long_release`, with `duration` and with `seconds`, the whole seconds
+  it was held, 3 for three or more. A button per key presses it from Home
   Assistant; those are created disabled.
+
+  | Nikobus bus event | Here: `type`, or the entity's `event_type` |
+  |---|---|
+  | `nikobus_button_pressed` | `pressed` |
+  | `nikobus_button_timer_1`, `_2`, `_3` | `hold` with `seconds` 1, 2, 3 |
+  | `nikobus_short_button_pressed` | `short_release` |
+  | `nikobus_long_button_pressed` | `long_release` |
+  | `nikobus_button_released` | either release; `duration` is its `duration_s` |
+  | `nikobus_button_pressed_0` … `_3` | a release with `seconds` 0 … 3 |
 - **Scenes.** The central functions the link scan classifies become scenes,
   activated by their own telegram. A light scene on a wall key or an IR
   code is a scene only under the name the project file gives it; unnamed,
@@ -71,8 +83,9 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 - **Names** of modules, plates, outputs and light scenes come from the
   `.nkb` project file, uploaded in the options; its rooms become the areas
   of the modules and plates that have none.
-- **Maintenance**, read-only: how far the PC-Link's clock is from Home
-  Assistant's, with a button that sets it (the one thing ever written); a
+- **Maintenance**, read-only: the PC-Link's clock, with how far it is
+  from Home Assistant's, and a button that sets it (the one thing ever
+  written); a
   check of every module's status and memory against its checksum; a backup
   of every module's memory to `nikobus_ng_backup/<date>` in the
   configuration directory.
@@ -96,8 +109,13 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   each read of it is a timeout on the bus.
 - **For a language model.** What Home Assistant cannot show of an
   installation is its wiring. The `nikobus_ng.describe` action returns it
-  as data: every output with the keys that drive it, their modes and
-  times, every key with what it drives, the scenes with their outputs.
+  as data: every output with the keys that drive it, every key with what
+  it drives, the scenes with their outputs. Each link is said in words
+  (`does`: "Switches the output on at once, and off again after 2 min.")
+  and carries its values under what they are (`off_after`, `on_after`,
+  `hold_time`, `run_time`, `level`, `dim_time`) instead of the vendor's
+  T1 and T2, whose meaning changes with the module and the mode. The
+  wording is the library's, taken from the vendor's manuals.
   The same is offered to Home Assistant's conversation agents as an LLM
   API, "Nikobus NG", with six tools: an overview, one output, one key,
   the scenes, the health of the bus, and pressing a key. Five only read;
@@ -106,10 +124,21 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 - **Taking over from the Nikobus integration.** An options step moves
   the entity ids, shown names, areas, aliases, labels, icons and
   voice-assistant exposure of the Nikobus integration's lights, switches,
-  covers, fans, scenes and input switches onto this integration's
-  entities, and makes relays lights where they were. The Nikobus entities
-  are parked, not deleted, and "Give back" undoes it. Keys are not taken
-  over: they are other kinds of entity here.
+  covers, fans, scenes, input switches and key press buttons onto this
+  integration's entities, and makes relays lights where they were. The
+  Nikobus entities are parked, not deleted, and "Give back" undoes it. A
+  key is a binary sensor there and an event entity here: the event
+  entity takes the sensor's id under `event.`, with its name, area and
+  labels, and the sensor keeps its own id.
+- **Labels by kind**, an option: "Nikobus Output", "Nikobus Button" and
+  "Nikobus Scene", the labels of the Nikobus integration, on outputs,
+  keys and scenes.
+- **Names as in the Nikobus integration.** A module or a plate the
+  project file names is shown as `Name (Room)`, a plate with the number
+  the vendor software shows it under in front: `11: Boudoir (Hall)`. The
+  gateway's device is *Nikobus Bridge*. A light scene and a shutter group
+  each have a device of their own, so they are shown under their own
+  name and nothing in front of it.
 - **A blueprint**, `blueprints/automation/fdebrus/nikobus_ng_key_controls_entity.yaml`:
   a key switches an entity of any integration.
 - **Stays in step.** A press is followed by a read of what the key drives; a
@@ -121,7 +150,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 5 444 lines |
+| Python | 15 036 lines | 5 594 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
@@ -129,9 +158,9 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Relay as light, dimmer as fan | module customisation, 17 flow steps | two tick lists in the options |
 | Unnamed outputs | no entity | an entity; disabled when no key drives it |
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
-| PC-Link clock | a timestamp sensor that changes every hour | the drift in seconds, and a button |
+| PC-Link clock | a timestamp sensor, read every hour | the same, with how far it is off as an attribute, and a button |
 | Settings | 17 options steps | a menu: gateway, lights and fans, a roller output, LED keys, a module's type, names, files |
-| Tests | 923, against a stub of Home Assistant | 106, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 127, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -144,19 +173,19 @@ What exists in the Nikobus integration and is absent here.
 | A refresh interval to set | fixed |
 | A device per PC-Link calendar channel | named in `controlled_by` only |
 | Volume level and brightness of a colour controller | the bus offers neither |
-| A migration of key entities and of automations on Nikobus bus events | outputs, scenes and input switches are taken over; the rest is by hand |
+| A migration of automations that read a key's sensor or use Nikobus bus events | outputs, scenes, input switches and keys are taken over; those automations are changed by hand |
 
 ## What is verified
 
 | Verified against the real core and the simulator | Not verified |
 |---|---|
-| Config flow, reconfigure, options, `.nkb` names | Commands and presses on real hardware |
+| Config flow, reconfigure, options, `.nkb` names | Switching an output and moving a shutter on real hardware |
 | Setup, unload, removal, reconnection | A Feedback Module's pushed frames |
 | Reading and writing all three module types | Timing on a serial line |
 | The link pass of a discovery, its save and reload | Shutter run times from real link tables |
 | Presses: events, reads, the write guard | Motion detectors on real hardware |
 | Shutter position, scenes, motion sensors, diagnostics | Logical inputs on real hardware |
-| Logical inputs, actions, repairs, device removal | The PC-Link clock, read or set |
+| Logical inputs, actions, repairs, device removal | The hour between two tries of a silent module, on real hardware |
 | Module status and memory read; the backup files | A module's checksum (the simulator has none) |
 | The blueprint, in a real automation | LED keys with a real Feedback Module |
 | One module read again; a port nothing answers on; states pushed without their queries | A link table that does not line up (the library's flag is set by the test) |
@@ -177,7 +206,14 @@ project file, and with 0.3.0 its six logical inputs and the clock of its
 PC-Link, an hour ahead. With 0.6.0 its PC-Link turned out to list a
 colour controller that is not on the bus: every read of it was a
 fifteen-second timeout, and with a Feedback Module it was never counted
-as silent, fixed in 0.6.1.
+as silent, fixed in 0.6.1. With 0.7.0 (2026-11-11): a light scene
+activated from Home Assistant put its key on the bus and the dimmer
+output it holds went to its preset, 4,0 V in the link and 0x66 of 0xFF
+read back; the button that sets the PC-Link's clock took it from 47
+minutes ahead to one second; the description returned 52 outputs, 154
+keys, 4 scenes and 6 logical inputs. The silent colour controller was
+asked at two polls and the entry was disabled before the third, so the
+hour's pause was not seen.
 
 ## Trying it
 
@@ -188,7 +224,7 @@ Only one program may talk to the bus. **Disable the Nikobus entry first.**
 2. *Settings → Devices & services → Add integration → Nikobus NG*, and give
    the serial port or `host:port`.
 3. The first setup starts a discovery. Follow it on the *Discovery* sensor
-   of the *Nikobus* device. Entities appear when it ends.
+   of the *Nikobus Bridge* device. Entities appear when it ends.
 
 It uses its own domain and its own store, so it changes nothing of the
 Nikobus integration, and removing its entry removes everything it created.
@@ -210,11 +246,11 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 | File | Lines | |
 |---|---|---|
 | `hub.py` | 661 | the connection, output state, commands, LED keys, polling, reconnection |
-| `config_flow.py` | 612 | setup, reconfigure, the options menu, the uploads |
-| `inventory.py` | 587 | the store, and every question asked of it |
-| `maintenance.py` | 416 | the clock, the programming checks, the backup |
+| `config_flow.py` | 616 | setup, reconfigure, the options menu, the uploads |
+| `inventory.py` | 602 | the store, and every question asked of it |
+| `maintenance.py` | 420 | the clock, the programming checks, the backup |
 | `cover.py` | 364 | shutters, their position, shutter groups |
 | `discovery.py` | 241 | one discovery run, of everything or of one module |
-| `describe.py` | 234 | the installation as data, for a person or a model |
-| `takeover.py` | 200 | taking over the Nikobus integration's entities, and giving them back |
-| the rest | 2 129 | the platforms, presses, repairs, actions, the LLM tools, the hand-written files, diagnostics |
+| `describe.py` | 246 | the installation as data, for a person or a model |
+| `takeover.py` | 221 | taking over the Nikobus integration's entities, and giving them back |
+| the rest | 2 223 | the platforms, presses, repairs, actions, the LLM tools, the hand-written files, diagnostics |

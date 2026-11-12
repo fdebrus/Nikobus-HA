@@ -33,6 +33,8 @@ async def test_a_press_fires_the_keys_event_entity(hass: HomeAssistant, simulato
     state = hass.states.get(entity_id)
     assert state.attributes["event_type"] == "short_release"
     assert state.attributes["bus_address"] == KEY_SWITCH_1
+    # The simulator's press is a short burst; a key held for seconds is not modelled.
+    assert (state.attributes["duration"], state.attributes["seconds"]) == (0.12, 0)
 
 
 async def test_the_output_a_key_drives_is_read_after_the_press(hass: HomeAssistant, simulator: WallSimulator, scanned: SetupFixture) -> None:
