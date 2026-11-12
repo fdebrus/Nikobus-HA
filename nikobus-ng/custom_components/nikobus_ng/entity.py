@@ -78,7 +78,9 @@ def plate_device(hub: NikobusHub, address: str, entry: dict[str, Any]) -> Device
         model=entry.get("model"),
         name=hub.inventory.device_name(address) or description,
         suggested_area=hub.inventory.device_area(address),
-        via_device_id=hub.group_device_id(plate_group(entry)),
+        # An input hangs under the module it is an input of, where that module is known.
+        via_device_id=hub.system_module_ids.get(str(entry.get("pc_logic_parent_address") or "").upper())
+        or hub.group_device_id(plate_group(entry)),
     )
 
 
