@@ -246,10 +246,15 @@ class NikobusOptionsFlow(OptionsFlowWithReload):
         steps.append("names")
         if inventory.is_empty or inventory.from_project:
             steps.append("files")
+        # Offered again while something is left to take: an earlier version took no keys.
+        if (
+            has_old_entities(self.hass)
+            and not inventory.is_empty
+            and make_plan(self.hass, self.config_entry.runtime_data).entities
+        ):
+            steps.append("take_over")
         if inventory.takeover["done"]:
             steps.append("give_back")
-        elif has_old_entities(self.hass) and not inventory.is_empty:
-            steps.append("take_over")
         return self.async_show_menu(step_id="init", menu_options=steps)
 
     async def async_step_gateway(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

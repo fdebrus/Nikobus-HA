@@ -93,6 +93,26 @@ def _shown_name(hass: HomeAssistant, entry: er.RegistryEntry) -> str:
     return er.async_get_legacy_friendly_name(hass, entry)
 
 
+def _carried_name(old: er.RegistryEntry, mine: er.RegistryEntry | None, shown: str) -> str | None:
+    """The name to give this integration's entity so that it reads as the Nikobus one did.
+
+    Up to Home Assistant 2026.10 a name set in the registry is shown as
+    it is, so the whole shown name is carried. From 2026.11 the device's
+    name is always put in front of it, so only the entity's own part is
+    carried: the name a person gave it, else the one the Nikobus
+    integration gave it; nothing where that is this entity's name already.
+    """
+    if not hasattr(old, "compat_name"):
+        return shown or None
+    part = old.name or old.original_name
+    return part if part and mine is not None and part != mine.original_name else None
+
+
+def _used(old: er.RegistryEntry) -> bool:
+    """Whether the Nikobus entity was in use: enabled, or disabled only because its entry is."""
+    return old.disabled_by in (None, er.RegistryEntryDisabler.CONFIG_ENTRY)
+
+
 def make_plan(hass: HomeAssistant, hub: NikobusHub) -> Plan:
     """Match every Nikobus entity to this integration's, and say what would change."""
     inventory = hub.inventory
@@ -102,6 +122,7 @@ def make_plan(hass: HomeAssistant, hub: NikobusHub) -> Plan:
     fans = set(hub.fan_outputs)
     shutters = {output: dict(settings) for output, settings in hub.shutters.items()}
     plan = Plan()
+    taken = {(item["domain"], item["unique_id"]) for item in inventory.takeover["done"]}
     for entry in sorted(er.async_get(hass).entities.values(), key=lambda e: e.entity_id):
         if entry.platform != OLD_DOMAIN:
             continue
@@ -132,6 +153,9 @@ def make_plan(hass: HomeAssistant, hub: NikobusHub) -> Plan:
                     break
         if target is None:
             plan.left += 1
+            continue
+        if target in taken:
+            # Taken over before: its Nikobus entity is parked, and not to be taken again.
             continue
         plan.entities.append(
             {
@@ -174,8 +198,7 @@ def apply_pending(hass: HomeAssistant, hub: NikobusHub) -> int:
         if parked:
             registry.async_update_entity(old.entity_id, new_entity_id=parked)
         changes: dict[str, Any] = {
-            # A name set in the registry is shown as it is, without the module's in front.
-            "name": item["name"] or None,
+            "name": _carried_name(old, mine, item["name"]),
             "area_id": old.area_id or (device.area_id if device else None),
             "aliases": old.aliases,
             "labels": old.labels,
@@ -184,7 +207,7 @@ def apply_pending(hass: HomeAssistant, hub: NikobusHub) -> int:
         }
         if taken != mine_id:
             changes["new_entity_id"] = taken
-        if old.disabled_by is None and mine and mine.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
+        if _used(old) and mine and mine.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
             # Used there, so wanted here, whatever the links say.
             changes["disabled_by"] = None
         registry.async_update_entity(mine_id, **changes)
@@ -194,6 +217,34 @@ def apply_pending(hass: HomeAssistant, hub: NikobusHub) -> int:
             {**item, "taken_entity_id": taken, "previous_entity_id": mine_id, "parked": parked}
         )
     return len(inventory.takeover["done"])
+
+
+def repair_taken(hass: HomeAssistant, hub: NikobusHub) -> int:
+    """Put right what an earlier take-over left wrong; returns how many entities changed.
+
+    Up to 0.8.0 the whole shown name was carried on every Home Assistant,
+    which from 2026.11 reads with the device's name twice, and an entity
+    whose Nikobus entry was disabled counted as unused and stayed
+    disabled here. A name changed since by a person is left alone.
+    """
+    registry = er.async_get(hass)
+    repaired = 0
+    for item in hub.inventory.takeover["done"]:
+        mine_id = registry.async_get_entity_id(item["domain"], DOMAIN, item["unique_id"])
+        old = registry.async_get(item["parked"] or item["entity_id"])
+        mine = registry.async_get(mine_id) if mine_id else None
+        if mine is None or old is None or old.platform != OLD_DOMAIN:
+            continue
+        changes: dict[str, Any] = {}
+        name = _carried_name(old, mine, item["name"])
+        if mine.name == (item["name"] or None) and mine.name != name:
+            changes["name"] = name
+        if _used(old) and mine.disabled_by is er.RegistryEntryDisabler.INTEGRATION:
+            changes["disabled_by"] = None
+        if changes:
+            registry.async_update_entity(mine.entity_id, **changes)
+            repaired += 1
+    return repaired
 
 
 def give_back(hass: HomeAssistant, hub: NikobusHub) -> int:
