@@ -47,6 +47,8 @@ class Describer:
         self._entities = er.async_get(hub.hass)
         self._areas = ar.async_get(hub.hass)
         self._devices = dr.async_get(hub.hass)
+        # Asked once per output when the whole installation is described.
+        self._scenes: list[dict[str, Any]] | None = None
 
     def _entity(self, platform: str, unique_id: str) -> dict[str, Any]:
         """An entity as a model can point at it: its id, its name, its area."""
@@ -125,8 +127,13 @@ class Describer:
             "value": self._hub.value(module.address, channel),
             "controlled_by": drivers,
             "calendar_channels": inventory.calendar_channels_driving(module.address, channel),
+            # By name as well: an address alone tells a reader nothing.
             "scenes": [
-                scene["address"]
+                {
+                    "address": scene["address"],
+                    "name": scene.get("name") or scene["project_name"],
+                    "entity_id": scene["entity_id"],
+                }
                 for scene in self.scenes()
                 if any((o.get("module"), o.get("channel")) == (module.address, channel) for o in scene["outputs"])
             ],
@@ -134,6 +141,11 @@ class Describer:
 
     def scenes(self) -> list[dict[str, Any]]:
         """Every central function: its frames, and the outputs it sets."""
+        if self._scenes is None:
+            self._scenes = self._read_scenes()
+        return self._scenes
+
+    def _read_scenes(self) -> list[dict[str, Any]]:
         inventory = self._hub.inventory
         modules = {module.address: module for module in inventory.output_modules()}
         scenes = []

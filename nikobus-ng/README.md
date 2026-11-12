@@ -157,7 +157,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 
 | | Nikobus (this repository) | Nikobus NG |
 |---|---|---|
-| Python | 15 036 lines | 5 726 lines |
+| Python | 15 036 lines | 5 738 lines |
 | Output state | buffer, plus an optimistic copy per entity | the buffer; entities are views |
 | Structure | one coordinator of 3 600 lines | hub, discovery, presses, inventory |
 | Discovery | two buttons, in order | one action, automatic on first setup |
@@ -167,7 +167,7 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
 | Gone modules and plates | two actions: detect, then purge | a repair when a module stops answering; delete the device |
 | PC-Link clock | a timestamp sensor, read every hour | the same, with how far it is off as an attribute, and a button |
 | Settings | 17 options steps | a menu: gateway, lights and fans, a roller output, LED keys, a module's type, names, files |
-| Tests | 923, against a stub of Home Assistant | 144, against the real core and a simulated bus |
+| Tests | 923, against a stub of Home Assistant | 146, against the real core and a simulated bus |
 
 ## What it does not do
 
@@ -266,6 +266,6 @@ Assistant. Nothing of Home Assistant or of the library is replaced.
 | `maintenance.py` | 420 | the clock, the programming checks, the backup |
 | `cover.py` | 364 | shutters, their position, shutter groups |
 | `discovery.py` | 241 | one discovery run, of everything or of one module |
-| `describe.py` | 246 | the installation as data, for a person or a model |
+| `describe.py` | 258 | the installation as data, for a person or a model |
 | `takeover.py` | 272 | taking over the Nikobus integration's entities, and giving them back |
 | the rest | 2 264 | the platforms, presses, repairs, actions, the LLM tools, the hand-written files, diagnostics |
