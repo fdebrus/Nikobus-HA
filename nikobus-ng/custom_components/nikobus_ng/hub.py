@@ -322,6 +322,8 @@ class NikobusHub:
                 dr.async_get(self.hass)
                 .async_get_or_create(
                     config_entry_id=self.entry.entry_id,
+                    # Not a thing on the bus: Home Assistant lists it apart and under another icon.
+                    entry_type=dr.DeviceEntryType.SERVICE,
                     identifiers={(DOMAIN, self.group_identifier(group))},
                     manufacturer=MANUFACTURER,
                     translation_key=group,

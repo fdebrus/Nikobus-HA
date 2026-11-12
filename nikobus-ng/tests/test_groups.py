@@ -63,6 +63,14 @@ async def test_devices_hang_under_their_kind_and_no_kind_is_empty(
     }
     # The installation has no remote, no interface and no shutter group.
     assert groups == {"Output modules", "System modules", "Wall buttons", "Scenes"}
+    # A group is a service to Home Assistant, a module or a plate a device.
+    kinds = {
+        device.entry_type
+        for device in dr.async_entries_for_config_entry(devices, entry.entry_id)
+        if device.via_device_id == hub.gateway_device_id
+    }
+    assert kinds == {dr.DeviceEntryType.SERVICE}
+    assert devices.async_get_device_by_identifier((DOMAIN, SWITCH), entry.entry_id).entry_type is None
 
 
 async def test_a_kind_nothing_is_filed_under_any_more_goes_and_none_can_be_deleted(
