@@ -179,6 +179,27 @@
     },
     "shutter_group": {
       "name": "Rolluikgroep {address}"
+    },
+    "output_modules": {
+      "name": "Uitgangsmodules"
+    },
+    "system_modules": {
+      "name": "Systeemmodules"
+    },
+    "wall_buttons": {
+      "name": "Wanddrukknoppen"
+    },
+    "remotes": {
+      "name": "Afstandsbedieningen"
+    },
+    "interfaces": {
+      "name": "Interfaces"
+    },
+    "scenes": {
+      "name": "Sferen"
+    },
+    "shutter_groups": {
+      "name": "Rolluikgroepen"
     }
   },
   "entity": {

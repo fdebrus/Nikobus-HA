@@ -66,23 +66,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: NikobusConfigEntry) -> b
 
 
 def _remove_devices_no_longer_known(hass: HomeAssistant, entry: NikobusConfigEntry, hub: NikobusHub) -> None:
-    """Delete the devices of modules, plates and central functions the inventory lost."""
-    known = {entry.entry_id, *hub.inventory.addresses(), *hub.inventory.scenes}
+    """Delete the devices of what the inventory lost, and of what has no entity any more.
+
+    A module or a plate stays while the inventory holds it. A scene's or
+    a shutter group's device, and a group nothing is filed under, stay
+    while an entity asked for them at this start.
+    """
+    known = {entry.entry_id, *hub.inventory.addresses(), *hub.group_identifiers, *hub.function_identifiers}
     devices = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(devices, entry.entry_id):
-        if not any(
-            domain == DOMAIN and identifier.removesuffix("_scene").removesuffix("_group") in known
-            for domain, identifier in device.identifiers
-        ):
+        if not any(domain == DOMAIN and identifier in known for domain, identifier in device.identifiers):
             devices.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
 
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: NikobusConfigEntry, device: dr.DeviceEntry
 ) -> bool:
-    """Deleting a module or a plate forgets it; the gateway stays, and so does what the modules hold."""
+    """Deleting a module or a plate forgets it; the gateway, its groups and what the modules hold stay."""
     addresses = [identifier for domain, identifier in device.identifiers if domain == DOMAIN]
-    if entry.entry_id in addresses or any(address.endswith(("_scene", "_group")) for address in addresses):
+    if any(address.startswith(entry.entry_id) or address.endswith(("_scene", "_group")) for address in addresses):
         return False
     for address in addresses:
         await entry.runtime_data.async_forget(address)

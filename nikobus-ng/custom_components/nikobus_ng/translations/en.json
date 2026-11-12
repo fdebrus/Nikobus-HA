@@ -179,6 +179,27 @@
     },
     "shutter_group": {
       "name": "Shutter group {address}"
+    },
+    "output_modules": {
+      "name": "Output modules"
+    },
+    "system_modules": {
+      "name": "System modules"
+    },
+    "wall_buttons": {
+      "name": "Wall buttons"
+    },
+    "remotes": {
+      "name": "Remotes"
+    },
+    "interfaces": {
+      "name": "Interfaces"
+    },
+    "scenes": {
+      "name": "Scenes"
+    },
+    "shutter_groups": {
+      "name": "Shutter groups"
     }
   },
   "entity": {

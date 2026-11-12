@@ -11,5 +11,5 @@
   "loggers": ["nikobus_connect"],
   "requirements": ["nikobus-connect>=0.57.7"],
   "single_config_entry": true,
-  "version": "0.8.1"
+  "version": "0.9.0"
 }

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
 from nikobus_connect import (
@@ -58,6 +59,7 @@ from .const import (
     ISSUE_FEEDBACK_PORT,
     ISSUE_NO_DEVICE,
     ISSUE_NOT_ANSWERING,
+    MANUFACTURER,
     POLL_INTERVAL,
     RECONNECT_DELAY_INITIAL,
     RECONNECT_DELAY_MAX,
@@ -101,6 +103,9 @@ class NikobusHub:
         self.connected = False
         #: The gateway's device, which every other device hangs under.
         self.gateway_device_id: str = ""
+        self._groups: dict[str, str] = {}
+        #: The devices of the scenes and shutter groups that have an entity this run.
+        self.function_identifiers: set[str] = set()
 
         self.connection: NikobusConnect
         self.listener: NikobusEventListener
@@ -302,6 +307,36 @@ class NikobusHub:
         return lambda: self._status_listeners.remove(listener)
 
     @callback
+    def group_device_id(self, group: str) -> str:
+        """The device a kind of device is filed under; made when the first one asks for it.
+
+        It holds no entity: it is there so that the gateway's page shows
+        the output modules, the wall buttons, the remotes and so on apart
+        instead of one long list.
+        """
+        if group not in self._groups:
+            self._groups[group] = (
+                dr.async_get(self.hass)
+                .async_get_or_create(
+                    config_entry_id=self.entry.entry_id,
+                    identifiers={(DOMAIN, self.group_identifier(group))},
+                    manufacturer=MANUFACTURER,
+                    translation_key=group,
+                    via_device_id=self.gateway_device_id,
+                )
+                .id
+            )
+        return self._groups[group]
+
+    def group_identifier(self, group: str) -> str:
+        """What a group's device is known by in the device registry."""
+        return f"{self.entry.entry_id}_{group}"
+
+    @property
+    def group_identifiers(self) -> set[str]:
+        """The groups that have something filed under them."""
+        return {self.group_identifier(group) for group in self._groups}
+
     def notify(self, address: str | None = None) -> None:
         """Wake the entities of one module, or everything."""
         if address is not None:

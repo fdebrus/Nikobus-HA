@@ -47,7 +47,10 @@ async def test_the_inventory_becomes_devices_and_entities(hass: HomeAssistant, s
     module = devices.async_get_device_by_identifier((DOMAIN, SWITCH), entry.entry_id)
     gateway = devices.async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
     assert module is not None and gateway is not None
-    assert (module.name, module.model, module.via_device_id) == ("Switch module 4707", "05-000-02", gateway.id)
+    assert (module.name, module.model) == ("Switch module 4707", "05-000-02")
+    # Filed under its kind, which hangs under the gateway.
+    group = devices.async_get(module.via_device_id)
+    assert (group.name, group.via_device_id) == ("Output modules", gateway.id)
     assert gateway.serial_number == "86F5"
     assert devices.async_get_device_by_identifier((DOMAIN, PLATE), entry.entry_id) is not None
 

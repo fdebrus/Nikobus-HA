@@ -117,5 +117,14 @@ ISSUE_TYPE_FIXABLE: Final = "module_type_fixable"
 #: This many pushed states with none of the queries behind them: the port is the Feedback Module's own.
 FEEDBACK_PORT_ANSWERS: Final = 6
 
+#: The kinds devices are filed under, between the gateway and the device itself.
+GROUP_OUTPUT_MODULES: Final = "output_modules"
+GROUP_SYSTEM_MODULES: Final = "system_modules"
+GROUP_WALL_BUTTONS: Final = "wall_buttons"
+GROUP_REMOTES: Final = "remotes"
+GROUP_INTERFACES: Final = "interfaces"
+GROUP_SCENES: Final = "scenes"
+GROUP_SHUTTER_GROUPS: Final = "shutter_groups"
+
 #: Fired for every key press seen on the bus, known key or not.
 EVENT_PRESS: Final = "nikobus_ng_press"

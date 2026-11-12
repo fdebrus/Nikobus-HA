@@ -119,7 +119,7 @@ async def test_a_scene_has_a_device_of_its_own_that_stays(
     devices = dr.async_get(hass)
     device = devices.async_get_device_by_identifier((DOMAIN, f"{KEY_SCENE}_scene"), entry.entry_id)
     assert device is not None
-    assert (device.name, device.via_device_id) == ("Dinner", hub.gateway_device_id)
+    assert (device.name, device.via_device_id) == ("Dinner", hub.group_device_id("scenes"))
     await hass.config_entries.async_reload(entry.entry_id)
     await _reloaded(hass, entry, hub)
     assert devices.async_get_device_by_identifier((DOMAIN, f"{KEY_SCENE}_scene"), entry.entry_id) is not None

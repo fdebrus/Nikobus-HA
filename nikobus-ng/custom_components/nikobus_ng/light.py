@@ -20,7 +20,7 @@ from nikobus_connect.rgb import (
     decode_rgb_state,
 )
 
-from .const import DIMMER_MODULE, DOMAIN, MANUFACTURER
+from .const import DIMMER_MODULE, DOMAIN, GROUP_OUTPUT_MODULES, MANUFACTURER
 from .entity import ChannelEntity, NikobusEntity, OnOffEntity, outputs_of
 from .hub import NikobusHub
 
@@ -101,7 +101,7 @@ class NikobusRgbLight(NikobusEntity, LightEntity):
             model=str(entry.get("model") or "") or None,
             name=hub.inventory.device_name(address) or f"RGB controller {address}",
             suggested_area=hub.inventory.device_area(address),
-            via_device_id=hub.gateway_device_id,
+            via_device_id=hub.group_device_id(GROUP_OUTPUT_MODULES),
         )
 
     async def async_added_to_hass(self) -> None:
