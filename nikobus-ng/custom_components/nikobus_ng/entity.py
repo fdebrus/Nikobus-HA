@@ -18,6 +18,14 @@ from .const import (
     CONF_USE_AS,
     DIMMER_MODULE,
     DOMAIN,
+    GROUP_INTERFACES,
+    GROUP_OUTPUT_MODULES,
+    GROUP_REMOTES,
+    GROUP_SCENES,
+    GROUP_SHUTTER_GROUPS,
+    GROUP_SYSTEM_MODULES,
+    GROUP_WALL_BUTTONS,
+    INPUT_MODULE_TYPES,
     MANUFACTURER,
     ROLLER_MODULE,
     SWITCH_MODULE,
@@ -43,6 +51,24 @@ def gateway_device(hub: NikobusHub) -> DeviceInfo:
     )
 
 
+def plate_group(entry: dict[str, Any]) -> str:
+    """Where a plate is filed, by what the inventory calls it.
+
+    An input of a PC-Logic or a Modular Interface goes with the system
+    modules, an interface with the interfaces, anything on radio with
+    the remotes, the rest with the wall buttons. "interface" is looked
+    for first: the word has "rf" in it.
+    """
+    if entry.get("pc_logic_parent_type") in INPUT_MODULE_TYPES:
+        return GROUP_SYSTEM_MODULES
+    kind = f"{entry.get('type') or ''} {entry.get('description') or ''}".lower()
+    if "interface" in kind:
+        return GROUP_INTERFACES
+    if "rf" in kind:
+        return GROUP_REMOTES
+    return GROUP_WALL_BUTTONS
+
+
 def plate_device(hub: NikobusHub, address: str, entry: dict[str, Any]) -> DeviceInfo:
     """The device of a plate, a transmitter or a detector."""
     description = str(entry.get("description") or entry.get("type") or "Nikobus button").strip()
@@ -52,16 +78,18 @@ def plate_device(hub: NikobusHub, address: str, entry: dict[str, Any]) -> Device
         model=entry.get("model"),
         name=hub.inventory.device_name(address) or description,
         suggested_area=hub.inventory.device_area(address),
-        via_device_id=hub.gateway_device_id,
+        via_device_id=hub.group_device_id(plate_group(entry)),
     )
 
 
 def function_device(hub: NikobusHub, identifier: str, kind: str, address: str, name: str | None) -> DeviceInfo:
     """The device of a light scene or a shutter group: its own, so that it is shown under its own name."""
+    group = GROUP_SHUTTER_GROUPS if kind == "shutter_group" else GROUP_SCENES
+    hub.function_identifiers.add(identifier)
     info = DeviceInfo(
         identifiers={(DOMAIN, identifier)},
         manufacturer=MANUFACTURER,
-        via_device_id=hub.gateway_device_id,
+        via_device_id=hub.group_device_id(group),
     )
     if name:
         info["name"] = name
@@ -165,7 +193,7 @@ class ChannelEntity(NikobusEntity):
             model=module.model or None,
             name=inventory.device_name(module.address) or f"{module.description} {module.address}",
             suggested_area=inventory.device_area(module.address),
-            via_device_id=hub.gateway_device_id,
+            via_device_id=hub.group_device_id(GROUP_OUTPUT_MODULES),
         )
 
     async def async_added_to_hass(self) -> None:

@@ -179,6 +179,27 @@
     },
     "shutter_group": {
       "name": "Groupe de volets {address}"
+    },
+    "output_modules": {
+      "name": "Modules de sortie"
+    },
+    "system_modules": {
+      "name": "Modules système"
+    },
+    "wall_buttons": {
+      "name": "Boutons muraux"
+    },
+    "remotes": {
+      "name": "Télécommandes"
+    },
+    "interfaces": {
+      "name": "Interfaces"
+    },
+    "scenes": {
+      "name": "Ambiances"
+    },
+    "shutter_groups": {
+      "name": "Groupes de volets"
     }
   },
   "entity": {

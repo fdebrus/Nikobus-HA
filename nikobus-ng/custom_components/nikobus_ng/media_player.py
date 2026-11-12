@@ -22,7 +22,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, MANUFACTURER
+from .const import DOMAIN, GROUP_SYSTEM_MODULES, MANUFACTURER
 from .entity import NikobusEntity
 from .hub import NikobusHub
 from .presses import PRESSED
@@ -83,7 +83,7 @@ class NikobusAudioZone(NikobusEntity, MediaPlayerEntity, RestoreEntity):
             model="05-205",
             name=hub.inventory.device_name(module) or f"Audio distribution {module}",
             suggested_area=hub.inventory.device_area(module),
-            via_device_id=hub.gateway_device_id,
+            via_device_id=hub.group_device_id(GROUP_SYSTEM_MODULES),
         )
 
     async def async_added_to_hass(self) -> None:
