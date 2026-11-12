@@ -56,10 +56,22 @@ The reasoning behind the design is in [REVIEW.md](REVIEW.md).
   is kept across restarts.
 - **A scene activated at the wall** records the activation on its entity,
   whichever of its keys was pressed.
-- **Keys.** One `event` entity per key with `pressed`, `hold`,
-  `short_release` and `long_release`, one device per plate, and a bus event
-  `nikobus_ng_press` for any address. A button per key presses it from Home
+- **Keys.** One `event` entity per key, one device per plate, and a bus
+  event `nikobus_ng_press` for any address, known key or not. A press
+  gives `pressed` at its first telegram, `hold` with `seconds` 1, 2 and 3
+  as it goes on, and at its end `short_release` (under a second) or
+  `long_release`, with `duration` and with `seconds`, the whole seconds
+  it was held, 3 for three or more. A button per key presses it from Home
   Assistant; those are created disabled.
+
+  | Nikobus bus event | Here: `type`, or the entity's `event_type` |
+  |---|---|
+  | `nikobus_button_pressed` | `pressed` |
+  | `nikobus_button_timer_1`, `_2`, `_3` | `hold` with `seconds` 1, 2, 3 |
+  | `nikobus_short_button_pressed` | `short_release` |
+  | `nikobus_long_button_pressed` | `long_release` |
+  | `nikobus_button_released` | either release; `duration` is its `duration_s` |
+  | `nikobus_button_pressed_0` … `_3` | a release with `seconds` 0 … 3 |
 - **Scenes.** The central functions the link scan classifies become scenes,
   activated by their own telegram. A light scene on a wall key or an IR
   code is a scene only under the name the project file gives it; unnamed,
