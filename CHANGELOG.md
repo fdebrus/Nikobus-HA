@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.31.7
+
+**Requires `nikobus-connect` 0.57.10.**
+
+- **The inputs of a PC-Logic at an odd address work.** The addresses of a PC-Logic's six inputs are computed from the module's own address, and the computation dropped the address's lowest bit. A PC-Logic at an even address was not affected. At an odd address a contact fired `nikobus_button_pressed` with no module and channel, and the LM-INPUT sensors and the A/B switch never reacted (#592, a 05-201 at `8F71`: contacts on inputs 1 and 2 send `24778B` / `64778B` and `14778B` / `54778B`, where `20778B` / `60778B` and `10778B` / `50778B` were expected). Fixed in the library. One module, two of its six inputs captured; the other four follow from the same computation.
+- **If your PC-Logic has an odd address, run *1. Load Project Overview* again** after updating. It replaces the six inputs stored at the wrong addresses. Their entities are new ones, because an entity is identified by its bus address; the old ones, which never reacted, are removed.
+
 ## 3.31.6
 
 **Requires `nikobus-connect` 0.57.5.**
